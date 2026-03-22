@@ -1,0 +1,132 @@
+[
+  {
+    "gameId": "game-persist",
+    "homeTeamId": "home",
+    "awayTeamId": "away",
+    "events": [
+      {
+        "id": "evt-1",
+        "gameId": "game-persist",
+        "sequence": 1,
+        "timestampIso": "2026-03-18T20:00:00.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 470,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "shot_attempt",
+        "playerId": "h1",
+        "made": true,
+        "points": 2,
+        "zone": "paint"
+      }
+    ]
+  },
+  {
+    "gameId": "game-update",
+    "homeTeamId": "home",
+    "awayTeamId": "away",
+    "events": [
+      {
+        "id": "evt-shot",
+        "gameId": "game-update",
+        "sequence": 1,
+        "timestampIso": "2026-03-18T20:00:00.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 470,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "shot_attempt",
+        "playerId": "h1",
+        "made": true,
+        "points": 3,
+        "zone": "above_break_three"
+      }
+    ]
+  },
+  {
+    "gameId": "game-update-2",
+    "homeTeamId": "home",
+    "awayTeamId": "away",
+    "events": [
+      {
+        "id": "evt-shot",
+        "gameId": "game-update-2",
+        "sequence": 1,
+        "timestampIso": "2026-03-18T20:00:00.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 470,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "shot_attempt",
+        "playerId": "h1",
+        "made": false,
+        "points": 3,
+        "zone": "above_break_three"
+      }
+    ]
+  },
+  {
+    "gameId": "game-lineup",
+    "homeTeamId": "home",
+    "awayTeamId": "away",
+    "events": [
+      {
+        "id": "evt-pos",
+        "gameId": "game-lineup",
+        "sequence": 1,
+        "timestampIso": "2026-03-18T20:00:00.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 470,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "possession_start",
+        "possessedByTeamId": "home"
+      },
+      {
+        "id": "evt-sub",
+        "gameId": "game-lineup",
+        "sequence": 2,
+        "timestampIso": "2026-03-18T20:00:15.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 455,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "substitution",
+        "playerOutId": "home-p1",
+        "playerInId": "home-p6"
+      }
+    ]
+  },
+  {
+    "gameId": "game-lineup-2",
+    "homeTeamId": "home",
+    "awayTeamId": "away",
+    "events": [
+      {
+        "id": "evt-pos",
+        "gameId": "game-lineup-2",
+        "sequence": 1,
+        "timestampIso": "2026-03-18T20:00:00.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 470,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "possession_start",
+        "possessedByTeamId": "home"
+      },
+      {
+        "id": "evt-sub",
+        "gameId": "game-lineup-2",
+        "sequence": 2,
+        "timestampIso": "2026-03-18T20:00:15.000Z",
+        "period": 1,
+        "clockSecondsRemaining": 455,
+        "teamId": "home",
+        "operatorId": "op-1",
+        "type": "substitution",
+        "playerOutId": "home-p1",
+        "playerInId": "home-p6"
+      }
+    ]
+  }
+]
