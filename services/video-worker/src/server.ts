@@ -1,5 +1,5 @@
 import cors from "cors";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import {
   addAnchor,
   addVideo,
@@ -12,11 +12,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
+// Optional API-key auth. Set PIVOT_API_KEY env var to enable.
+// ---------------------------------------------------------------------------
+const API_KEY = process.env.PIVOT_API_KEY;
+function requireApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (!API_KEY) { next(); return; }
+  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
+  if (provided === API_KEY) { next(); return; }
+  res.status(401).json({ error: "Unauthorized — invalid or missing x-api-key" });
+}
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/games/:gameId/videos", (req, res) => {
+app.post("/games/:gameId/videos", requireApiKey, (req, res) => {
   const { id, filename } = req.body ?? {};
 
   if (!id || !filename) {
@@ -33,11 +44,11 @@ app.post("/games/:gameId/videos", (req, res) => {
   res.status(201).json(video);
 });
 
-app.get("/games/:gameId/videos", (req, res) => {
+app.get("/games/:gameId/videos", requireApiKey, (req, res) => {
   res.json(listVideos(req.params.gameId));
 });
 
-app.post("/games/:gameId/sync-anchors", (req, res) => {
+app.post("/games/:gameId/sync-anchors", requireApiKey, (req, res) => {
   const { id, videoId, eventType, period, gameClockSeconds, videoSecond } = req.body ?? {};
 
   if (!id || !videoId || !eventType) {
@@ -58,11 +69,11 @@ app.post("/games/:gameId/sync-anchors", (req, res) => {
   res.status(201).json(anchor);
 });
 
-app.get("/games/:gameId/sync-anchors", (req, res) => {
+app.get("/games/:gameId/sync-anchors", requireApiKey, (req, res) => {
   res.json(listAnchors(req.params.gameId));
 });
 
-app.get("/games/:gameId/videos/:videoId/resolve", (req, res) => {
+app.get("/games/:gameId/videos/:videoId/resolve", requireApiKey, (req, res) => {
   const period = Number(req.query.period ?? 1);
   const gameClockSeconds = Number(req.query.gameClockSeconds ?? 0);
 

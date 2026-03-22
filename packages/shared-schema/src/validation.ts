@@ -95,6 +95,16 @@ const timeoutSchema = baseSchema.extend({
   timeoutType: z.enum(TIMEOUT_TYPES)
 });
 
+const periodStartSchema = baseSchema.extend({
+  type: z.literal("period_start"),
+  period: z.number().int().min(1)
+});
+
+const periodEndSchema = baseSchema.extend({
+  type: z.literal("period_end"),
+  period: z.number().int().min(1)
+});
+
 export const gameEventSchema = z.discriminatedUnion("type", [
   shotAttemptSchema,
   reboundSchema,
@@ -106,7 +116,9 @@ export const gameEventSchema = z.discriminatedUnion("type", [
   substitutionSchema,
   possessionStartSchema,
   possessionEndSchema,
-  timeoutSchema
+  timeoutSchema,
+  periodStartSchema,
+  periodEndSchema
 ]);
 
 export function parseGameEvent(input: unknown): GameEvent {

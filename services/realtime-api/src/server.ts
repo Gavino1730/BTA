@@ -1,5 +1,5 @@
 import cors from "cors";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import {
@@ -16,6 +16,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
+// Optional API-key auth. Set PIVOT_API_KEY env var to enable.
+// ---------------------------------------------------------------------------
+const API_KEY = process.env.PIVOT_API_KEY;
+function requireApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (!API_KEY) { next(); return; }                       // key not configured → open
+  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
+  if (provided === API_KEY) { next(); return; }
+  res.status(401).json({ error: "Unauthorized — invalid or missing x-api-key" });
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -27,7 +38,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/games", (req, res) => {
+app.post("/games", requireApiKey, (req, res) => {
   const { gameId, homeTeamId, awayTeamId } = req.body ?? {};
 
   if (!gameId || !homeTeamId || !awayTeamId) {
@@ -47,7 +58,7 @@ app.post("/games", (req, res) => {
   res.status(201).json(state);
 });
 
-app.get("/games/:gameId/state", (req, res) => {
+app.get("/games/:gameId/state", requireApiKey, (req, res) => {
   const state = getGameState(req.params.gameId);
 
   if (!state) {
@@ -58,7 +69,7 @@ app.get("/games/:gameId/state", (req, res) => {
   res.json(state);
 });
 
-app.get("/games/:gameId/insights", (req, res) => {
+app.get("/games/:gameId/insights", requireApiKey, (req, res) => {
   const state = getGameState(req.params.gameId);
   if (!state) {
     res.status(404).json({ error: "game not found" });
@@ -68,7 +79,7 @@ app.get("/games/:gameId/insights", (req, res) => {
   res.json(getGameInsights(req.params.gameId));
 });
 
-app.get("/games/:gameId/events", (req, res) => {
+app.get("/games/:gameId/events", requireApiKey, (req, res) => {
   const state = getGameState(req.params.gameId);
   if (!state) {
     res.status(404).json({ error: "game not found" });
@@ -78,7 +89,7 @@ app.get("/games/:gameId/events", (req, res) => {
   res.json(getGameEvents(req.params.gameId));
 });
 
-app.post("/games/:gameId/events", (req, res) => {
+app.post("/games/:gameId/events", requireApiKey, (req, res) => {
   try {
     const payload = {
       ...(req.body ?? {}),
@@ -97,7 +108,7 @@ app.post("/games/:gameId/events", (req, res) => {
   }
 });
 
-app.delete("/games/:gameId/events/:eventId", (req, res) => {
+app.delete("/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
   try {
     const { state, insights } = deleteEvent(req.params.gameId, req.params.eventId);
 
@@ -111,7 +122,7 @@ app.delete("/games/:gameId/events/:eventId", (req, res) => {
   }
 });
 
-app.put("/games/:gameId/events/:eventId", (req, res) => {
+app.put("/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
   try {
     const { event, state, insights } = updateEvent(
       req.params.gameId,
@@ -130,6 +141,17 @@ app.put("/games/:gameId/events/:eventId", (req, res) => {
 });
 
 io.on("connection", (socket) => {
+  // Validate API key on socket connection when auth is enabled
+  if (API_KEY) {
+    const provided = (socket.handshake.auth as Record<string, unknown>)?.apiKey as string | undefined
+      ?? socket.handshake.headers["x-api-key"] as string | undefined;
+    if (provided !== API_KEY) {
+      socket.emit("error", { message: "Unauthorized — invalid or missing apiKey" });
+      socket.disconnect(true);
+      return;
+    }
+  }
+
   socket.on("join:game", (gameId: string) => {
     if (!gameId) {
       return;
