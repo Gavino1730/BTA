@@ -9,7 +9,9 @@ export const EVENT_TYPES = [
   "substitution",
   "possession_start",
   "possession_end",
-  "timeout"
+  "timeout",
+  "period_start",
+  "period_end"
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -139,6 +141,16 @@ export interface TimeoutEvent extends GameEventBase {
   timeoutType: TimeoutType;
 }
 
+export interface PeriodStartEvent extends GameEventBase {
+  type: "period_start";
+  period: number;
+}
+
+export interface PeriodEndEvent extends GameEventBase {
+  type: "period_end";
+  period: number;
+}
+
 export type GameEvent =
   | ShotAttemptEvent
   | ReboundEvent
@@ -150,4 +162,6 @@ export type GameEvent =
   | SubstitutionEvent
   | PossessionStartEvent
   | PossessionEndEvent
-  | TimeoutEvent;
+  | TimeoutEvent
+  | PeriodStartEvent
+  | PeriodEndEvent;

@@ -5,6 +5,16 @@ const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";
 const STORE = "pivot-op";
 const APP_DATA_KEY = "pivot-app-data-v3";
 
+/** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
+function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
+  return setup.apiKey ? { "x-api-key": setup.apiKey } : {};
+}
+/** Returns RequestInit for a plain GET request, adding the API key header when configured. */
+function apiHeaders(setup: { apiKey?: string }): RequestInit {
+  const h = apiKeyHeader(setup);
+  return Object.keys(h).length ? { headers: h } : {};
+}
+
 type TeamSide = "home" | "away";
 type SettingsView = "menu" | "teams" | "team-edit" | "game-setup";
 
@@ -13,6 +23,8 @@ export interface Player {
   number: string;
   name: string;
   position: string;
+  height?: string;   // e.g. "6'2\""
+  grade?: string;    // e.g. "11"
 }
 
 export interface Team {
@@ -27,6 +39,7 @@ export interface GameSetup {
   homeTeamId: string;
   awayTeamId: string;
   apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
+  apiKey?: string;       // shared secret sent as x-api-key header
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
@@ -128,6 +141,33 @@ function computeScores(events: GameEvent[]) {
   return s;
 }
 
+function generateGameId(opponent: string, date: string): string {
+  const slug = (opponent || "game").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "game";
+  const d = date || new Date().toISOString().slice(0, 10);
+  return `${d}-${slug}`;
+}
+
+function computePlusMinus(events: GameEvent[], vcSide: TeamSide): Record<string, number> {
+  const pm: Record<string, number> = {};
+  const vcLineup = new Set<string>();
+  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
+  for (const e of sorted) {
+    if (e.type === "substitution") {
+      if (e.teamId === vcSide) { vcLineup.delete(e.playerOutId); vcLineup.add(e.playerInId); }
+    } else if (e.type === "shot_attempt" || e.type === "rebound" ||
+               e.type === "foul" || e.type === "assist" || e.type === "steal" || e.type === "block") {
+      if (e.teamId === vcSide) vcLineup.add(e.playerId);
+    } else if (e.type === "turnover" && e.playerId) {
+      if (e.teamId === vcSide) vcLineup.add(e.playerId);
+    }
+    if (e.type === "shot_attempt" && e.made) {
+      const delta = e.teamId === vcSide ? e.points : -e.points;
+      for (const pid of vcLineup) pm[pid] = (pm[pid] ?? 0) + delta;
+    }
+  }
+  return pm;
+}
+
 function describeEvent(
   event: GameEvent,
   homeTeamName: string,
@@ -166,6 +206,10 @@ function describeEvent(
       return { main: "sub", detail: `${tn(event.teamId)}  ${pn(event.playerOutId)} â†’ ${pn(event.playerInId)}`, accent: "white" };
     case "possession_start":
       return { main: "possession", detail: tn(event.possessedByTeamId), accent: "white" };
+    case "period_start":
+      return { main: `Q${event.period} start`, detail: "", accent: "teal" };
+    case "period_end":
+      return { main: `Q${event.period} end`, detail: "", accent: "white" };
     default:
       return { main: (event as GameEvent).type, detail: "", accent: "white" };
   }
@@ -419,6 +463,7 @@ function abbreviateName(fullName: string): string {
 
 interface DashboardPlayerStat {
   number: number; name: string;
+  height?: string; grade?: string;
   fg_made: number; fg_att: number; fg_pct: string;
   fg3_made: number; fg3_att: number; fg3_pct: string;
   ft_made: number; ft_att: number; ft_pct: string;
@@ -427,7 +472,7 @@ interface DashboardPlayerStat {
   pts: number; plus_minus: number;
 }
 
-function computeDashboardPlayerStats(events: GameEvent[], players: Player[]): DashboardPlayerStat[] {
+function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcSide: TeamSide): DashboardPlayerStat[] {
   const map: Record<string, {
     fg_made: number; fg_att: number; fg3_made: number; fg3_att: number;
     ft_made: number; ft_att: number; pts: number;
@@ -461,6 +506,7 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[]): Da
   }
 
   const pct = (made: number, att: number) => att > 0 ? `${Math.round(made / att * 100)}%` : "-";
+  const plusMinus = computePlusMinus(events, vcSide);
 
   return players
     .map(p => {
@@ -469,12 +515,14 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[]): Da
       return {
         number: parseInt(p.number, 10) || 0,
         name: abbreviateName(p.name),
+        height: p.height,
+        grade: p.grade,
         fg_made: t.fg_made, fg_att: t.fg_att, fg_pct: pct(t.fg_made, t.fg_att),
         fg3_made: t.fg3_made, fg3_att: t.fg3_att, fg3_pct: pct(t.fg3_made, t.fg3_att),
         ft_made: t.ft_made, ft_att: t.ft_att, ft_pct: pct(t.ft_made, t.ft_att),
         oreb: t.oreb, dreb: t.dreb, fouls: t.fouls,
         stl: t.stl, to: t.to, blk: t.blk, asst: t.ast,
-        pts: t.pts, plus_minus: 0,
+        pts: t.pts, plus_minus: plusMinus[p.id] ?? 0,
       };
     })
     .filter(p =>
@@ -566,7 +614,7 @@ export function App() {
     setSequence(localSeq);
     async function hydrate() {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`);
+        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (!res.ok) { setSubmittedEvents([]); return; }
         const events = (await res.json()) as GameEvent[];
         setSubmittedEvents(events);
@@ -586,7 +634,7 @@ export function App() {
     try {
       const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(event),
       });
       if (!res.ok) return false;
@@ -609,7 +657,7 @@ export function App() {
       if (!ok) break;
     }
     try {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`);
+      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
       if (res.ok) setSubmittedEvents((await res.json()) as GameEvent[]);
     } catch { /* empty */ }
   }
@@ -636,33 +684,31 @@ export function App() {
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     // If it is already submitted to the API, delete it there
     if (submittedEvents.some(e => e.id === last.id)) {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${last.id}`, { method: "DELETE" });
+      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
       if (res.ok) setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
     }
   }
 
-  async function startGame() {
+  async function startGame(newGameId?: string) {
+    const gid = newGameId ?? appData.gameSetup.gameId;
     const res = await fetch(`${appData.gameSetup.apiUrl}/games`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
       body: JSON.stringify({
-        gameId,
+        gameId: gid,
         homeTeamId: appData.gameSetup.homeTeamId || "home",
         awayTeamId: appData.gameSetup.awayTeamId || "away",
       }),
     });
     if (res.ok) {
+      const nextData = { ...appData, gameSetup: { ...appData.gameSetup, gameId: gid, statsGameId: undefined } };
+      setAppData(nextData);
+      saveAppData(nextData);
       setPendingEvents([]);
       setSubmittedEvents([]);
       setSequence(1);
-      savePending(gameId, []);
-      saveSeq(gameId, 1);
-      // Clear the stored dashboard game ID — next game must get its own fresh record
-      setAppData(prev => {
-        const next = { ...prev, gameSetup: { ...prev.gameSetup, statsGameId: undefined } };
-        saveAppData(next);
-        return next;
-      });
+      savePending(gid, []);
+      saveSeq(gid, 1);
     }
   }
 
@@ -671,7 +717,8 @@ export function App() {
     if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
       await submitToDashboard();
     }
-    await startGame();
+    const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
+    await startGame(newId);
   }
 
   async function submitToDashboard() {
@@ -700,7 +747,7 @@ export function App() {
 
     const vcScore = scores[vcSide];
     const oppScore = scores[oppSide];
-    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players);
+    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcSide);
     const teamStats = computeTeamStats(allEventObjs, vcSide);
 
     const payload: Record<string, unknown> = {
@@ -720,7 +767,7 @@ export function App() {
     try {
       const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(payload),
       });
       const result = await res.json() as { message?: string; gameId?: number; error?: string };
@@ -753,6 +800,10 @@ export function App() {
   const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
   const scores = useMemo(() => computeScores(allEventObjs), [allEventObjs]);
   const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
+  const foulAlerts = useMemo(() => {
+    const vcPl = appData.gameSetup.vcSide === "home" ? homePlayers : awayPlayers;
+    return vcPl.filter(p => (pTotals[p.id]?.fouls ?? 0) >= 4);
+  }, [appData.gameSetup.vcSide, homePlayers, awayPlayers, pTotals]);
 
   // Keep the ref current so the interval always has the latest values
   useEffect(() => {
@@ -870,7 +921,11 @@ export function App() {
                   <span className="pnum">#{p.number}</span>
                   <span className="pname">{p.name}</span>
                   {p.position && <span className="ppos">{p.position}</span>}
-                  {pTotals[p.id]?.fouls ? <span className="pfoul">{pTotals[p.id].fouls}f</span> : null}
+                  {pTotals[p.id]?.fouls ? (
+                    <span className={`pfoul${pTotals[p.id].fouls >= 5 ? " pfoul-out" : pTotals[p.id].fouls >= 4 ? " pfoul-warn" : ""}`}>
+                      {pTotals[p.id].fouls}f{pTotals[p.id].fouls >= 5 ? " OUT" : ""}
+                    </span>
+                  ) : null}
                   {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
                 </button>
               ))}
@@ -907,7 +962,11 @@ export function App() {
                   <span className="pnum">#{p.number}</span>
                   <span className="pname">{p.name}</span>
                   {p.position && <span className="ppos">{p.position}</span>}
-                  {pTotals[p.id]?.fouls ? <span className="pfoul">{pTotals[p.id].fouls}f</span> : null}
+                  {pTotals[p.id]?.fouls ? (
+                    <span className={`pfoul${pTotals[p.id].fouls >= 5 ? " pfoul-out" : pTotals[p.id].fouls >= 4 ? " pfoul-warn" : ""}`}>
+                      {pTotals[p.id].fouls}f{pTotals[p.id].fouls >= 5 ? " OUT" : ""}
+                    </span>
+                  ) : null}
                   {pTotals[p.id]?.points ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
                 </button>
               ))}
@@ -1012,7 +1071,11 @@ export function App() {
   return (
     <div className="game-layout">
       {renderModal()}
-      {!online && <div className="offline-badge">OFFLINE</div>}
+      {!online && (
+        <div className="offline-badge">
+          OFFLINE{pendingEvents.length > 0 ? ` · ${pendingEvents.length} unsaved` : ""}
+        </div>
+      )}
       {pendingEvents.length > 0 && online && (
         <button className="offline-badge pending-badge" onClick={() => void flushQueue()}>
           {pendingEvents.length} pending ↑
@@ -1053,6 +1116,16 @@ export function App() {
           </div>
         </div>
 
+        {foulAlerts.length > 0 && (
+          <div className="foul-alerts">
+            {foulAlerts.map(p => (
+              <div key={p.id} className={`foul-alert ${(pTotals[p.id]?.fouls ?? 0) >= 5 ? "foul-out-alert" : "foul-warn-alert"}`}>
+                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "\u26d4" : "\u26a0\ufe0f"} #{p.number} {p.name} — {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="event-feed">
           {allEvents.length === 0 && <p className="empty-feed">No events yet</p>}
           {allEvents.map(({ event, pending }) => {
@@ -1068,7 +1141,30 @@ export function App() {
 
         <div className="period-row">
           {periodLabels.map((lbl, i) => (
-            <button key={lbl} className={`period-btn${period === i + 1 ? " period-on" : ""}`} onClick={() => setPeriod(i + 1)}>{lbl}</button>
+            <button
+              key={lbl}
+              className={`period-btn${period === i + 1 ? " period-on" : ""}`}
+              onClick={() => {
+                const newPeriod = i + 1;
+                if (newPeriod === period) return;
+                // Fire period_end for the period we're leaving, then period_start for the new one
+                const endSeq = sequence;
+                void postEvent({
+                  ...base(endSeq),
+                  teamId: appData.gameSetup.homeTeamId || "home",
+                  type: "period_end",
+                  period,
+                } as GameEvent);
+                void postEvent({
+                  ...base(endSeq + 1),
+                  teamId: appData.gameSetup.homeTeamId || "home",
+                  type: "period_start",
+                  period: newPeriod,
+                } as GameEvent);
+                setPeriod(newPeriod);
+                setClockInput("8:00");
+              }}
+            >{lbl}</button>
           ))}
         </div>
         <div className="clock-row">
@@ -1107,6 +1203,15 @@ export function App() {
               : submitStatus === "error"   ? "⚠ Error — Retry"
               : "⬆ Send to Dashboard"}
           </button>
+          <a
+            className="coach-link-btn"
+            href={`${appData.gameSetup.dashboardUrl ?? "http://localhost:5173"}?gameId=${gameId}`}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open Coach Dashboard · ${gameId}`}
+          >
+            📺 Coach View
+          </a>
         </div>
       </div>
 
@@ -1153,6 +1258,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsHomeId, setGsHomeId] = useState(appData.gameSetup.homeTeamId);
   const [gsAwayId, setGsAwayId] = useState(appData.gameSetup.awayTeamId);
   const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
+  const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
   const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
@@ -1168,11 +1274,15 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [pNum, setPNum] = useState("");
   const [pName, setPName] = useState("");
   const [pPos, setPPos] = useState("");
+  const [pHt, setPHt] = useState("");
+  const [pGrade, setPGrade] = useState("");
   // editing existing player
   const [editPlayerId, setEditPlayerId] = useState<string | null>(null);
   const [epNum, setEpNum] = useState("");
   const [epName, setEpName] = useState("");
   const [epPos, setEpPos] = useState("");
+  const [epHt, setEpHt] = useState("");
+  const [epGrade, setEpGrade] = useState("");
 
   // sync local state when editingTeam changes
   useEffect(() => {
@@ -1205,9 +1315,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   // ---- Player CRUD ----
   function addPlayer() {
     if (!editingTeam || !pNum.trim() || !pName.trim()) return;
-    const player: Player = { id: uid(), number: pNum.trim(), name: pName.trim(), position: pPos };
+    const player: Player = { id: uid(), number: pNum.trim(), name: pName.trim(), position: pPos, height: pHt.trim() || undefined, grade: pGrade.trim() || undefined };
     onPersist({ ...appData, teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, players: [...t.players, player] } : t) });
-    setPNum(""); setPName(""); setPPos("");
+    setPNum(""); setPName(""); setPPos(""); setPHt(""); setPGrade("");
   }
 
   function removePlayer(playerId: string) {
@@ -1220,11 +1330,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     setEpNum(p.number);
     setEpName(p.name);
     setEpPos(p.position);
+    setEpHt(p.height ?? "");
+    setEpGrade(p.grade ?? "");
   }
 
   function saveEditPlayer() {
     if (!editingTeam || !editPlayerId || !epNum.trim() || !epName.trim()) return;
-    onPersist({ ...appData, teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, players: t.players.map(p => p.id === editPlayerId ? { ...p, number: epNum.trim(), name: epName.trim(), position: epPos } : p) } : t) });
+    onPersist({ ...appData, teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, players: t.players.map(p => p.id === editPlayerId ? { ...p, number: epNum.trim(), name: epName.trim(), position: epPos, height: epHt.trim() || undefined, grade: epGrade.trim() || undefined } : p) } : t) });
     setEditPlayerId(null);
   }
 
@@ -1237,6 +1349,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         homeTeamId: gsHomeId,
         awayTeamId: gsAwayId,
         apiUrl: gsApiUrl.trim() || DEFAULT_API,
+        apiKey: gsApiKey.trim() || undefined,
         opponent: gsOpponent.trim(),
         vcSide: gsVcSide,
         dashboardUrl: gsDashboardUrl.trim() || "http://localhost:5000",
@@ -1321,6 +1434,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
               <option value="">Pos</option>
               {POSITIONS.filter(Boolean).map(p => <option key={p} value={p}>{p}</option>)}
             </select>
+            <input className="ht-inp" placeholder='Ht' value={pHt} onChange={e => setPHt(e.target.value)} style={{ width: 52 }} />
+            <input className="grade-inp" placeholder='Gr' value={pGrade} onChange={e => setPGrade(e.target.value)} style={{ width: 36 }} />
             <button className="add-btn" onClick={addPlayer}>Add</button>
           </div>
         </section>
@@ -1349,6 +1464,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                     <span className="r-num">#{p.number}</span>
                     <span className="r-name">{p.name}</span>
                     {p.position && <span className="r-pos">{p.position}</span>}
+                    {p.height && <span className="r-ht">{p.height}</span>}
+                    {p.grade && <span className="r-grade">Gr.{p.grade}</span>}
                   </div>
                   <div className="roster-actions">
                     <button className="edit-btn" onClick={() => startEditPlayer(p)}>Edit</button>
@@ -1366,6 +1483,11 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   //  RENDER: Game setup
   // ================================================================
   if (settingsView === "game-setup") {
+    const setupErrors: string[] = [];
+    if (!gsHomeId) setupErrors.push("Select a Home team");
+    if (!gsAwayId) setupErrors.push("Select an Away team");
+    if (gsHomeId && gsAwayId && gsHomeId === gsAwayId) setupErrors.push("Home and Away must be different teams");
+    if (!gsOpponent.trim()) setupErrors.push("Enter the opponent name");
     return (
       <div className="settings-page">
         <header className="settings-header">
@@ -1441,6 +1563,17 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
+          <h3>API Key</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set PIVOT_API_KEY on the server). Leave blank in development.</p>
+          <input
+            type="password"
+            placeholder="Leave blank to disable auth"
+            value={gsApiKey}
+            onChange={e => setGsApiKey(e.target.value)}
+          />
+        </section>
+
+        <section className="settings-section">
           <h3>Stats Dashboard URL</h3>
           <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Stats Flask app (for sending game data)</p>
           <input
@@ -1451,7 +1584,17 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
-          <button className="start-btn" onClick={() => { saveGameSetup(); onStartGame(); }}>Start / Reset Game</button>
+          {setupErrors.length > 0 && (
+            <ul className="setup-errors">
+              {setupErrors.map(err => <li key={err}>{err}</li>)}
+            </ul>
+          )}
+          <button
+            className="start-btn"
+            disabled={setupErrors.length > 0}
+            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onStartGame(); } }}>
+            Start / Reset Game
+          </button>
         </section>
       </div>
     );

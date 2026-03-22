@@ -40,6 +40,7 @@ export interface GameState {
   teamStats: Record<string, TeamStats>;
   playerStatsByTeam: Record<string, Record<string, PlayerStats>>;
   playerFouls: Record<string, number>;
+  currentPeriod: number;
   events: GameEvent[];
   lastSequence: number;
 }
@@ -131,6 +132,7 @@ export function createInitialGameState(
       [awayTeamId]: {}
     },
     playerFouls: {},
+    currentPeriod: 1,
     events: [],
     lastSequence: 0
   };
@@ -189,6 +191,7 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
     teamStats: cloneTeamStats(current.teamStats),
     playerStatsByTeam: clonePlayerStatsByTeam(current.playerStatsByTeam),
     playerFouls: { ...current.playerFouls },
+    currentPeriod: current.currentPeriod,
     events: [...current.events, event],
     lastSequence: event.sequence
   };
@@ -253,6 +256,14 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
     case "possession_start": {
       state.possessionsByTeam[event.possessedByTeamId] =
         (state.possessionsByTeam[event.possessedByTeamId] ?? 0) + 1;
+      break;
+    }
+    case "period_start": {
+      state.currentPeriod = event.period;
+      break;
+    }
+    case "period_end": {
+      // period_end is informational; currentPeriod advances on period_start
       break;
     }
     case "substitution": {

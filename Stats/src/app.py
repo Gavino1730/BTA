@@ -39,6 +39,21 @@ app.config["JSON_SORT_KEYS"] = False
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max request size
 
+# ---------------------------------------------------------------------------
+# Optional API-key auth for /api/* routes.
+# Set PIVOT_API_KEY env var to enable — page routes are never gated.
+# ---------------------------------------------------------------------------
+@app.before_request
+def _require_api_key():
+    api_key = os.environ.get("PIVOT_API_KEY")
+    if not api_key:
+        return  # dev mode: no key configured → allow all
+    if not request.path.startswith("/api/"):
+        return  # page / static routes are never gated
+    provided = request.headers.get("X-Api-Key") or request.args.get("apiKey")
+    if provided != api_key:
+        return jsonify({"error": "Unauthorized — invalid or missing X-Api-Key"}), 401
+
 # Initialize services
 data = get_data_manager()
 advanced_calc = AdvancedStatsCalculator(data.stats_data)
@@ -59,7 +74,7 @@ def add_security_headers(response):
     # Allow the iPad operator app to call the ingest endpoint cross-origin
     if request.path == "/api/ingest-game":
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Api-Key"
         response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
     return response
 
@@ -208,6 +223,11 @@ def _recompute_season_stats(stats: dict) -> None:
                     "plus_minus": 0,
                 }
             sp = season_player_stats[name]
+            # Propagate optional roster attributes (latest game wins)
+            if ps.get("height"):
+                sp["height"] = ps["height"]
+            if ps.get("grade"):
+                sp["grade"] = ps["grade"]
             sp["games"] += 1
             sp["pts"] += ps.get("pts", 0)
             # Support both iPad format (fg_made/fg_att) and legacy format (fg/fga)
@@ -339,32 +359,6 @@ def ingest_game():
 
             with open(Config.STATS_FILE, "w") as f:
                 json.dump(stats, f, indent=2)
-
-            # Auto-register any new players that don't exist in roster.json
-            try:
-                with open(Config.ROSTER_FILE) as rf:
-                    roster_data = json.load(rf)
-                existing_names = {p["name"].lower() for p in roster_data.get("roster", [])}
-                added_any = False
-                for ps in payload.get("player_stats", []):
-                    player_name = ps.get("name", "").strip()
-                    if player_name and player_name.lower() not in existing_names:
-                        new_entry: dict = {"name": player_name}
-                        jersey = ps.get("number")
-                        if jersey is not None:
-                            try:
-                                new_entry["number"] = int(jersey)
-                            except (ValueError, TypeError):
-                                pass
-                        roster_data.setdefault("roster", []).append(new_entry)
-                        existing_names.add(player_name.lower())
-                        added_any = True
-                        logger.info(f"Auto-added player to roster: {player_name}")
-                if added_any:
-                    with open(Config.ROSTER_FILE, "w") as rf:
-                        json.dump(roster_data, rf, indent=2)
-            except OSError as roster_err:
-                logger.warning(f"Could not update roster.json: {roster_err}")
 
             data.reload()
             global advanced_calc
@@ -1016,7 +1010,7 @@ def ai_chat():
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         # Clean history with better validation
         clean_history = []
@@ -1069,7 +1063,7 @@ def ai_analyze():
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         valid_types = {"general", "player", "team", "trends", "coaching"}
         if analysis_type not in valid_types:
@@ -1106,7 +1100,7 @@ def ai_player_insights(player_name):
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         # Get fresh player stats and game logs
         stats = data.season_player_stats[player_name]
@@ -1159,7 +1153,7 @@ def ai_game_analysis(game_id):
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         ts = game["team_stats"]
         season = data.season_team_stats
@@ -1220,7 +1214,7 @@ def ai_team_summary():
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         # Build fresh context with all current data
         context = build_stats_context(data)
@@ -1290,7 +1284,7 @@ def get_season_analysis():
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         games = sorted(data.games, key=lambda x: x["gameId"])
         season = data.season_team_stats
@@ -1428,7 +1422,7 @@ def get_player_analysis(player_name):
 
         ai = get_ai_service()
         if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            return jsonify({"error": "OpenAI API key not configured"}), 500
 
         force = request.args.get("regenerate", "false").lower() == "true"
         cache = _load_player_cache()

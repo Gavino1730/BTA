@@ -1,35 +1,51 @@
-:root {
-  font-family: Georgia, "Trebuchet MS", serif;
-  color: #172554;
-  background:
-    radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 24%),
-    linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
-}
+/* ---- Reset ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-* {
-  box-sizing: border-box;
+:root {
+  --bg:         #14162b;
+  --surface:    #1e2244;
+  --surface-2:  rgba(255,255,255,0.05);
+  --border:     rgba(255,255,255,0.09);
+  --border-hi:  rgba(255,255,255,0.16);
+  --text:       #e8eaf0;
+  --text-muted: rgba(232,234,240,0.55);
+  --text-dim:   rgba(232,234,240,0.35);
+  --teal:       #2dd4bf;
+  --teal-soft:  rgba(45,212,191,0.14);
+  --red:        #f87171;
+  --red-soft:   rgba(248,113,113,0.14);
+  font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  min-height: 100vh;
 }
 
+/* ---- Page / Layout ---- */
 .page {
   max-width: 1100px;
   margin: 0 auto;
   padding: 1.25rem;
 }
 
+/* ---- Header ---- */
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .hero-card {
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--surface);
   border-radius: 18px;
+  border: 1px solid var(--border);
 }
 
 .eyebrow {
@@ -37,7 +53,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   font-size: 0.72rem;
-  color: #c2410c;
+  color: var(--teal);
 }
 
 .header-controls {
@@ -49,19 +65,33 @@ body {
 .header input {
   display: block;
   margin-top: 0.4rem;
-  padding: 0.5rem;
+  padding: 0.5rem 0.75rem;
   min-width: 180px;
   min-height: 44px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-hi);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
 }
 
+.header input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+/* ---- Cards ---- */
 .card {
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--surface);
   border-radius: 16px;
   padding: 1rem;
   margin-top: 1rem;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
 }
 
+/* ---- Status pills ---- */
 .connection-pill,
 .status-tag {
   border-radius: 999px;
@@ -74,16 +104,19 @@ body {
 
 .connection-pill.online,
 .status-tag.synced {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--teal-soft);
+  color: var(--teal);
+  border: 1px solid rgba(45,212,191,0.3);
 }
 
 .connection-pill.offline,
 .status-tag.uploaded {
-  background: #ffedd5;
-  color: #9a3412;
+  background: var(--red-soft);
+  color: var(--red);
+  border: 1px solid rgba(248,113,113,0.3);
 }
 
+/* ---- Scoreboard ---- */
 .scoreboard {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -91,16 +124,20 @@ body {
 }
 
 .score-item {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: var(--surface-2);
 }
 
 .score {
   font-size: 2rem;
+  font-weight: 800;
   margin: 0.25rem 0;
+  color: var(--teal);
 }
 
+/* ---- Insights ---- */
 .insight-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -108,17 +145,20 @@ body {
 }
 
 .insight-item {
-  border-left: 4px solid #0ea5e9;
-  padding: 0.5rem 0.75rem;
-  background: #f8fafc;
+  border-left: 3px solid var(--teal);
+  padding: 0.6rem 0.85rem;
+  background: var(--surface-2);
+  border-radius: 0 8px 8px 0;
 }
 
+/* ---- Film grid ---- */
 .film-grid {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 1rem;
 }
 
+/* ---- Forms ---- */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -127,32 +167,70 @@ body {
   margin-top: 1rem;
 }
 
-.form-grid input {
+.form-grid input,
+.form-grid select {
   display: block;
   width: 100%;
   margin-top: 0.4rem;
-  padding: 0.6rem;
+  padding: 0.6rem 0.75rem;
   min-height: 44px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-hi);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
 }
 
+.form-grid input:focus,
+.form-grid select:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Buttons ---- */
 button {
   border: none;
   border-radius: 12px;
   padding: 0.8rem 1rem;
-  background: #1d4ed8;
-  color: white;
+  background: var(--teal);
+  color: #0a1f1c;
   font-weight: 700;
   min-height: 44px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.12s;
 }
 
 button:hover {
-  cursor: pointer;
+  opacity: 0.85;
 }
 
 button.teal {
-  background: #0f766e;
+  background: var(--teal);
+  color: #0a1f1c;
 }
 
+button.secondary {
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-hi);
+  color: var(--text);
+}
+
+button.secondary:hover {
+  background: rgba(255,255,255,0.09);
+  opacity: 1;
+}
+
+/* ---- Film Cards ---- */
 .film-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -165,10 +243,15 @@ button.teal {
 }
 
 .film-card {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 0.85rem;
-  background: #f8fafc;
+  background: var(--surface-2);
+}
+
+.film-card:hover {
+  border-color: var(--border-hi);
+  background: rgba(255,255,255,0.07);
 }
 
 .event-card {
@@ -177,6 +260,21 @@ button.teal {
   gap: 1rem;
   align-items: center;
 }
+
+/* ---- Type ---- */
+h1 { font-size: 1.5rem; font-weight: 800; }
+h2 { font-size: 1.1rem; font-weight: 700; color: var(--teal); }
+h3 { font-size: 0.95rem; font-weight: 700; }
+
+.text-muted { color: var(--text-muted); }
+.text-dim   { color: var(--text-dim); }
+.teal-txt   { color: var(--teal); }
+.red-txt    { color: var(--red); }
+
+/* ---- Scrollbars ---- */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
 @media (max-width: 820px) {
   .header,

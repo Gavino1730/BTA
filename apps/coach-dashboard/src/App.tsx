@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
 interface TeamStats {
@@ -80,14 +80,25 @@ interface VideoResolution {
 
 const apiBase = import.meta.env.VITE_API ?? "http://localhost:4000";
 const videoBase = import.meta.env.VITE_VIDEO_API ?? "http://localhost:4100";
+const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
+
+/** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
+function apiKeyHeader(): Record<string, string> {
+  return API_KEY ? { "x-api-key": API_KEY } : {};
+}
 
 export function App() {
-  const [gameId, setGameId] = useState("game-1");
+  const [gameId, setGameId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("gameId") ?? "game-1";
+  });
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [connected, setConnected] = useState(false);
   const [videos, setVideos] = useState<VideoAsset[]>([]);
   const [anchors, setAnchors] = useState<SyncAnchor[]>([]);
+  const [videoSrcUrl, setVideoSrcUrl] = useState("");  // URL for the in-page video player
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [videoId, setVideoId] = useState("vid-1");
   const [filename, setFilename] = useState("full-game.mp4");
   const [anchorVideoId, setAnchorVideoId] = useState("vid-1");
@@ -96,7 +107,17 @@ export function App() {
   const [eventClipMap, setEventClipMap] = useState<Record<string, VideoResolution>>({});
 
   useEffect(() => {
-    const socket = io(apiBase);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gameId") !== gameId) {
+      params.set("gameId", gameId);
+      window.history.replaceState({}, "", `?${params.toString()}`);
+    }
+  }, [gameId]);
+
+  useEffect(() => {
+    const socket = io(apiBase, {
+      auth: API_KEY ? { apiKey: API_KEY } : {}
+    });
 
     socket.on("connect", () => {
       setConnected(true);
@@ -125,26 +146,26 @@ export function App() {
 
   useEffect(() => {
     async function hydrate() {
-      const stateRes = await fetch(`${apiBase}/games/${gameId}/state`);
+      const stateRes = await fetch(`${apiBase}/games/${gameId}/state`, { headers: apiKeyHeader() });
       if (stateRes.ok) {
         const payload = (await stateRes.json()) as GameState;
         setState(payload);
         setDashboardStatus("Loaded server game state");
       }
 
-      const insightRes = await fetch(`${apiBase}/games/${gameId}/insights`);
+      const insightRes = await fetch(`${apiBase}/games/${gameId}/insights`, { headers: apiKeyHeader() });
       if (insightRes.ok) {
         const payload = (await insightRes.json()) as Insight[];
         setInsights(payload);
       }
 
-      const videoRes = await fetch(`${videoBase}/games/${gameId}/videos`);
+      const videoRes = await fetch(`${videoBase}/games/${gameId}/videos`, { headers: apiKeyHeader() });
       if (videoRes.ok) {
         const payload = (await videoRes.json()) as VideoAsset[];
         setVideos(payload);
       }
 
-      const anchorRes = await fetch(`${videoBase}/games/${gameId}/sync-anchors`);
+      const anchorRes = await fetch(`${videoBase}/games/${gameId}/sync-anchors`, { headers: apiKeyHeader() });
       if (anchorRes.ok) {
         const payload = (await anchorRes.json()) as SyncAnchor[];
         setAnchors(payload);
@@ -209,7 +230,8 @@ export function App() {
     });
 
     const response = await fetch(
-      `${videoBase}/games/${gameId}/videos/${selectedVideoForResolution}/resolve?${query.toString()}`
+      `${videoBase}/games/${gameId}/videos/${selectedVideoForResolution}/resolve?${query.toString()}`,
+      { headers: apiKeyHeader() }
     );
 
     if (!response.ok) {
@@ -220,12 +242,17 @@ export function App() {
     const payload = (await response.json()) as VideoResolution;
     setEventClipMap((current) => ({ ...current, [eventId]: payload }));
     setDashboardStatus(`Resolved clip time for event ${eventId}`);
+    // Seek the in-page video player to the resolved time when source is loaded
+    if (videoRef.current) {
+      videoRef.current.currentTime = payload.resolvedVideoSecond;
+      void videoRef.current.play().catch(() => { /* autoplay blocked */ });
+    }
   }
 
   async function addVideoAsset() {
     const response = await fetch(`${videoBase}/games/${gameId}/videos`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
       body: JSON.stringify({ id: videoId, filename })
     });
 
@@ -243,7 +270,7 @@ export function App() {
   async function addSyncAnchor() {
     const response = await fetch(`${videoBase}/games/${gameId}/sync-anchors`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
       body: JSON.stringify({
         id: `anchor-${Date.now()}`,
         videoId: anchorVideoId,
@@ -370,6 +397,26 @@ export function App() {
         <div>
           <h2>Film Sync</h2>
           <p>Register uploaded game film and place manual sync anchors for later analysis.</p>
+
+          {/* Video player — shown when a source URL is provided */}
+          <div className="form-grid" style={{ marginBottom: 12 }}>
+            <label style={{ gridColumn: "1 / -1" }}>
+              Video Source URL
+              <input
+                placeholder="Paste a video URL or file:// path…"
+                value={videoSrcUrl}
+                onChange={(e) => setVideoSrcUrl(e.target.value)}
+              />
+            </label>
+          </div>
+          {videoSrcUrl && (
+            <video
+              ref={videoRef}
+              src={videoSrcUrl}
+              controls
+              style={{ width: "100%", borderRadius: 8, marginBottom: 16, background: "#000" }}
+            />
+          )}
 
           <div className="form-grid">
             <label>

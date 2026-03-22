@@ -717,6 +717,73 @@ html, body, #root {
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
 }
+.pfoul-warn {
+  color: #fbbf24;
+  background: rgba(251,191,36,0.15);
+}
+.pfoul-out {
+  color: #fff;
+  background: rgba(248,113,113,0.7);
+  font-weight: 800;
+}
+
+/* ---- Foul-out alerts in game view ---- */
+.foul-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.25rem 0.75rem;
+}
+.foul-alert {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  text-align: center;
+}
+.foul-out-alert {
+  background: rgba(248,113,113,0.18);
+  border: 1px solid rgba(248,113,113,0.45);
+  color: #fca5a5;
+}
+.foul-warn-alert {
+  background: rgba(251,191,36,0.1);
+  border: 1px solid rgba(251,191,36,0.35);
+  color: #fde68a;
+}
+
+/* ---- Setup validation errors ---- */
+.setup-errors {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.8rem;
+  background: rgba(248,113,113,0.08);
+  border: 1px solid rgba(248,113,113,0.3);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #fca5a5;
+}
+
+/* ---- Start button disabled state ---- */
+.start-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Coach View link ---- */
+.coach-link-btn {
+  display: block;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(45,212,191,0.65);
+  text-decoration: none;
+  padding: 0.25rem;
+}
+.coach-link-btn:hover { color: #2dd4bf; text-decoration: underline; }
 
 /* ---- Pending count badge ---- */
 .pending-badge {
