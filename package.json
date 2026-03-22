@@ -14,7 +14,10 @@
     "dev:coach": "npm run dev -w @pivot/coach-dashboard",
     "dev:operator": "npm run dev -w @pivot/ipad-operator",
     "dev:video": "npm run dev -w @pivot/video-worker",
-    "audit:ui": "node scripts/ui-audit.mjs"
+    "dev:stats": "cd services/stats-dashboard && python main.py",
+    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:stats\"",
+    "audit:ui": "node scripts/ui-audit.mjs",
+    "stats:install": "cd services/stats-dashboard && pip install -r requirements.txt"
   },
   "devDependencies": {
     "@types/node": "^22.15.19",

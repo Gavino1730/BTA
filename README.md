@@ -1,63 +1,134 @@
-# Pivot
+# Pivot — Valley Catholic Basketball Platform
 
-Hybrid high school basketball stats + AI insights platform.
+Hybrid high school basketball stats + AI insights platform. The iPad operator app takes live stats during a game; data flows to the realtime API for live coach dashboards and to the Stats Dashboard for season-long analytics, advanced stats, and AI insights.
 
-## Implemented Slices
+---
 
-- Shared schema package with strict event validation via Zod
-- Deterministic game-state package with replay support
-- Deterministic game-state package with replay support, possession counters, and active lineup tracking
-- Deterministic game-state package with replay support, possession counters, active lineup tracking, and per-player box score stats
-- Realtime API service with event ingest, state fanout, and websocket rooms
-- Realtime API correction flow with event deletion and full state replay
-- Insight engine service with rules-based live insight generation
-- Video worker service for post-game upload metadata and timeline sync anchors
-- Video worker service for post-game upload metadata, timeline sync anchors, and event-to-video timestamp resolution
-- Coach dashboard web app for live score, event feed, and insight cards
-- iPad operator web app with offline queue, reconnect sync, and event history
-- iPad operator web app with offline queue, reconnect sync, event history, and quick substitution/possession controls
-- File-backed persistence for realtime and video services under each service's `.pivot-data` directory
+## Project Structure
 
-## Run
+```
+apps/
+  coach-dashboard/      # Live coach view (scores, insights, lineups)
+  ipad-operator/        # iPad stat-taking app (offline-capable)
+packages/
+  game-state/           # Deterministic game state engine (TypeScript)
+  shared-schema/        # Zod-validated event types (TypeScript)
+services/
+  realtime-api/         # WebSocket + REST event ingest & fanout (Node)
+  insight-engine/       # Rules-based live insight generation (Node)
+  video-worker/         # Post-game video upload & timestamp sync (Node)
+  stats-dashboard/      # Season stats, advanced metrics & AI analytics (Python/Flask)
+```
 
-1. Install dependencies: `npm install`
-2. Run tests: `npm test`
-3. Run realtime API: `npm run dev:api`
-4. Run video worker: `npm run dev:video`
-5. Run coach dashboard: `npm run dev:coach`
-6. Run operator app: `npm run dev:operator`
-7. Run UI audit + screenshots: `npm run audit:ui`
+---
+
+## Quick Start
+
+### 1 — Install Node dependencies (monorepo)
+```bash
+npm install
+```
+
+### 2 — Set up the Stats Dashboard (Python)
+```bash
+cd services/stats-dashboard
+python -m venv .venv
+
+# Windows
+.venv\Scripts\Activate.ps1
+
+# Mac/Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+cp .env.example .env   # then fill in your OPENAI_API_KEY
+```
+
+### 3 — Run everything
+
+| Service | Command | Port |
+|---|---|---|
+| Realtime API | `npm run dev:api` | 4000 |
+| Video Worker | `npm run dev:video` | 4100 |
+| Coach Dashboard | `npm run dev:coach` | 5173 |
+| iPad Operator | `npm run dev:operator` | 5174 |
+| Stats Dashboard | `npm run dev:stats` | 5000 |
+
+Or run all Node services together:
+```bash
+npm run dev:all
+```
+
+---
+
+## Workflow
+
+1. **Before a game** — Open iPad Operator, go to Settings → Teams and set up rosters. Set opponent name and VC Home/Away in Game Setup.
+2. **During a game** — Use the iPad Operator to record every event (shots, rebounds, assists, steals, blocks, turnovers, fouls, subs). Stats are queued offline if connection drops and synced when back online. The Coach Dashboard shows live scores and AI insights.
+3. **After a game** — Tap **⬆ Send to Dashboard** in the iPad Operator. All player and team stats are instantly saved to the Stats Dashboard, season averages update automatically, and the AI generates new insights.
+
+---
+
+## Key Services
+
+### Stats Dashboard (`services/stats-dashboard/`)
+- Flask app with full season stats, per-game logs, and player/team leaderboards
+- Advanced metrics: eFG%, TS%, PER, usage rate, AST/TO ratio, defensive rating, consistency score
+- AI-generated insights powered by OpenAI GPT-4o-mini
+- **Ingest endpoint** — `POST /api/ingest-game` receives game data from the iPad app
+- Deploy to Railway/Heroku via the included `Procfile` and `nixpacks.toml`
+
+### Realtime API (`services/realtime-api/`)
+- Express + Socket.io for live event streaming to the coach dashboard
+- Full event correction: delete or update any past event and state replays deterministically
+- Persists to `services/realtime-api/.pivot-data/realtime-api.json`
+
+### iPad Operator (`apps/ipad-operator/`)
+- Offline-first stat tracker with local queue and sync
+- Records: shots (2pt/3pt/FT), rebounds (off/def), assists, steals, blocks, turnovers, fouls, substitutions
+- Sends completed games to the Stats Dashboard with one tap
+
+### Coach Dashboard (`apps/coach-dashboard/`)
+- Live score, event feed, insight cards, active lineups, and foul leaders
+
+---
 
 ## Key Ports
 
-- Realtime API: 4000
-- Video worker: 4100
-- Coach dashboard: 5173
-- Operator app: 5174
+| Service | Port |
+|---|---|
+| Stats Dashboard | **5000** |
+| Realtime API | **4000** |
+| Video Worker | **4100** |
+| Coach Dashboard | **5173** |
+| iPad Operator | **5174** |
+
+---
+
+## Environment Variables
+
+### Stats Dashboard (`services/stats-dashboard/.env`)
+| Variable | Description |
+|---|---|
+| `OPENAI_API_KEY` | Required for AI insights |
+| `DATABASE_URL` | PostgreSQL URL (optional; SQLite used locally) |
+| `FLASK_DEBUG` | Set to `True` for development |
+
+---
 
 ## Persistence
 
-- Realtime API state persists to `services/realtime-api/.pivot-data/realtime-api.json`
-- Video metadata persists to `services/video-worker/.pivot-data/video-worker.json`
+- Realtime API → `services/realtime-api/.pivot-data/realtime-api.json`
+- Video metadata → `services/video-worker/.pivot-data/video-worker.json`
+- Season stats → `services/stats-dashboard/data/vc_stats_output.json`
+- Roster → `services/stats-dashboard/data/roster.json`
 
-## Correction Workflow
+---
 
-- Operators can delete a submitted event
-- Operators can update submitted events in place (for example, toggling made/miss on a shot)
-- The backend replays the remaining event stream to recompute score, fouls, and insights deterministically
+## Deployment
 
-## Lineup and Possession Tracking
+The Stats Dashboard includes Railway/Heroku deployment config (`Procfile`, `nixpacks.toml`). See `services/stats-dashboard/docs/DEPLOY.md` for full instructions.
 
-- `possession_start` events increment team possession counts
-- `substitution` events increment team substitution totals and update active lineup snapshots
-- Coach dashboard score cards now show possessions, substitutions, and current active players
-- Coach dashboard score cards now show possessions, substitutions, active players, top scorers, and foul leaders
-
-## Event-to-Video Resolution
-
-- Endpoint: `GET /games/:gameId/videos/:videoId/resolve?period=<number>&gameClockSeconds=<number>`
-- Uses nearest sync anchor in the same period to estimate clip time
-- Coach dashboard can resolve clip timestamps directly from recent events
 
 ## UI QA Artifacts
 

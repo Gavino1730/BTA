@@ -733,4 +733,65 @@ html, body, #root {
   cursor: pointer;
 }
 
-
+/* ---- Submit to Dashboard ---- */
+.submit-area {
+  padding: 0.5rem 1rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 0.25rem;
+}
+.submit-meta {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.opp-inp {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: #e8eaf0;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.6rem;
+  outline: none;
+}
+.opp-inp::placeholder { color: rgba(232,234,240,0.3); }
+.opp-inp:focus { border-color: rgba(45,212,191,0.4); }
+.vc-side-toggle {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.vc-side-toggle .tt-btn {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0;
+}
+.submit-btn {
+  width: 100%;
+  padding: 0.55rem 1rem;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  background: rgba(45,212,191,0.15);
+  border: 1px solid rgba(45,212,191,0.4);
+  color: #2dd4bf;
+}
+.submit-btn:hover:not(:disabled) { background: rgba(45,212,191,0.25); }
+.submit-btn:disabled { opacity: 0.55; cursor: default; }
+.submit-btn.submit-success {
+  background: rgba(45,212,191,0.2);
+  border-color: #2dd4bf;
+  color: #2dd4bf;
+}
+.submit-btn.submit-error {
+  background: rgba(248,113,113,0.15);
+  border-color: rgba(248,113,113,0.5);
+  color: #f87171;
+}

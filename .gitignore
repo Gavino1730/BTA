@@ -4,3 +4,18 @@ coverage/
 .env
 .DS_Store
 *.log
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+instance/
+
+# Pivot data persistence
+.pivot-data/
+
+# Stats data (generated)
+services/stats-dashboard/data/season_analysis.json
+services/stats-dashboard/data/player_analysis_cache.json
+services/stats-dashboard/data/team_summary.json

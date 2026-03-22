@@ -3,7 +3,7 @@ Valley Catholic Basketball Stats - Flask Application
 Clean, refactored version with organized routes and services.
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, make_response, make_response
 from functools import lru_cache
 import json
 import os
@@ -56,6 +56,11 @@ def add_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Allow the iPad operator app to call the ingest endpoint cross-origin
+    if request.path == "/api/ingest-game":
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
     return response
 
 
@@ -138,6 +143,222 @@ def reload_data():
         except Exception as e:
             logger.error(f"Reload error: {e}")
             return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# Data Ingestion  (iPad Operator App → Stats Dashboard)
+# =============================================================================
+
+
+def _build_game_dict(game_id: int, payload: dict) -> dict:
+    """Build a game dict in vc_stats_output format from an ingest payload."""
+    vc = int(payload["vc_score"])
+    opp = int(payload["opp_score"])
+    result = "W" if vc > opp else ("L" if vc < opp else "T")
+    return {
+        "gameId": game_id,
+        "date": str(payload["date"])[:50],
+        "opponent": str(payload["opponent"])[:100],
+        "location": str(payload.get("location", "home")),
+        "vc_score": vc,
+        "opp_score": opp,
+        "result": result,
+        "team_stats": payload["team_stats"],
+        "player_stats": payload["player_stats"],
+    }
+
+
+def _recompute_season_stats(stats: dict) -> None:
+    """Rebuild season_player_stats, season_team_stats, and player_game_logs
+    from scratch by iterating all games[]. Modifies stats in-place."""
+    games = stats.get("games", [])
+    season_player_stats: dict = {}
+    player_game_logs: dict = {}
+    team_totals = {
+        "fg": 0, "fga": 0, "fg3": 0, "fg3a": 0,
+        "ft": 0, "fta": 0, "oreb": 0, "dreb": 0, "reb": 0,
+        "asst": 0, "to": 0, "stl": 0, "blk": 0, "pf": 0,
+        "win": 0, "loss": 0, "vc_total": 0, "games": 0,
+    }
+
+    for game in games:
+        ts = game.get("team_stats", {})
+        result = game.get("result", "")
+        for k in ["fg", "fga", "fg3", "fg3a", "ft", "fta",
+                  "oreb", "dreb", "reb", "asst", "to", "stl", "blk"]:
+            team_totals[k] += ts.get(k, 0)
+        team_totals["pf"] += ts.get("fouls", ts.get("pf", 0))
+        team_totals["vc_total"] += game.get("vc_score", 0)
+        team_totals["games"] += 1
+        if result == "W":
+            team_totals["win"] += 1
+        elif result == "L":
+            team_totals["loss"] += 1
+
+        for ps in game.get("player_stats", []):
+            name = ps.get("name", "").strip()
+            if not name:
+                continue
+            if name not in season_player_stats:
+                season_player_stats[name] = {
+                    "name": name, "games": 0,
+                    "pts": 0, "fg": 0, "fga": 0, "fg3": 0, "fg3a": 0,
+                    "ft": 0, "fta": 0, "oreb": 0, "dreb": 0, "reb": 0,
+                    "asst": 0, "to": 0, "stl": 0, "blk": 0, "fouls": 0,
+                    "plus_minus": 0,
+                }
+            sp = season_player_stats[name]
+            sp["games"] += 1
+            sp["pts"] += ps.get("pts", 0)
+            # Support both iPad format (fg_made/fg_att) and legacy format (fg/fga)
+            sp["fg"] += ps.get("fg_made", ps.get("fg", 0))
+            sp["fga"] += ps.get("fg_att", ps.get("fga", 0))
+            sp["fg3"] += ps.get("fg3_made", ps.get("fg3", 0))
+            sp["fg3a"] += ps.get("fg3_att", ps.get("fg3a", 0))
+            sp["ft"] += ps.get("ft_made", ps.get("ft", 0))
+            sp["fta"] += ps.get("ft_att", ps.get("fta", 0))
+            sp["oreb"] += ps.get("oreb", 0)
+            sp["dreb"] += ps.get("dreb", 0)
+            sp["reb"] += ps.get("oreb", 0) + ps.get("dreb", 0)
+            sp["asst"] += ps.get("asst", 0)
+            sp["to"] += ps.get("to", 0)
+            sp["stl"] += ps.get("stl", 0)
+            sp["blk"] += ps.get("blk", 0)
+            sp["fouls"] += ps.get("fouls", 0)
+            sp["plus_minus"] += ps.get("plus_minus", 0)
+
+            if name not in player_game_logs:
+                player_game_logs[name] = []
+            player_game_logs[name].append({
+                "gameId": game["gameId"],
+                "date": game["date"],
+                "opponent": game["opponent"],
+                "location": game["location"],
+                "result": game["result"],
+                "stats": ps,
+            })
+
+    for sp in season_player_stats.values():
+        g = max(sp["games"], 1)
+        sp["ppg"] = round(sp["pts"] / g, 1)
+        sp["rpg"] = round(sp["reb"] / g, 1)
+        sp["apg"] = round(sp["asst"] / g, 1)
+        sp["fg_pct"] = round(sp["fg"] / sp["fga"] * 100, 1) if sp["fga"] > 0 else 0.0
+        sp["fg3_pct"] = round(sp["fg3"] / sp["fg3a"] * 100, 1) if sp["fg3a"] > 0 else 0.0
+        sp["ft_pct"] = round(sp["ft"] / sp["fta"] * 100, 1) if sp["fta"] > 0 else 0.0
+
+    g_total = max(team_totals["games"], 1)
+    stats["season_player_stats"] = season_player_stats
+    stats["season_team_stats"] = {
+        "fg": team_totals["fg"],
+        "fga": team_totals["fga"],
+        "fg3": team_totals["fg3"],
+        "fg3a": team_totals["fg3a"],
+        "ft": team_totals["ft"],
+        "fta": team_totals["fta"],
+        "oreb": team_totals["oreb"],
+        "dreb": team_totals["dreb"],
+        "reb": team_totals["reb"],
+        "asst": team_totals["asst"],
+        "to": team_totals["to"],
+        "stl": team_totals["stl"],
+        "blk": team_totals["blk"],
+        "pf": team_totals["pf"],
+        "win": team_totals["win"],
+        "loss": team_totals["loss"],
+        "ppg": round(team_totals["vc_total"] / g_total, 1),
+        "rpg": round(team_totals["reb"] / g_total, 1),
+        "apg": round(team_totals["asst"] / g_total, 1),
+        "to_pg": round(team_totals["to"] / g_total, 1),
+        "stl_pg": round(team_totals["stl"] / g_total, 1),
+        "blk_pg": round(team_totals["blk"] / g_total, 1),
+        "oreb_pg": round(team_totals["oreb"] / g_total, 1),
+        "dreb_pg": round(team_totals["dreb"] / g_total, 1),
+        "fouls_pg": round(team_totals["pf"] / g_total, 1),
+        "fg_pct": round(team_totals["fg"] / team_totals["fga"] * 100, 1) if team_totals["fga"] > 0 else 0.0,
+        "fg3_pct": round(team_totals["fg3"] / team_totals["fg3a"] * 100, 1) if team_totals["fg3a"] > 0 else 0.0,
+        "ft_pct": round(team_totals["ft"] / team_totals["fta"] * 100, 1) if team_totals["fta"] > 0 else 0.0,
+    }
+    stats["player_game_logs"] = player_game_logs
+
+
+@app.route("/api/ingest-game", methods=["POST", "OPTIONS"])
+def ingest_game():
+    """Receive a completed game from the iPad operator app and persist it."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    payload = request.get_json(force=True, silent=True)
+    if not payload or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    required_fields = ["date", "opponent", "vc_score", "opp_score", "team_stats", "player_stats"]
+    for field in required_fields:
+        if field not in payload:
+            return jsonify({"error": f"Missing required field: {field}"}), 400
+
+    if not str(payload["date"]).strip() or not str(payload["opponent"]).strip():
+        return jsonify({"error": "date and opponent must be non-empty"}), 400
+
+    try:
+        int(payload["vc_score"])
+        int(payload["opp_score"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "vc_score and opp_score must be integers"}), 400
+
+    with reload_lock:
+        try:
+            stats = data.stats_data
+            existing_ids = [g.get("gameId", 0) for g in stats.get("games", [])]
+
+            incoming_id = payload.get("gameId")
+            if incoming_id is not None:
+                try:
+                    gid = int(incoming_id)
+                except (ValueError, TypeError):
+                    return jsonify({"error": "gameId must be an integer"}), 400
+                existing_game = next((g for g in stats["games"] if g["gameId"] == gid), None)
+                game_dict = _build_game_dict(gid, payload)
+                if existing_game:
+                    stats["games"] = [
+                        game_dict if g["gameId"] == gid else g
+                        for g in stats["games"]
+                    ]
+                    logger.info(f"Updated existing game #{gid}")
+                else:
+                    stats["games"].append(game_dict)
+                    logger.info(f"Inserted new game #{gid}")
+            else:
+                gid = max(existing_ids, default=0) + 1
+                game_dict = _build_game_dict(gid, payload)
+                stats["games"].append(game_dict)
+                logger.info(f"Inserted new game #{gid} (auto-assigned ID)")
+
+            stats["games"].sort(key=lambda g: g["gameId"])
+            _recompute_season_stats(stats)
+
+            with open(Config.STATS_FILE, "w") as f:
+                json.dump(stats, f, indent=2)
+
+            data.reload()
+            global advanced_calc
+            advanced_calc = AdvancedStatsCalculator(data.stats_data)
+
+            for cache_path in [Config.TEAM_CACHE, Config.ANALYSIS_CACHE]:
+                try:
+                    if os.path.exists(cache_path):
+                        os.remove(cache_path)
+                except OSError:
+                    pass
+
+            return jsonify({"message": "Game saved successfully", "gameId": gid}), 201
+
+        except OSError as e:
+            logger.error(f"File error during game ingest: {e}")
+            return jsonify({"error": "Failed to write stats file"}), 500
+        except Exception as e:
+            logger.error(f"Game ingest error: {e}")
+            return jsonify({"error": "Internal server error"}), 500
 
 
 # =============================================================================

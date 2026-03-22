@@ -2,6 +2,7 @@
 import type { GameEvent } from "@pivot/shared-schema";
 
 const API = "http://localhost:4000";
+const STATS_API = import.meta.env.VITE_STATS_API ?? "http://localhost:5000";
 const STORE = "pivot-op";
 const APP_DATA_KEY = "pivot-app-data-v3";
 
@@ -26,6 +27,9 @@ export interface GameSetup {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
+  opponent: string;
+  vcSide: "home" | "away";
+  dashboardUrl: string;
 }
 
 export interface AppData {
@@ -35,14 +39,22 @@ export interface AppData {
 
 const DEFAULT_DATA: AppData = {
   teams: [],
-  gameSetup: { gameId: "game-1", homeTeamId: "", awayTeamId: "" },
+  gameSetup: { gameId: "game-1", homeTeamId: "", awayTeamId: "", opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
 };
 
 // ---- Storage helpers ----
 function loadAppData(): AppData {
   try {
     const s = localStorage.getItem(APP_DATA_KEY);
-    if (s) return { ...DEFAULT_DATA, ...(JSON.parse(s) as AppData) };
+    if (s) {
+      const parsed = JSON.parse(s) as AppData;
+      return {
+        ...DEFAULT_DATA,
+        ...parsed,
+        // Deep-merge gameSetup so new fields get their defaults for old saves
+        gameSetup: { ...DEFAULT_DATA.gameSetup, ...parsed.gameSetup },
+      };
+    }
   } catch { /* empty */ }
   return DEFAULT_DATA;
 }
@@ -396,6 +408,98 @@ async function exportGamePDF(
   doc.save(`pivot_${safeDate}_${safeId}.pdf`);
 }
 
+// ---- Dashboard stats helpers (Stats dashboard integration) ----
+
+function abbreviateName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) return fullName;
+  return `${parts[0][0]} ${parts.slice(1).join(" ")}`;
+}
+
+interface DashboardPlayerStat {
+  number: number; name: string;
+  fg_made: number; fg_att: number; fg_pct: string;
+  fg3_made: number; fg3_att: number; fg3_pct: string;
+  ft_made: number; ft_att: number; ft_pct: string;
+  oreb: number; dreb: number; fouls: number;
+  stl: number; to: number; blk: number; asst: number;
+  pts: number; plus_minus: number;
+}
+
+function computeDashboardPlayerStats(events: GameEvent[], players: Player[]): DashboardPlayerStat[] {
+  const map: Record<string, {
+    fg_made: number; fg_att: number; fg3_made: number; fg3_att: number;
+    ft_made: number; ft_att: number; pts: number;
+    oreb: number; dreb: number; ast: number; stl: number; blk: number; to: number; fouls: number;
+  }> = {};
+
+  function get(id: string) {
+    if (!map[id]) map[id] = { fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0,
+      ft_made: 0, ft_att: 0, pts: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
+    return map[id];
+  }
+
+  for (const e of events) {
+    if (e.type === "shot_attempt") {
+      const t = get(e.playerId);
+      if (e.points === 1) {              // free throw
+        t.ft_att++;
+        if (e.made) { t.ft_made++; t.pts++; }
+      } else {                           // field goal (2pt or 3pt)
+        t.fg_att++;
+        if (e.points === 3) t.fg3_att++;
+        if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
+      }
+    } else if (e.type === "rebound") {
+      const t = get(e.playerId); if (e.offensive) t.oreb++; else t.dreb++;
+    } else if (e.type === "assist")  { get(e.playerId).ast++;   }
+    else if (e.type === "steal")     { get(e.playerId).stl++;   }
+    else if (e.type === "block")     { get(e.playerId).blk++;   }
+    else if (e.type === "turnover" && e.playerId) { get(e.playerId).to++; }
+    else if (e.type === "foul")      { get(e.playerId).fouls++; }
+  }
+
+  const pct = (made: number, att: number) => att > 0 ? `${Math.round(made / att * 100)}%` : "-";
+
+  return players
+    .map(p => {
+      const t = map[p.id] ?? { fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0,
+        ft_made: 0, ft_att: 0, pts: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
+      return {
+        number: parseInt(p.number, 10) || 0,
+        name: abbreviateName(p.name),
+        fg_made: t.fg_made, fg_att: t.fg_att, fg_pct: pct(t.fg_made, t.fg_att),
+        fg3_made: t.fg3_made, fg3_att: t.fg3_att, fg3_pct: pct(t.fg3_made, t.fg3_att),
+        ft_made: t.ft_made, ft_att: t.ft_att, ft_pct: pct(t.ft_made, t.ft_att),
+        oreb: t.oreb, dreb: t.dreb, fouls: t.fouls,
+        stl: t.stl, to: t.to, blk: t.blk, asst: t.ast,
+        pts: t.pts, plus_minus: 0,
+      };
+    })
+    .filter(p =>
+      p.fg_att > 0 || p.ft_att > 0 || p.oreb > 0 || p.dreb > 0 ||
+      p.stl > 0 || p.blk > 0 || p.to > 0 || p.fouls > 0 || p.asst > 0
+    );
+}
+
+function computeTeamStats(events: GameEvent[], teamSide: TeamSide) {
+  let fg = 0, fga = 0, fg3 = 0, fg3a = 0, ft = 0, fta = 0;
+  let oreb = 0, dreb = 0, asst = 0, to = 0, stl = 0, blk = 0, fouls = 0;
+  for (const e of events) {
+    if (e.teamId !== teamSide) continue;
+    if (e.type === "shot_attempt") {
+      if (e.points === 1) { fta++; if (e.made) ft++; }
+      else { fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; } }
+    } else if (e.type === "rebound")  { if (e.offensive) oreb++; else dreb++; }
+    else if (e.type === "assist")     { asst++;  }
+    else if (e.type === "steal")      { stl++;   }
+    else if (e.type === "block")      { blk++;   }
+    else if (e.type === "turnover")   { to++;    }
+    else if (e.type === "foul")       { fouls++; }
+  }
+  return { fg, fga, fg3, fg3a, ft, fta, oreb, dreb, reb: oreb + dreb, asst, to, stl, blk, fouls };
+}
+
 // ---- Modal types ----
 type Modal =
   | { kind: "shot"; teamId: TeamSide; points: 1 | 2 | 3; made: boolean }
@@ -431,6 +535,7 @@ export function App() {
   const [activeTeam, setActiveTeam] = useState<TeamSide>("home");
   const [modal, setModal] = useState<Modal | null>(null);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
 
   // ---- Derived: home/away teams ----
   const homeTeam = appData.teams.find(t => t.id === appData.gameSetup.homeTeamId);
@@ -548,6 +653,65 @@ export function App() {
       setSequence(1);
       savePending(gameId, []);
       saveSeq(gameId, 1);
+    }
+  }
+
+  async function submitToDashboard() {
+    const vcSide = appData.gameSetup.vcSide ?? "home";
+    const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
+    const opponent = appData.gameSetup.opponent?.trim() ?? "";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+
+    if (!opponent) {
+      alert("Enter the opponent name in Game Setup (⚙ Settings → Game Setup) before submitting.");
+      return;
+    }
+
+    const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
+    if (!vcTeam) {
+      alert("VC team is not configured. Check Game Setup in Settings.");
+      return;
+    }
+
+    setSubmitStatus("pending");
+
+    // Format date to match Stats dashboard convention: "Dec 3, 2025"
+    const dateParts = new Date(gameDate + "T12:00:00").toLocaleDateString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+    });
+
+    const vcScore = scores[vcSide];
+    const oppScore = scores[oppSide];
+    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players);
+    const teamStats = computeTeamStats(allEventObjs, vcSide);
+
+    const payload = {
+      date: dateParts,
+      opponent,
+      location: vcSide,
+      vc_score: vcScore,
+      opp_score: oppScore,
+      team_stats: teamStats,
+      player_stats: playerStats,
+    };
+
+    try {
+      const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json() as { message?: string; gameId?: number; error?: string };
+      if (res.ok) {
+        setSubmitStatus("success");
+        setTimeout(() => setSubmitStatus("idle"), 4000);
+      } else {
+        console.error("Dashboard ingest error:", result.error);
+        setSubmitStatus("error");
+      }
+    } catch (err) {
+      console.error("Could not reach Stats dashboard:", err);
+      setSubmitStatus("error");
     }
   }
 
@@ -869,6 +1033,37 @@ export function App() {
         <div className="date-row">
           <input className="date-inp" type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} title="Game date" />
         </div>
+        <div className="submit-area">
+          <div className="submit-meta">
+            <input
+              className="opp-inp"
+              placeholder="Opponent name"
+              value={appData.gameSetup.opponent ?? ""}
+              onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
+            />
+            <div className="vc-side-toggle">
+              <button
+                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
+                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
+                VC Home
+              </button>
+              <button
+                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
+                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
+                VC Away
+              </button>
+            </div>
+          </div>
+          <button
+            className={`submit-btn submit-${submitStatus}`}
+            onClick={() => void submitToDashboard()}
+            disabled={submitStatus === "pending"}>
+            {submitStatus === "pending" ? "Saving…"
+              : submitStatus === "success" ? "✓ Saved to Dashboard!"
+              : submitStatus === "error"   ? "⚠ Error — Retry"
+              : "⬆ Send to Dashboard"}
+          </button>
+        </div>
       </div>
 
       {/* RIGHT: Stats */}
@@ -913,6 +1108,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
   const [gsHomeId, setGsHomeId] = useState(appData.gameSetup.homeTeamId);
   const [gsAwayId, setGsAwayId] = useState(appData.gameSetup.awayTeamId);
+  const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
+  const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
+  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
 
   // ---- New team form ----
   const [newTeamName, setNewTeamName] = useState("");
@@ -987,7 +1185,17 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
   // ---- Game setup ----
   function saveGameSetup() {
-    onPersist({ ...appData, gameSetup: { gameId: gsGameId.trim() || "game-1", homeTeamId: gsHomeId, awayTeamId: gsAwayId } });
+    onPersist({
+      ...appData,
+      gameSetup: {
+        gameId: gsGameId.trim() || "game-1",
+        homeTeamId: gsHomeId,
+        awayTeamId: gsAwayId,
+        opponent: gsOpponent.trim(),
+        vcSide: gsVcSide,
+        dashboardUrl: gsDashboardUrl.trim() || "http://localhost:5000",
+      },
+    });
   }
 
   // ================================================================
@@ -1142,7 +1350,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>Away Team (red)</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams yet \u2014 create one in Teams first.</p>}
+          {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
           <div className="team-picker">
             {appData.teams.map(t => (
               <button key={t.id}
@@ -1155,6 +1363,34 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Opponent Name</h3>
+          <input
+            placeholder="e.g. Knappa"
+            value={gsOpponent}
+            onChange={e => setGsOpponent(e.target.value)}
+          />
+        </section>
+
+        <section className="settings-section">
+          <h3>VC Team Side</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Which side is Valley Catholic playing on?</p>
+          <div className="team-toggle">
+            <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>Home (teal)</button>
+            <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>Away (red)</button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Stats Dashboard URL</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Stats Flask app (for sending game data)</p>
+          <input
+            placeholder="http://localhost:5000"
+            value={gsDashboardUrl}
+            onChange={e => setGsDashboardUrl(e.target.value)}
+          />
         </section>
 
         <section className="settings-section">
