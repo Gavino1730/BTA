@@ -15,12 +15,13 @@
     "dev:operator": "npm run dev -w @pivot/ipad-operator",
     "dev:video": "npm run dev -w @pivot/video-worker",
     "dev:stats": "cd services/stats-dashboard && python main.py",
-    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:stats\"",
+    "dev:all": "concurrently --names api,operator,coach,video,stats --prefix-colors cyan,green,yellow,magenta,blue \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:video\" \"npm run dev:stats\"",
     "audit:ui": "node scripts/ui-audit.mjs",
     "stats:install": "cd services/stats-dashboard && pip install -r requirements.txt"
   },
   "devDependencies": {
     "@types/node": "^22.15.19",
+    "concurrently": "^9.2.1",
     "playwright": "^1.58.2",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",

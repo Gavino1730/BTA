@@ -2,7 +2,6 @@
 import type { GameEvent } from "@pivot/shared-schema";
 
 const API = "http://localhost:4000";
-const STATS_API = import.meta.env.VITE_STATS_API ?? "http://localhost:5000";
 const STORE = "pivot-op";
 const APP_DATA_KEY = "pivot-app-data-v3";
 
@@ -30,6 +29,7 @@ export interface GameSetup {
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
+  statsGameId?: number;  // returned by dashboard on first successful submit
 }
 
 export interface AppData {
@@ -653,7 +653,21 @@ export function App() {
       setSequence(1);
       savePending(gameId, []);
       saveSeq(gameId, 1);
+      // Clear the stored dashboard game ID — next game must get its own fresh record
+      setAppData(prev => {
+        const next = { ...prev, gameSetup: { ...prev.gameSetup, statsGameId: undefined } };
+        saveAppData(next);
+        return next;
+      });
     }
+  }
+
+  /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
+  async function endAndResetGame() {
+    if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
+      await submitToDashboard();
+    }
+    await startGame();
   }
 
   async function submitToDashboard() {
@@ -685,7 +699,7 @@ export function App() {
     const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players);
     const teamStats = computeTeamStats(allEventObjs, vcSide);
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       date: dateParts,
       opponent,
       location: vcSide,
@@ -694,6 +708,10 @@ export function App() {
       team_stats: teamStats,
       player_stats: playerStats,
     };
+    // Include stored statsGameId so the dashboard upserts instead of duplicating
+    if (appData.gameSetup.statsGameId != null) {
+      payload.gameId = appData.gameSetup.statsGameId;
+    }
 
     try {
       const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
@@ -703,6 +721,13 @@ export function App() {
       });
       const result = await res.json() as { message?: string; gameId?: number; error?: string };
       if (res.ok) {
+        // Store the assigned gameId so future re-submits overwrite instead of duplicate
+        if (result.gameId != null && result.gameId !== appData.gameSetup.statsGameId) {
+          persistData({
+            ...appData,
+            gameSetup: { ...appData.gameSetup, statsGameId: result.gameId },
+          });
+        }
         setSubmitStatus("success");
         setTimeout(() => setSubmitStatus("idle"), 4000);
       } else {
@@ -956,7 +981,7 @@ export function App() {
       onNav={setSettingsView}
       onEditTeam={setEditingTeamId}
       onBack={() => setView("game")}
-      onStartGame={() => { void startGame(); setView("game"); }}
+      onStartGame={() => { void endAndResetGame(); setView("game"); }}
     />;
   }
 

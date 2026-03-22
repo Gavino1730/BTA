@@ -340,6 +340,32 @@ def ingest_game():
             with open(Config.STATS_FILE, "w") as f:
                 json.dump(stats, f, indent=2)
 
+            # Auto-register any new players that don't exist in roster.json
+            try:
+                with open(Config.ROSTER_FILE) as rf:
+                    roster_data = json.load(rf)
+                existing_names = {p["name"].lower() for p in roster_data.get("roster", [])}
+                added_any = False
+                for ps in payload.get("player_stats", []):
+                    player_name = ps.get("name", "").strip()
+                    if player_name and player_name.lower() not in existing_names:
+                        new_entry: dict = {"name": player_name}
+                        jersey = ps.get("number")
+                        if jersey is not None:
+                            try:
+                                new_entry["number"] = int(jersey)
+                            except (ValueError, TypeError):
+                                pass
+                        roster_data.setdefault("roster", []).append(new_entry)
+                        existing_names.add(player_name.lower())
+                        added_any = True
+                        logger.info(f"Auto-added player to roster: {player_name}")
+                if added_any:
+                    with open(Config.ROSTER_FILE, "w") as rf:
+                        json.dump(roster_data, rf, indent=2)
+            except OSError as roster_err:
+                logger.warning(f"Could not update roster.json: {roster_err}")
+
             data.reload()
             global advanced_calc
             advanced_calc = AdvancedStatsCalculator(data.stats_data)
