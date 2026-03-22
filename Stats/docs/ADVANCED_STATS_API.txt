@@ -1,0 +1,228 @@
+==============================================================================
+VALLEY CATHOLIC BASKETBALL - ADVANCED STATS API
+==============================================================================
+
+All statistics are calculated from box score data only. No play-by-play, no shot
+charts, no opponent player tracking required.
+
+==============================================================================
+API ENDPOINTS
+==============================================================================
+
+BASE URL: http://localhost:5000/api/advanced
+
+1. GET /api/advanced/team
+   Returns: Comprehensive team-level advanced statistics
+   
+2. GET /api/advanced/player/<player_name>
+   Returns: Advanced statistics for a specific player
+   
+3. GET /api/advanced/game/<game_id>
+   Returns: Advanced statistics for a specific game
+   
+4. GET /api/advanced/patterns
+   Returns: Win/loss patterns and threshold records
+   
+5. GET /api/advanced/volatility
+   Returns: Variance and consistency metrics
+   
+6. GET /api/advanced/insights
+   Returns: Auto-generated data-driven insights
+   
+7. GET /api/advanced/all
+   Returns: All advanced stats in one call (team + patterns + volatility + insights)
+
+==============================================================================
+TEAM ADVANCED STATS (/api/advanced/team)
+==============================================================================
+
+A. SCORING & EFFICIENCY
+- ppg (points per game)
+- ppp (points per possession)
+- fg_pct, fg2_pct, fg3_pct, ft_pct
+- efg_pct (effective field goal %)
+- ts_pct (true shooting %)
+- pts_per_shot, pts_per_fga, pts_per_fta
+
+B. SHOT MIX & DEPENDENCY
+- fg3_attempt_rate (3PA / FGA %)
+- ft_rate (FTA / FGA %)
+- inside_scoring_reliance (2PA / FGA %)
+- shot_balance:
+  * 2pt_share (% of points from 2PT)
+  * 3pt_share (% of points from 3PT)
+  * ft_share (% of points from FT)
+
+C. POSSESSION CONTROL
+- est_possessions (estimated possessions per game)
+- to_per_poss (turnovers per possession)
+- to_per_100 (turnovers per 100 possessions)
+- ast_to_ratio (assist to turnover ratio)
+- reb_per_poss (rebounds per possession)
+- oreb_rate, dreb_rate (estimated rebound rates)
+
+D. BALL MOVEMENT
+- apg (assists per game)
+- ast_per_fg (assists per field goal made)
+- assisted_scoring_rate (% of FGs assisted)
+- isolation_reliance (% of FGs unassisted)
+
+E. DEFENSE (BOX SCORE ONLY)
+- spg (steals per game)
+- bpg (blocks per game)
+- stl_blk_per_poss (steals + blocks per possession)
+
+F. DISCIPLINE & CONTROL
+- fpg (fouls per game)
+- fta_allowed (free throw attempts allowed per game)
+
+==============================================================================
+PLAYER ADVANCED STATS (/api/advanced/player/<name>)
+==============================================================================
+
+A. SCORING & EFFICIENCY
+- ppg, pts_per_shot, pts_per_fga
+- efg_pct, ts_pct
+- fg_pct, fg3_pct, ft_pct
+
+B. USAGE & ROLE
+- usage_proxy: (FGA + 0.44×FTA + TO) / team total
+- shot_volume_share (% of team FGA)
+- scoring_share (% of team points)
+- primary_scorer flag (scoring_share >= 20%)
+- secondary_scorer flag (scoring_share 10-20%)
+
+C. BALL HANDLING
+- apg (assists per game)
+- ast_to_ratio
+- total_assists
+
+D. REBOUNDING
+- rpg (rebounds per game)
+- oreb, dreb (totals)
+- reb_share (% of team rebounds)
+
+E. DEFENSE & ACTIVITY
+- spg, bpg (steals/blocks per game)
+- total_stl, total_blk
+
+F. IMPACT
+- plus_minus (season total)
+- pm_per_game
+
+==============================================================================
+GAME ADVANCED STATS (/api/advanced/game/<game_id>)
+==============================================================================
+
+- game_id, opponent, result, score
+- efficiency:
+  * ppp (points per possession)
+  * efg_pct, ts_pct, fg_pct
+- possession:
+  * est_poss (estimated possessions)
+  * to_per_100 (turnovers per 100 possessions)
+  * ast_to_ratio
+- ball_movement:
+  * assists (total)
+  * ast_pct (assist %)
+
+==============================================================================
+WIN/LOSS PATTERNS (/api/advanced/patterns)
+==============================================================================
+
+A. WIN CONDITIONS
+- min_fg_pct_in_wins
+- avg_fg_pct_in_wins
+- max_to_in_wins
+- avg_to_in_wins
+- min_ast_in_wins
+- avg_ast_in_wins
+- min_reb_in_wins
+
+B. LOSS CONDITIONS
+- avg_fg_pct_in_losses
+- avg_to_in_losses
+
+C. THRESHOLD RECORDS
+- to_13_or_less: "W-L record"
+- fg_44_or_higher: "W-L record"
+
+D. TOTALS
+- total_wins
+- total_losses
+
+==============================================================================
+VOLATILITY METRICS (/api/advanced/volatility)
+==============================================================================
+
+A. TEAM VOLATILITY
+- ppg_variance, ppg_std_dev, ppg_range
+- fg_pct_variance, fg_pct_std_dev
+- to_variance, to_std_dev
+
+B. PLAYER VOLATILITY (Top 5 Scorers)
+For each player:
+- name, ppg
+- std_dev (scoring standard deviation)
+- variance (scoring variance)
+- range (scoring range "min-max")
+
+==============================================================================
+AUTO-GENERATED INSIGHTS (/api/advanced/insights)
+==============================================================================
+
+Returns array of provable insights, such as:
+- "Team is 8-0 when turnovers ≤ 15"
+- "Team is undefeated when FG% ≥ 44%"
+- "In losses, team averages 16.3 TO vs 12.1 in wins"
+- "Record when TO ≤ 13: 7-0"
+- "Record when FG% ≥ 44%: 8-1"
+
+==============================================================================
+USAGE EXAMPLES
+==============================================================================
+
+1. Get all team advanced stats:
+   fetch('/api/advanced/team')
+
+2. Get player advanced stats:
+   fetch('/api/advanced/player/Hank Lomber')
+
+3. Get game breakdown:
+   fetch('/api/advanced/game/1')
+
+4. Get win conditions:
+   fetch('/api/advanced/patterns')
+
+5. Get everything at once:
+   fetch('/api/advanced/all')
+
+==============================================================================
+INTEGRATION WITH AI PROMPTS
+==============================================================================
+
+These stats are available for AI analysis via the stats_context passed to all
+AI endpoints. The AI can reference:
+
+- Efficiency metrics (eFG%, TS%)
+- Usage patterns
+- Win/loss thresholds
+- Volatility indicators
+- Proven insights
+
+All without speculation or non-measurable claims.
+
+==============================================================================
+DATA LIMITATIONS (WHAT YOU CANNOT DO)
+==============================================================================
+
+With box score data alone, you CANNOT:
+✗ Identify specific defensive matchups
+✗ Track momentum or "runs"
+✗ Assign blame to specific defensive positions
+✗ Infer effort, confidence, or coaching intent
+✗ Analyze shot selection by location
+✗ Track plus/minus by lineup combinations
+✗ Measure pace or tempo accurately
+
+==============================================================================

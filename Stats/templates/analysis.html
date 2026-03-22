@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="analysis-page">
+    <h1>Season Analysis</h1>
+    <p class="subtitle">Comprehensive breakdown of the season - what's changed, what's lacking, what needs to improve</p>
+    
+    <div class="analysis-controls">
+        <button class="btn-regenerate" onclick="regenerateAnalysis()">Regenerate Analysis</button>
+        <span class="analysis-status" id="status">Loading analysis...</span>
+    </div>
+
+    <!-- Season Summary Section -->
+    <div class="analysis-section">
+        <h2>Season Summary</h2>
+        <div id="season-summary" class="summary-content">
+            <p class="loading">Loading season analysis...</p>
+        </div>
+    </div>
+
+    <!-- Per-Game Analysis Section -->
+    <div class="analysis-section">
+        <h2>Game-by-Game Breakdown</h2>
+        <div id="per-game-analysis" class="games-breakdown">
+            <p class="loading">Loading game analysis...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+.analysis-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.analysis-page h1 {
+    color: #4169E1;
+    margin-bottom: 10px;
+}
+
+.analysis-page .subtitle {
+    color: #999;
+    margin-bottom: 30px;
+    font-size: 0.95rem;
+}
+
+.analysis-controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 30px;
+    align-items: center;
+}
+
+.btn-regenerate {
+    background: #4169E1;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.3s;
+}
+
+.btn-regenerate:hover {
+    background: #315ac1;
+}
+
+.analysis-status {
+    color: #999;
+    font-size: 0.9rem;
+}
+
+.analysis-section {
+    background: #2e2e2e;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 30px;
+}
+
+.analysis-section h2 {
+    color: #fff;
+    margin-bottom: 20px;
+    font-size: 1.2rem;
+}
+
+.summary-content {
+    color: #ddd;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.games-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.game-card {
+    background: #1f1f1f;
+    border-left: 4px solid #4169E1;
+    padding: 15px;
+    border-radius: 5px;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.game-title {
+    color: #fff;
+    font-weight: bold;
+    flex: 1;
+}
+
+.game-score {
+    color: #4169E1;
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.game-result {
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.game-result.win {
+    background: #2d5016;
+    color: #90EE90;
+}
+
+.game-result.loss {
+    background: #5c1616;
+    color: #FF6B6B;
+}
+
+.game-shooting {
+    background: #2a2a2a;
+    padding: 10px;
+    border-radius: 3px;
+    margin: 10px 0;
+    font-size: 0.9rem;
+    color: #bbb;
+}
+
+.game-shooting span {
+    display: inline-block;
+    margin-right: 15px;
+}
+
+.shooting-stat {
+    color: #4169E1;
+    font-weight: bold;
+}
+
+.player-section {
+    margin: 15px 0;
+    padding: 10px;
+    background: #252525;
+    border-radius: 3px;
+}
+
+.player-section h4 {
+    color: #4169E1;
+    margin: 0 0 8px 0;
+    font-size: 0.95rem;
+}
+
+.player-item {
+    color: #ccc;
+    line-height: 1.5;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #333;
+}
+
+.player-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.player-name {
+    color: #fff;
+    font-weight: bold;
+}
+
+.player-stats {
+    color: #999;
+    font-size: 0.85rem;
+}
+
+.above-avg {
+    color: #90EE90;
+}
+
+.below-avg {
+    color: #FF6B6B;
+}
+
+.game-analysis {
+    color: #bbb;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 0.95rem;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+.loading {
+    color: #666;
+    font-style: italic;
+}
+
+@media (max-width: 768px) {
+    .analysis-page {
+        padding: 15px;
+    }
+    
+    .game-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .analysis-controls {
+        flex-direction: column;
+    }
+    
+    .btn-regenerate {
+        width: 100%;
+    }
+}
+</style>
+
+<script>
+async function loadAnalysis() {
+    try {
+        const response = await fetch('/api/season-analysis');
+        const data = await response.json();
+        
+        if (data.error) {
+            document.getElementById('season-summary').innerHTML = `<p class="loading">Error: ${data.error}</p>`;
+            document.getElementById('status').textContent = 'Error loading analysis';
+            return;
+        }
+        
+        // Display season summary
+        const seasonSummary = data.season_summary || 'No season summary available';
+        document.getElementById('season-summary').innerHTML = `<div class="summary-content">${escapeHtml(seasonSummary)}</div>`;
+        document.getElementById('status').textContent = 'Analysis loaded';
+        
+        // Display per-game analysis with detailed stats
+        const gamesHtml = data.per_game_analysis.map(game => {
+            let perfHtml = '';
+            if (game.player_performances && game.player_performances.length > 0) {
+                perfHtml = `
+                    <div class="player-section">
+                        <h4>📊 PLAYER PERFORMANCES</h4>
+                        ${game.player_performances.map(p => `
+                            <div class="player-item ${p.indicator === '↓' ? 'below-avg-card' : ''}">
+                                <div class="player-name">
+                                    <span class="perf-indicator ${p.indicator === '↑' ? 'perf-up' : p.indicator === '↓' ? 'perf-down' : 'perf-neutral'}">${p.indicator}</span>
+                                    ${p.rank}. ${p.name}
+                                </div>
+                                <div class="player-stats">
+                                    <strong>${p.pts}pts</strong> | 
+                                    FG: ${p.fg} (${p.fg_pct.toFixed(0)}%) | 
+                                    3P: ${p.fg3} (${p.fg3_pct.toFixed(0)}%) | 
+                                    FT: ${p.ft} (${p.ft_pct.toFixed(0)}%) |
+                                    ${p.reb}reb | ${p.asst}ast
+                                </div>
+                                <div class="player-stats">
+                                    Season Avg: ${p.season_ppg.toFixed(1)}ppg | 
+                                    <span class="${p.diff > 1 ? 'perf-up' : p.diff < -1 ? 'perf-down' : 'perf-neutral'}">
+                                        ${p.diff > 0 ? '+' : ''}${p.diff.toFixed(1)} vs avg
+                                    </span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            let shootingHtml = '';
+            if (game.shooting) {
+                shootingHtml = `
+                    <div class="game-shooting">
+                        <span><span class="shooting-stat">${game.shooting['2pt']}</span> 2-Point</span>
+                        <span><span class="shooting-stat">${game.shooting['3pt']}</span> 3-Point</span>
+                        <span><span class="shooting-stat">${game.shooting['ft']}</span> Free Throw</span>
+                    </div>
+                `;
+            }
+            
+            return `
+            <div class="game-card">
+                <div class="game-header">
+                    <span class="game-title">Game ${game.game}: vs ${game.opponent} (${game.date})</span>
+                    <span class="game-score">${game.score}</span>
+                    <span class="game-result ${game.result.toLowerCase()}">${game.result.toUpperCase()}</span>
+                </div>
+                ${shootingHtml}
+                ${perfHtml}
+                <div class="game-analysis">${escapeHtml(game.analysis)}</div>
+            </div>
+        `}).join('');
+        
+        document.getElementById('per-game-analysis').innerHTML = gamesHtml;
+        document.getElementById('status').textContent = `Generated: ${new Date(data.generated_at).toLocaleString()}`;
+    } catch (error) {
+        console.error('Error loading analysis:', error);
+        document.getElementById('season-summary').innerHTML = `<p class="loading">Failed to load analysis</p>`;
+    }
+}
+
+async function regenerateAnalysis() {
+    if (!confirm('Regenerate analysis? This will overwrite the existing analysis.')) {
+        return;
+    }
+    
+    document.getElementById('status').textContent = 'Clearing cache...';
+    
+    try {
+        // Clear cache
+        await fetch('/api/season-analysis', { method: 'DELETE' });
+        
+        // Reload
+        document.getElementById('season-summary').innerHTML = '<p class="loading">Generating new analysis...</p>';
+        document.getElementById('per-game-analysis').innerHTML = '<p class="loading">Generating game analysis...</p>';
+        loadAnalysis();
+    } catch (error) {
+        console.error('Error regenerating:', error);
+        document.getElementById('status').textContent = 'Error regenerating analysis';
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+// Load analysis when page loads
+loadAnalysis();
+</script>
+{% endblock %}

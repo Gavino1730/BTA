@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="games-page">
+    <h1>Games</h1>
+    
+    <div class="games-filter">
+        <input type="text" id="game-search" placeholder="Search opponent...">
+        <select id="game-result-filter" title="Filter games by result">
+            <option value="">All Results</option>
+            <option value="W">Wins</option>
+            <option value="L">Losses</option>
+        </select>
+    </div>
+
+    <div id="games-container" class="games-container"></div>
+
+    <!-- Game Detail Modal -->
+    <div id="gameModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="gameDetail"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='games.js') }}?v=1.7"></script>
+{% endblock %}

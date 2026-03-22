@@ -1,0 +1,71 @@
+{
+  "team": "Valley Catholic",
+  "season": "2025-2026",
+  "roster": [
+    {
+      "number": 1,
+      "name": "Cooper Bonnett",
+      "grade": 12
+    },
+    {
+      "number": 2,
+      "name": "Alex Post",
+      "grade": 11
+    },
+    {
+      "number": 3,
+      "name": "Gavin Galan",
+      "grade": 12
+    },
+    {
+      "number": 4,
+      "name": "Kye Fixter",
+      "grade": 11
+    },
+    {
+      "number": 5,
+      "name": "Marcos Mueller",
+      "grade": 12
+    },
+    {
+      "number": 10,
+      "name": "Matthew Gunther",
+      "grade": 12
+    },
+    {
+      "number": 11,
+      "name": "Tyler Eddy",
+      "grade": 10
+    },
+    {
+      "number": 15,
+      "name": "Elijah Schaal",
+      "grade": 12
+    },
+    {
+      "number": 20,
+      "name": "Hank Lomber",
+      "grade": 11
+    },
+    {
+      "number": 22,
+      "name": "Sam Robbins",
+      "grade": 10
+    },
+    {
+      "number": 23,
+      "name": "Garrett Frank",
+      "grade": 11
+    },
+    {
+      "number": 24,
+      "name": "Michael Mehta",
+      "grade": 12
+    },
+    {
+      "number": 44,
+      "name": "Liam Plep",
+      "grade": 12
+    }
+  ]
+}
