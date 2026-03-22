@@ -78,8 +78,8 @@ interface VideoResolution {
   anchorId: string;
 }
 
-const apiBase = "http://localhost:4000";
-const videoBase = "http://localhost:4100";
+const apiBase = import.meta.env.VITE_API ?? "http://localhost:4000";
+const videoBase = import.meta.env.VITE_VIDEO_API ?? "http://localhost:4100";
 
 export function App() {
   const [gameId, setGameId] = useState("game-1");

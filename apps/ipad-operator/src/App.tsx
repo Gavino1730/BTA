@@ -1,7 +1,7 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import type { GameEvent } from "@pivot/shared-schema";
 
-const API = "http://localhost:4000";
+const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";
 const STORE = "pivot-op";
 const APP_DATA_KEY = "pivot-app-data-v3";
 
@@ -26,6 +26,7 @@ export interface GameSetup {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
+  apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
@@ -39,7 +40,7 @@ export interface AppData {
 
 const DEFAULT_DATA: AppData = {
   teams: [],
-  gameSetup: { gameId: "game-1", homeTeamId: "", awayTeamId: "", opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
+  gameSetup: { gameId: "game-1", homeTeamId: "", awayTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
 };
 
 // ---- Storage helpers ----
@@ -537,6 +538,9 @@ export function App() {
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
 
+  // Ref for auto-save interval — always holds the latest values without re-registering the interval
+  const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
+
   // ---- Derived: home/away teams ----
   const homeTeam = appData.teams.find(t => t.id === appData.gameSetup.homeTeamId);
   const awayTeam = appData.teams.find(t => t.id === appData.gameSetup.awayTeamId);
@@ -562,7 +566,7 @@ export function App() {
     setSequence(localSeq);
     async function hydrate() {
       try {
-        const res = await fetch(`${API}/games/${gameId}/events`);
+        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`);
         if (!res.ok) { setSubmittedEvents([]); return; }
         const events = (await res.json()) as GameEvent[];
         setSubmittedEvents(events);
@@ -580,7 +584,7 @@ export function App() {
 
   async function submitEvent(event: GameEvent): Promise<boolean> {
     try {
-      const res = await fetch(`${API}/games/${gameId}/events`, {
+      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(event),
@@ -605,7 +609,7 @@ export function App() {
       if (!ok) break;
     }
     try {
-      const res = await fetch(`${API}/games/${gameId}/events`);
+      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`);
       if (res.ok) setSubmittedEvents((await res.json()) as GameEvent[]);
     } catch { /* empty */ }
   }
@@ -632,13 +636,13 @@ export function App() {
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     // If it is already submitted to the API, delete it there
     if (submittedEvents.some(e => e.id === last.id)) {
-      const res = await fetch(`${API}/games/${gameId}/events/${last.id}`, { method: "DELETE" });
+      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${last.id}`, { method: "DELETE" });
       if (res.ok) setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
     }
   }
 
   async function startGame() {
-    const res = await fetch(`${API}/games`, {
+    const res = await fetch(`${appData.gameSetup.apiUrl}/games`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -749,6 +753,21 @@ export function App() {
   const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
   const scores = useMemo(() => computeScores(allEventObjs), [allEventObjs]);
   const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
+
+  // Keep the ref current so the interval always has the latest values
+  useEffect(() => {
+    autoSaveCtx.current.run = () => {
+      if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim() && navigator.onLine) {
+        void submitToDashboard();
+      }
+    };
+  });
+
+  // Auto-save every 3 minutes — interval reads from ref so no deps needed
+  useEffect(() => {
+    const id = setInterval(() => autoSaveCtx.current.run(), 3 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // ---- Event builder ----
   function base(seq: number) {
@@ -1133,6 +1152,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
   const [gsHomeId, setGsHomeId] = useState(appData.gameSetup.homeTeamId);
   const [gsAwayId, setGsAwayId] = useState(appData.gameSetup.awayTeamId);
+  const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
   const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
@@ -1216,9 +1236,11 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         gameId: gsGameId.trim() || "game-1",
         homeTeamId: gsHomeId,
         awayTeamId: gsAwayId,
+        apiUrl: gsApiUrl.trim() || DEFAULT_API,
         opponent: gsOpponent.trim(),
         vcSide: gsVcSide,
         dashboardUrl: gsDashboardUrl.trim() || "http://localhost:5000",
+        statsGameId: appData.gameSetup.statsGameId,
       },
     });
   }
@@ -1406,6 +1428,16 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>Home (teal)</button>
             <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>Away (red)</button>
           </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Realtime API URL</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Node API server — use laptop's local IP on game day (e.g. http://192.168.1.5:4000)</p>
+          <input
+            placeholder={DEFAULT_API}
+            value={gsApiUrl}
+            onChange={e => setGsApiUrl(e.target.value)}
+          />
         </section>
 
         <section className="settings-section">
