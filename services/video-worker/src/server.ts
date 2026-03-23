@@ -1,6 +1,6 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
-import type { Period } from "@pivot/shared-schema";
+import type { Period } from "@bta/shared-schema";
 import {
   addAnchor,
   addVideo,

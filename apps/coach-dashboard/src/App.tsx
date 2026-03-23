@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getPeriodDurationSeconds, type Period } from "@pivot/shared-schema";
+import { getPeriodDurationSeconds, type Period } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
   formatBonusIndicator,

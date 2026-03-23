@@ -1,4 +1,4 @@
-import { formatClockSeconds, type Period } from "@pivot/shared-schema";
+import { formatClockSeconds, type Period } from "@bta/shared-schema";
 
 export interface DashboardEventMetaInput {
   teamId: string;

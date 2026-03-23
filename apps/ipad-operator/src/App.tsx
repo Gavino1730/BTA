@@ -328,7 +328,7 @@ async function exportGamePDF(
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...accent);
-    doc.text(name.toUpperCase() + " \u2014 BOX SCORE", 14, y + 4);
+    doc.text(name.toUpperCase() + " — BOX SCORE", 14, y + 4);
     y += 7;
 
     if (players.length === 0) {
@@ -463,7 +463,7 @@ async function exportGamePDF(
     doc.setFontSize(7);
     doc.setTextColor(100, 104, 130);
     doc.text(
-      `BTA Basketball  \u2022  Generated ${new Date().toLocaleString()}`,
+      `BTA Basketball  •  Generated ${new Date().toLocaleString()}`,
       14, doc.internal.pageSize.getHeight() - 6,
     );
     doc.text(`Page ${i} / ${pages}`, W - 14, doc.internal.pageSize.getHeight() - 6, { align: "right" });
@@ -942,15 +942,15 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.points}pt \u2014 {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>\u2715</button>
+              <span className="modal-title">{modal.points}pt — {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="made-miss-row">
               <button className={`toggle-btn ${modal.made ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, made: true })}>Made</button>
               <button className={`toggle-btn ${!modal.made ? "t-red" : ""}`} onClick={() => setModal({ ...modal, made: false })}>Miss</button>
             </div>
             <div className="player-list">
-              {players.length === 0 && <p className="no-players">No players \u2014 set up roster in Settings \u2630</p>}
+              {players.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
               {players.map(p => (
                 <button key={p.id} className="player-row" onClick={() => confirmShot(p.id)}>
                   <span className="pnum">#{p.number}</span>
@@ -974,7 +974,7 @@ export function App() {
     if (modal.kind === "stat") {
       const statLabels: Record<string, string> = {
         def_reb: "Def Rebound", off_reb: "Off Rebound", turnover: "Turnover",
-        steal: "Steal", assist: "Assist \u2014 pick passer", block: "Block", foul: "Foul",
+        steal: "Steal", assist: "Assist — pick passer", block: "Block", foul: "Foul",
       };
       const players = teamPlayers(modal.teamId);
       return (
@@ -988,10 +988,10 @@ export function App() {
                   <button className={modal.teamId === "away" ? "t-red" : ""} onClick={() => setModal({ ...modal, teamId: "away" })}>{awayTeamName}</button>
                 </div>
               </div>
-              <button className="modal-close" onClick={closeModal}>\u2715</button>
+              <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="player-list">
-              {players.length === 0 && <p className="no-players">No players \u2014 set up roster in Settings \u2630</p>}
+              {players.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
               {players.map(p => (
                 <button key={p.id} className="player-row" onClick={() => confirmStat(p.id)}>
                   <span className="pnum">#{p.number}</span>
@@ -1018,8 +1018,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Assist \u2014 pick scorer</span>
-              <button className="modal-close" onClick={closeModal}>\u2715</button>
+              <span className="modal-title">Assist — pick scorer</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="player-list">
               {players.map(p => (
@@ -1041,8 +1041,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Sub Out \u2014 {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>\u2715</button>
+              <span className="modal-title">Sub Out — {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="player-list">
               {players.map(p => (
@@ -1063,8 +1063,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Sub In \u2014 {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>\u2715</button>
+              <span className="modal-title">Sub In — {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="player-list">
               {players.map(p => (
@@ -1128,12 +1128,12 @@ export function App() {
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 1, made: true })}>1pt</button>
         </div>
         <div className="panel-foot">
-          <button className="icon-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">\u2630</button>
-          <button className="icon-btn" onClick={() => void undoLast()} title="Undo last">\u21a9</button>
+          <button className="icon-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">☰</button>
+          <button className="icon-btn" onClick={() => void undoLast()} title="Undo last">↩</button>
           <button className="icon-btn pdf-btn"
             title="Export PDF"
             onClick={() => void exportGamePDF(gameId, gameDate, homeTeam, awayTeam, allEventObjs)}>
-            \u21e9 PDF
+            ⬇ PDF
           </button>
         </div>
         <div className="end-game-section">
@@ -1162,19 +1162,19 @@ export function App() {
             className={`submit-btn submit-${submitStatus}`}
             onClick={() => void submitToDashboard()}
             disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Saving\u2026"
-              : submitStatus === "success" ? "\u2713 Saved to Dashboard!"
-              : submitStatus === "error"   ? "\u26a0 Error \u2014 Retry"
-              : "\uD83C\uDFC1 Save Final Stats"}
+            {submitStatus === "pending" ? "Saving…"
+              : submitStatus === "success" ? "✓ Saved to Dashboard!"
+              : submitStatus === "error"   ? "⚠ Error — Retry"
+              : "🏁 Save Final Stats"}
           </button>
           <a
             className="coach-link-btn"
             href={`${appData.gameSetup.dashboardUrl ?? "http://localhost:5173"}?gameId=${gameId}`}
             target="_blank"
             rel="noreferrer"
-            title={`Open Coach Dashboard \u00b7 ${gameId}`}
+            title={`Open Coach Dashboard · ${gameId}`}
           >
-            \uD83D\uDCFA Coach View
+            📺 Coach View
           </a>
         </div>
       </div>
@@ -1196,7 +1196,7 @@ export function App() {
           <div className="foul-alerts">
             {foulAlerts.map(p => (
               <div key={p.id} className={`foul-alert ${(pTotals[p.id]?.fouls ?? 0) >= 5 ? "foul-out-alert" : "foul-warn-alert"}`}>
-                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "\u26d4" : "\u26a0\ufe0f"} #{p.number} {p.name} — {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
+                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "🚫" : "⚠️"} #{p.number} {p.name} — {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
               </div>
             ))}
           </div>
@@ -1399,7 +1399,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>\u2190 Back</button>
+          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
           <h2>Teams</h2>
           <div style={{ width: 64 }} />
         </header>
@@ -1427,7 +1427,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
               </div>
               <div className="team-list-actions">
                 <button className="edit-btn" onClick={() => { onEditTeam(team.id); onNav("team-edit"); }}>Roster</button>
-                <button className="rm-btn" onClick={() => deleteTeam(team.id)}>\u2715</button>
+                <button className="rm-btn" onClick={() => deleteTeam(team.id)}>✕</button>
               </div>
             </div>
           ))}
@@ -1443,7 +1443,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("teams")}>\u2190 Teams</button>
+          <button className="back-btn" onClick={() => onNav("teams")}>← Teams</button>
           <h2>{editingTeam.name}</h2>
           <div style={{ width: 64 }} />
         </header>
@@ -1489,7 +1489,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                     {POSITIONS.filter(Boolean).map(pos => <option key={pos} value={pos}>{pos}</option>)}
                   </select>
                   <button className="add-btn" onClick={saveEditPlayer}>Save</button>
-                  <button className="rm-btn" onClick={() => setEditPlayerId(null)}>\u2715</button>
+                  <button className="rm-btn" onClick={() => setEditPlayerId(null)}>✕</button>
                 </div>
               )
               : (
@@ -1503,7 +1503,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                   </div>
                   <div className="roster-actions">
                     <button className="edit-btn" onClick={() => startEditPlayer(p)}>Edit</button>
-                    <button className="rm-btn" onClick={() => removePlayer(p.id)}>\u2715</button>
+                    <button className="rm-btn" onClick={() => removePlayer(p.id)}>✕</button>
                   </div>
                 </div>
               )
@@ -1523,7 +1523,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>\u2190 Back</button>
+          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
           <h2>Game Setup</h2>
           <button className="save-btn" onClick={() => { saveGameSetup(); onNav("menu"); }}>Save</button>
         </header>
@@ -1535,7 +1535,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>Your Team</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams yet \u2014 create one in Teams first.</p>}
+          {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
           <div className="team-picker">
             {appData.teams.map(t => (
               <button key={t.id}
@@ -1650,7 +1650,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   return (
     <div className="settings-page">
       <header className="settings-header">
-        <button className="back-btn" onClick={onBack}>\u2190 Game</button>
+        <button className="back-btn" onClick={onBack}>← Game</button>
         <h2>Settings</h2>
         <div style={{ width: 64 }} />
       </header>
@@ -1662,11 +1662,11 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">Game Setup</span>
             <span className="menu-card-sub">
               {myTeamForMenu
-                ? `${myTeamForMenu.name} (${vcSideForMenu}) vs ${appData.gameSetup.opponent || "TBD"} \u2022 ${appData.gameSetup.gameId}`
+                ? `${myTeamForMenu.name} (${vcSideForMenu}) vs ${appData.gameSetup.opponent || "TBD"} • ${appData.gameSetup.gameId}`
                 : "No team selected"}
             </span>
           </div>
-          <span className="menu-chev">\u203a</span>
+          <span className="menu-chev"›</span>
         </div>
       </section>
 
@@ -1675,9 +1675,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         <div className="menu-card" onClick={() => onNav("teams")}>
           <div className="menu-card-info">
             <span className="menu-card-title">Teams &amp; Rosters</span>
-            <span className="menu-card-sub">{appData.teams.length} team{appData.teams.length !== 1 ? "s" : ""} \u2022 {appData.teams.reduce((n, t) => n + t.players.length, 0)} players total</span>
+            <span className="menu-card-sub">{appData.teams.length} team{appData.teams.length !== 1 ? "s" : ""} • {appData.teams.reduce((n, t) => n + t.players.length, 0)} players total</span>
           </div>
-          <span className="menu-chev">\u203a</span>
+          <span className="menu-chev">›</span>
         </div>
       </section>
 
@@ -1687,10 +1687,10 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           {appData.teams.map(team => (
             <div key={team.id} className="menu-card" onClick={() => { onEditTeam(team.id); onNav("team-edit"); }}>
               <div className="menu-card-info">
-                <span className="menu-card-title">{team.abbreviation} \u2014 {team.name}</span>
+                <span className="menu-card-title">{team.abbreviation} — {team.name}</span>
                 <span className="menu-card-sub">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
               </div>
-              <span className="menu-chev">\u203a</span>
+              <span className="menu-chev">›</span>
             </div>
           ))}
         </section>
