@@ -895,3 +895,37 @@ html, body {
   border-color: rgba(248,113,113,0.5);
   color: #f87171;
 }
+
+.submit-banner {
+  margin-top: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: rgba(232,234,240,0.78);
+  padding: 0.65rem 0.8rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  min-height: 3rem;
+}
+
+.submit-banner-idle {
+  border-color: rgba(255,255,255,0.12);
+}
+
+.submit-banner-pending {
+  border-color: rgba(45,212,191,0.42);
+  background: rgba(45,212,191,0.1);
+  color: #99f6e4;
+}
+
+.submit-banner-success {
+  border-color: rgba(45,212,191,0.45);
+  background: rgba(45,212,191,0.12);
+  color: #ccfbf1;
+}
+
+.submit-banner-error {
+  border-color: rgba(248,113,113,0.45);
+  background: rgba(248,113,113,0.12);
+  color: #fecaca;
+}

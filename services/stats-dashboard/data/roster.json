@@ -25,10 +25,10 @@
     },
     {
       "number": 4,
-      "name": "Test Player Four",
-      "grade": "11",
-      "position": "PF",
-      "height": "6'7\""
+      "name": "Stephen Curry",
+      "grade": "Pro",
+      "position": "PG",
+      "height": "6'2\""
     },
     {
       "number": 5,
@@ -38,18 +38,46 @@
       "height": "6'9\""
     },
     {
+      "number": 6,
+      "name": "LeBron James",
+      "position": "SF",
+      "height": "6'9\"",
+      "grade": "Pro"
+    },
+    {
+      "number": 7,
+      "name": "Kevin Durant",
+      "position": "SF",
+      "height": "6'10\"",
+      "grade": "Pro"
+    },
+    {
+      "number": 8,
+      "name": "Kobe Bryant",
+      "position": "SG",
+      "height": "6'6\"",
+      "grade": "Pro"
+    },
+    {
+      "number": 9,
+      "name": "Michael Jordan",
+      "position": "SG",
+      "height": "6'6\"",
+      "grade": "Pro"
+    },
+    {
       "number": 10,
-      "name": "Test Player Six",
+      "name": "Magic Johnson",
       "position": "PG",
-      "height": "5'11\"",
-      "grade": "10"
+      "height": "6'9\"",
+      "grade": "Pro"
     },
     {
       "number": 11,
-      "name": "Test Player Seven",
-      "grade": "10",
-      "position": "SG",
-      "height": "6'1\""
+      "name": "Kyrie Irving",
+      "grade": "Pro",
+      "position": "PG",
+      "height": "6'2\""
     },
     {
       "number": 12,
@@ -60,10 +88,10 @@
     },
     {
       "number": 13,
-      "name": "Test Player Nine",
+      "name": "Anthony Davis",
       "position": "PF",
-      "height": "6'6\"",
-      "grade": "9"
+      "height": "6'10\"",
+      "grade": "Pro"
     },
     {
       "number": 14,
@@ -71,6 +99,13 @@
       "position": "C",
       "height": "6'8\"",
       "grade": "10"
+    },
+    {
+      "number": 15,
+      "name": "Carmelo Anthony",
+      "position": "PF",
+      "height": "6'7\"",
+      "grade": "Pro"
     },
     {
       "number": 20,
@@ -91,6 +126,13 @@
       "number": 30,
       "name": "Caleb Ortiz",
       "grade": 9
+    },
+    {
+      "number": 34,
+      "name": "Shaquille O'Neal",
+      "position": "C",
+      "height": "7'1\"",
+      "grade": "Pro"
     }
   ]
 }

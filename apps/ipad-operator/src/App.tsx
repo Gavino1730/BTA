@@ -647,6 +647,7 @@ export function App() {
   const [modal, setModal] = useState<Modal | null>(null);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
+  const [submitMessage, setSubmitMessage] = useState<string>("Ready to save final stats to the dashboard.");
 
   // Ref for auto-save interval — always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
@@ -845,12 +846,16 @@ export function App() {
   /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
   async function endAndResetGame() {
     if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
-      await submitToDashboard();
+      const saved = await submitToDashboard();
+      if (!saved) {
+        return false;
+      }
     }
     // Use fresh localStorage data so we get the opponent name just saved by saveGameSetup()
     const latest = loadAppData();
     const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
     await startGame(newId);
+    return true;
   }
 
   async function submitToDashboard() {
@@ -860,17 +865,22 @@ export function App() {
     const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
 
     if (!opponent) {
+      const message = "Enter the opponent name in Game Setup before submitting.";
+      setSubmitMessage(message);
       alert("Enter the opponent name in Game Setup (⚙ Settings → Game Setup) before submitting.");
-      return;
+      return false;
     }
 
     const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
     if (!vcTeam) {
+      const message = "Tracked team is not configured. Check Game Setup in Settings.";
+      setSubmitMessage(message);
       alert("Tracked team is not configured. Check Game Setup in Settings.");
-      return;
+      return false;
     }
 
     setSubmitStatus("pending");
+    setSubmitMessage(`Saving final stats to ${dashboardUrl}...`);
 
     // Format date to match Stats dashboard convention: "Dec 3, 2025"
     const dateParts = new Date(gameDate + "T12:00:00").toLocaleDateString("en-US", {
@@ -913,7 +923,7 @@ export function App() {
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(payload),
       });
-      const result = await res.json() as { message?: string; gameId?: number; error?: string };
+      const result = await res.json().catch(() => ({})) as { message?: string; gameId?: number; error?: string };
       if (res.ok) {
         // Store the assigned gameId so future re-submits overwrite instead of duplicate
         if (result.gameId != null && result.gameId !== appData.gameSetup.statsGameId) {
@@ -923,14 +933,30 @@ export function App() {
           });
         }
         setSubmitStatus("success");
-        setTimeout(() => setSubmitStatus("idle"), 4000);
+        setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
+        setTimeout(() => {
+          setSubmitStatus("idle");
+          setSubmitMessage("Ready to save final stats to the dashboard.");
+        }, 4000);
+        return true;
       } else {
-        console.error("Dashboard ingest error:", result.error);
+        const errorMessage = result.error || result.message || `Request failed with status ${res.status}.`;
+        console.error("Dashboard ingest error:", errorMessage);
+        setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
+        alert(
+          `Could not save final stats to the Stats dashboard.\n\n${errorMessage}\n\nCheck Settings -> Game Setup -> Stats Dashboard URL and make sure the dashboard is running.`
+        );
         setSubmitStatus("error");
+        return false;
       }
     } catch (err) {
       console.error("Could not reach Stats dashboard:", err);
+      setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
+      alert(
+        `Could not reach the Stats dashboard at ${dashboardUrl}.\n\nStart the Stats Dashboard service or update Settings -> Game Setup -> Stats Dashboard URL, then retry.`
+      );
       setSubmitStatus("error");
+      return false;
     }
   }
 
@@ -1203,7 +1229,12 @@ export function App() {
       onNav={setSettingsView}
       onEditTeam={setEditingTeamId}
       onBack={() => setView("game")}
-      onStartGame={() => { void endAndResetGame(); setView("game"); }}
+      onStartGame={async () => {
+        const reset = await endAndResetGame();
+        if (reset) {
+          setView("game");
+        }
+      }}
     />;
   }
 
@@ -1274,6 +1305,9 @@ export function App() {
               : submitStatus === "error"   ? "⚠ Error — Retry"
               : "🏁 Save Final Stats"}
           </button>
+          <div className={`submit-banner submit-banner-${submitStatus}`} role="status" aria-live="polite">
+            {submitMessage}
+          </div>
           <a
             className="coach-link-btn"
             href={buildCoachViewUrl(gameId, {
@@ -1388,7 +1422,7 @@ interface SettingsScreenProps {
   onNav: (v: SettingsView) => void;
   onEditTeam: (id: string | null) => void;
   onBack: () => void;
-  onStartGame: () => void;
+  onStartGame: () => void | Promise<void>;
 }
 
 const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];

@@ -472,33 +472,49 @@ export function App() {
     });
   }, [gameId]);
 
-  function canonicalTeamId(teamId: string): string {
-    const normalized = teamId.toLowerCase();
-    const isHomeAlias = normalized === "home" || normalized === "team-home";
-    const isAwayAlias = normalized === "away" || normalized === "team-away";
+  const canonicalSideIds = useMemo(() => {
+    const homeId = setupNames.vcSide === "home"
+      ? (setupNames.myTeamId || state?.homeTeamId || "home")
+      : (state?.opponentTeamId || state?.homeTeamId || "home");
+    const awayId = setupNames.vcSide === "away"
+      ? (setupNames.myTeamId || state?.awayTeamId || "away")
+      : (state?.opponentTeamId || state?.awayTeamId || "away");
 
-    if (isHomeAlias) {
-      if (setupNames.vcSide === "home" && setupNames.myTeamId) {
-        return setupNames.myTeamId;
-      }
-      if (state?.homeTeamId && state.homeTeamId !== teamId) {
-        return state.homeTeamId;
-      }
-      if (state?.opponentTeamId) {
-        return state.opponentTeamId;
-      }
+    const homeAliases = new Set<string>([
+      "home",
+      "team-home",
+      state?.homeTeamId,
+      setupNames.vcSide === "home" ? setupNames.myTeamId : state?.opponentTeamId,
+    ].filter((value): value is string => Boolean(value)));
+
+    const awayAliases = new Set<string>([
+      "away",
+      "team-away",
+      state?.awayTeamId,
+      setupNames.vcSide === "away" ? setupNames.myTeamId : state?.opponentTeamId,
+    ].filter((value): value is string => Boolean(value)));
+
+    return {
+      homeId,
+      awayId,
+      homeAliases,
+      awayAliases,
+    };
+  }, [
+    setupNames.myTeamId,
+    setupNames.vcSide,
+    state?.awayTeamId,
+    state?.homeTeamId,
+    state?.opponentTeamId,
+  ]);
+
+  function canonicalTeamId(teamId: string): string {
+    if (canonicalSideIds.homeAliases.has(teamId)) {
+      return canonicalSideIds.homeId;
     }
 
-    if (isAwayAlias) {
-      if (setupNames.vcSide === "away" && setupNames.myTeamId) {
-        return setupNames.myTeamId;
-      }
-      if (state?.awayTeamId && state.awayTeamId !== teamId) {
-        return state.awayTeamId;
-      }
-      if (state?.opponentTeamId) {
-        return state.opponentTeamId;
-      }
+    if (canonicalSideIds.awayAliases.has(teamId)) {
+      return canonicalSideIds.awayId;
     }
 
     return teamId;
@@ -556,12 +572,11 @@ export function App() {
   }, [rawTeamIds, setupNames.myTeamId, setupNames.vcSide, state]);
 
   const teams = useMemo(() => {
-    const preferred = [state?.homeTeamId, state?.awayTeamId]
-      .filter((teamId): teamId is string => Boolean(teamId))
-      .map((teamId) => canonicalTeamId(teamId));
+    const preferred = [canonicalSideIds.homeId, canonicalSideIds.awayId]
+      .filter((teamId): teamId is string => Boolean(teamId));
 
     return [...new Set([...preferred, ...Object.keys(aggregatedTeams)])];
-  }, [aggregatedTeams, state?.awayTeamId, state?.homeTeamId]);
+  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId]);
 
   function toTitleCase(value: string): string {
     return value
@@ -732,158 +747,6 @@ export function App() {
           </div>
         </div>
       </header>
-
-      {/* ── Roster Builder ─────────────────────────────────────────────── */}
-      <section className="card">
-        <div className="roster-header-row">
-          <div>
-            <h2>Roster Builder</h2>
-            <p className="text-muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
-              Teams created here are shared with the iPad Operator and all other BTA apps automatically.
-            </p>
-          </div>
-          <div className="roster-actions">
-            <button className="secondary" onClick={exportRoster}>Export JSON</button>
-            <label className="btn-import secondary">
-              Import JSON
-              <input
-                type="file"
-                accept=".json"
-                style={{ display: "none" }}
-                onChange={(e) => { if (e.target.files?.[0]) importRoster(e.target.files[0]); e.target.value = ""; }}
-              />
-            </label>
-            <button className="secondary" onClick={loadSampleTeams}>Load Samples</button>
-            <button onClick={() => { setShowNewTeamForm(true); setExpandedTeamId(null); }}>+ New Team</button>
-          </div>
-        </div>
-
-        {rosterTeams.length === 0 && !showNewTeamForm && (
-          <p className="text-muted" style={{ marginTop: "0.75rem" }}>
-            No teams yet — click <strong>+ New Team</strong> or <strong>Load Samples</strong> to get started.
-          </p>
-        )}
-
-        {showNewTeamForm && (
-          <div className="roster-new-team-form form-grid">
-            <label>
-              Team Name
-              <input
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                placeholder="e.g. Warriors"
-                onKeyDown={(e) => e.key === "Enter" && addTeam()}
-              />
-            </label>
-            <label>
-              Abbreviation
-              <input
-                value={newTeamAbbr}
-                onChange={(e) => setNewTeamAbbr(e.target.value)}
-                placeholder="e.g. WAR"
-                maxLength={4}
-              />
-            </label>
-            <button onClick={addTeam}>Create Team</button>
-            <button className="secondary" onClick={() => { setShowNewTeamForm(false); setNewTeamName(""); setNewTeamAbbr(""); }}>
-              Cancel
-            </button>
-          </div>
-        )}
-
-        <div className="roster-team-list">
-          {rosterTeams.map((team) => (
-            <div key={team.id} className="roster-team-card">
-              <div className="roster-team-header">
-                <div className="roster-team-identity">
-                  <strong className="roster-team-name">{team.name}</strong>
-                  <span className="roster-abbr">{team.abbreviation}</span>
-                  <span className="text-dim">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="roster-team-btns">
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      setExpandedTeamId(expandedTeamId === team.id ? null : team.id);
-                      setEditingPlayerId(null);
-                      setEditPlayerDraft(null);
-                      setAddingPlayerForTeam(null);
-                    }}
-                  >
-                    {expandedTeamId === team.id ? "▲ Collapse" : "▼ Edit Roster"}
-                  </button>
-                  <button className="secondary danger-btn" onClick={() => removeTeam(team.id)}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-
-              {expandedTeamId === team.id && (
-                <div className="roster-players-area">
-                  {team.players.length === 0 && (
-                    <p className="text-dim" style={{ marginBottom: "0.5rem" }}>No players yet.</p>
-                  )}
-                  <table className="roster-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th>Pos</th>
-                        <th>Height</th>
-                        <th>Grade</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {team.players.map((player) =>
-                        editingPlayerId === player.id && editPlayerDraft ? (
-                          <tr key={player.id} className="roster-row-edit">
-                            <td><input className="roster-inline-input" value={editPlayerDraft.number} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, number: e.target.value })} style={{ width: "3.5rem" }} /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.name} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, name: e.target.value })} style={{ width: "100%" }} /></td>
-                            <td><select className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.height ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, height: e.target.value || undefined })} style={{ width: "4.5rem" }} placeholder={"6'2\""} /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.grade ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, grade: e.target.value || undefined })} style={{ width: "3rem" }} placeholder="11" /></td>
-                            <td className="roster-row-actions">
-                              <button style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => saveEditedPlayer(team.id)}>Save</button>
-                              <button className="secondary" style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => { setEditingPlayerId(null); setEditPlayerDraft(null); }}>✕</button>
-                            </td>
-                          </tr>
-                        ) : (
-                          <tr key={player.id} className="roster-row">
-                            <td><strong>#{player.number}</strong></td>
-                            <td>{player.name}</td>
-                            <td><span className="pos-badge">{player.position}</span></td>
-                            <td className="text-dim">{player.height ?? "—"}</td>
-                            <td className="text-dim">{player.grade ? `Gr ${player.grade}` : "—"}</td>
-                            <td className="roster-row-actions">
-                              <button className="secondary" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => { setEditingPlayerId(player.id); setEditPlayerDraft({ ...player }); }}>Edit</button>
-                              <button className="secondary danger-btn" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => removePlayer(team.id, player.id)}>✕</button>
-                            </td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-
-                  {addingPlayerForTeam === team.id ? (
-                    <div className="roster-add-player-form form-grid" style={{ marginTop: "0.75rem" }}>
-                      <label>Jersey #<input value={newPlayerNum} onChange={(e) => setNewPlayerNum(e.target.value)} placeholder="23" /></label>
-                      <label>Name<input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="Player Name" onKeyDown={(e) => e.key === "Enter" && addPlayer(team.id)} /></label>
-                      <label>Position<select value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
-                      <label>Height<input value={newPlayerHeight} onChange={(e) => setNewPlayerHeight(e.target.value)} placeholder={"6'2\""} /></label>
-                      <label>Grade<input value={newPlayerGrade} onChange={(e) => setNewPlayerGrade(e.target.value)} placeholder="11" /></label>
-                      <button onClick={() => addPlayer(team.id)}>Add Player</button>
-                      <button className="secondary" onClick={() => setAddingPlayerForTeam(null)}>Cancel</button>
-                    </div>
-                  ) : (
-                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos("PG"); setNewPlayerHeight(""); setNewPlayerGrade(""); }}>+ Add Player</button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
 
       <section className="card">
         <h2>Scoreboard</h2>
@@ -1066,6 +929,158 @@ export function App() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── Roster Builder ─────────────────────────────────────────────── */}
+      <section className="card">
+        <div className="roster-header-row">
+          <div>
+            <h2>Roster Builder</h2>
+            <p className="text-muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
+              Teams created here are shared with the iPad Operator and all other BTA apps automatically.
+            </p>
+          </div>
+          <div className="roster-actions">
+            <button className="secondary" onClick={exportRoster}>Export JSON</button>
+            <label className="btn-import secondary">
+              Import JSON
+              <input
+                type="file"
+                accept=".json"
+                style={{ display: "none" }}
+                onChange={(e) => { if (e.target.files?.[0]) importRoster(e.target.files[0]); e.target.value = ""; }}
+              />
+            </label>
+            <button className="secondary" onClick={loadSampleTeams}>Load Samples</button>
+            <button onClick={() => { setShowNewTeamForm(true); setExpandedTeamId(null); }}>+ New Team</button>
+          </div>
+        </div>
+
+        {rosterTeams.length === 0 && !showNewTeamForm && (
+          <p className="text-muted" style={{ marginTop: "0.75rem" }}>
+            No teams yet — click <strong>+ New Team</strong> or <strong>Load Samples</strong> to get started.
+          </p>
+        )}
+
+        {showNewTeamForm && (
+          <div className="roster-new-team-form form-grid">
+            <label>
+              Team Name
+              <input
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                placeholder="e.g. Warriors"
+                onKeyDown={(e) => e.key === "Enter" && addTeam()}
+              />
+            </label>
+            <label>
+              Abbreviation
+              <input
+                value={newTeamAbbr}
+                onChange={(e) => setNewTeamAbbr(e.target.value)}
+                placeholder="e.g. WAR"
+                maxLength={4}
+              />
+            </label>
+            <button onClick={addTeam}>Create Team</button>
+            <button className="secondary" onClick={() => { setShowNewTeamForm(false); setNewTeamName(""); setNewTeamAbbr(""); }}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        <div className="roster-team-list">
+          {rosterTeams.map((team) => (
+            <div key={team.id} className="roster-team-card">
+              <div className="roster-team-header">
+                <div className="roster-team-identity">
+                  <strong className="roster-team-name">{team.name}</strong>
+                  <span className="roster-abbr">{team.abbreviation}</span>
+                  <span className="text-dim">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="roster-team-btns">
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      setExpandedTeamId(expandedTeamId === team.id ? null : team.id);
+                      setEditingPlayerId(null);
+                      setEditPlayerDraft(null);
+                      setAddingPlayerForTeam(null);
+                    }}
+                  >
+                    {expandedTeamId === team.id ? "▲ Collapse" : "▼ Edit Roster"}
+                  </button>
+                  <button className="secondary danger-btn" onClick={() => removeTeam(team.id)}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              {expandedTeamId === team.id && (
+                <div className="roster-players-area">
+                  {team.players.length === 0 && (
+                    <p className="text-dim" style={{ marginBottom: "0.5rem" }}>No players yet.</p>
+                  )}
+                  <table className="roster-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Pos</th>
+                        <th>Height</th>
+                        <th>Grade</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {team.players.map((player) =>
+                        editingPlayerId === player.id && editPlayerDraft ? (
+                          <tr key={player.id} className="roster-row-edit">
+                            <td><input className="roster-inline-input" value={editPlayerDraft.number} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, number: e.target.value })} style={{ width: "3.5rem" }} /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.name} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, name: e.target.value })} style={{ width: "100%" }} /></td>
+                            <td><select className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.height ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, height: e.target.value || undefined })} style={{ width: "4.5rem" }} placeholder={"6'2\""} /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.grade ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, grade: e.target.value || undefined })} style={{ width: "3rem" }} placeholder="11" /></td>
+                            <td className="roster-row-actions">
+                              <button style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => saveEditedPlayer(team.id)}>Save</button>
+                              <button className="secondary" style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => { setEditingPlayerId(null); setEditPlayerDraft(null); }}>✕</button>
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={player.id} className="roster-row">
+                            <td><strong>#{player.number}</strong></td>
+                            <td>{player.name}</td>
+                            <td><span className="pos-badge">{player.position}</span></td>
+                            <td className="text-dim">{player.height ?? "—"}</td>
+                            <td className="text-dim">{player.grade ? `Gr ${player.grade}` : "—"}</td>
+                            <td className="roster-row-actions">
+                              <button className="secondary" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => { setEditingPlayerId(player.id); setEditPlayerDraft({ ...player }); }}>Edit</button>
+                              <button className="secondary danger-btn" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => removePlayer(team.id, player.id)}>✕</button>
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+
+                  {addingPlayerForTeam === team.id ? (
+                    <div className="roster-add-player-form form-grid" style={{ marginTop: "0.75rem" }}>
+                      <label>Jersey #<input value={newPlayerNum} onChange={(e) => setNewPlayerNum(e.target.value)} placeholder="23" /></label>
+                      <label>Name<input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="Player Name" onKeyDown={(e) => e.key === "Enter" && addPlayer(team.id)} /></label>
+                      <label>Position<select value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
+                      <label>Height<input value={newPlayerHeight} onChange={(e) => setNewPlayerHeight(e.target.value)} placeholder={"6'2\""} /></label>
+                      <label>Grade<input value={newPlayerGrade} onChange={(e) => setNewPlayerGrade(e.target.value)} placeholder="11" /></label>
+                      <button onClick={() => addPlayer(team.id)}>Add Player</button>
+                      <button className="secondary" onClick={() => setAddingPlayerForTeam(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos("PG"); setNewPlayerHeight(""); setNewPlayerGrade(""); }}>+ Add Player</button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </section>
 
