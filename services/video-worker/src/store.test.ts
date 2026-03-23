@@ -16,7 +16,7 @@ describe("video-worker store", () => {
       gameId: "game-1",
       videoId: "vid-1",
       eventType: "tipoff",
-      period: 1,
+      period: "Q1",
       gameClockSeconds: 480,
       videoSecond: 18
     });
@@ -38,7 +38,7 @@ describe("video-worker store", () => {
       gameId: "game-2",
       videoId: "vid-2",
       eventType: "tipoff",
-      period: 1,
+      period: "Q1",
       gameClockSeconds: 480,
       videoSecond: 12
     });
@@ -48,12 +48,12 @@ describe("video-worker store", () => {
       gameId: "game-2",
       videoId: "vid-2",
       eventType: "quarter_start",
-      period: 1,
+      period: "Q1",
       gameClockSeconds: 360,
       videoSecond: 132
     });
 
-    const result = resolveVideoSecond("game-2", "vid-2", 1, 350);
+    const result = resolveVideoSecond("game-2", "vid-2", "Q1", 350);
 
     expect(result).not.toBeNull();
     expect(result?.anchorId).toBe("anchor-mid");

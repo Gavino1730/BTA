@@ -8,25 +8,38 @@ import {
   type GameEvent
 } from "./types.js";
 
+// Period must be Q1–Q4 or OT1, OT2, etc. per NFHS rules
+const periodSchema = z.string().regex(/^(Q[1-4]|OT\d+)$/, "Period must be Q1, Q2, Q3, Q4, OT1, OT2, etc.");
+
 const baseSchema = z.object({
   id: z.string().min(1),
   gameId: z.string().min(1),
   sequence: z.number().int().min(1),
   timestampIso: z.string().datetime(),
-  period: z.number().int().min(1),
+  period: periodSchema,
   clockSecondsRemaining: z.number().min(0),
   teamId: z.string().min(1),
   operatorId: z.string().min(1),
   type: z.enum(EVENT_TYPES)
 });
 
+// Field goals only (2pt or 3pt) — free throws use free_throw_attempt
 const shotAttemptSchema = baseSchema.extend({
   type: z.literal("shot_attempt"),
   playerId: z.string().min(1),
   made: z.boolean(),
-  points: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  points: z.union([z.literal(2), z.literal(3)]),
   zone: z.enum(SHOT_ZONES),
   assistedByPlayerId: z.string().min(1).optional()
+});
+
+// Individual free throw — each FT tracked as a separate event per NFHS rules
+const freeThrowAttemptSchema = baseSchema.extend({
+  type: z.literal("free_throw_attempt"),
+  playerId: z.string().min(1),
+  made: z.boolean(),
+  attemptNumber: z.number().int().min(1),
+  totalAttempts: z.number().int().min(1).max(3)
 });
 
 const reboundSchema = baseSchema.extend({
@@ -46,7 +59,9 @@ const foulSchema = baseSchema.extend({
   type: z.literal("foul"),
   playerId: z.string().min(1),
   foulType: z.enum(FOUL_TYPES),
-  onPlayerId: z.string().min(1).optional()
+  onPlayerId: z.string().min(1).optional(),
+  shootingFoulPoints: z.union([z.literal(2), z.literal(3)]).optional(),
+  andOne: z.boolean().optional()
 });
 
 const assistSchema = baseSchema.extend({
@@ -95,18 +110,15 @@ const timeoutSchema = baseSchema.extend({
   timeoutType: z.enum(TIMEOUT_TYPES)
 });
 
-const periodStartSchema = baseSchema.extend({
-  type: z.literal("period_start"),
-  period: z.number().int().min(1)
-});
-
-const periodEndSchema = baseSchema.extend({
-  type: z.literal("period_end"),
-  period: z.number().int().min(1)
+// Period transition — used to log period changes and trigger team foul resets
+const periodTransitionSchema = baseSchema.extend({
+  type: z.literal("period_transition"),
+  newPeriod: periodSchema
 });
 
 export const gameEventSchema = z.discriminatedUnion("type", [
   shotAttemptSchema,
+  freeThrowAttemptSchema,
   reboundSchema,
   turnoverSchema,
   foulSchema,
@@ -117,8 +129,7 @@ export const gameEventSchema = z.discriminatedUnion("type", [
   possessionStartSchema,
   possessionEndSchema,
   timeoutSchema,
-  periodStartSchema,
-  periodEndSchema
+  periodTransitionSchema
 ]);
 
 export function parseGameEvent(input: unknown): GameEvent {

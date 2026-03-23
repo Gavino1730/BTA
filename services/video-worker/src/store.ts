@@ -19,7 +19,8 @@ export interface SyncAnchor {
   gameId: string;
   videoId: string;
   eventType: "tipoff" | "quarter_start" | "buzzer";
-  period: number;
+  /** NFHS period string: Q1–Q4 or OT1, OT2, … */
+  period: string;
   gameClockSeconds: number;
   videoSecond: number;
   createdAtIso: string;
@@ -27,7 +28,8 @@ export interface SyncAnchor {
 
 export interface VideoResolution {
   videoId: string;
-  period: number;
+  /** NFHS period string: Q1–Q4 or OT1, OT2, … */
+  period: string;
   gameClockSeconds: number;
   resolvedVideoSecond: number;
   anchorId: string;
@@ -114,7 +116,7 @@ export function listAnchors(gameId: string): SyncAnchor[] {
 export function resolveVideoSecond(
   gameId: string,
   videoId: string,
-  period: number,
+  period: string,
   gameClockSeconds: number
 ): VideoResolution | null {
   const gameAnchors = (anchors.get(gameId) ?? []).filter(

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GameEvent } from "@bta/shared-schema";
+import { buildPeriodLabels, getPeriodDefaultClock, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 import { QRCodeSVG } from "qrcode.react";
 
 const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";

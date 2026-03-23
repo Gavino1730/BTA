@@ -12,13 +12,14 @@ function clockToSec(clock: string): number {
 
 interface RunningTotals {
   points: number; fgm: number; fga: number; threePm: number; threePa: number;
+  ftm: number; fta: number;
   oreb: number; dreb: number; ast: number; stl: number; blk: number; to: number; fouls: number;
 }
 
 function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals> {
   const map: Record<string, RunningTotals> = {};
   function get(id: string) {
-    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
+    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
     return map[id];
   }
   for (const e of events) {
@@ -31,6 +32,10 @@ function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals>
         t.points += e.points;
         if (e.points === 3) t.threePm++;
       }
+    } else if (e.type === "free_throw_attempt") {
+      const t = get(e.playerId);
+      t.fta++;
+      if (e.made) { t.ftm++; t.points += 1; }
     } else if (e.type === "rebound") {
       const t = get(e.playerId);
       if (e.offensive) t.oreb++; else t.dreb++;
@@ -55,6 +60,9 @@ function computeScores(events: GameEvent[]) {
     if (e.type === "shot_attempt" && e.made) {
       const side = e.teamId as TeamSide;
       if (side === "home" || side === "away") s[side] += e.points;
+    } else if (e.type === "free_throw_attempt" && e.made) {
+      const side = e.teamId as TeamSide;
+      if (side === "home" || side === "away") s[side] += 1;
     }
   }
   return s;
@@ -62,18 +70,36 @@ function computeScores(events: GameEvent[]) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function shot(overrides: Partial<GameEvent> & { made: boolean; points: 1 | 2 | 3; teamId: string; playerId: string }): GameEvent {
+function shot(overrides: Partial<GameEvent> & { made: boolean; points: 2 | 3; teamId: string; playerId: string }): GameEvent {
   return {
     id: `evt-${Math.random()}`,
     gameId: "g1",
     sequence: 1,
     timestampIso: "2026-03-20T00:00:00.000Z",
-    period: 1,
-    clockSecondsRemaining: 600,
+    period: "Q1",
+    clockSecondsRemaining: 480,
     operatorId: "op-1",
     type: "shot_attempt",
     zone: "paint",
     ...overrides,
+  } as GameEvent;
+}
+
+function ftEvt(playerId: string, teamId: string, made: boolean, attemptNumber = 1, totalAttempts = 2): GameEvent {
+  return {
+    id: `ft-${Math.random()}`,
+    gameId: "g1",
+    sequence: 1,
+    timestampIso: "2026-03-20T00:00:00.000Z",
+    period: "Q1",
+    clockSecondsRemaining: 480,
+    operatorId: "op-1",
+    teamId,
+    type: "free_throw_attempt",
+    playerId,
+    made,
+    attemptNumber,
+    totalAttempts,
   } as GameEvent;
 }
 
@@ -83,13 +109,13 @@ function foulEvt(playerId: string): GameEvent {
     gameId: "g1",
     sequence: 2,
     timestampIso: "2026-03-20T00:01:00.000Z",
-    period: 1,
-    clockSecondsRemaining: 580,
+    period: "Q1",
+    clockSecondsRemaining: 460,
     operatorId: "op-1",
     teamId: "home",
     type: "foul",
     playerId,
-    foulType: "reaching",
+    foulType: "personal",
   } as GameEvent;
 }
 
@@ -97,7 +123,7 @@ function foulEvt(playerId: string): GameEvent {
 
 describe("clockToSec", () => {
   it("converts MM:SS correctly", () => {
-    expect(clockToSec("12:00")).toBe(720);
+    expect(clockToSec("8:00")).toBe(480);
     expect(clockToSec("0:30")).toBe(30);
     expect(clockToSec("5:45")).toBe(345);
   });
@@ -128,10 +154,11 @@ describe("computeScores", () => {
     expect(computeScores([])).toEqual({ home: 0, away: 0 });
   });
 
-  it("counts free throws as 1 point each", () => {
+  it("counts free throws as 1 point each via free_throw_attempt events", () => {
     const events = [
-      shot({ teamId: "home", playerId: "h1", made: true, points: 1 }),
-      shot({ teamId: "home", playerId: "h1", made: true, points: 1 }),
+      ftEvt("h1", "home", true,  1, 2),
+      ftEvt("h1", "home", true,  2, 2),
+      ftEvt("h1", "home", false, 1, 1), // miss — should not count
     ];
     expect(computeScores(events).home).toBe(2);
   });
@@ -189,21 +216,22 @@ describe("computePlayerTotals", () => {
     expect(totals["a1"].threePm).toBe(1);
   });
 
-  it("counts free throw makes and misses", () => {
+  it("counts free throw makes and misses via free_throw_attempt events", () => {
     const events = [
-      shot({ teamId: "home", playerId: "h1", made: true,  points: 1 }),
-      shot({ teamId: "home", playerId: "h1", made: false, points: 1 }),
+      ftEvt("h1", "home", true,  1, 2),
+      ftEvt("h1", "home", false, 2, 2),
     ];
     const t = computePlayerTotals(events)["h1"];
     expect(t.points).toBe(1);
-    expect(t.fgm).toBe(1);
-    expect(t.fga).toBe(2);
-    expect(t.threePm).toBe(0);
-    expect(t.threePa).toBe(0);
+    expect(t.ftm).toBe(1);
+    expect(t.fta).toBe(2);
+    // FTs are not FG attempts
+    expect(t.fgm).toBe(0);
+    expect(t.fga).toBe(0);
   });
 
   it("tracks rebounds (offensive and defensive)", () => {
-    const base = { id: "r1", gameId: "g1", sequence: 1, timestampIso: "2026-03-20T00:00:00.000Z", period: 1, clockSecondsRemaining: 500, operatorId: "op-1", teamId: "home" };
+    const base = { id: "r1", gameId: "g1", sequence: 1, timestampIso: "2026-03-20T00:00:00.000Z", period: "Q1", clockSecondsRemaining: 480, operatorId: "op-1", teamId: "home" };
     const events: GameEvent[] = [
       { ...base, id: "r1", type: "rebound", playerId: "h1", offensive: true  } as GameEvent,
       { ...base, id: "r2", type: "rebound", playerId: "h1", offensive: false } as GameEvent,
@@ -215,7 +243,7 @@ describe("computePlayerTotals", () => {
   });
 
   it("tracks assists, steals, blocks, turnovers", () => {
-    const base = { id: "x", gameId: "g1", sequence: 1, timestampIso: "2026-03-20T00:00:00.000Z", period: 1, clockSecondsRemaining: 500, operatorId: "op-1", teamId: "home" };
+    const base = { id: "x", gameId: "g1", sequence: 1, timestampIso: "2026-03-20T00:00:00.000Z", period: "Q1", clockSecondsRemaining: 480, operatorId: "op-1", teamId: "home" };
     const events: GameEvent[] = [
       { ...base, id: "a1", type: "assist",   playerId: "h1", scorerPlayerId: "h2" } as GameEvent,
       { ...base, id: "a2", type: "assist",   playerId: "h1", scorerPlayerId: "h2" } as GameEvent,

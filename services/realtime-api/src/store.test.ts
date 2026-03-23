@@ -21,7 +21,7 @@ describe("store", () => {
       gameId: "game-1",
       sequence: 1,
       timestampIso: "2026-03-18T20:00:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 470,
       teamId: "home",
       operatorId: "op-1",
@@ -56,7 +56,7 @@ describe("store", () => {
       gameId: "game-2",
       sequence: 1,
       timestampIso: "2026-03-18T20:00:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 470,
       teamId: "home",
       operatorId: "op-1",
@@ -72,13 +72,13 @@ describe("store", () => {
       gameId: "game-2",
       sequence: 2,
       timestampIso: "2026-03-18T20:01:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 460,
       teamId: "away",
       operatorId: "op-1",
       type: "foul",
       playerId: "a1",
-      foulType: "reaching"
+      foulType: "personal"
     });
 
     const result = deleteEvent("game-2", "evt-a");
@@ -100,7 +100,7 @@ describe("store", () => {
       gameId: "game-3",
       sequence: 1,
       timestampIso: "2026-03-18T20:00:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 470,
       teamId: "home",
       operatorId: "op-1",
@@ -114,7 +114,7 @@ describe("store", () => {
     const result = updateEvent("game-3", "evt-shot", {
       sequence: 1,
       timestampIso: "2026-03-18T20:00:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 470,
       teamId: "home",
       operatorId: "op-1",
@@ -126,7 +126,7 @@ describe("store", () => {
     });
 
     expect(result.state.scoreByTeam.home).toBe(0);
-    expect(result.state.teamStats.home.shooting.made).toBe(0);
+    expect(result.state.teamStats.home.shooting.fgMade).toBe(0);
     expect(getGameEvents("game-3")[0].id).toBe("evt-shot");
   });
 
@@ -142,7 +142,7 @@ describe("store", () => {
       gameId: "game-4",
       sequence: 1,
       timestampIso: "2026-03-18T20:00:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 470,
       teamId: "home",
       operatorId: "op-1",
@@ -158,7 +158,7 @@ describe("store", () => {
       gameId: "game-4",
       sequence: 2,
       timestampIso: "2026-03-18T20:01:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 460,
       teamId: "away",
       operatorId: "op-1",
@@ -171,7 +171,7 @@ describe("store", () => {
       updateEvent("game-4", "evt-1", {
         sequence: 2,
         timestampIso: "2026-03-18T20:00:00.000Z",
-        period: 1,
+        period: "Q1",
         clockSecondsRemaining: 470,
         teamId: "home",
         operatorId: "op-1",

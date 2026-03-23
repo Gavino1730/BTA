@@ -10,13 +10,13 @@ describe("insight engine", () => {
       gameId: "game-1",
       sequence,
       timestampIso: "2026-03-18T20:00:00.000Z",
-      period: 1,
+      period: "Q1",
       clockSecondsRemaining: 400 - sequence,
       teamId: "home",
       operatorId: "op-1",
-      type: "foul",
+      type: "foul" as const,
       playerId: "h1",
-      foulType: "reaching"
+      foulType: "personal" as const
     }));
 
     const state = replayEvents(createInitialGameState("game-1", "home", "away"), events);

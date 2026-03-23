@@ -1,8 +1,16 @@
 import type { GameEvent } from "@bta/shared-schema";
 
+// NFHS rules constants
+/** Players foul out after 5 personal fouls (tracked game-wide including OT) */
+export const FOUL_OUT_THRESHOLD = 5;
+/** Bonus awarded when opposing team reaches 5 team fouls in a period. Always 2 FTs — no 1-and-1. */
+export const BONUS_FOUL_THRESHOLD = 5;
+
 export interface TeamShootingStats {
-  attempts: number;
-  made: number;
+  fgAttempts: number;  // field goal attempts (2pt + 3pt only)
+  fgMade: number;
+  ftAttempts: number;  // free throw attempts
+  ftMade: number;
   points: number;
 }
 
@@ -10,7 +18,7 @@ export interface TeamStats {
   reboundsOff: number;
   reboundsDef: number;
   turnovers: number;
-  fouls: number;
+  fouls: number;       // total fouls committed (all periods)
   substitutions: number;
   shooting: TeamShootingStats;
 }
@@ -19,8 +27,10 @@ export interface PlayerStats {
   playerId: string;
   teamId: string;
   points: number;
-  shotAttempts: number;
-  shotsMade: number;
+  fgAttempts: number;  // field goals attempted (2pt + 3pt)
+  fgMade: number;
+  ftAttempts: number;
+  ftMade: number;
   reboundsOff: number;
   reboundsDef: number;
   turnovers: number;
@@ -30,17 +40,63 @@ export interface PlayerStats {
   blocks: number;
 }
 
+function isOTPeriod(period: string): boolean {
+  return /^OT\d+$/.test(period);
+}
+
+/**
+ * Compute bonus status per NFHS rules:
+ * - Q1–Q4: bonus when opposing team reaches 5 team fouls in that period
+ * - OT: fouls carry over from Q4; no reset between OT periods.
+ *   Bonus based on Q4 fouls + all OT fouls (combined running total).
+ */
+function computeBonusByTeam(
+  teamFoulsByPeriod: Record<string, Record<string, number>>,
+  currentPeriod: string,
+  homeTeamId: string,
+  awayTeamId: string
+): Record<string, boolean> {
+  function periodFoulsForTeam(teamId: string): number {
+    const byPeriod = teamFoulsByPeriod[teamId] ?? {};
+    if (isOTPeriod(currentPeriod)) {
+      // Carry Q4 fouls into all OT periods; accumulate across all OT periods
+      const q4Fouls = byPeriod["Q4"] ?? 0;
+      const otFouls = Object.entries(byPeriod)
+        .filter(([p]) => isOTPeriod(p))
+        .reduce((sum, [, c]) => sum + c, 0);
+      return q4Fouls + otFouls;
+    }
+    return byPeriod[currentPeriod] ?? 0;
+  }
+
+  const homeFouls = periodFoulsForTeam(homeTeamId);
+  const awayFouls = periodFoulsForTeam(awayTeamId);
+
+  return {
+    // Home team is in bonus when away team has 5+ period fouls
+    [homeTeamId]: awayFouls >= BONUS_FOUL_THRESHOLD,
+    // Away team is in bonus when home team has 5+ period fouls
+    [awayTeamId]: homeFouls >= BONUS_FOUL_THRESHOLD,
+  };
+}
+
 export interface GameState {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
+  /** Current period (Q1, Q2, Q3, Q4, OT1, OT2, ...), updated by period_transition events */
+  currentPeriod: string;
   scoreByTeam: Record<string, number>;
   possessionsByTeam: Record<string, number>;
   activeLineupsByTeam: Record<string, string[]>;
   teamStats: Record<string, TeamStats>;
   playerStatsByTeam: Record<string, Record<string, PlayerStats>>;
+  /** Personal fouls per player across the entire game (foul out at 5) */
   playerFouls: Record<string, number>;
-  currentPeriod: number;
+  /** Team fouls indexed by teamId → period → count. Used for bonus calculation. */
+  teamFoulsByPeriod: Record<string, Record<string, number>>;
+  /** Whether each team is currently in bonus (opposing team has 5+ period fouls) */
+  bonusByTeam: Record<string, boolean>;
   events: GameEvent[];
   lastSequence: number;
 }
@@ -52,8 +108,10 @@ const emptyTeamStats = (): TeamStats => ({
   fouls: 0,
   substitutions: 0,
   shooting: {
-    attempts: 0,
-    made: 0,
+    fgAttempts: 0,
+    fgMade: 0,
+    ftAttempts: 0,
+    ftMade: 0,
     points: 0
   }
 });
@@ -64,9 +122,7 @@ function cloneTeamStats(teamStats: Record<string, TeamStats>): Record<string, Te
       teamId,
       {
         ...stats,
-        shooting: {
-          ...stats.shooting
-        }
+        shooting: { ...stats.shooting }
       }
     ])
   );
@@ -77,8 +133,10 @@ function emptyPlayerStats(playerId: string, teamId: string): PlayerStats {
     playerId,
     teamId,
     points: 0,
-    shotAttempts: 0,
-    shotsMade: 0,
+    fgAttempts: 0,
+    fgMade: 0,
+    ftAttempts: 0,
+    ftMade: 0,
     reboundsOff: 0,
     reboundsDef: 0,
     turnovers: 0,
@@ -111,6 +169,7 @@ export function createInitialGameState(
     gameId,
     homeTeamId,
     awayTeamId,
+    currentPeriod: "Q1",
     scoreByTeam: {
       [homeTeamId]: 0,
       [awayTeamId]: 0
@@ -132,7 +191,14 @@ export function createInitialGameState(
       [awayTeamId]: {}
     },
     playerFouls: {},
-    currentPeriod: 1,
+    teamFoulsByPeriod: {
+      [homeTeamId]: {},
+      [awayTeamId]: {}
+    },
+    bonusByTeam: {
+      [homeTeamId]: false,
+      [awayTeamId]: false
+    },
     events: [],
     lastSequence: 0
   };
@@ -143,6 +209,7 @@ function ensureTeamState(state: GameState, teamId: string): TeamStats {
     state.teamStats[teamId] = emptyTeamStats();
     state.scoreByTeam[teamId] = state.scoreByTeam[teamId] ?? 0;
     state.possessionsByTeam[teamId] = state.possessionsByTeam[teamId] ?? 0;
+    state.teamFoulsByPeriod[teamId] = state.teamFoulsByPeriod[teamId] ?? {};
   }
 
   return state.teamStats[teamId];
@@ -183,6 +250,7 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
 
   const state: GameState = {
     ...current,
+    currentPeriod: event.period,
     scoreByTeam: { ...current.scoreByTeam },
     possessionsByTeam: { ...current.possessionsByTeam },
     activeLineupsByTeam: Object.fromEntries(
@@ -191,7 +259,10 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
     teamStats: cloneTeamStats(current.teamStats),
     playerStatsByTeam: clonePlayerStatsByTeam(current.playerStatsByTeam),
     playerFouls: { ...current.playerFouls },
-    currentPeriod: current.currentPeriod,
+    teamFoulsByPeriod: Object.fromEntries(
+      Object.entries(current.teamFoulsByPeriod).map(([teamId, periods]) => [teamId, { ...periods }])
+    ),
+    bonusByTeam: { ...current.bonusByTeam },
     events: [...current.events, event],
     lastSequence: event.sequence
   };
@@ -200,15 +271,30 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
 
   switch (event.type) {
     case "shot_attempt": {
+      // Field goals only (2pt and 3pt)
       const playerStats = ensurePlayerStats(state, event.teamId, event.playerId);
-      teamStats.shooting.attempts += 1;
-      playerStats.shotAttempts += 1;
+      teamStats.shooting.fgAttempts += 1;
+      playerStats.fgAttempts += 1;
       if (event.made) {
-        teamStats.shooting.made += 1;
+        teamStats.shooting.fgMade += 1;
         teamStats.shooting.points += event.points;
         state.scoreByTeam[event.teamId] += event.points;
-        playerStats.shotsMade += 1;
+        playerStats.fgMade += 1;
         playerStats.points += event.points;
+      }
+      break;
+    }
+    case "free_throw_attempt": {
+      // Each free throw is a separate event per NFHS rules
+      const playerStats = ensurePlayerStats(state, event.teamId, event.playerId);
+      teamStats.shooting.ftAttempts += 1;
+      playerStats.ftAttempts += 1;
+      if (event.made) {
+        teamStats.shooting.ftMade += 1;
+        teamStats.shooting.points += 1;
+        state.scoreByTeam[event.teamId] += 1;
+        playerStats.ftMade += 1;
+        playerStats.points += 1;
       }
       break;
     }
@@ -236,6 +322,19 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
       teamStats.fouls += 1;
       playerStats.fouls += 1;
       state.playerFouls[event.playerId] = (state.playerFouls[event.playerId] ?? 0) + 1;
+
+      // Track team fouls per period for NFHS bonus calculation
+      const byPeriod = state.teamFoulsByPeriod[event.teamId] ?? {};
+      byPeriod[event.period] = (byPeriod[event.period] ?? 0) + 1;
+      state.teamFoulsByPeriod[event.teamId] = byPeriod;
+
+      // Recompute bonus after every foul
+      state.bonusByTeam = computeBonusByTeam(
+        state.teamFoulsByPeriod,
+        state.currentPeriod,
+        state.homeTeamId,
+        state.awayTeamId
+      );
       break;
     }
     case "assist": {
@@ -258,14 +357,6 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
         (state.possessionsByTeam[event.possessedByTeamId] ?? 0) + 1;
       break;
     }
-    case "period_start": {
-      state.currentPeriod = event.period;
-      break;
-    }
-    case "period_end": {
-      // period_end is informational; currentPeriod advances on period_start
-      break;
-    }
     case "substitution": {
       const activeLineup = ensureLineupState(state, event.teamId);
       const withoutOutgoing = activeLineup.filter((playerId) => playerId !== event.playerOutId);
@@ -274,6 +365,17 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
       }
       state.activeLineupsByTeam[event.teamId] = withoutOutgoing;
       teamStats.substitutions += 1;
+      break;
+    }
+    case "period_transition": {
+      // Update tracked period; bonus recomputes based on new period context
+      state.currentPeriod = event.newPeriod;
+      state.bonusByTeam = computeBonusByTeam(
+        state.teamFoulsByPeriod,
+        state.currentPeriod,
+        state.homeTeamId,
+        state.awayTeamId
+      );
       break;
     }
     default: {
@@ -292,3 +394,10 @@ export function replayEvents(initial: GameState, events: GameEvent[]): GameState
     .sort((a, b) => a.sequence - b.sequence)
     .reduce((state, event) => applyEvent(state, event), initial);
 }
+
+/** Returns true if the player has fouled out (5 personal fouls per NFHS rules) */
+export function isPlayerFouledOut(state: GameState, playerId: string): boolean {
+  return (state.playerFouls[playerId] ?? 0) >= FOUL_OUT_THRESHOLD;
+}
+
+
