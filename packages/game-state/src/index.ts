@@ -84,6 +84,10 @@ export interface GameState {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
+  /** Opponent team name displayed on scoreboard */
+  opponentName?: string;
+  /** Opponent team ID ("home" or "away") for identifying which side is the opponent */
+  opponentTeamId?: string;
   /** Current period (Q1, Q2, Q3, Q4, OT1, OT2, ...), updated by period_transition events */
   currentPeriod: string;
   scoreByTeam: Record<string, number>;
@@ -163,12 +167,16 @@ function clonePlayerStatsByTeam(
 export function createInitialGameState(
   gameId: string,
   homeTeamId: string,
-  awayTeamId: string
+  awayTeamId: string,
+  opponentName?: string,
+  opponentTeamId?: string
 ): GameState {
   return {
     gameId,
     homeTeamId,
     awayTeamId,
+    opponentName,
+    opponentTeamId,
     currentPeriod: "Q1",
     scoreByTeam: {
       [homeTeamId]: 0,

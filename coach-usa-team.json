@@ -17,15 +17,5 @@
         { "id": "usa-34", "number": "34", "name": "Shaquille O'Neal", "position": "C", "height": "7'1\"", "grade": "Pro" }
       ]
     }
-  ],
-  "gameSetup": {
-    "gameId": "2026-03-22-usa",
-    "myTeamId": "team-usa",
-    "apiUrl": "http://localhost:4000",
-    "apiKey": "",
-    "opponent": "Practice Opponent",
-    "vcSide": "home",
-    "dashboardUrl": "http://localhost:5000",
-    "statsGameId": null
-  }
+  ]
 }
