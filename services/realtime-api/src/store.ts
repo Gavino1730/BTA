@@ -21,11 +21,15 @@ export interface CreateGameInput {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
+  opponentName?: string;
+  opponentTeamId?: string;
 }
 
 interface GameSession {
   homeTeamId: string;
   awayTeamId: string;
+  opponentName?: string;
+  opponentTeamId?: string;
   state: GameState;
   eventsById: Map<string, GameEvent>;
   eventIdsBySequence: Map<number, string>;
@@ -36,6 +40,8 @@ interface PersistedGameSession {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
+  opponentName?: string;
+  opponentTeamId?: string;
   events: GameEvent[];
 }
 
@@ -55,6 +61,8 @@ function persistSessions() {
     gameId: session.state.gameId,
     homeTeamId: session.homeTeamId,
     awayTeamId: session.awayTeamId,
+    opponentName: session.opponentName,
+    opponentTeamId: session.opponentTeamId,
     events: listOrderedEvents(session)
   }));
 
@@ -71,11 +79,15 @@ function restoreSessions() {
     const initialState = createInitialGameState(
       session.gameId,
       session.homeTeamId,
-      session.awayTeamId
+      session.awayTeamId,
+      session.opponentName,
+      session.opponentTeamId
     );
     const restoredSession: GameSession = {
       homeTeamId: session.homeTeamId,
       awayTeamId: session.awayTeamId,
+      opponentName: session.opponentName,
+      opponentTeamId: session.opponentTeamId,
       state: replayEvents(initialState, session.events),
       eventsById: new Map(session.events.map((event) => [event.id, event])),
       eventIdsBySequence: new Map(session.events.map((event) => [event.sequence, event.id])),
@@ -93,12 +105,16 @@ export function createGame(input: CreateGameInput): GameState {
   const state = createInitialGameState(
     input.gameId,
     input.homeTeamId,
-    input.awayTeamId
+    input.awayTeamId,
+    input.opponentName,
+    input.opponentTeamId
   );
 
   sessions.set(input.gameId, {
     homeTeamId: input.homeTeamId,
     awayTeamId: input.awayTeamId,
+    opponentName: input.opponentName,
+    opponentTeamId: input.opponentTeamId,
     state,
     eventsById: new Map<string, GameEvent>(),
     eventIdsBySequence: new Map<number, string>(),

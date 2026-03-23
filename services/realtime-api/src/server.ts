@@ -39,7 +39,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/games", requireApiKey, (req, res) => {
-  const { gameId, homeTeamId, awayTeamId } = req.body ?? {};
+  const { gameId, homeTeamId, awayTeamId, opponentName, opponentTeamId } = req.body ?? {};
 
   if (!gameId || !homeTeamId || !awayTeamId) {
     res.status(400).json({ error: "gameId, homeTeamId, awayTeamId are required" });
@@ -49,7 +49,9 @@ app.post("/games", requireApiKey, (req, res) => {
   const state = createGame({
     gameId,
     homeTeamId,
-    awayTeamId
+    awayTeamId,
+    opponentName,
+    opponentTeamId
   });
 
   io.to(gameId).emit("game:state", state);

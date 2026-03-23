@@ -43,6 +43,10 @@ interface PlayerStats {
 
 interface GameState {
   gameId: string;
+  opponentName?: string;
+  opponentTeamId?: string;
+  homeTeamId?: string;
+  awayTeamId?: string;
   currentPeriod: Period;
   scoreByTeam: Record<string, number>;
   bonusByTeam: Record<string, boolean>;
@@ -58,6 +62,87 @@ interface GameState {
     period: Period;
     clockSecondsRemaining: number;
   }>;
+}
+
+function emptyTeamStats(): TeamStats {
+  return {
+    shooting: {
+      fgAttempts: 0,
+      fgMade: 0,
+      ftAttempts: 0,
+      ftMade: 0,
+      points: 0,
+    },
+    turnovers: 0,
+    fouls: 0,
+    reboundsOff: 0,
+    reboundsDef: 0,
+    substitutions: 0,
+  };
+}
+
+function mergeTeamStats(target: TeamStats, source?: TeamStats): TeamStats {
+  if (!source) {
+    return target;
+  }
+
+  target.shooting.fgAttempts += source.shooting.fgAttempts;
+  target.shooting.fgMade += source.shooting.fgMade;
+  target.shooting.ftAttempts += source.shooting.ftAttempts;
+  target.shooting.ftMade += source.shooting.ftMade;
+  target.shooting.points += source.shooting.points;
+  target.turnovers += source.turnovers;
+  target.fouls += source.fouls;
+  target.reboundsOff += source.reboundsOff;
+  target.reboundsDef += source.reboundsDef;
+  target.substitutions += source.substitutions;
+
+  return target;
+}
+
+function mergePlayerStats(
+  target: Record<string, PlayerStats>,
+  source?: Record<string, PlayerStats>
+): Record<string, PlayerStats> {
+  if (!source) {
+    return target;
+  }
+
+  for (const player of Object.values(source)) {
+    const existing = target[player.playerId] ?? {
+      ...player,
+      points: 0,
+      fgAttempts: 0,
+      fgMade: 0,
+      ftAttempts: 0,
+      ftMade: 0,
+      reboundsOff: 0,
+      reboundsDef: 0,
+      turnovers: 0,
+      fouls: 0,
+      assists: 0,
+      steals: 0,
+      blocks: 0,
+    };
+
+    existing.teamId = player.teamId;
+    existing.points += player.points;
+    existing.fgAttempts += player.fgAttempts;
+    existing.fgMade += player.fgMade;
+    existing.ftAttempts += player.ftAttempts;
+    existing.ftMade += player.ftMade;
+    existing.reboundsOff += player.reboundsOff;
+    existing.reboundsDef += player.reboundsDef;
+    existing.turnovers += player.turnovers;
+    existing.fouls += player.fouls;
+    existing.assists += player.assists;
+    existing.steals += player.steals;
+    existing.blocks += player.blocks;
+
+    target[player.playerId] = existing;
+  }
+
+  return target;
 }
 
 interface Insight {
@@ -91,6 +176,89 @@ interface VideoResolution {
   resolvedVideoSecond: number;
   anchorId: string;
 }
+
+// ── Roster Builder ──────────────────────────────────────────────────────────
+// Uses the same localStorage key as the iPad Operator so rosters are shared.
+const ROSTER_STORAGE_KEY = "bta-app-data-v3";
+const POSITIONS = ["PG", "SG", "SF", "PF", "C"] as const;
+
+export interface RosterPlayer {
+  id: string;
+  number: string;
+  name: string;
+  position: string;
+  height?: string;
+  grade?: string;
+}
+
+export interface RosterTeam {
+  id: string;
+  name: string;
+  abbreviation: string;
+  players: RosterPlayer[];
+}
+
+const SAMPLE_TEAMS: RosterTeam[] = [
+  {
+    id: "team-home",
+    name: "Warriors",
+    abbreviation: "WAR",
+    players: [
+      { id: "player-1",  number: "23", name: "Marcus Johnson",  position: "SG", height: "6'4\"", grade: "12" },
+      { id: "player-2",  number: "24", name: "Chris Williams",  position: "SF", height: "6'7\"", grade: "12" },
+      { id: "player-3",  number: "25", name: "Alex Davis",      position: "PF", height: "6'9\"", grade: "11" },
+      { id: "player-4",  number: "30", name: "James Brown",     position: "C",  height: "6'11\"", grade: "12" },
+      { id: "player-5",  number: "32", name: "David Martinez",  position: "PG", height: "6'1\"", grade: "11" },
+      { id: "player-6",  number: "41", name: "Kevin Anderson",  position: "SG", height: "6'3\"", grade: "10" },
+      { id: "player-7",  number: "42", name: "Ryan Thompson",   position: "SF", height: "6'5\"", grade: "10" },
+      { id: "player-8",  number: "43", name: "Evan Taylor",     position: "PF", height: "6'8\"", grade: "11" },
+      { id: "player-9",  number: "55", name: "Mike Thomas",     position: "C",  height: "6'10\"", grade: "10" },
+      { id: "player-10", number: "10", name: "Josh Wilson",     position: "PG", height: "6'0\"", grade: "10" },
+    ],
+  },
+  {
+    id: "team-away",
+    name: "Tigers",
+    abbreviation: "TIG",
+    players: [
+      { id: "player-20", number: "21", name: "Tyler Rodriguez", position: "SG", height: "6'3\"", grade: "12" },
+      { id: "player-21", number: "22", name: "Jordan Lee",      position: "SF", height: "6'6\"", grade: "12" },
+      { id: "player-22", number: "33", name: "Ben Clark",       position: "PF", height: "6'8\"", grade: "11" },
+      { id: "player-23", number: "34", name: "Zach Hall",       position: "C",  height: "6'10\"", grade: "12" },
+      { id: "player-24", number: "5",  name: "Carlos Reyes",    position: "PG", height: "6'0\"", grade: "11" },
+      { id: "player-25", number: "11", name: "Dylan Scott",     position: "SG", height: "6'2\"", grade: "10" },
+      { id: "player-26", number: "12", name: "Austin King",     position: "SF", height: "6'4\"", grade: "10" },
+      { id: "player-27", number: "13", name: "Cole Young",      position: "PF", height: "6'7\"", grade: "9"  },
+      { id: "player-28", number: "14", name: "Blake Harris",    position: "C",  height: "6'9\"", grade: "10" },
+      { id: "player-29", number: "3",  name: "Aiden Walker",    position: "PG", height: "5'11\"", grade: "9" },
+    ],
+  },
+];
+
+function loadRosterTeams(): RosterTeam[] {
+  try {
+    const raw = localStorage.getItem(ROSTER_STORAGE_KEY);
+    if (raw) return (JSON.parse(raw) as { teams?: RosterTeam[] }).teams ?? [];
+  } catch { /* corrupt */ }
+  return [];
+}
+
+function saveRosterTeams(teams: RosterTeam[]): void {
+  try {
+    const raw = localStorage.getItem(ROSTER_STORAGE_KEY);
+    const existing: Record<string, unknown> = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    localStorage.setItem(ROSTER_STORAGE_KEY, JSON.stringify({ ...existing, teams }));
+  } catch { /* storage full */ }
+}
+
+function slugifyTeamName(name: string): string {
+  return `team-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || Date.now()}`;
+}
+
+function newPlayerId(): string {
+  return `player-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 const apiBase = import.meta.env.VITE_API ?? "http://localhost:4000";
 const videoBase = import.meta.env.VITE_VIDEO_API ?? "http://localhost:4100";
@@ -129,6 +297,110 @@ export function App() {
   const [videoSecond, setVideoSecond] = useState("12");
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [eventClipMap, setEventClipMap] = useState<Record<string, VideoResolution>>({});
+
+  // ── Roster Builder state ─────────────────────────────────────────────────
+  const [rosterTeams, setRosterTeamsState] = useState<RosterTeam[]>(loadRosterTeams);
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [editPlayerDraft, setEditPlayerDraft] = useState<RosterPlayer | null>(null);
+  const [showNewTeamForm, setShowNewTeamForm] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamAbbr, setNewTeamAbbr] = useState("");
+  const [addingPlayerForTeam, setAddingPlayerForTeam] = useState<string | null>(null);
+  const [newPlayerNum, setNewPlayerNum] = useState("");
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [newPlayerPos, setNewPlayerPos] = useState("PG");
+  const [newPlayerHeight, setNewPlayerHeight] = useState("");
+  const [newPlayerGrade, setNewPlayerGrade] = useState("");
+
+  function setRosterTeams(next: RosterTeam[]) {
+    setRosterTeamsState(next);
+    saveRosterTeams(next);
+  }
+
+  function addTeam() {
+    if (!newTeamName.trim()) return;
+    let id = slugifyTeamName(newTeamName);
+    let suffix = 2;
+    while (rosterTeams.some((t) => t.id === id)) { id = `${slugifyTeamName(newTeamName)}-${suffix++}`; }
+    const abbr = newTeamAbbr.trim().toUpperCase().slice(0, 4) || newTeamName.trim().slice(0, 3).toUpperCase();
+    const team: RosterTeam = { id, name: newTeamName.trim(), abbreviation: abbr, players: [] };
+    setRosterTeams([...rosterTeams, team]);
+    setNewTeamName("");
+    setNewTeamAbbr("");
+    setShowNewTeamForm(false);
+    setExpandedTeamId(id);
+  }
+
+  function removeTeam(id: string) {
+    if (!window.confirm(`Remove team "${rosterTeams.find((t) => t.id === id)?.name ?? id}"?`)) return;
+    setRosterTeams(rosterTeams.filter((t) => t.id !== id));
+    if (expandedTeamId === id) setExpandedTeamId(null);
+  }
+
+  function addPlayer(teamId: string) {
+    if (!newPlayerName.trim() || !newPlayerNum.trim()) return;
+    const player: RosterPlayer = {
+      id: newPlayerId(),
+      number: newPlayerNum.trim(),
+      name: newPlayerName.trim(),
+      position: newPlayerPos,
+      height: newPlayerHeight.trim() || undefined,
+      grade: newPlayerGrade.trim() || undefined,
+    };
+    setRosterTeams(rosterTeams.map((t) => t.id === teamId ? { ...t, players: [...t.players, player] } : t));
+    setAddingPlayerForTeam(null);
+    setNewPlayerNum("");
+    setNewPlayerName("");
+    setNewPlayerPos("PG");
+    setNewPlayerHeight("");
+    setNewPlayerGrade("");
+  }
+
+  function removePlayer(teamId: string, playerId: string) {
+    setRosterTeams(rosterTeams.map((t) => t.id === teamId ? { ...t, players: t.players.filter((p) => p.id !== playerId) } : t));
+    if (editingPlayerId === playerId) { setEditingPlayerId(null); setEditPlayerDraft(null); }
+  }
+
+  function saveEditedPlayer(teamId: string) {
+    if (!editPlayerDraft) return;
+    setRosterTeams(rosterTeams.map((t) =>
+      t.id === teamId ? { ...t, players: t.players.map((p) => p.id === editPlayerDraft.id ? editPlayerDraft : p) } : t
+    ));
+    setEditingPlayerId(null);
+    setEditPlayerDraft(null);
+  }
+
+  function exportRoster() {
+    const json = JSON.stringify({ teams: rosterTeams }, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bta-roster.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importRoster(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target!.result as string) as { teams?: RosterTeam[] };
+        if (Array.isArray(data.teams)) setRosterTeams(data.teams);
+      } catch { /* invalid JSON */ }
+    };
+    reader.readAsText(file);
+  }
+
+  function loadSampleTeams() {
+    if (rosterTeams.length > 0 && !window.confirm("This will replace your current roster with sample teams. Continue?")) return;
+    setRosterTeams(SAMPLE_TEAMS);
+    setExpandedTeamId(SAMPLE_TEAMS[0]?.id ?? null);
+    setEditingPlayerId(null);
+    setEditPlayerDraft(null);
+    setAddingPlayerForTeam(null);
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -201,9 +473,96 @@ export function App() {
     });
   }, [gameId]);
 
-  const teams = useMemo(() => {
-    return Object.keys(state?.scoreByTeam ?? {});
+  function canonicalTeamId(teamId: string): string {
+    const normalized = teamId.toLowerCase();
+    const isHomeAlias = normalized === "home" || normalized === "team-home";
+    const isAwayAlias = normalized === "away" || normalized === "team-away";
+
+    if (isHomeAlias) {
+      if (setupNames.vcSide === "home" && setupNames.myTeamId) {
+        return setupNames.myTeamId;
+      }
+      if (state?.homeTeamId && state.homeTeamId !== teamId) {
+        return state.homeTeamId;
+      }
+      if (state?.opponentTeamId) {
+        return state.opponentTeamId;
+      }
+    }
+
+    if (isAwayAlias) {
+      if (setupNames.vcSide === "away" && setupNames.myTeamId) {
+        return setupNames.myTeamId;
+      }
+      if (state?.awayTeamId && state.awayTeamId !== teamId) {
+        return state.awayTeamId;
+      }
+      if (state?.opponentTeamId) {
+        return state.opponentTeamId;
+      }
+    }
+
+    return teamId;
+  }
+
+  const rawTeamIds = useMemo(() => {
+    return [...new Set([
+      ...Object.keys(state?.scoreByTeam ?? {}),
+      ...Object.keys(state?.bonusByTeam ?? {}),
+      ...Object.keys(state?.possessionsByTeam ?? {}),
+      ...Object.keys(state?.activeLineupsByTeam ?? {}),
+      ...Object.keys(state?.teamStats ?? {}),
+      ...Object.keys(state?.playerStatsByTeam ?? {}),
+    ])];
   }, [state]);
+
+  const aggregatedTeams = useMemo(() => {
+    const aggregated: Record<string, {
+      score: number;
+      bonus: boolean;
+      possessions: number;
+      activeLineup: string[];
+      teamStats: TeamStats;
+      playerStats: Record<string, PlayerStats>;
+    }> = {};
+
+    function ensureTeam(teamId: string) {
+      aggregated[teamId] ??= {
+        score: 0,
+        bonus: false,
+        possessions: 0,
+        activeLineup: [],
+        teamStats: emptyTeamStats(),
+        playerStats: {},
+      };
+
+      return aggregated[teamId];
+    }
+
+    for (const rawTeamId of rawTeamIds) {
+      const teamId = canonicalTeamId(rawTeamId);
+      const target = ensureTeam(teamId);
+      target.score += state?.scoreByTeam?.[rawTeamId] ?? 0;
+      target.bonus = target.bonus || (state?.bonusByTeam?.[rawTeamId] ?? false);
+      target.possessions += state?.possessionsByTeam?.[rawTeamId] ?? 0;
+      target.activeLineup = [...new Set([
+        ...target.activeLineup,
+        ...(state?.activeLineupsByTeam?.[rawTeamId] ?? []),
+      ])];
+      mergeTeamStats(target.teamStats, state?.teamStats?.[rawTeamId]);
+      mergePlayerStats(target.playerStats, state?.playerStatsByTeam?.[rawTeamId]);
+    }
+
+    return aggregated;
+  }, [rawTeamIds, setupNames.myTeamId, setupNames.vcSide, state]);
+
+  const teams = useMemo(() => {
+    const preferred = [state?.homeTeamId, state?.awayTeamId]
+      .filter((teamId): teamId is string => Boolean(teamId))
+      .map((teamId) => canonicalTeamId(teamId));
+
+    return [...new Set([...preferred, ...Object.keys(aggregatedTeams)])];
+  }, [aggregatedTeams, state?.awayTeamId, state?.homeTeamId]);
 
   function toTitleCase(value: string): string {
     return value
@@ -230,11 +589,18 @@ export function App() {
       if (setupNames.vcSide === "away" && isAwayAlias) return setupNames.myTeamName;
     }
 
-    if (setupNames.opponentName) {
-      if (setupNames.vcSide === "home" && isAwayAlias) return setupNames.opponentName;
-      if (setupNames.vcSide === "away" && isHomeAlias) return setupNames.opponentName;
+    // Check both setupNames and game state for opponent name
+    const opponentName = setupNames.opponentName || state?.opponentName || "";
+    if (opponentName) {
+      // If the teamId matches the opponent team ID from game state
+      if (state?.opponentTeamId && teamId === state.opponentTeamId) {
+        return opponentName;
+      }
+      // Fallback to side-based matching for URL param setup
+      if (setupNames.vcSide === "home" && isAwayAlias) return opponentName;
+      if (setupNames.vcSide === "away" && isHomeAlias) return opponentName;
       if (setupNames.myTeamId && teamId !== setupNames.myTeamId && teams.length === 2) {
-        return setupNames.opponentName;
+        return opponentName;
       }
     }
 
@@ -244,7 +610,7 @@ export function App() {
   const leadersByTeam = useMemo(() => {
     return Object.fromEntries(
       teams.map((teamId) => {
-        const players = Object.values(state?.playerStatsByTeam?.[teamId] ?? {});
+        const players = Object.values(aggregatedTeams[teamId]?.playerStats ?? {});
         const scoringLeader = players
           .slice()
           .sort((left, right) => right.points - left.points || left.playerId.localeCompare(right.playerId))[0];
@@ -261,7 +627,7 @@ export function App() {
         foulLeader?: PlayerStats;
       }
     >;
-  }, [state, teams]);
+  }, [aggregatedTeams, teams]);
 
   const selectedVideoForResolution = useMemo(() => {
     const synced = videos.find((video) => video.status === "synced");
@@ -353,7 +719,6 @@ export function App() {
           <p className="eyebrow">Bench Intelligence</p>
           <h1>BTA Coach Dashboard</h1>
           <p>{dashboardStatus}</p>
-          <p>NFHS live view: 8:00 quarters, 4:00 overtime, bonus at 5 team fouls.</p>
         </div>
         <div className="header-controls">
           <label>
@@ -369,6 +734,158 @@ export function App() {
         </div>
       </header>
 
+      {/* ── Roster Builder ─────────────────────────────────────────────── */}
+      <section className="card">
+        <div className="roster-header-row">
+          <div>
+            <h2>Roster Builder</h2>
+            <p className="text-muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
+              Teams created here are shared with the iPad Operator and all other BTA apps automatically.
+            </p>
+          </div>
+          <div className="roster-actions">
+            <button className="secondary" onClick={exportRoster}>Export JSON</button>
+            <label className="btn-import secondary">
+              Import JSON
+              <input
+                type="file"
+                accept=".json"
+                style={{ display: "none" }}
+                onChange={(e) => { if (e.target.files?.[0]) importRoster(e.target.files[0]); e.target.value = ""; }}
+              />
+            </label>
+            <button className="secondary" onClick={loadSampleTeams}>Load Samples</button>
+            <button onClick={() => { setShowNewTeamForm(true); setExpandedTeamId(null); }}>+ New Team</button>
+          </div>
+        </div>
+
+        {rosterTeams.length === 0 && !showNewTeamForm && (
+          <p className="text-muted" style={{ marginTop: "0.75rem" }}>
+            No teams yet — click <strong>+ New Team</strong> or <strong>Load Samples</strong> to get started.
+          </p>
+        )}
+
+        {showNewTeamForm && (
+          <div className="roster-new-team-form form-grid">
+            <label>
+              Team Name
+              <input
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                placeholder="e.g. Warriors"
+                onKeyDown={(e) => e.key === "Enter" && addTeam()}
+              />
+            </label>
+            <label>
+              Abbreviation
+              <input
+                value={newTeamAbbr}
+                onChange={(e) => setNewTeamAbbr(e.target.value)}
+                placeholder="e.g. WAR"
+                maxLength={4}
+              />
+            </label>
+            <button onClick={addTeam}>Create Team</button>
+            <button className="secondary" onClick={() => { setShowNewTeamForm(false); setNewTeamName(""); setNewTeamAbbr(""); }}>
+              Cancel
+            </button>
+          </div>
+        )}
+
+        <div className="roster-team-list">
+          {rosterTeams.map((team) => (
+            <div key={team.id} className="roster-team-card">
+              <div className="roster-team-header">
+                <div className="roster-team-identity">
+                  <strong className="roster-team-name">{team.name}</strong>
+                  <span className="roster-abbr">{team.abbreviation}</span>
+                  <span className="text-dim">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="roster-team-btns">
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      setExpandedTeamId(expandedTeamId === team.id ? null : team.id);
+                      setEditingPlayerId(null);
+                      setEditPlayerDraft(null);
+                      setAddingPlayerForTeam(null);
+                    }}
+                  >
+                    {expandedTeamId === team.id ? "▲ Collapse" : "▼ Edit Roster"}
+                  </button>
+                  <button className="secondary danger-btn" onClick={() => removeTeam(team.id)}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              {expandedTeamId === team.id && (
+                <div className="roster-players-area">
+                  {team.players.length === 0 && (
+                    <p className="text-dim" style={{ marginBottom: "0.5rem" }}>No players yet.</p>
+                  )}
+                  <table className="roster-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Pos</th>
+                        <th>Height</th>
+                        <th>Grade</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {team.players.map((player) =>
+                        editingPlayerId === player.id && editPlayerDraft ? (
+                          <tr key={player.id} className="roster-row-edit">
+                            <td><input className="roster-inline-input" value={editPlayerDraft.number} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, number: e.target.value })} style={{ width: "3.5rem" }} /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.name} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, name: e.target.value })} style={{ width: "100%" }} /></td>
+                            <td><select className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.height ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, height: e.target.value || undefined })} style={{ width: "4.5rem" }} placeholder={"6'2\""} /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.grade ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, grade: e.target.value || undefined })} style={{ width: "3rem" }} placeholder="11" /></td>
+                            <td className="roster-row-actions">
+                              <button style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => saveEditedPlayer(team.id)}>Save</button>
+                              <button className="secondary" style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => { setEditingPlayerId(null); setEditPlayerDraft(null); }}>✕</button>
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={player.id} className="roster-row">
+                            <td><strong>#{player.number}</strong></td>
+                            <td>{player.name}</td>
+                            <td><span className="pos-badge">{player.position}</span></td>
+                            <td className="text-dim">{player.height ?? "—"}</td>
+                            <td className="text-dim">{player.grade ? `Gr ${player.grade}` : "—"}</td>
+                            <td className="roster-row-actions">
+                              <button className="secondary" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => { setEditingPlayerId(player.id); setEditPlayerDraft({ ...player }); }}>Edit</button>
+                              <button className="secondary danger-btn" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => removePlayer(team.id, player.id)}>✕</button>
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+
+                  {addingPlayerForTeam === team.id ? (
+                    <div className="roster-add-player-form form-grid" style={{ marginTop: "0.75rem" }}>
+                      <label>Jersey #<input value={newPlayerNum} onChange={(e) => setNewPlayerNum(e.target.value)} placeholder="23" /></label>
+                      <label>Name<input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="Player Name" onKeyDown={(e) => e.key === "Enter" && addPlayer(team.id)} /></label>
+                      <label>Position<select value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
+                      <label>Height<input value={newPlayerHeight} onChange={(e) => setNewPlayerHeight(e.target.value)} placeholder={"6'2\""} /></label>
+                      <label>Grade<input value={newPlayerGrade} onChange={(e) => setNewPlayerGrade(e.target.value)} placeholder="11" /></label>
+                      <button onClick={() => addPlayer(team.id)}>Add Player</button>
+                      <button className="secondary" onClick={() => setAddingPlayerForTeam(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos("PG"); setNewPlayerHeight(""); setNewPlayerGrade(""); }}>+ Add Player</button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="card">
         <h2>Scoreboard</h2>
         {teams.length === 0 ? <p>No live game state yet.</p> : null}
@@ -380,22 +897,22 @@ export function App() {
             >
               <header className="score-item-header">
                 <h3>{displayTeamName(teamId)}</h3>
-                <p className="score">{state?.scoreByTeam[teamId] ?? 0}</p>
+                <p className="score">{aggregatedTeams[teamId]?.score ?? 0}</p>
               </header>
 
               <div className="score-meta-grid">
-                <p className="metric-row"><span>FGM / FGA</span><strong>{state?.teamStats[teamId]?.shooting.fgMade ?? 0}/{state?.teamStats[teamId]?.shooting.fgAttempts ?? 0}</strong></p>
-                <p className="metric-row"><span>FTM / FTA</span><strong>{state?.teamStats[teamId]?.shooting.ftMade ?? 0}/{state?.teamStats[teamId]?.shooting.ftAttempts ?? 0}</strong></p>
-                <p className="metric-row"><span>Possessions</span><strong>{state?.possessionsByTeam[teamId] ?? 0}</strong></p>
-                <p className="metric-row"><span>Turnovers</span><strong>{state?.teamStats[teamId]?.turnovers ?? 0}</strong></p>
-                <p className="metric-row"><span>Team fouls</span><strong>{state?.teamStats[teamId]?.fouls ?? 0}</strong></p>
-                <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(state?.bonusByTeam?.[teamId] ?? false)}</strong></p>
-                <p className="metric-row"><span>Subs</span><strong>{state?.teamStats[teamId]?.substitutions ?? 0}</strong></p>
+                <p className="metric-row"><span>FGM / FGA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.fgMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.fgAttempts ?? 0}</strong></p>
+                <p className="metric-row"><span>FTM / FTA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.ftMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.ftAttempts ?? 0}</strong></p>
+                <p className="metric-row"><span>Possessions</span><strong>{aggregatedTeams[teamId]?.possessions ?? 0}</strong></p>
+                <p className="metric-row"><span>Turnovers</span><strong>{aggregatedTeams[teamId]?.teamStats.turnovers ?? 0}</strong></p>
+                <p className="metric-row"><span>Team fouls</span><strong>{aggregatedTeams[teamId]?.teamStats.fouls ?? 0}</strong></p>
+                <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(aggregatedTeams[teamId]?.bonus ?? false)}</strong></p>
+                <p className="metric-row"><span>Subs</span><strong>{aggregatedTeams[teamId]?.teamStats.substitutions ?? 0}</strong></p>
                 <p className="metric-row metric-wrap">
                   <span>Active lineup</span>
                   <strong>
-                    {(state?.activeLineupsByTeam[teamId] ?? []).length > 0
-                      ? state?.activeLineupsByTeam[teamId].join(", ")
+                    {(aggregatedTeams[teamId]?.activeLineup ?? []).length > 0
+                      ? aggregatedTeams[teamId]?.activeLineup.join(", ")
                       : "not set"}
                   </strong>
                 </p>
@@ -460,7 +977,7 @@ export function App() {
                   void resolveEventClip(event.id, event.period, event.clockSecondsRemaining)
                 }
               >
-                Resolve Clip
+                Clip
               </button>
             </article>
           ))}
@@ -552,6 +1069,7 @@ export function App() {
           </div>
         </div>
       </section>
+
     </div>
   );
 }

@@ -651,17 +651,26 @@ export function App() {
   // Ref for auto-save interval — always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
+  // Helper to generate team ID from name
+  function generateTeamId(name: string): string {
+    return `team-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`;
+  }
+
   // ---- Derived: home/away teams ----
   // myTeamId is the team we are tracking; side determines which slot they fill.
   const myTeam = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
   const vcSideSetup = appData.gameSetup.vcSide ?? "home";
   const homeTeam = vcSideSetup === "home" ? myTeam : undefined;
   const awayTeam  = vcSideSetup === "away" ? myTeam : undefined;
-  const homeTeamId = vcSideSetup === "home" ? (appData.gameSetup.myTeamId || "home") : "home";
-  const awayTeamId = vcSideSetup === "away" ? (appData.gameSetup.myTeamId || "away") : "away";
+  const opponentName = appData.gameSetup.opponent?.trim() || "";
+  const opponentTeamId = opponentName ? generateTeamId(opponentName) : "opponent";
+  const homeTeamId = vcSideSetup === "home" ? (appData.gameSetup.myTeamId || "team-home") : opponentTeamId;
+  const awayTeamId = vcSideSetup === "away" ? (appData.gameSetup.myTeamId || "team-away") : opponentTeamId;
   const vcTeamId = vcSideSetup === "home" ? homeTeamId : awayTeamId;
-  const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : "Home";
-  const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : "Away";
+  const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : opponentName || "Home";
+  const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : opponentName || "Away";
+  const liveHomeSideLabel = `${homeTeamName} (home)`;
+  const liveAwaySideLabel = `${awayTeamName} (away)`;
   const homePlayers = homeTeam?.players ?? [];
   const awayPlayers = awayTeam?.players ?? [];
   const allPlayers = [...homePlayers, ...awayPlayers];
@@ -674,6 +683,8 @@ export function App() {
     if (event.teamId === homeTeamId || event.teamId === awayTeamId) return event;
     if (event.teamId === "home") return { ...event, teamId: homeTeamId };
     if (event.teamId === "away") return { ...event, teamId: awayTeamId };
+    if (event.teamId === "team-home") return { ...event, teamId: homeTeamId };
+    if (event.teamId === "team-away") return { ...event, teamId: awayTeamId };
     return event;
   }
 
@@ -781,6 +792,8 @@ export function App() {
         gameId: gid,
         homeTeamId,
         awayTeamId,
+        opponentName: opponentName,
+        opponentTeamId,
       }),
     });
     if (res.ok) {
@@ -1207,12 +1220,12 @@ export function App() {
               <button
                 className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
                 onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
-                Home
+                {liveHomeSideLabel}
               </button>
               <button
                 className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
                 onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
-                Away
+                {liveAwaySideLabel}
               </button>
             </div>
           </div>
@@ -1353,6 +1366,15 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
   const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
+  const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
+  const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
+  const gsOpponentName = gsOpponent.trim() || "Opponent";
+  const gsHomeSideLabel = gsVcSide === "home"
+    ? `${gsMyTeamName} (home)`
+    : `${gsOpponentName} (home)`;
+  const gsAwaySideLabel = gsVcSide === "away"
+    ? `${gsMyTeamName} (away)`
+    : `${gsOpponentName} (away)`;
 
   // ---- New team form ----
   const [newTeamName, setNewTeamName] = useState("");
@@ -1618,8 +1640,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <h3>Your Side</h3>
           <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
           <div className="team-toggle">
-            <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>Home (teal)</button>
-            <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>Away (red)</button>
+            <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
+            <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
           </div>
         </section>
 
@@ -1702,6 +1724,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   // ================================================================
   const myTeamForMenu = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
   const vcSideForMenu = appData.gameSetup.vcSide ?? "home";
+  const menuSideLabel = vcSideForMenu === "home" ? "home" : "away";
 
   return (
     <div className="settings-page">
@@ -1718,7 +1741,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">Game Setup</span>
             <span className="menu-card-sub">
               {myTeamForMenu
-                ? `${myTeamForMenu.name} (${vcSideForMenu}) vs ${appData.gameSetup.opponent || "TBD"} • ${appData.gameSetup.gameId}`
+                ? `${myTeamForMenu.name} (${menuSideLabel}) vs ${appData.gameSetup.opponent || "TBD"} • ${appData.gameSetup.gameId}`
                 : "No team selected"}
             </span>
           </div>
