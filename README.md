@@ -1,4 +1,4 @@
-# Pivot — Valley Catholic Basketball Platform
+# BTA Basketball Platform
 
 Hybrid high school basketball stats + AI insights platform. The iPad operator app takes live stats during a game; data flows to the realtime API for live coach dashboards and to the Stats Dashboard for season-long analytics, advanced stats, and AI insights.
 
@@ -81,7 +81,7 @@ npm run dev:all
 ### Realtime API (`services/realtime-api/`)
 - Express + Socket.io for live event streaming to the coach dashboard
 - Full event correction: delete or update any past event and state replays deterministically
-- Persists to `services/realtime-api/.pivot-data/realtime-api.json`
+- Persists to `services/realtime-api/.bta-data/realtime-api.json`
 
 ### iPad Operator (`apps/ipad-operator/`)
 - Offline-first stat tracker with local queue and sync
@@ -118,8 +118,8 @@ npm run dev:all
 
 ## Persistence
 
-- Realtime API → `services/realtime-api/.pivot-data/realtime-api.json`
-- Video metadata → `services/video-worker/.pivot-data/video-worker.json`
+- Realtime API → `services/realtime-api/.bta-data/realtime-api.json`
+- Video metadata → `services/video-worker/.bta-data/video-worker.json`
 - Season stats → `services/stats-dashboard/data/vc_stats_output.json`
 - Roster → `services/stats-dashboard/data/roster.json`
 

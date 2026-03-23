@@ -165,7 +165,7 @@ async function showGameDetail(game) {
 
         <div class="game-detail-score">
             <div class="score-column">
-                <div class="score-team">Valley Catholic</div>
+                <div class="score-team">Cedar Ridge Raptors</div>
                 <div class="score-value">${game.vc_score}</div>
             </div>
             <div class="score-column">
@@ -239,7 +239,7 @@ async function showGameDetail(game) {
             </div>
         </div>
 
-        <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 1rem;">Valley Catholic Box Score</h3>
+        <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 1rem;">Cedar Ridge Raptors Box Score</h3>
         <table class="box-score-table">
             <thead>
                 <tr>

@@ -1,9 +1,10 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
-import type { GameEvent } from "@pivot/shared-schema";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { GameEvent } from "@bta/shared-schema";
+import { QRCodeSVG } from "qrcode.react";
 
 const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";
-const STORE = "pivot-op";
-const APP_DATA_KEY = "pivot-app-data-v3";
+const STORE = "bta-op";
+const APP_DATA_KEY = "bta-app-data-v3";
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
 function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
@@ -36,14 +37,17 @@ export interface Team {
 
 export interface GameSetup {
   gameId: string;
-  homeTeamId: string;
-  awayTeamId: string;
+  myTeamId: string;      // the team you are tracking
   apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
   apiKey?: string;       // shared secret sent as x-api-key header
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
   statsGameId?: number;  // returned by dashboard on first successful submit
+  /** @deprecated use myTeamId + vcSide instead */
+  homeTeamId?: string;
+  /** @deprecated use myTeamId + vcSide instead */
+  awayTeamId?: string;
 }
 
 export interface AppData {
@@ -53,24 +57,41 @@ export interface AppData {
 
 const DEFAULT_DATA: AppData = {
   teams: [],
-  gameSetup: { gameId: "game-1", homeTeamId: "", awayTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
+  gameSetup: { gameId: "game-1", myTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
 };
 
 // ---- Storage helpers ----
 function loadAppData(): AppData {
+  // Check URL params first — a QR-code scan may carry config overrides.
+  const qp = new URLSearchParams(window.location.search);
+  const urlSetup: Partial<GameSetup> = {};
+  if (qp.get("apiUrl"))      urlSetup.apiUrl      = qp.get("apiUrl")!;
+  if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
+  if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
+  if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
+  if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;
+  if (qp.get("vcSide") === "home" || qp.get("vcSide") === "away") urlSetup.vcSide = qp.get("vcSide") as "home" | "away";
+
   try {
     const s = localStorage.getItem(APP_DATA_KEY);
     if (s) {
       const parsed = JSON.parse(s) as AppData;
+      const gs = { ...DEFAULT_DATA.gameSetup, ...parsed.gameSetup };
+      // Migrate old saves that used homeTeamId/awayTeamId instead of myTeamId
+      if (!gs.myTeamId) {
+        const side = gs.vcSide ?? "home";
+        const legacyId = side === "home" ? (gs as GameSetup).homeTeamId : (gs as GameSetup).awayTeamId;
+        if (legacyId) gs.myTeamId = legacyId;
+      }
       return {
         ...DEFAULT_DATA,
         ...parsed,
         // Deep-merge gameSetup so new fields get their defaults for old saves
-        gameSetup: { ...DEFAULT_DATA.gameSetup, ...parsed.gameSetup },
+        gameSetup: { ...gs, ...urlSetup },
       };
     }
   } catch { /* empty */ }
-  return DEFAULT_DATA;
+  return { ...DEFAULT_DATA, gameSetup: { ...DEFAULT_DATA.gameSetup, ...urlSetup } };
 }
 function saveAppData(d: AppData) { localStorage.setItem(APP_DATA_KEY, JSON.stringify(d)); }
 function pendingKey(gid: string) { return `${STORE}:${gid}:pending`; }
@@ -255,7 +276,7 @@ async function exportGamePDF(
   doc.setFontSize(18);
   doc.setTextColor(...TEAL);
   doc.setFont("helvetica", "bold");
-  doc.text("PIVOT", 14, 13);
+  doc.text("BTA", 14, 13);
 
   doc.setFontSize(10);
   doc.setTextColor(...LIGHT);
@@ -442,7 +463,7 @@ async function exportGamePDF(
     doc.setFontSize(7);
     doc.setTextColor(100, 104, 130);
     doc.text(
-      `Pivot Basketball  \u2022  Generated ${new Date().toLocaleString()}`,
+      `BTA Basketball  \u2022  Generated ${new Date().toLocaleString()}`,
       14, doc.internal.pageSize.getHeight() - 6,
     );
     doc.text(`Page ${i} / ${pages}`, W - 14, doc.internal.pageSize.getHeight() - 6, { align: "right" });
@@ -450,7 +471,7 @@ async function exportGamePDF(
 
   const safeId   = gameId.replace(/[^a-zA-Z0-9\-_]/g, "_");
   const safeDate = gameDate.replace(/[^a-zA-Z0-9\-]/g, "-");
-  doc.save(`pivot_${safeDate}_${safeId}.pdf`);
+  doc.save(`bta_${safeDate}_${safeId}.pdf`);
 }
 
 // ---- Dashboard stats helpers (Stats dashboard integration) ----
@@ -590,10 +611,13 @@ export function App() {
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
   // ---- Derived: home/away teams ----
-  const homeTeam = appData.teams.find(t => t.id === appData.gameSetup.homeTeamId);
-  const awayTeam = appData.teams.find(t => t.id === appData.gameSetup.awayTeamId);
-  const homeTeamName = homeTeam?.name ?? "Home";
-  const awayTeamName = awayTeam?.name ?? "Away";
+  // myTeamId is the team we are tracking; side determines which slot they fill.
+  const myTeam = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
+  const vcSideSetup = appData.gameSetup.vcSide ?? "home";
+  const homeTeam = vcSideSetup === "home" ? myTeam : undefined;
+  const awayTeam  = vcSideSetup === "away" ? myTeam : undefined;
+  const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : "Home";
+  const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : "Away";
   const homePlayers = homeTeam?.players ?? [];
   const awayPlayers = awayTeam?.players ?? [];
   const allPlayers = [...homePlayers, ...awayPlayers];
@@ -696,8 +720,8 @@ export function App() {
       headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
       body: JSON.stringify({
         gameId: gid,
-        homeTeamId: appData.gameSetup.homeTeamId || "home",
-        awayTeamId: appData.gameSetup.awayTeamId || "away",
+        homeTeamId: vcSideSetup === "home" ? (appData.gameSetup.myTeamId || "home") : "home",
+        awayTeamId: vcSideSetup === "away" ? (appData.gameSetup.myTeamId || "away") : "away",
       }),
     });
     if (res.ok) {
@@ -750,6 +774,16 @@ export function App() {
     const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcSide);
     const teamStats = computeTeamStats(allEventObjs, vcSide);
 
+    // Full roster for the dashboard to upsert — keyed by jersey number so it
+    // correctly updates existing players instead of creating abbreviated duplicates.
+    const rosterPayload = vcTeam.players.map(p => ({
+      number: parseInt(p.number, 10) || 0,
+      name: p.name,
+      position: p.position || undefined,
+      height: p.height || undefined,
+      grade: p.grade || undefined,
+    }));
+
     const payload: Record<string, unknown> = {
       date: dateParts,
       opponent,
@@ -758,6 +792,7 @@ export function App() {
       opp_score: oppScore,
       team_stats: teamStats,
       player_stats: playerStats,
+      roster: rosterPayload,
     };
     // Include stored statsGameId so the dashboard upserts instead of duplicating
     if (appData.gameSetup.statsGameId != null) {
@@ -1101,6 +1136,47 @@ export function App() {
             \u21e9 PDF
           </button>
         </div>
+        <div className="end-game-section">
+          <div className="end-game-divider"><span>END OF GAME</span></div>
+          <div className="submit-meta">
+            <input
+              className="opp-inp"
+              placeholder="Opponent name"
+              value={appData.gameSetup.opponent ?? ""}
+              onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
+            />
+            <div className="vc-side-toggle">
+              <button
+                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
+                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
+                VC Home
+              </button>
+              <button
+                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
+                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
+                VC Away
+              </button>
+            </div>
+          </div>
+          <button
+            className={`submit-btn submit-${submitStatus}`}
+            onClick={() => void submitToDashboard()}
+            disabled={submitStatus === "pending"}>
+            {submitStatus === "pending" ? "Saving\u2026"
+              : submitStatus === "success" ? "\u2713 Saved to Dashboard!"
+              : submitStatus === "error"   ? "\u26a0 Error \u2014 Retry"
+              : "\uD83C\uDFC1 Save Final Stats"}
+          </button>
+          <a
+            className="coach-link-btn"
+            href={`${appData.gameSetup.dashboardUrl ?? "http://localhost:5173"}?gameId=${gameId}`}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open Coach Dashboard \u00b7 ${gameId}`}
+          >
+            \uD83D\uDCFA Coach View
+          </a>
+        </div>
       </div>
 
       {/* CENTER: Feed */}
@@ -1173,46 +1249,6 @@ export function App() {
         <div className="date-row">
           <input className="date-inp" type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} title="Game date" />
         </div>
-        <div className="submit-area">
-          <div className="submit-meta">
-            <input
-              className="opp-inp"
-              placeholder="Opponent name"
-              value={appData.gameSetup.opponent ?? ""}
-              onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
-            />
-            <div className="vc-side-toggle">
-              <button
-                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
-                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
-                VC Home
-              </button>
-              <button
-                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
-                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
-                VC Away
-              </button>
-            </div>
-          </div>
-          <button
-            className={`submit-btn submit-${submitStatus}`}
-            onClick={() => void submitToDashboard()}
-            disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Saving…"
-              : submitStatus === "success" ? "✓ Saved to Dashboard!"
-              : submitStatus === "error"   ? "⚠ Error — Retry"
-              : "⬆ Send to Dashboard"}
-          </button>
-          <a
-            className="coach-link-btn"
-            href={`${appData.gameSetup.dashboardUrl ?? "http://localhost:5173"}?gameId=${gameId}`}
-            target="_blank"
-            rel="noreferrer"
-            title={`Open Coach Dashboard · ${gameId}`}
-          >
-            📺 Coach View
-          </a>
-        </div>
       </div>
 
       {/* RIGHT: Stats */}
@@ -1255,8 +1291,7 @@ const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];
 function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav, onEditTeam, onBack, onStartGame }: SettingsScreenProps) {
   // ---- Game setup local state ----
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
-  const [gsHomeId, setGsHomeId] = useState(appData.gameSetup.homeTeamId);
-  const [gsAwayId, setGsAwayId] = useState(appData.gameSetup.awayTeamId);
+  const [gsMyTeamId, setGsMyTeamId] = useState(appData.gameSetup.myTeamId);
   const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
@@ -1346,8 +1381,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       ...appData,
       gameSetup: {
         gameId: gsGameId.trim() || "game-1",
-        homeTeamId: gsHomeId,
-        awayTeamId: gsAwayId,
+        myTeamId: gsMyTeamId,
         apiUrl: gsApiUrl.trim() || DEFAULT_API,
         apiKey: gsApiKey.trim() || undefined,
         opponent: gsOpponent.trim(),
@@ -1484,9 +1518,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   // ================================================================
   if (settingsView === "game-setup") {
     const setupErrors: string[] = [];
-    if (!gsHomeId) setupErrors.push("Select a Home team");
-    if (!gsAwayId) setupErrors.push("Select an Away team");
-    if (gsHomeId && gsAwayId && gsHomeId === gsAwayId) setupErrors.push("Home and Away must be different teams");
+    if (!gsMyTeamId) setupErrors.push("Select your team");
     if (!gsOpponent.trim()) setupErrors.push("Enter the opponent name");
     return (
       <div className="settings-page">
@@ -1502,30 +1534,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
-          <h3>Home Team (teal)</h3>
+          <h3>Your Team</h3>
           {appData.teams.length === 0 && <p className="dim-text">No teams yet \u2014 create one in Teams first.</p>}
           <div className="team-picker">
             {appData.teams.map(t => (
               <button key={t.id}
-                className={`team-pick-btn${gsHomeId === t.id ? " pick-active-teal" : ""}`}
-                onClick={() => { setGsHomeId(t.id); if (gsAwayId === t.id) setGsAwayId(""); }}>
-                <span className="tp-abbr">{t.abbreviation}</span>
-                <span className="tp-name">{t.name}</span>
-                <span className="tp-count">{t.players.length}p</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3>Away Team (red)</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
-          <div className="team-picker">
-            {appData.teams.map(t => (
-              <button key={t.id}
-                className={`team-pick-btn${gsAwayId === t.id ? " pick-active-red" : ""}${gsHomeId === t.id ? " pick-locked" : ""}`}
-                disabled={gsHomeId === t.id}
-                onClick={() => setGsAwayId(t.id)}>
+                className={`team-pick-btn${gsMyTeamId === t.id ? " pick-active-teal" : ""}`}
+                onClick={() => setGsMyTeamId(t.id)}>
                 <span className="tp-abbr">{t.abbreviation}</span>
                 <span className="tp-name">{t.name}</span>
                 <span className="tp-count">{t.players.length}p</span>
@@ -1544,8 +1559,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
-          <h3>VC Team Side</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Which side is Valley Catholic playing on?</p>
+          <h3>Your Side</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
           <div className="team-toggle">
             <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>Home (teal)</button>
             <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>Away (red)</button>
@@ -1564,7 +1579,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set PIVOT_API_KEY on the server). Leave blank in development.</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set BTA_API_KEY on the server). Leave blank in development.</p>
           <input
             type="password"
             placeholder="Leave blank to disable auth"
@@ -1596,6 +1611,32 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             Start / Reset Game
           </button>
         </section>
+
+        {/* QR code — scan on a second iPad to auto-fill the same config */}
+        <section className="settings-section">
+          <h3>Share Config</h3>
+          <p className="dim-text" style={{ marginBottom: 12 }}>
+            Scan on another device to copy these settings.
+          </p>
+          {(() => {
+            const configUrl = new URL(window.location.href);
+            const params = configUrl.searchParams;
+            params.set("apiUrl", gsApiUrl.trim() || DEFAULT_API);
+            if (gsApiKey.trim()) params.set("apiKey", gsApiKey.trim());
+            params.set("dashboardUrl", gsDashboardUrl.trim() || "http://localhost:5000");
+            params.set("gameId", gsGameId.trim() || "game-1");
+            params.set("opponent", gsOpponent.trim());
+            params.set("vcSide", gsVcSide);
+            return (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <QRCodeSVG value={configUrl.toString()} size={200} level="M" />
+                <small className="dim-text" style={{ wordBreak: "break-all", textAlign: "center" }}>
+                  {configUrl.toString()}
+                </small>
+              </div>
+            );
+          })()}
+        </section>
       </div>
     );
   }
@@ -1603,8 +1644,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   // ================================================================
   //  RENDER: Settings menu (default)
   // ================================================================
-  const homeTeam = appData.teams.find(t => t.id === appData.gameSetup.homeTeamId);
-  const awayTeam = appData.teams.find(t => t.id === appData.gameSetup.awayTeamId);
+  const myTeamForMenu = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
+  const vcSideForMenu = appData.gameSetup.vcSide ?? "home";
 
   return (
     <div className="settings-page">
@@ -1620,7 +1661,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <div className="menu-card-info">
             <span className="menu-card-title">Game Setup</span>
             <span className="menu-card-sub">
-              {homeTeam && awayTeam ? `${homeTeam.name} vs ${awayTeam.name} \u2022 ${appData.gameSetup.gameId}` : "No teams selected"}
+              {myTeamForMenu
+                ? `${myTeamForMenu.name} (${vcSideForMenu}) vs ${appData.gameSetup.opponent || "TBD"} \u2022 ${appData.gameSetup.gameId}`
+                : "No team selected"}
             </span>
           </div>
           <span className="menu-chev">\u203a</span>

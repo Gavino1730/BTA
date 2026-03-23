@@ -3,7 +3,7 @@ import {
   createInitialGameState,
   replayEvents,
   type GameState
-} from "@pivot/game-state";
+} from "@bta/game-state";
 import {
   existsSync,
   mkdirSync,
@@ -14,8 +14,8 @@ import { resolve } from "node:path";
 import {
   generateInsights,
   type LiveInsight
-} from "@pivot/insight-engine";
-import { parseGameEvent, type GameEvent } from "@pivot/shared-schema";
+} from "@bta/insight-engine";
+import { parseGameEvent, type GameEvent } from "@bta/shared-schema";
 
 export interface CreateGameInput {
   gameId: string;
@@ -41,7 +41,7 @@ interface PersistedGameSession {
 
 const sessions = new Map<string, GameSession>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
-const dataDirectory = resolve(process.cwd(), ".pivot-data");
+const dataDirectory = resolve(process.cwd(), ".bta-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
 
 function persistSessions() {

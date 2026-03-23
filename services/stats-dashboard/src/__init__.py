@@ -1,5 +1,5 @@
 """
-Valley Catholic Basketball Stats Application
+Basketball Stats Application
 """
 
 __version__ = "2.0.0"

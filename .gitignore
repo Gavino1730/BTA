@@ -12,8 +12,8 @@ __pycache__/
 *.egg-info/
 instance/
 
-# Pivot data persistence
-.pivot-data/
+# BTA data persistence
+.bta-data/
 
 # Stats data (generated)
 services/stats-dashboard/data/season_analysis.json

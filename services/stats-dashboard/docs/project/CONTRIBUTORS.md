@@ -1,4 +1,4 @@
-# Valley Catholic Basketball Stats - Contributors
+# Cedar Ridge Raptors Basketball Stats - Contributors
 
 Thank you to everyone who has contributed to this project! 🎉🏀
 
@@ -60,7 +60,7 @@ To add yourself as a contributor, please follow these steps:
 
 ## Special Thanks
 
-- Valley Catholic High School for supporting this project
+- Cedar Ridge Athletics for supporting this project
 - The open-source community for amazing tools and libraries
 - OpenAI for providing AI capabilities
 - All users who provide feedback and suggestions
@@ -69,6 +69,6 @@ To add yourself as a contributor, please follow these steps:
 
 <div align="center">
 
-**Built with ❤️ by the community, for Valley Catholic Basketball**
+**Built by the community, for Cedar Ridge Raptors Basketball**
 
 </div>

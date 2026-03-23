@@ -284,7 +284,7 @@ async function loadCharts() {
                 labels: sortedOpponents,
                 datasets: [
                     {
-                        label: 'Valley Catholic',
+                        label: 'Cedar Ridge Raptors',
                         data: sortedVcScore,
                         borderColor: '#4169E1',
                         backgroundColor: 'rgba(65, 105, 225, 0.1)',

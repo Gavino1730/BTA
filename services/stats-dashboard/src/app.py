@@ -1,5 +1,5 @@
 """
-Valley Catholic Basketball Stats - Flask Application
+Basketball Stats - Flask Application
 Clean, refactored version with organized routes and services.
 """
 
@@ -340,29 +340,73 @@ def ingest_game():
             with open(Config.STATS_FILE, "w") as f:
                 json.dump(stats, f, indent=2)
 
-            # Auto-register any new players that don't exist in roster.json
+            # Sync roster.json from the full roster field sent by the iPad.
+            # Falls back to the abbreviated player_stats names when roster is absent.
             try:
                 with open(Config.ROSTER_FILE) as rf:
                     roster_data = json.load(rf)
-                existing_names = {p["name"].lower() for p in roster_data.get("roster", [])}
-                added_any = False
-                for ps in payload.get("player_stats", []):
-                    player_name = ps.get("name", "").strip()
-                    if player_name and player_name.lower() not in existing_names:
-                        new_entry: dict = {"name": player_name}
-                        jersey = ps.get("number")
-                        if jersey is not None:
-                            try:
-                                new_entry["number"] = int(jersey)
-                            except (ValueError, TypeError):
-                                pass
-                        roster_data.setdefault("roster", []).append(new_entry)
-                        existing_names.add(player_name.lower())
-                        added_any = True
-                        logger.info(f"Auto-added player to roster: {player_name}")
-                if added_any:
-                    with open(Config.ROSTER_FILE, "w") as rf:
-                        json.dump(roster_data, rf, indent=2)
+
+                incoming_roster = payload.get("roster", [])
+                if incoming_roster:
+                    # Preferred path: iPad sends full player objects keyed by jersey
+                    existing_by_number = {
+                        p.get("number"): p
+                        for p in roster_data.get("roster", [])
+                        if p.get("number") is not None
+                    }
+                    existing_by_name = {
+                        p["name"].lower(): p
+                        for p in roster_data.get("roster", [])
+                    }
+                    changed = False
+                    for incoming in incoming_roster:
+                        jersey = incoming.get("number")
+                        full_name = (incoming.get("name") or "").strip()
+                        if not full_name:
+                            continue
+                        # Match by jersey number first, then by name
+                        existing = existing_by_number.get(jersey) or existing_by_name.get(full_name.lower())
+                        if existing:
+                            # Update attributes on existing entry
+                            for attr in ("name", "number", "position", "height", "grade"):
+                                val = incoming.get(attr)
+                                if val is not None and val != "":
+                                    if existing.get(attr) != val:
+                                        existing[attr] = val
+                                        changed = True
+                        else:
+                            new_entry = {k: v for k, v in incoming.items() if v is not None and v != ""}
+                            roster_data.setdefault("roster", []).append(new_entry)
+                            existing_by_name[full_name.lower()] = new_entry
+                            if jersey is not None:
+                                existing_by_number[jersey] = new_entry
+                            changed = True
+                            logger.info(f"Auto-added player to roster: {full_name}")
+                    if changed:
+                        roster_data["roster"].sort(key=lambda p: p.get("number", 999))
+                        with open(Config.ROSTER_FILE, "w") as rf:
+                            json.dump(roster_data, rf, indent=2)
+                else:
+                    # Fallback: add any completely unknown abbreviated names
+                    existing_names = {p["name"].lower() for p in roster_data.get("roster", [])}
+                    added_any = False
+                    for ps in payload.get("player_stats", []):
+                        player_name = (ps.get("name") or "").strip()
+                        if player_name and player_name.lower() not in existing_names:
+                            new_entry = {"name": player_name}
+                            jersey = ps.get("number")
+                            if jersey is not None:
+                                try:
+                                    new_entry["number"] = int(jersey)
+                                except (ValueError, TypeError):
+                                    pass
+                            roster_data.setdefault("roster", []).append(new_entry)
+                            existing_names.add(player_name.lower())
+                            added_any = True
+                            logger.info(f"Auto-added player (fallback) to roster: {player_name}")
+                    if added_any:
+                        with open(Config.ROSTER_FILE, "w") as rf:
+                            json.dump(roster_data, rf, indent=2)
             except OSError as roster_err:
                 logger.warning(f"Could not update roster.json: {roster_err}")
 
@@ -442,7 +486,7 @@ def api_players():
         full_name = roster_player.get("name", "")
         if " " in full_name:
             parts = full_name.split(" ", 1)
-            abbrev = f"{parts[0][0]} {parts[1]}"  # e.g., "Hank Lomber" -> "H Lomber"
+            abbrev = f"{parts[0][0]} {parts[1]}"  # e.g., "Trey Morgan" -> "T Morgan"
             roster_by_abbrev[abbrev] = roster_player
 
     enhanced = []

@@ -1,5 +1,5 @@
 {
-  "name": "@pivot/realtime-api",
+  "name": "@bta/realtime-api",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/server.js",
@@ -10,9 +10,9 @@
     "dev": "tsx src/server.ts"
   },
   "dependencies": {
-    "@pivot/game-state": "0.1.0",
-    "@pivot/insight-engine": "0.1.0",
-    "@pivot/shared-schema": "0.1.0",
+    "@bta/game-state": "0.1.0",
+    "@bta/insight-engine": "0.1.0",
+    "@bta/shared-schema": "0.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "socket.io": "^4.8.1"

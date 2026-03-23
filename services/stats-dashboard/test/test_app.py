@@ -1,5 +1,5 @@
 """
-Smoke tests for the Valley Catholic Stats Dashboard Flask API.
+Smoke tests for the Basketball Stats Dashboard Flask API.
 
 Run from the services/stats-dashboard directory:
     .venv/Scripts/python -m pytest test/ -v

@@ -1,6 +1,6 @@
 {
-  "team": "Valley Catholic",
-  "season": "2025-2026",
+  "team": "Cedar Ridge Raptors",
+  "season": "2026-2027 Test Season",
   "games": [
     {
       "gameId": 1,
@@ -94,7 +94,7 @@
       "opponent": "Jefferson",
       "location": "home",
       "type": "Tournament",
-      "tournament": "Valley Catholic Holiday Tournament",
+      "tournament": "Cedar Ridge Invitational",
       "result": "W",
       "vc_score": 97,
       "opp_score": 13,
@@ -109,7 +109,7 @@
       "opponent": "Mid Pacific (HI)",
       "location": "home",
       "type": "Tournament",
-      "tournament": "Valley Catholic Holiday Tournament",
+      "tournament": "Cedar Ridge Invitational",
       "result": "W",
       "vc_score": 80,
       "opp_score": 54,
@@ -124,7 +124,7 @@
       "opponent": "Regis",
       "location": "home",
       "type": "Tournament",
-      "tournament": "Valley Catholic Holiday Tournament",
+      "tournament": "Cedar Ridge Invitational",
       "result": "W",
       "vc_score": 92,
       "opp_score": 86,

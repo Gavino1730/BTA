@@ -800,7 +800,35 @@ html, body, #root {
   cursor: pointer;
 }
 
-/* ---- Submit to Dashboard ---- */
+/* ---- End of Game section (left panel) ---- */
+.end-game-section {
+  padding: 0.5rem 0 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.end-game-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+.end-game-divider::before,
+.end-game-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+}
+.end-game-divider span {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(232,234,240,0.35);
+  white-space: nowrap;
+}
+
+/* ---- Submit to Dashboard (legacy submit-area kept for compat) ---- */
 .submit-area {
   padding: 0.5rem 1rem 0.8rem;
   display: flex;

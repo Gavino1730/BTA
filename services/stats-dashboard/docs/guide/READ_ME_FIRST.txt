@@ -1,7 +1,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
 ║          BASKETBALL STATS AUDIT - CRITICAL ISSUES FOUND                      ║
-║          Valley Catholic High School Basketball Team                         ║
+║          Cedar Ridge Raptors Basketball Team                                 ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 

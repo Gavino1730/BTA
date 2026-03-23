@@ -17,9 +17,9 @@ app.use(cors());
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
-// Optional API-key auth. Set PIVOT_API_KEY env var to enable.
+// Optional API-key auth. Set BTA_API_KEY env var to enable.
 // ---------------------------------------------------------------------------
-const API_KEY = process.env.PIVOT_API_KEY;
+const API_KEY = process.env.BTA_API_KEY;
 function requireApiKey(req: Request, res: Response, next: NextFunction): void {
   if (!API_KEY) { next(); return; }                       // key not configured → open
   const provided = req.headers["x-api-key"] ?? req.query.apiKey;

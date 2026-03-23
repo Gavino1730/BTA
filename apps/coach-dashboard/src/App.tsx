@@ -301,7 +301,7 @@ export function App() {
       <header className="header card hero-card">
         <div>
           <p className="eyebrow">Bench Intelligence</p>
-          <h1>Pivot Coach Dashboard</h1>
+          <h1>BTA Coach Dashboard</h1>
           <p>{dashboardStatus}</p>
         </div>
         <div className="header-controls">

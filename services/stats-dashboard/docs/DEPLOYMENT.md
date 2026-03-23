@@ -1,4 +1,4 @@
-# Valley Catholic Basketball Stats - Deployment Guide
+# Cedar Ridge Raptors Basketball Stats - Deployment Guide
 
 ## 🚀 Quick Deploy to Railway
 
@@ -17,7 +17,7 @@ git init
 git add .
 
 # Commit
-git commit -m "Initial commit - Valley Catholic Basketball Stats"
+git commit -m "Initial commit - Cedar Ridge Raptors Basketball Stats"
 
 # Create a new repository on GitHub, then:
 git remote add origin https://github.com/YOUR_USERNAME/vc-basketball-stats.git

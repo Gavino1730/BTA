@@ -1,5 +1,5 @@
 {
-  "name": "@pivot/ipad-operator",
+  "name": "@bta/ipad-operator",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,9 +9,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@pivot/shared-schema": "0.1.0",
+    "@bta/shared-schema": "0.1.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

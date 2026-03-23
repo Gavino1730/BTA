@@ -1,18 +1,18 @@
-# Valley Catholic Stats Output - JSON Structure
+# Cedar Ridge Raptors Stats Output - JSON Structure
 
 **File:** `vc_stats_output.json`  
-**Size:** 126 KB  
-**Team:** Valley Catholic (Valiants)  
-**Season:** 2025-2026  
+**Size:** Example output  
+**Team:** Cedar Ridge Raptors  
+**Season:** 2026-2027 Test Season  
 
 ## Summary Stats
-- **Record:** 8-1 (89%)
-- **PPG:** 83.3
-- **FG%:** 47.0%
-- **3P%:** 32.0%
-- **FT%:** 73.0%
-- **RPG:** 32.0
-- **APG:** 18.4
+- **Record:** 3-1 (75%)
+- **PPG:** 75.0
+- **FG%:** 49.5%
+- **3P%:** 40.0%
+- **FT%:** 69.6%
+- **RPG:** 33.8
+- **APG:** 18.3
 
 ---
 
@@ -21,8 +21,8 @@
 ### Root Level
 ```json
 {
-  "team": "Valley Catholic",
-  "season": "2025-2026",
+  "team": "Cedar Ridge Raptors",
+  "season": "2026-2027 Test Season",
   "games": [...],
   "player_game_logs": {...},
   "season_team_stats": {...},
@@ -32,17 +32,17 @@
 
 ---
 
-## 1. GAMES (Array of 9 games)
+## 1. GAMES (Array of 4 games)
 
 Each game contains:
 ```json
 {
-  "gameId": 5,
-  "date": "Dec 16, 2025",
-  "opponent": "Banks",
+  "gameId": 1,
+  "date": "Nov 3, 2026",
+  "opponent": "Harbor Tech",
   "location": "home",
-  "vc_score": 87,
-  "opp_score": 65,
+  "vc_score": 78,
+  "opp_score": 64,
   "result": "W",
   "team_stats": {
     "fg": 32,
@@ -62,10 +62,10 @@ Each game contains:
   "player_stats": [
     {
       "number": 20,
-      "name": "H Lomber",
-      "fg_made": 11,
-      "fg_att": 24,
-      "fg_pct": "46%",
+      "name": "T Morgan",
+      "fg_made": 9,
+      "fg_att": 16,
+      "fg_pct": "56%",
       "fg3_made": 3,
       "fg3_att": 9,
       "fg3_pct": "33%",
@@ -87,14 +87,14 @@ Each game contains:
 ```
 
 ### Key Fields:
-- **gameId**: Unique game identifier (1-9)
+- **gameId**: Unique game identifier
 - **date**: Game date in format "Mon DD, YYYY"
 - **opponent**: Opponent team name
 - **location**: "home" or "away"
-- **vc_score**: Valley Catholic points
+- **vc_score**: Tracked team points
 - **opp_score**: Opponent points
 - **result**: "W" or "L"
-- **team_stats**: Valley Catholic team box score
+- **team_stats**: Tracked team box score
 - **player_stats**: Individual player stats sorted by points (descending)
 
 ---
@@ -103,18 +103,18 @@ Each game contains:
 
 ```json
 {
-  "H Lomber": [
+  "T Morgan": [
     {
       "gameId": 1,
-      "date": "Dec 3, 2025",
-      "opponent": "Valley",
-      "location": "away",
+      "date": "Nov 3, 2026",
+      "opponent": "Harbor Tech",
+      "location": "home",
       "stats": {
         "number": 20,
-        "name": "H Lomber",
-        "fg_made": 10,
-        "fg_att": 21,
-        "fg_pct": "48%",
+        "name": "T Morgan",
+        "fg_made": 9,
+        "fg_att": 16,
+        "fg_pct": "56%",
         "fg3_made": 3,
         "fg3_att": 8,
         "fg3_pct": "38%",
@@ -133,7 +133,7 @@ Each game contains:
     },
     ...
   ],
-  "M Mehta": [...],
+  "J Carter": [...],
   ...
 }
 ```
@@ -149,29 +149,29 @@ Each game contains:
 
 ```json
 {
-  "games": 9,
-  "wins": 8,
+  "games": 4,
+  "wins": 3,
   "losses": 1,
-  "pts": 750,
-  "fg": 424,
-  "fga": 903,
-  "fg3": 288,
-  "fg3a": 900,
-  "ft": 657,
-  "fta": 900,
-  "oreb": 145,
-  "dreb": 143,
-  "reb": 288,
-  "asst": 166,
-  "to": 117,
-  "stl": 165,
-  "blk": 31,
-  "ppg": 83.3,
-  "rpg": 32.0,
-  "apg": 18.4,
-  "fg_pct": 47.0,
-  "fg3_pct": 32.0,
-  "ft_pct": 73.0
+  "pts": 300,
+  "fg": 111,
+  "fga": 227,
+  "fg3": 38,
+  "fg3a": 100,
+  "ft": 41,
+  "fta": 58,
+  "oreb": 35,
+  "dreb": 100,
+  "reb": 135,
+  "asst": 73,
+  "to": 44,
+  "stl": 23,
+  "blk": 11,
+  "ppg": 75.0,
+  "rpg": 33.8,
+  "apg": 18.3,
+  "fg_pct": 48.9,
+  "fg3_pct": 38.0,
+  "ft_pct": 70.7
 }
 ```
 
@@ -187,10 +187,10 @@ Each game contains:
 
 ```json
 {
-  "H Lomber": {
-    "name": "H Lomber",
-    "games": 9,
-    "pts": 185,
+  "T Morgan": {
+    "name": "T Morgan",
+    "games": 4,
+    "pts": 85,
     "fg": 81,
     "fga": 161,
     "fg3": 20,
@@ -212,7 +212,7 @@ Each game contains:
     "fg3_pct": 33.3,
     "ft_pct": 90.6
   },
-  "M Mehta": {...},
+  "J Carter": {...},
   ...
 }
 ```
@@ -225,37 +225,28 @@ Each game contains:
 
 ---
 
-## Games Included (9 Total)
+## Games Included (4 Total)
 
 | Game ID | Date | Opponent | Result | Score |
 |---------|------|----------|--------|-------|
-| 1 | Dec 3, 2025 | Knappa | W | 83-58 |
-| 2 | Dec 5, 2025 | Gladstone | W | 88-41 |
-| 3 | Dec 9, 2025 | Scappoose | L | 69-90 |
-| 4 | Dec 12, 2025 | Pleasant Hill | W | 73-45 |
-| 5 | Dec 16, 2025 | Banks | W | 87-65 |
-| 6 | Dec 22, 2025 | Tillamook | W | 85-35 |
-| 7 | Dec 28, 2025 | Jefferson | W | 97-13 |
-| 8 | Dec 29, 2025 | Mid Pacific | W | 80-54 |
-| 9 | Dec 30, 2025 | Regis | W | 92-86 |
+| 1 | Nov 3, 2026 | Harbor Tech | W | 78-64 |
+| 2 | Nov 7, 2026 | Summit Prep | L | 66-70 |
+| 3 | Nov 12, 2026 | Eastview Academy | W | 82-59 |
+| 4 | Nov 18, 2026 | Northside HS | W | 74-68 |
 
 ---
 
-## Players Tracked (13 Total)
+## Players Tracked (9 Total)
 
-1. A Post (#2)
-2. C Bonnett (#1)
-3. E Schaal (#15)
-4. G Frank (#23)
-5. G Galan (#3)
-6. H Lomber (#20)
-7. K Fixter (#4)
-8. L Plep (#44)
-9. M Gunther (#10)
-10. M Mehta (#24)
-11. M Mueller (#5)
-12. S Robbins (#22)
-13. T Eddy (#11)
+1. J Carter (#1)
+2. M Brooks (#2)
+3. E Novak (#3)
+4. O Price (#4)
+5. N Kim (#5)
+6. D Lane (#11)
+7. T Morgan (#20)
+8. L Reed (#22)
+9. I Shaw (#24)
 
 ---
 
@@ -266,7 +257,7 @@ Each game contains:
 1. **Team Page**: Use `season_team_stats` for overview stats
 2. **Schedule/Results**: Use `games` array with gameId and dates
 3. **Box Scores**: Use `games[i].player_stats` and `games[i].team_stats`
-4. **Player Pages**: Use `season_player_stats[playerName]` for career stats
+4. **Player Pages**: Use `season_player_stats[playerName]` for season stats
 5. **Game Logs**: Use `player_game_logs[playerName]` to show all games for a player
 
 ### Data Types:
@@ -275,7 +266,7 @@ Each game contains:
 - **Floats**: per-game averages, percentages (decimal)
 
 ### Notes:
-- Player names are formatted as initial + last name (e.g., "H Lomber")
+- Player names are formatted as initial + last name (e.g., "T Morgan")
 - Percentages are stored as strings with % in stats fields, and as decimals in aggregate fields
 - "-" indicates no attempts (e.g., no 3-pointers attempted)
 - All stats aggregated from PDF stat sheets automatically

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createInitialGameState, replayEvents } from "@pivot/game-state";
-import type { GameEvent } from "@pivot/shared-schema";
+import { createInitialGameState, replayEvents } from "@bta/game-state";
+import type { GameEvent } from "@bta/shared-schema";
 import { generateInsights } from "./index.js";
 
 describe("insight engine", () => {

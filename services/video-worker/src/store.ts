@@ -36,7 +36,7 @@ export interface VideoResolution {
 const videos = new Map<string, VideoAsset[]>();
 const anchors = new Map<string, SyncAnchor[]>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
-const dataDirectory = resolve(process.cwd(), ".pivot-data");
+const dataDirectory = resolve(process.cwd(), ".bta-data");
 const dataFile = resolve(dataDirectory, "video-worker.json");
 
 interface PersistedVideoStore {

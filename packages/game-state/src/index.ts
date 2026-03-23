@@ -1,4 +1,4 @@
-import type { GameEvent } from "@pivot/shared-schema";
+import type { GameEvent } from "@bta/shared-schema";
 
 export interface TeamShootingStats {
   attempts: number;

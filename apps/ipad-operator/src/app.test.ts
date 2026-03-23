@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GameEvent } from "@pivot/shared-schema";
+import type { GameEvent } from "@bta/shared-schema";
 
 // ---- Inline copies of pure helpers from App.tsx so we can test without a DOM ----
 

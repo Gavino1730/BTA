@@ -1,6 +1,6 @@
-# 🏀 Valley Catholic Basketball Stats
+# 🏀 Cedar Ridge Raptors Basketball Stats
 
-> **A comprehensive basketball statistics platform with AI-powered analysis for Valley Catholic High School's varsity team.**
+> **A comprehensive basketball statistics platform with AI-powered analysis for a test varsity team.**
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Flask](https://img.shields.io/badge/flask-3.1.2-green.svg)](https://flask.palletsprojects.com/)
@@ -29,7 +29,7 @@
 - **📊 Advanced Stats**: eFG%, TS%, PPP, shot analytics, win/loss patterns, and consistency metrics
 - **🤖 AI Analysis**: Powered by OpenAI GPT models for player evaluation, game breakdowns, and diagnostic insights
 - **📱 Responsive Design**: Six fully responsive pages optimized for desktop and mobile
-- **🎨 Modern UI**: Dark theme with Valley Catholic school colors (Royal Blue)
+- **🎨 Modern UI**: Dark theme with Cedar Ridge Raptors colors (Royal Blue)
 - **⚡ High Performance**: Backend caching with LRU cache and Service Worker for offline support
 - **📈 Interactive Charts**: Real-time data visualization with Chart.js
 - **🔒 Secure**: Environment-based configuration with no hardcoded credentials
@@ -578,11 +578,11 @@ Additional documentation is available in the `docs/` directory:
 
 ## 👥 Team
 
-Built for **Valley Catholic High School Basketball Team** - 2025-2026 Season
+Built for **Cedar Ridge Raptors Basketball Team** - 2026-2027 Test Season
 
 ## 🙏 Acknowledgments
 
-- Valley Catholic High School for supporting the project
+- Cedar Ridge Athletics for supporting the project
 - OpenAI for providing AI analysis capabilities
 - The Python and Flask communities
 - All contributors and testers
@@ -601,8 +601,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Built with ❤️ for Valley Catholic Basketball**
+**Built for Cedar Ridge Raptors Basketball**
 
-[⬆ Back to Top](#-valley-catholic-basketball-stats)
+[⬆ Back to Top](#-cedar-ridge-raptors-basketball-stats)
 
 </div>

@@ -156,8 +156,11 @@ def build_stats_context(data_manager) -> str:
     total_games = season_stats.get("win", 0) + season_stats.get("loss", 0)
     win_pct = (season_stats.get("win", 0) / total_games * 100) if total_games > 0 else 0
 
+    team_name = data_manager.stats_data.get("team", "Test Team")
+    season_name = data_manager.stats_data.get("season", "Current Season")
+
     context = f"""
-Valley Catholic Varsity Basketball - 2025-2026 Season Stats
+{team_name} - {season_name} Stats
 
 TEAM RECORD: {season_stats.get('win', 0)}-{season_stats.get('loss', 0)}
 Win Percentage: {win_pct:.1f}%

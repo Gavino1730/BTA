@@ -1,5 +1,5 @@
 {
-  "name": "@pivot/game-state",
+  "name": "@bta/game-state",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
@@ -15,6 +15,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pivot/shared-schema": "0.1.0"
+    "@bta/shared-schema": "0.1.0"
   }
 }

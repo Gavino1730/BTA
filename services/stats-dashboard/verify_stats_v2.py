@@ -209,10 +209,10 @@ class StatsVerifier:
         # Display game info
         print(f"Date: {game_data.get('date', 'N/A')}")
         print(f"Opponent: {game_data.get('opponent', 'N/A')}")
-        print(f"Score: Valley Catholic {game_data.get('vc_score', 0)} - {game_data.get('opponent', 'Opponent')} {game_data.get('opp_score', 0)}")
+        print(f"Score: Home Team {game_data.get('vc_score', 0)} - {game_data.get('opponent', 'Opponent')} {game_data.get('opp_score', 0)}")
         
         players = game_data.get('players', [])
-        print(f"\nVerifying {len(players)} Valley Catholic players...")
+        print(f"\nVerifying {len(players)} home team players...")
         
         # Calculate team totals from players
         team_totals = {
@@ -266,7 +266,7 @@ class StatsVerifier:
             )
         
         # Display team totals
-        print(f"\n--- Valley Catholic Team Totals ---")
+        print(f"\n--- Home Team Totals ---")
         print(f"FG: {team_totals['fg_made']}/{team_totals['fg_att']}", end="")
         if team_totals['fg_att'] > 0:
             print(f" ({round(team_totals['fg_made']/team_totals['fg_att']*100)}%)")

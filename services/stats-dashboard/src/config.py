@@ -1,5 +1,5 @@
 """
-Configuration for Valley Catholic Basketball Stats Application
+Configuration for Basketball Stats Application
 All settings centralized here for easy maintenance.
 """
 
@@ -85,7 +85,7 @@ FG_PERCENTAGE_THRESHOLD = 44.0
 MIN_GAMES_FOR_VARIANCE = 2
 
 # Players excluded from analysis
-EXCLUDED_PLAYERS = {"Matthew Gunther", "Liam Plep", "Gavin Galan", "Kye Fixter"}
+EXCLUDED_PLAYERS = set()
 
 # ==========================================================================
 # Token Limits

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Main entry point for Valley Catholic Basketball Stats Application
+Main entry point for Basketball Stats Application
 """
 
 import sys

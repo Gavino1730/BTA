@@ -1,5 +1,5 @@
 {
-  "name": "@pivot/insight-engine",
+  "name": "@bta/insight-engine",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pivot/game-state": "0.1.0",
-    "@pivot/shared-schema": "0.1.0"
+    "@bta/game-state": "0.1.0",
+    "@bta/shared-schema": "0.1.0"
   }
 }

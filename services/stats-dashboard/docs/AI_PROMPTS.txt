@@ -1,6 +1,6 @@
 ==============================================================================
-VALLEY CATHOLIC BASKETBALL STATS
-AI PROMPT SYSTEM (FINAL – DIAGNOSTIC VERSION)
+CEDAR RIDGE RAPTORS BASKETBALL STATS
+AI PROMPT SYSTEM (FINAL - DIAGNOSTIC VERSION)
 ==============================================================================
 
 SCOPE & DATA CONSTRAINTS
@@ -36,9 +36,9 @@ GLOBAL SYSTEM RULES (APPLIES TO ALL PROMPTS)
 
 4. PLAYER FILTER
 - Exclude players:
-  Matthew Gunther, Liam Plep, Gavin Galan, Kye Fixter
+   None by default
 - Requests involving excluded players return:
-  404 PLAYER EXCLUDED
+   404 PLAYER EXCLUDED
 
 ==============================================================================
 

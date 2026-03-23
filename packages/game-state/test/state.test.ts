@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GameEvent } from "@pivot/shared-schema";
+import type { GameEvent } from "@bta/shared-schema";
 import { applyEvent, createInitialGameState, replayEvents } from "../src/index.js";
 
 describe("game-state", () => {

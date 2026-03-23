@@ -1,5 +1,5 @@
-import type { GameState } from "@pivot/game-state";
-import type { GameEvent } from "@pivot/shared-schema";
+import type { GameState } from "@bta/game-state";
+import type { GameEvent } from "@bta/shared-schema";
 
 export type InsightType =
   | "run_detection"

@@ -1,5 +1,5 @@
 """
-Valley Catholic Basketball Stats - Flask Application
+Basketball Stats - Flask Application
 Clean, refactored version with organized routes and services.
 """
 
@@ -41,11 +41,11 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max request size
 
 # ---------------------------------------------------------------------------
 # Optional API-key auth for /api/* routes.
-# Set PIVOT_API_KEY env var to enable — page routes are never gated.
+# Set BTA_API_KEY env var to enable — page routes are never gated.
 # ---------------------------------------------------------------------------
 @app.before_request
 def _require_api_key():
-    api_key = os.environ.get("PIVOT_API_KEY")
+    api_key = os.environ.get("BTA_API_KEY")
     if not api_key:
         return  # dev mode: no key configured → allow all
     if not request.path.startswith("/api/"):

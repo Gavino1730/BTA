@@ -318,8 +318,8 @@ season_team_stats['ft_pct'] = round(season_team_stats['ft'] / season_team_stats[
 
 # Build output JSON
 output = {
-    'team': 'Valley Catholic',
-    'season': '2025-2026',
+    'team': 'Cedar Ridge Raptors',
+    'season': '2026-2027 Test Season',
     'games': games_data,
     'player_game_logs': player_game_logs,
     'season_player_stats': season_player_stats,

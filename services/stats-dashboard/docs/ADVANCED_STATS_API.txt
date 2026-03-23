@@ -1,5 +1,5 @@
 ==============================================================================
-VALLEY CATHOLIC BASKETBALL - ADVANCED STATS API
+CEDAR RIDGE RAPTORS BASKETBALL - ADVANCED STATS API
 ==============================================================================
 
 All statistics are calculated from box score data only. No play-by-play, no shot
@@ -186,7 +186,7 @@ USAGE EXAMPLES
    fetch('/api/advanced/team')
 
 2. Get player advanced stats:
-   fetch('/api/advanced/player/Hank Lomber')
+   fetch('/api/advanced/player/Trey Morgan')
 
 3. Get game breakdown:
    fetch('/api/advanced/game/1')

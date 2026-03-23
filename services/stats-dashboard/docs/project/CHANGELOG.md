@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2025-01-14
 
 ### Added
-- Initial release of Valley Catholic Basketball Stats platform
+- Initial release of Cedar Ridge Raptors Basketball Stats platform
 - Six responsive pages: Dashboard, Games, Players, Trends, Analysis, AI Insights
 - Advanced statistics calculations (eFG%, TS%, PPP, volatility metrics)
 - AI-powered analysis using OpenAI GPT models
@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PostgreSQL and SQLite database support
 - Interactive charts with Chart.js
 - Service Worker for offline support
-- Dark theme with Valley Catholic branding
+- Dark theme with Cedar Ridge Raptors branding
 - Mobile-responsive design
 - Backend caching with LRU cache
 - Railway and Heroku deployment support
