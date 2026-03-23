@@ -4,33 +4,73 @@
   "roster": [
     {
       "number": 1,
-      "name": "Jalen Carter",
-      "grade": 12
+      "name": "Test Player One",
+      "grade": "12",
+      "position": "PG",
+      "height": "6'0\""
     },
     {
       "number": 2,
-      "name": "Mason Brooks",
-      "grade": 11
+      "name": "Test Player Two",
+      "grade": "12",
+      "position": "SG",
+      "height": "6'2\""
     },
     {
       "number": 3,
-      "name": "Eli Novak",
-      "grade": 10
+      "name": "Test Player Three",
+      "grade": "11",
+      "position": "SF",
+      "height": "6'5\""
     },
     {
       "number": 4,
-      "name": "Owen Price",
-      "grade": 11
+      "name": "Test Player Four",
+      "grade": "11",
+      "position": "PF",
+      "height": "6'7\""
     },
     {
       "number": 5,
-      "name": "Noah Kim",
-      "grade": 12
+      "name": "Test Player Five",
+      "grade": "12",
+      "position": "C",
+      "height": "6'9\""
+    },
+    {
+      "number": 10,
+      "name": "Test Player Six",
+      "position": "PG",
+      "height": "5'11\"",
+      "grade": "10"
     },
     {
       "number": 11,
-      "name": "Darius Lane",
-      "grade": 10
+      "name": "Test Player Seven",
+      "grade": "10",
+      "position": "SG",
+      "height": "6'1\""
+    },
+    {
+      "number": 12,
+      "name": "Test Player Eight",
+      "position": "SF",
+      "height": "6'3\"",
+      "grade": "9"
+    },
+    {
+      "number": 13,
+      "name": "Test Player Nine",
+      "position": "PF",
+      "height": "6'6\"",
+      "grade": "9"
+    },
+    {
+      "number": 14,
+      "name": "Test Player Ten",
+      "position": "C",
+      "height": "6'8\"",
+      "grade": "10"
     },
     {
       "number": 20,
