@@ -152,7 +152,9 @@ function recomputeSession(session: GameSession): void {
   const initialState = createInitialGameState(
     session.state.gameId,
     session.homeTeamId,
-    session.awayTeamId
+    session.awayTeamId,
+    session.opponentName,
+    session.opponentTeamId
   );
 
   session.state = replayEvents(initialState, orderedEvents);

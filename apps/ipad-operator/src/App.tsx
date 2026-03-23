@@ -80,20 +80,20 @@ const DEFAULT_DATA: AppData = {
 };
 
 const STANDARD_TEST_TEAM: Team = {
-  id: "team-test",
-  name: "test team",
-  abbreviation: "TST",
+  id: "team-usa",
+  name: "USA",
+  abbreviation: "USA",
   players: [
-    { id: "player-30", number: "1", name: "Test Player One", position: "PG", height: "6'0\"", grade: "12" },
-    { id: "player-31", number: "2", name: "Test Player Two", position: "SG", height: "6'2\"", grade: "12" },
-    { id: "player-32", number: "3", name: "Test Player Three", position: "SF", height: "6'5\"", grade: "11" },
-    { id: "player-33", number: "4", name: "Test Player Four", position: "PF", height: "6'7\"", grade: "11" },
-    { id: "player-34", number: "5", name: "Test Player Five", position: "C", height: "6'9\"", grade: "12" },
-    { id: "player-35", number: "10", name: "Test Player Six", position: "PG", height: "5'11\"", grade: "10" },
-    { id: "player-36", number: "11", name: "Test Player Seven", position: "SG", height: "6'1\"", grade: "10" },
-    { id: "player-37", number: "12", name: "Test Player Eight", position: "SF", height: "6'3\"", grade: "9" },
-    { id: "player-38", number: "13", name: "Test Player Nine", position: "PF", height: "6'6\"", grade: "9" },
-    { id: "player-39", number: "14", name: "Test Player Ten", position: "C", height: "6'8\"", grade: "10" },
+    { id: "usa-4", number: "4", name: "Stephen Curry", position: "PG", height: "6'2\"", grade: "Pro" },
+    { id: "usa-6", number: "6", name: "LeBron James", position: "SF", height: "6'9\"", grade: "Pro" },
+    { id: "usa-7", number: "7", name: "Kevin Durant", position: "SF", height: "6'10\"", grade: "Pro" },
+    { id: "usa-8", number: "8", name: "Kobe Bryant", position: "SG", height: "6'6\"", grade: "Pro" },
+    { id: "usa-9", number: "9", name: "Michael Jordan", position: "SG", height: "6'6\"", grade: "Pro" },
+    { id: "usa-10", number: "10", name: "Magic Johnson", position: "PG", height: "6'9\"", grade: "Pro" },
+    { id: "usa-11", number: "11", name: "Kyrie Irving", position: "PG", height: "6'2\"", grade: "Pro" },
+    { id: "usa-13", number: "13", name: "Anthony Davis", position: "PF", height: "6'10\"", grade: "Pro" },
+    { id: "usa-15", number: "15", name: "Carmelo Anthony", position: "PF", height: "6'7\"", grade: "Pro" },
+    { id: "usa-34", number: "34", name: "Shaquille O'Neal", position: "C", height: "7'1\"", grade: "Pro" },
   ],
 };
 
@@ -784,28 +784,62 @@ export function App() {
   }
 
   async function startGame(newGameId?: string) {
-    const gid = newGameId ?? appData.gameSetup.gameId;
-    const res = await fetch(`${appData.gameSetup.apiUrl}/games`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-      body: JSON.stringify({
-        gameId: gid,
-        homeTeamId,
-        awayTeamId,
-        opponentName: opponentName,
-        opponentTeamId,
-      }),
-    });
-    if (res.ok) {
-      const nextData = { ...appData, gameSetup: { ...appData.gameSetup, gameId: gid, statsGameId: undefined } };
-      setAppData(nextData);
-      saveAppData(nextData);
-      setPendingEvents([]);
-      setSubmittedEvents([]);
-      setSequence(1);
-      savePending(gid, []);
-      saveSeq(gid, 1);
+    // Read fresh settings from localStorage — saveGameSetup writes there synchronously
+    // before this async function resolves, so we always get the latest values.
+    const latest = loadAppData();
+    const gid = newGameId ?? latest.gameSetup.gameId;
+
+    // Derive team IDs from the latest saved setup
+    const latestVcSide = latest.gameSetup.vcSide ?? "home";
+    const latestOpponent = latest.gameSetup.opponent?.trim() || "";
+    const latestOpponentTeamId = latestOpponent
+      ? `team-${latestOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`
+      : "opponent";
+    const latestHomeTeamId =
+      latestVcSide === "home"
+        ? latest.gameSetup.myTeamId || "team-home"
+        : latestOpponentTeamId;
+    const latestAwayTeamId =
+      latestVcSide === "away"
+        ? latest.gameSetup.myTeamId || "team-away"
+        : latestOpponentTeamId;
+
+    try {
+      const res = await fetch(`${latest.gameSetup.apiUrl}/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
+        body: JSON.stringify({
+          gameId: gid,
+          homeTeamId: latestHomeTeamId,
+          awayTeamId: latestAwayTeamId,
+          opponentName: latestOpponent,
+          opponentTeamId: latestOpponentTeamId,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        alert(`Could not register game on the live server (${res.status}): ${body || "unknown error"}.\n\nCheck Settings → API URL and try again.`);
+        return;
+      }
+    } catch {
+      alert(`Could not reach the live server at ${latest.gameSetup.apiUrl}.\n\nMake sure the realtime API is running, then go to Settings → Game Setup and tap Start Game again.`);
+      return;
     }
+
+    // Merge new gameId into the latest persisted data to avoid overwriting settings
+    // that were saved by saveGameSetup() just before this call.
+    const nextData: AppData = {
+      ...latest,
+      gameSetup: { ...latest.gameSetup, gameId: gid, statsGameId: undefined },
+    };
+    setAppData(nextData);
+    saveAppData(nextData);
+    setPendingEvents([]);
+    setSubmittedEvents([]);
+    setSequence(1);
+    savePending(gid, []);
+    saveSeq(gid, 1);
   }
 
   /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
@@ -813,7 +847,9 @@ export function App() {
     if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
       await submitToDashboard();
     }
-    const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
+    // Use fresh localStorage data so we get the opponent name just saved by saveGameSetup()
+    const latest = loadAppData();
+    const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
     await startGame(newId);
   }
 

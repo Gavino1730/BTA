@@ -200,37 +200,20 @@ export interface RosterTeam {
 
 const SAMPLE_TEAMS: RosterTeam[] = [
   {
-    id: "team-home",
-    name: "Warriors",
-    abbreviation: "WAR",
+    id: "team-usa",
+    name: "USA",
+    abbreviation: "USA",
     players: [
-      { id: "player-1",  number: "23", name: "Marcus Johnson",  position: "SG", height: "6'4\"", grade: "12" },
-      { id: "player-2",  number: "24", name: "Chris Williams",  position: "SF", height: "6'7\"", grade: "12" },
-      { id: "player-3",  number: "25", name: "Alex Davis",      position: "PF", height: "6'9\"", grade: "11" },
-      { id: "player-4",  number: "30", name: "James Brown",     position: "C",  height: "6'11\"", grade: "12" },
-      { id: "player-5",  number: "32", name: "David Martinez",  position: "PG", height: "6'1\"", grade: "11" },
-      { id: "player-6",  number: "41", name: "Kevin Anderson",  position: "SG", height: "6'3\"", grade: "10" },
-      { id: "player-7",  number: "42", name: "Ryan Thompson",   position: "SF", height: "6'5\"", grade: "10" },
-      { id: "player-8",  number: "43", name: "Evan Taylor",     position: "PF", height: "6'8\"", grade: "11" },
-      { id: "player-9",  number: "55", name: "Mike Thomas",     position: "C",  height: "6'10\"", grade: "10" },
-      { id: "player-10", number: "10", name: "Josh Wilson",     position: "PG", height: "6'0\"", grade: "10" },
-    ],
-  },
-  {
-    id: "team-away",
-    name: "Tigers",
-    abbreviation: "TIG",
-    players: [
-      { id: "player-20", number: "21", name: "Tyler Rodriguez", position: "SG", height: "6'3\"", grade: "12" },
-      { id: "player-21", number: "22", name: "Jordan Lee",      position: "SF", height: "6'6\"", grade: "12" },
-      { id: "player-22", number: "33", name: "Ben Clark",       position: "PF", height: "6'8\"", grade: "11" },
-      { id: "player-23", number: "34", name: "Zach Hall",       position: "C",  height: "6'10\"", grade: "12" },
-      { id: "player-24", number: "5",  name: "Carlos Reyes",    position: "PG", height: "6'0\"", grade: "11" },
-      { id: "player-25", number: "11", name: "Dylan Scott",     position: "SG", height: "6'2\"", grade: "10" },
-      { id: "player-26", number: "12", name: "Austin King",     position: "SF", height: "6'4\"", grade: "10" },
-      { id: "player-27", number: "13", name: "Cole Young",      position: "PF", height: "6'7\"", grade: "9"  },
-      { id: "player-28", number: "14", name: "Blake Harris",    position: "C",  height: "6'9\"", grade: "10" },
-      { id: "player-29", number: "3",  name: "Aiden Walker",    position: "PG", height: "5'11\"", grade: "9" },
+      { id: "usa-4", number: "4", name: "Stephen Curry", position: "PG", height: "6'2\"", grade: "Pro" },
+      { id: "usa-6", number: "6", name: "LeBron James", position: "SF", height: "6'9\"", grade: "Pro" },
+      { id: "usa-7", number: "7", name: "Kevin Durant", position: "SF", height: "6'10\"", grade: "Pro" },
+      { id: "usa-8", number: "8", name: "Kobe Bryant", position: "SG", height: "6'6\"", grade: "Pro" },
+      { id: "usa-9", number: "9", name: "Michael Jordan", position: "SG", height: "6'6\"", grade: "Pro" },
+      { id: "usa-10", number: "10", name: "Magic Johnson", position: "PG", height: "6'9\"", grade: "Pro" },
+      { id: "usa-11", number: "11", name: "Kyrie Irving", position: "PG", height: "6'2\"", grade: "Pro" },
+      { id: "usa-13", number: "13", name: "Anthony Davis", position: "PF", height: "6'10\"", grade: "Pro" },
+      { id: "usa-15", number: "15", name: "Carmelo Anthony", position: "PF", height: "6'7\"", grade: "Pro" },
+      { id: "usa-34", number: "34", name: "Shaquille O'Neal", position: "C", height: "7'1\"", grade: "Pro" },
     ],
   },
 ];
@@ -415,6 +398,20 @@ export function App() {
       auth: API_KEY ? { apiKey: API_KEY } : {}
     });
 
+    // Poll for game state every 5 s until a game:state arrives.
+    // This covers the case where the iPad's startGame() hasn't completed yet
+    // when the coach first opens the dashboard.
+    let pollInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
+      if (socket.connected) socket.emit("join:game", gameId);
+    }, 5000);
+
+    function stopPoll() {
+      if (pollInterval !== null) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+
     socket.on("connect", () => {
       setConnected(true);
       socket.emit("join:game", gameId);
@@ -427,6 +424,7 @@ export function App() {
     socket.emit("join:game", gameId);
 
     socket.on("game:state", (nextState: GameState) => {
+      stopPoll();
       setState(nextState);
       setDashboardStatus("Live state synced");
     });
@@ -436,6 +434,7 @@ export function App() {
     });
 
     return () => {
+      stopPoll();
       socket.disconnect();
     };
   }, [gameId]);
