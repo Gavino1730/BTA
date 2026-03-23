@@ -66,7 +66,7 @@ function InvokeRaw([string]$method, [string]$path, $body = $null) {
 # ── Wait for API if needed ────────────────────────────────────────────────────
 if ($StartApi) {
   Write-Host "  Starting realtime-api…" -ForegroundColor Yellow
-  $job = Start-Job { Set-Location $using:PWD; npm run dev:api }
+  Start-Job { Set-Location $using:PWD; npm run dev:api } | Out-Null
   $deadline = (Get-Date).AddSeconds(30)
   $ready = $false
   Write-Host "  Waiting for API to be ready" -ForegroundColor Yellow -NoNewline

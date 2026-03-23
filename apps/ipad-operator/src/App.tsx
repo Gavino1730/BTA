@@ -227,10 +227,8 @@ function describeEvent(
       return { main: "sub", detail: `${tn(event.teamId)}  ${pn(event.playerOutId)} â†’ ${pn(event.playerInId)}`, accent: "white" };
     case "possession_start":
       return { main: "possession", detail: tn(event.possessedByTeamId), accent: "white" };
-    case "period_start":
-      return { main: `Q${event.period} start`, detail: "", accent: "teal" };
-    case "period_end":
-      return { main: `Q${event.period} end`, detail: "", accent: "white" };
+    case "period_transition":
+      return { main: `${event.newPeriod} start`, detail: "", accent: "teal" };
     default:
       return { main: (event as GameEvent).type, detail: "", accent: "white" };
   }
@@ -247,7 +245,7 @@ async function exportGamePDF(
   allEvents: GameEvent[],
 ) {
   const { default: jsPDF } = await import("jspdf");
-  const autoTable = (await import("jspdf-autotable")).default;
+  await import("jspdf-autotable");
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
@@ -374,7 +372,7 @@ async function exportGamePDF(
       String(sum(t => t.fouls)),
     ]);
 
-    autoTable(doc, {
+    (doc as any).autoTable({
       startY: y,
       head: headers,
       body: rows,
@@ -399,7 +397,7 @@ async function exportGamePDF(
         10: { cellWidth: 10, halign: "center" },
         11: { cellWidth: 10, halign: "center" },
       },
-      didParseCell(data) {
+      didParseCell(data: any) {
         if (data.row.index === rows.length - 1) {
           data.cell.styles.fillColor = MID;
           data.cell.styles.fontStyle = "bold";
@@ -411,7 +409,7 @@ async function exportGamePDF(
         }
       },
     });
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+    y = (doc as any).lastAutoTable.finalY + 6;
   }
 
   boxScoreTable(homeTeam, "home");
@@ -437,7 +435,7 @@ async function exportGamePDF(
     return [clock, team, d.main, d.detail ?? ""];
   });
 
-  autoTable(doc, {
+  (doc as any).autoTable({
     startY: y,
     head: [["Clock", "Team", "Event", "Detail"]],
     body: pbpRows,
@@ -509,14 +507,9 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcS
   for (const e of events) {
     if (e.type === "shot_attempt") {
       const t = get(e.playerId);
-      if (e.points === 1) {              // free throw
-        t.ft_att++;
-        if (e.made) { t.ft_made++; t.pts++; }
-      } else {                           // field goal (2pt or 3pt)
-        t.fg_att++;
-        if (e.points === 3) t.fg3_att++;
-        if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
-      }
+      t.fg_att++;
+      if (e.points === 3) t.fg3_att++;
+      if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
     } else if (e.type === "rebound") {
       const t = get(e.playerId); if (e.offensive) t.oreb++; else t.dreb++;
     } else if (e.type === "assist")  { get(e.playerId).ast++;   }
@@ -558,8 +551,7 @@ function computeTeamStats(events: GameEvent[], teamSide: TeamSide) {
   for (const e of events) {
     if (e.teamId !== teamSide) continue;
     if (e.type === "shot_attempt") {
-      if (e.points === 1) { fta++; if (e.made) ft++; }
-      else { fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; } }
+      fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; }
     } else if (e.type === "rebound")  { if (e.offensive) oreb++; else dreb++; }
     else if (e.type === "assist")     { asst++;  }
     else if (e.type === "steal")      { stl++;   }
@@ -572,7 +564,7 @@ function computeTeamStats(events: GameEvent[], teamSide: TeamSide) {
 
 // ---- Modal types ----
 type Modal =
-  | { kind: "shot"; teamId: TeamSide; points: 1 | 2 | 3; made: boolean }
+  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean }
   | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
   | { kind: "sub1"; teamId: TeamSide }
@@ -600,7 +592,7 @@ export function App() {
   const [submittedEvents, setSubmittedEvents] = useState<GameEvent[]>([]);
 
   // ---- In-game UI state ----
-  const [period, setPeriod] = useState(1);
+  const [period, setPeriod] = useState("Q1" as string);
   const [clockInput, setClockInput] = useState("12:00");
   const [activeTeam, setActiveTeam] = useState<TeamSide>("home");
   const [modal, setModal] = useState<Modal | null>(null);
@@ -862,7 +854,7 @@ export function App() {
       gameId,
       sequence: seq,
       timestampIso: new Date().toISOString(),
-      period,
+      period: period as string,
       clockSecondsRemaining: clockToSec(clockInput),
       operatorId: "op-1",
     };
@@ -880,7 +872,7 @@ export function App() {
       playerId,
       made: modal.made,
       points: modal.points,
-      zone: modal.points === 3 ? "above_break_three" : modal.points === 1 ? "free_throw" : "paint",
+      zone: modal.points === 3 ? "above_break_three" : "paint",
     } as GameEvent);
     closeModal();
   }
@@ -890,14 +882,14 @@ export function App() {
     const b = base(sequence);
     const { stat, teamId } = modal;
     let event: GameEvent | null = null;
-    if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false } as GameEvent;
-    if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  } as GameEvent;
-    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: "reaching" } as GameEvent;
-    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: "bad_pass" } as GameEvent;
-    if (stat === "steal")    event = { ...b, teamId, type: "steal",    playerId } as GameEvent;
-    if (stat === "block")    event = { ...b, teamId, type: "block",    playerId } as GameEvent;
+    if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false };
+    if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  };
+    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: "personal" };
+    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: "bad_pass" };
+    if (stat === "steal")    event = { ...b, teamId, type: "steal",    playerId };
+    if (stat === "block")    event = { ...b, teamId, type: "block",    playerId };
     if (stat === "assist")   { setModal({ kind: "assist2", teamId, assistPlayerId: playerId }); return; }
-    if (event) void postEvent(event);
+    if (event) void postEvent(event as GameEvent);
     closeModal();
   }
 
@@ -909,7 +901,7 @@ export function App() {
       type: "assist",
       playerId: modal.assistPlayerId,
       scorerPlayerId,
-    } as GameEvent);
+    });
     closeModal();
   }
 
@@ -926,7 +918,7 @@ export function App() {
       type: "substitution",
       playerOutId: modal.playerOutId,
       playerInId,
-    } as GameEvent);
+    });
     closeModal();
   }
 
@@ -1101,7 +1093,7 @@ export function App() {
   // ================================================================
   //  GAME VIEW (3-column)
   // ================================================================
-  const periodLabels = ["Q1", "Q2", "Q3", "Q4", "OT"];
+  const periodLabels = buildPeriodLabels(0);
 
   return (
     <div className="game-layout">
@@ -1124,8 +1116,6 @@ export function App() {
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 2, made: true })}>2pt</button>
           <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 3, made: true })}>3pt</button>
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 3, made: true })}>3pt</button>
-          <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 1, made: true })}>1pt</button>
-          <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 1, made: true })}>1pt</button>
         </div>
         <div className="panel-foot">
           <button className="icon-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">\u2630</button>
@@ -1216,29 +1206,22 @@ export function App() {
         </div>
 
         <div className="period-row">
-          {periodLabels.map((lbl, i) => (
+          {periodLabels.map((lbl) => (
             <button
               key={lbl}
-              className={`period-btn${period === i + 1 ? " period-on" : ""}`}
+              className={`period-btn${period === lbl ? " period-on" : ""}`}
               onClick={() => {
-                const newPeriod = i + 1;
-                if (newPeriod === period) return;
-                // Fire period_end for the period we're leaving, then period_start for the new one
+                if (lbl === period) return;
+                // Fire period_transition for the new period
                 const endSeq = sequence;
                 void postEvent({
                   ...base(endSeq),
                   teamId: appData.gameSetup.homeTeamId || "home",
-                  type: "period_end",
-                  period,
-                } as GameEvent);
-                void postEvent({
-                  ...base(endSeq + 1),
-                  teamId: appData.gameSetup.homeTeamId || "home",
-                  type: "period_start",
-                  period: newPeriod,
-                } as GameEvent);
-                setPeriod(newPeriod);
-                setClockInput("8:00");
+                  type: "period_transition",
+                  newPeriod: lbl,
+                });
+                setPeriod(lbl);
+                setClockInput(getPeriodDefaultClock(lbl));
               }}
             >{lbl}</button>
           ))}
