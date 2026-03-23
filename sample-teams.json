@@ -1,0 +1,275 @@
+{
+  "teams": [
+    {
+      "id": "team-home",
+      "name": "Warriors",
+      "abbreviation": "WAR",
+      "players": [
+        {
+          "id": "player-1",
+          "number": "23",
+          "name": "Marcus Johnson",
+          "position": "SG",
+          "height": "6'4\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-2",
+          "number": "24",
+          "name": "Chris Williams",
+          "position": "SF",
+          "height": "6'7\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-3",
+          "number": "25",
+          "name": "Alex Davis",
+          "position": "PF",
+          "height": "6'9\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-4",
+          "number": "30",
+          "name": "James Brown",
+          "position": "C",
+          "height": "6'11\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-5",
+          "number": "32",
+          "name": "David Martinez",
+          "position": "PG",
+          "height": "6'1\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-6",
+          "number": "41",
+          "name": "Kevin Anderson",
+          "position": "SG",
+          "height": "6'3\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-7",
+          "number": "42",
+          "name": "Ryan Thompson",
+          "position": "SF",
+          "height": "6'5\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-8",
+          "number": "43",
+          "name": "Evan Taylor",
+          "position": "PF",
+          "height": "6'8\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-9",
+          "number": "55",
+          "name": "Mike Thomas",
+          "position": "C",
+          "height": "6'10\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-10",
+          "number": "10",
+          "name": "Josh Wilson",
+          "position": "PG",
+          "height": "6'0\"",
+          "grade": "10"
+        }
+      ]
+    },
+    {
+      "id": "team-away",
+      "name": "Tigers",
+      "abbreviation": "TIG",
+      "players": [
+        {
+          "id": "player-20",
+          "number": "21",
+          "name": "Tyler Rodriguez",
+          "position": "SG",
+          "height": "6'3\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-21",
+          "number": "22",
+          "name": "Brandon Garcia",
+          "position": "SF",
+          "height": "6'6\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-22",
+          "number": "40",
+          "name": "Cameron White",
+          "position": "PF",
+          "height": "6'8\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-23",
+          "number": "50",
+          "name": "Derek Lee",
+          "position": "C",
+          "height": "6'10\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-24",
+          "number": "11",
+          "name": "Brandon Clark",
+          "position": "PG",
+          "height": "6'2\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-25",
+          "number": "33",
+          "name": "Kyle Harris",
+          "position": "SG",
+          "height": "6'2\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-26",
+          "number": "34",
+          "name": "Nathan Lewis",
+          "position": "SF",
+          "height": "6'4\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-27",
+          "number": "35",
+          "name": "Jordan Walker",
+          "position": "PF",
+          "height": "6'7\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-28",
+          "number": "51",
+          "name": "Trevor Hall",
+          "position": "C",
+          "height": "6'9\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-29",
+          "number": "12",
+          "name": "Mason Young",
+          "position": "PG",
+          "height": "6'0\"",
+          "grade": "10"
+        }
+      ]
+    },
+    {
+      "id": "team-test",
+      "name": "test team",
+      "abbreviation": "TST",
+      "players": [
+        {
+          "id": "player-30",
+          "number": "1",
+          "name": "Test Player One",
+          "position": "PG",
+          "height": "6'0\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-31",
+          "number": "2",
+          "name": "Test Player Two",
+          "position": "SG",
+          "height": "6'2\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-32",
+          "number": "3",
+          "name": "Test Player Three",
+          "position": "SF",
+          "height": "6'5\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-33",
+          "number": "4",
+          "name": "Test Player Four",
+          "position": "PF",
+          "height": "6'7\"",
+          "grade": "11"
+        },
+        {
+          "id": "player-34",
+          "number": "5",
+          "name": "Test Player Five",
+          "position": "C",
+          "height": "6'9\"",
+          "grade": "12"
+        },
+        {
+          "id": "player-35",
+          "number": "10",
+          "name": "Test Player Six",
+          "position": "PG",
+          "height": "5'11\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-36",
+          "number": "11",
+          "name": "Test Player Seven",
+          "position": "SG",
+          "height": "6'1\"",
+          "grade": "10"
+        },
+        {
+          "id": "player-37",
+          "number": "12",
+          "name": "Test Player Eight",
+          "position": "SF",
+          "height": "6'3\"",
+          "grade": "9"
+        },
+        {
+          "id": "player-38",
+          "number": "13",
+          "name": "Test Player Nine",
+          "position": "PF",
+          "height": "6'6\"",
+          "grade": "9"
+        },
+        {
+          "id": "player-39",
+          "number": "14",
+          "name": "Test Player Ten",
+          "position": "C",
+          "height": "6'8\"",
+          "grade": "10"
+        }
+      ]
+    }
+  ],
+  "gameSetup": {
+    "gameId": "2026-03-22-warriors",
+    "myTeamId": "team-home",
+    "apiUrl": "http://localhost:4000",
+    "apiKey": "",
+    "opponent": "Tigers",
+    "vcSide": "home",
+    "dashboardUrl": "http://localhost:5000",
+    "statsGameId": null
+  }
+}

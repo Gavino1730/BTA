@@ -5,7 +5,7 @@
   "main": "src/server.ts",
   "types": "src/server.ts",
   "scripts": {
-    "dev": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

@@ -119,22 +119,87 @@ body {
 /* ---- Scoreboard ---- */
 .scoreboard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.1rem;
 }
 
 .score-item {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.85rem;
-  background: var(--surface-2);
+  border: 1px solid var(--border-hi);
+  border-radius: 14px;
+  padding: 0.95rem 1rem 1rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.score-item-home {
+  border-color: rgba(45,212,191,0.35);
+}
+
+.score-item-away {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.score-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.score-item-header h3 {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
 }
 
 .score {
-  font-size: 2rem;
-  font-weight: 800;
-  margin: 0.25rem 0;
+  font-size: 3.1rem;
+  line-height: 0.9;
+  font-weight: 900;
+  margin: 0;
   color: var(--teal);
+  text-shadow: 0 0 14px rgba(45,212,191,0.28);
+}
+
+.score-meta-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 1.08rem;
+  line-height: 1.24;
+  color: var(--text);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 0.18rem 0;
+}
+
+.metric-row span {
+  color: rgba(232,234,240,0.82);
+  font-weight: 500;
+}
+
+.metric-row strong {
+  color: #ffffff;
+  font-weight: 800;
+  text-align: right;
+}
+
+.metric-row.metric-wrap {
+  align-items: flex-start;
+}
+
+.metric-row.metric-wrap strong {
+  max-width: 62%;
+  word-break: break-word;
 }
 
 /* ---- Insights ---- */
@@ -285,5 +350,17 @@ h3 { font-size: 0.95rem; font-weight: 700; }
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .scoreboard {
+    grid-template-columns: 1fr;
+  }
+
+  .score {
+    font-size: 2.5rem;
+  }
+
+  .metric-row {
+    font-size: 1rem;
   }
 }

@@ -3,6 +3,7 @@ import { buildPeriodLabels, getPeriodDefaultClock, isOvertimePeriod, type GameEv
 import { QRCodeSVG } from "qrcode.react";
 
 const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";
+const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? "http://localhost:5173";
 const STORE = "bta-op";
 const APP_DATA_KEY = "bta-app-data-v3";
 
@@ -14,6 +15,24 @@ function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
 function apiHeaders(setup: { apiKey?: string }): RequestInit {
   const h = apiKeyHeader(setup);
   return Object.keys(h).length ? { headers: h } : {};
+}
+
+function buildCoachViewUrl(
+  gameId: string,
+  setup: {
+    myTeamId?: string;
+    myTeamName?: string;
+    opponentName?: string;
+    vcSide?: "home" | "away";
+  }
+): string {
+  const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
+  const params = new URLSearchParams({ gameId });
+  if (setup.myTeamId) params.set("myTeamId", setup.myTeamId);
+  if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);
+  if (setup.opponentName) params.set("opponentName", setup.opponentName);
+  if (setup.vcSide) params.set("vcSide", setup.vcSide);
+  return `${base}/?${params.toString()}`;
 }
 
 type TeamSide = "home" | "away";
@@ -60,6 +79,34 @@ const DEFAULT_DATA: AppData = {
   gameSetup: { gameId: "game-1", myTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
 };
 
+const STANDARD_TEST_TEAM: Team = {
+  id: "team-test",
+  name: "test team",
+  abbreviation: "TST",
+  players: [
+    { id: "player-30", number: "1", name: "Test Player One", position: "PG", height: "6'0\"", grade: "12" },
+    { id: "player-31", number: "2", name: "Test Player Two", position: "SG", height: "6'2\"", grade: "12" },
+    { id: "player-32", number: "3", name: "Test Player Three", position: "SF", height: "6'5\"", grade: "11" },
+    { id: "player-33", number: "4", name: "Test Player Four", position: "PF", height: "6'7\"", grade: "11" },
+    { id: "player-34", number: "5", name: "Test Player Five", position: "C", height: "6'9\"", grade: "12" },
+    { id: "player-35", number: "10", name: "Test Player Six", position: "PG", height: "5'11\"", grade: "10" },
+    { id: "player-36", number: "11", name: "Test Player Seven", position: "SG", height: "6'1\"", grade: "10" },
+    { id: "player-37", number: "12", name: "Test Player Eight", position: "SF", height: "6'3\"", grade: "9" },
+    { id: "player-38", number: "13", name: "Test Player Nine", position: "PF", height: "6'6\"", grade: "9" },
+    { id: "player-39", number: "14", name: "Test Player Ten", position: "C", height: "6'8\"", grade: "10" },
+  ],
+};
+
+function withStandardizedTeams(data: AppData): AppData {
+  const hasTestTeam = data.teams.some((t) => t.id === STANDARD_TEST_TEAM.id);
+  const teams = hasTestTeam ? data.teams : [...data.teams, STANDARD_TEST_TEAM];
+  const hasSelectedTeam = teams.some((t) => t.id === data.gameSetup.myTeamId);
+  const gameSetup = hasSelectedTeam
+    ? data.gameSetup
+    : { ...data.gameSetup, myTeamId: STANDARD_TEST_TEAM.id };
+  return { ...data, teams, gameSetup };
+}
+
 // ---- Storage helpers ----
 function loadAppData(): AppData {
   // Check URL params first — a QR-code scan may carry config overrides.
@@ -83,15 +130,15 @@ function loadAppData(): AppData {
         const legacyId = side === "home" ? (gs as GameSetup).homeTeamId : (gs as GameSetup).awayTeamId;
         if (legacyId) gs.myTeamId = legacyId;
       }
-      return {
+      return withStandardizedTeams({
         ...DEFAULT_DATA,
         ...parsed,
         // Deep-merge gameSetup so new fields get their defaults for old saves
         gameSetup: { ...gs, ...urlSetup },
-      };
+      });
     }
   } catch { /* empty */ }
-  return { ...DEFAULT_DATA, gameSetup: { ...DEFAULT_DATA.gameSetup, ...urlSetup } };
+  return withStandardizedTeams({ ...DEFAULT_DATA, gameSetup: { ...DEFAULT_DATA.gameSetup, ...urlSetup } });
 }
 function saveAppData(d: AppData) { localStorage.setItem(APP_DATA_KEY, JSON.stringify(d)); }
 function pendingKey(gid: string) { return `${STORE}:${gid}:pending`; }
@@ -151,12 +198,12 @@ function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals>
   }
   return map;
 }
-function computeScores(events: GameEvent[]) {
+function computeScores(events: GameEvent[], homeTeamId: string, awayTeamId: string) {
   const s = { home: 0, away: 0 };
   for (const e of events) {
     if (e.type === "shot_attempt" && e.made) {
-      const side = e.teamId as TeamSide;
-      if (side === "home" || side === "away") s[side] += e.points;
+      if (e.teamId === homeTeamId) s.home += e.points;
+      if (e.teamId === awayTeamId) s.away += e.points;
     }
   }
   return s;
@@ -168,21 +215,21 @@ function generateGameId(opponent: string, date: string): string {
   return `${d}-${slug}`;
 }
 
-function computePlusMinus(events: GameEvent[], vcSide: TeamSide): Record<string, number> {
+function computePlusMinus(events: GameEvent[], vcTeamId: string): Record<string, number> {
   const pm: Record<string, number> = {};
   const vcLineup = new Set<string>();
   const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
   for (const e of sorted) {
     if (e.type === "substitution") {
-      if (e.teamId === vcSide) { vcLineup.delete(e.playerOutId); vcLineup.add(e.playerInId); }
+      if (e.teamId === vcTeamId) { vcLineup.delete(e.playerOutId); vcLineup.add(e.playerInId); }
     } else if (e.type === "shot_attempt" || e.type === "rebound" ||
                e.type === "foul" || e.type === "assist" || e.type === "steal" || e.type === "block") {
-      if (e.teamId === vcSide) vcLineup.add(e.playerId);
+      if (e.teamId === vcTeamId) vcLineup.add(e.playerId);
     } else if (e.type === "turnover" && e.playerId) {
-      if (e.teamId === vcSide) vcLineup.add(e.playerId);
+      if (e.teamId === vcTeamId) vcLineup.add(e.playerId);
     }
     if (e.type === "shot_attempt" && e.made) {
-      const delta = e.teamId === vcSide ? e.points : -e.points;
+      const delta = e.teamId === vcTeamId ? e.points : -e.points;
       for (const pid of vcLineup) pm[pid] = (pm[pid] ?? 0) + delta;
     }
   }
@@ -194,9 +241,11 @@ function describeEvent(
   homeTeamName: string,
   awayTeamName: string,
   allPlayers: Player[],
-  pTotals: Record<string, RunningTotals>
+  pTotals: Record<string, RunningTotals>,
+  homeTeamId = "home",
+  awayTeamId = "away"
 ) {
-  const tn = (id: string) => id === "home" ? homeTeamName : awayTeamName;
+  const tn = (id: string) => id === homeTeamId ? homeTeamName : id === awayTeamId ? awayTeamName : id;
   const pn = (id: string) => playerDisplayName(id, allPlayers);
   switch (event.type) {
     case "shot_attempt": {
@@ -264,7 +313,7 @@ async function exportGamePDF(
   const awayPlayers = awayTeam?.players ?? [];
   const allPlayers  = [...homePlayers, ...awayPlayers];
 
-  const scores  = computeScores(allEvents);
+  const scores  = computeScores(allEvents, homeTeam?.id ?? "home", awayTeam?.id ?? "away");
   const pTotals = computePlayerTotals(allEvents);
 
   // Header banner
@@ -427,11 +476,11 @@ async function exportGamePDF(
 
   const sortedEvents = [...allEvents].sort((a, b) => a.sequence - b.sequence);
   const pbpRows = sortedEvents.map(e => {
-    const d = describeEvent(e, homeName, awayName, allPlayers, pTotals);
+    const d = describeEvent(e, homeName, awayName, allPlayers, pTotals, homeTeam?.id ?? "home", awayTeam?.id ?? "away");
     const mins = Math.floor(e.clockSecondsRemaining / 60);
     const secs = String(e.clockSecondsRemaining % 60).padStart(2, "0");
     const clock = `Q${e.period}  ${mins}:${secs}`;
-    const team  = e.teamId === "home" ? homeAbbr : e.teamId === "away" ? awayAbbr : "";
+    const team  = e.teamId === "home" || e.teamId === homeTeam?.id ? homeAbbr : e.teamId === "away" || e.teamId === awayTeam?.id ? awayAbbr : "";
     return [clock, team, d.main, d.detail ?? ""];
   });
 
@@ -491,7 +540,7 @@ interface DashboardPlayerStat {
   pts: number; plus_minus: number;
 }
 
-function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcSide: TeamSide): DashboardPlayerStat[] {
+function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcTeamId: string): DashboardPlayerStat[] {
   const map: Record<string, {
     fg_made: number; fg_att: number; fg3_made: number; fg3_att: number;
     ft_made: number; ft_att: number; pts: number;
@@ -520,7 +569,7 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcS
   }
 
   const pct = (made: number, att: number) => att > 0 ? `${Math.round(made / att * 100)}%` : "-";
-  const plusMinus = computePlusMinus(events, vcSide);
+  const plusMinus = computePlusMinus(events, vcTeamId);
 
   return players
     .map(p => {
@@ -545,11 +594,11 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcS
     );
 }
 
-function computeTeamStats(events: GameEvent[], teamSide: TeamSide) {
+function computeTeamStats(events: GameEvent[], teamId: string) {
   let fg = 0, fga = 0, fg3 = 0, fg3a = 0, ft = 0, fta = 0;
   let oreb = 0, dreb = 0, asst = 0, to = 0, stl = 0, blk = 0, fouls = 0;
   for (const e of events) {
-    if (e.teamId !== teamSide) continue;
+    if (e.teamId !== teamId) continue;
     if (e.type === "shot_attempt") {
       fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; }
     } else if (e.type === "rebound")  { if (e.offensive) oreb++; else dreb++; }
@@ -593,7 +642,7 @@ export function App() {
 
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
-  const [clockInput, setClockInput] = useState("12:00");
+  const [clockInput, setClockInput] = useState("8:00");
   const [activeTeam, setActiveTeam] = useState<TeamSide>("home");
   const [modal, setModal] = useState<Modal | null>(null);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -608,11 +657,25 @@ export function App() {
   const vcSideSetup = appData.gameSetup.vcSide ?? "home";
   const homeTeam = vcSideSetup === "home" ? myTeam : undefined;
   const awayTeam  = vcSideSetup === "away" ? myTeam : undefined;
+  const homeTeamId = vcSideSetup === "home" ? (appData.gameSetup.myTeamId || "home") : "home";
+  const awayTeamId = vcSideSetup === "away" ? (appData.gameSetup.myTeamId || "away") : "away";
+  const vcTeamId = vcSideSetup === "home" ? homeTeamId : awayTeamId;
   const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : "Home";
   const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : "Away";
   const homePlayers = homeTeam?.players ?? [];
   const awayPlayers = awayTeam?.players ?? [];
   const allPlayers = [...homePlayers, ...awayPlayers];
+
+  function resolveTeamId(side: TeamSide): string {
+    return side === "home" ? homeTeamId : awayTeamId;
+  }
+
+  function normalizeEventTeamId(event: GameEvent): GameEvent {
+    if (event.teamId === homeTeamId || event.teamId === awayTeamId) return event;
+    if (event.teamId === "home") return { ...event, teamId: homeTeamId };
+    if (event.teamId === "away") return { ...event, teamId: awayTeamId };
+    return event;
+  }
 
   // ---- Network ----
   useEffect(() => {
@@ -624,7 +687,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const localPending = loadPending(gameId);
+    const localPending = loadPending(gameId).map(normalizeEventTeamId);
     const localSeq = loadSeq(gameId);
     setPendingEvents(localPending);
     setSequence(localSeq);
@@ -632,7 +695,7 @@ export function App() {
       try {
         const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (!res.ok) { setSubmittedEvents([]); return; }
-        const events = (await res.json()) as GameEvent[];
+        const events = ((await res.json()) as GameEvent[]).map(normalizeEventTeamId);
         setSubmittedEvents(events);
         const highest = events.reduce((m, e) => Math.max(m, e.sequence), 0);
         const next = Math.max(localSeq, highest + 1);
@@ -647,20 +710,21 @@ export function App() {
   useEffect(() => { saveSeq(gameId, sequence); }, [gameId, sequence]);
 
   async function submitEvent(event: GameEvent): Promise<boolean> {
+    const normalizedEvent = normalizeEventTeamId(event);
     try {
       const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(event),
+        body: JSON.stringify(normalizedEvent),
       });
       if (!res.ok) return false;
-      setSubmittedEvents(cur => [...cur, event].sort((a, b) => a.sequence - b.sequence));
-      setPendingEvents(cur => cur.filter(p => p.id !== event.id));
+      setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
+      setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
       return true;
     } catch {
       setPendingEvents(cur => {
-        if (cur.some(p => p.id === event.id)) return cur;
-        return [...cur, event].sort((a, b) => a.sequence - b.sequence);
+        if (cur.some(p => p.id === normalizedEvent.id)) return cur;
+        return [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence);
       });
       return false;
     }
@@ -674,7 +738,7 @@ export function App() {
     }
     try {
       const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
-      if (res.ok) setSubmittedEvents((await res.json()) as GameEvent[]);
+      if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
     } catch { /* empty */ }
   }
 
@@ -684,6 +748,9 @@ export function App() {
     const next = event.sequence + 1;
     setSequence(next);
     saveSeq(gameId, next);
+    // Optimistic update: add to pending immediately so score updates instantly
+    setPendingEvents(cur => [...cur, event].sort((a, b) => a.sequence - b.sequence));
+    // Then submit in background
     await submitEvent(event);
   }
 
@@ -712,8 +779,8 @@ export function App() {
       headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
       body: JSON.stringify({
         gameId: gid,
-        homeTeamId: vcSideSetup === "home" ? (appData.gameSetup.myTeamId || "home") : "home",
-        awayTeamId: vcSideSetup === "away" ? (appData.gameSetup.myTeamId || "away") : "away",
+        homeTeamId,
+        awayTeamId,
       }),
     });
     if (res.ok) {
@@ -750,7 +817,7 @@ export function App() {
 
     const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
     if (!vcTeam) {
-      alert("VC team is not configured. Check Game Setup in Settings.");
+      alert("Tracked team is not configured. Check Game Setup in Settings.");
       return;
     }
 
@@ -763,8 +830,8 @@ export function App() {
 
     const vcScore = scores[vcSide];
     const oppScore = scores[oppSide];
-    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcSide);
-    const teamStats = computeTeamStats(allEventObjs, vcSide);
+    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
+    const teamStats = computeTeamStats(allEventObjs, vcTeamId);
 
     // Full roster for the dashboard to upsert — keyed by jersey number so it
     // correctly updates existing players instead of creating abbreviated duplicates.
@@ -825,7 +892,7 @@ export function App() {
   ].sort((a, b) => b.event.sequence - a.event.sequence), [submittedEvents, pendingEvents]);
   // scores and totals include pending events so the UI is always up-to-date offline
   const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
-  const scores = useMemo(() => computeScores(allEventObjs), [allEventObjs]);
+  const scores = useMemo(() => computeScores(allEventObjs, homeTeamId, awayTeamId), [allEventObjs, homeTeamId, awayTeamId]);
   const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
   const foulAlerts = useMemo(() => {
     const vcPl = appData.gameSetup.vcSide === "home" ? homePlayers : awayPlayers;
@@ -867,7 +934,7 @@ export function App() {
     if (!modal || modal.kind !== "shot") return;
     void postEvent({
       ...base(sequence),
-      teamId: modal.teamId,
+      teamId: resolveTeamId(modal.teamId),
       type: "shot_attempt",
       playerId,
       made: modal.made,
@@ -880,7 +947,8 @@ export function App() {
   function confirmStat(playerId: string) {
     if (!modal || modal.kind !== "stat") return;
     const b = base(sequence);
-    const { stat, teamId } = modal;
+    const { stat } = modal;
+    const teamId = resolveTeamId(modal.teamId);
     let event: GameEvent | null = null;
     if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false };
     if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  };
@@ -888,7 +956,7 @@ export function App() {
     if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: "bad_pass" };
     if (stat === "steal")    event = { ...b, teamId, type: "steal",    playerId };
     if (stat === "block")    event = { ...b, teamId, type: "block",    playerId };
-    if (stat === "assist")   { setModal({ kind: "assist2", teamId, assistPlayerId: playerId }); return; }
+    if (stat === "assist")   { setModal({ kind: "assist2", teamId: modal.teamId, assistPlayerId: playerId }); return; }
     if (event) void postEvent(event as GameEvent);
     closeModal();
   }
@@ -897,7 +965,7 @@ export function App() {
     if (!modal || modal.kind !== "assist2") return;
     void postEvent({
       ...base(sequence),
-      teamId: modal.teamId,
+      teamId: resolveTeamId(modal.teamId),
       type: "assist",
       playerId: modal.assistPlayerId,
       scorerPlayerId,
@@ -914,7 +982,7 @@ export function App() {
     if (!modal || modal.kind !== "sub2") return;
     void postEvent({
       ...base(sequence),
-      teamId: modal.teamId,
+      teamId: resolveTeamId(modal.teamId),
       type: "substitution",
       playerOutId: modal.playerOutId,
       playerInId,
@@ -1139,12 +1207,12 @@ export function App() {
               <button
                 className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
                 onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
-                VC Home
+                Home
               </button>
               <button
                 className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
                 onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
-                VC Away
+                Away
               </button>
             </div>
           </div>
@@ -1159,7 +1227,12 @@ export function App() {
           </button>
           <a
             className="coach-link-btn"
-            href={`${appData.gameSetup.dashboardUrl ?? "http://localhost:5173"}?gameId=${gameId}`}
+            href={buildCoachViewUrl(gameId, {
+              myTeamId: appData.gameSetup.myTeamId,
+              myTeamName: myTeam?.name,
+              opponentName: appData.gameSetup.opponent,
+              vcSide: appData.gameSetup.vcSide,
+            })}
             target="_blank"
             rel="noreferrer"
             title={`Open Coach Dashboard · ${gameId}`}
@@ -1195,7 +1268,7 @@ export function App() {
         <div className="event-feed">
           {allEvents.length === 0 && <p className="empty-feed">No events yet</p>}
           {allEvents.map(({ event, pending }) => {
-            const d = describeEvent(event, homeTeamName, awayTeamName, allPlayers, pTotals);
+            const d = describeEvent(event, homeTeamName, awayTeamName, allPlayers, pTotals, homeTeamId, awayTeamId);
             return (
               <div key={event.id} className={`feed-item${pending ? " feed-pending" : ""}`}>
                 <span className={`feed-main ac-${d.accent}`}>{d.main}</span>
@@ -1216,7 +1289,7 @@ export function App() {
                 const endSeq = sequence;
                 void postEvent({
                   ...base(endSeq),
-                  teamId: appData.gameSetup.homeTeamId || "home",
+                  teamId: homeTeamId,
                   type: "period_transition",
                   newPeriod: lbl,
                 });
@@ -1227,7 +1300,7 @@ export function App() {
           ))}
         </div>
         <div className="clock-row">
-          <input className="clock-inp" value={clockInput} onChange={e => setClockInput(e.target.value)} placeholder="12:00" />
+          <input className="clock-inp" value={clockInput} onChange={e => setClockInput(e.target.value)} placeholder="8:00" />
         </div>
         <div className="date-row">
           <input className="date-inp" type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} title="Game date" />
@@ -1649,7 +1722,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                 : "No team selected"}
             </span>
           </div>
-          <span className="menu-chev"›</span>
+          <span className="menu-chev">›</span>
         </div>
       </section>
 

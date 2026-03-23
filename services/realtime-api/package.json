@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "dev": "tsx src/server.ts"
+    "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
     "@bta/game-state": "0.1.0",

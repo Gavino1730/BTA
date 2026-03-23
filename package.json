@@ -15,7 +15,7 @@
     "dev:operator": "npm run dev -w @bta/ipad-operator",
     "dev:video": "npm run dev -w @bta/video-worker",
     "dev:stats": "cd services/stats-dashboard && .venv\\Scripts\\python main.py",
-    "dev:all": "concurrently --names api,operator,coach,video,stats --prefix-colors cyan,green,yellow,magenta,blue \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:video\" \"npm run dev:stats\"",
+    "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach,video,stats --prefix-colors cyan,green,yellow,magenta,blue \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:video\" \"npm run dev:stats\"",
     "game-day": "pwsh -File scripts/game-day.ps1",
     "smoke-test": "pwsh -File scripts/smoke-test.ps1",
     "audit:ui": "node scripts/ui-audit.mjs",

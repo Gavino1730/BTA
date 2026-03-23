@@ -102,6 +102,16 @@ function apiKeyHeader(): Record<string, string> {
 }
 
 export function App() {
+  const setupNames = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      myTeamId: params.get("myTeamId") ?? "",
+      myTeamName: params.get("myTeamName") ?? "",
+      opponentName: params.get("opponentName") ?? "",
+      vcSide: params.get("vcSide") === "away" ? "away" as const : "home" as const,
+    };
+  }, []);
+
   const [gameId, setGameId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("gameId") ?? "game-1";
@@ -194,6 +204,42 @@ export function App() {
   const teams = useMemo(() => {
     return Object.keys(state?.scoreByTeam ?? {});
   }, [state]);
+
+  function toTitleCase(value: string): string {
+    return value
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part[0].toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  function displayTeamName(teamId: string): string {
+    const normalized = teamId.toLowerCase();
+    const isHomeAlias = normalized === "home" || normalized === "team-home";
+    const isAwayAlias = normalized === "away" || normalized === "team-away";
+
+    if (setupNames.myTeamId && teamId === setupNames.myTeamId && setupNames.myTeamName) {
+      return setupNames.myTeamName;
+    }
+
+    if (setupNames.myTeamName) {
+      if (setupNames.vcSide === "home" && isHomeAlias) return setupNames.myTeamName;
+      if (setupNames.vcSide === "away" && isAwayAlias) return setupNames.myTeamName;
+    }
+
+    if (setupNames.opponentName) {
+      if (setupNames.vcSide === "home" && isAwayAlias) return setupNames.opponentName;
+      if (setupNames.vcSide === "away" && isHomeAlias) return setupNames.opponentName;
+      if (setupNames.myTeamId && teamId !== setupNames.myTeamId && teams.length === 2) {
+        return setupNames.opponentName;
+      }
+    }
+
+    return toTitleCase(teamId);
+  }
 
   const leadersByTeam = useMemo(() => {
     return Object.fromEntries(
@@ -327,35 +373,52 @@ export function App() {
         <h2>Scoreboard</h2>
         {teams.length === 0 ? <p>No live game state yet.</p> : null}
         <div className="scoreboard">
-          {teams.map((teamId) => (
-            <article key={teamId} className="score-item">
-              <h3>{teamId}</h3>
-              <p className="score">{state?.scoreByTeam[teamId] ?? 0}</p>
-              <p>FGM/FGA: {state?.teamStats[teamId]?.shooting.fgMade ?? 0}/{state?.teamStats[teamId]?.shooting.fgAttempts ?? 0}</p>
-              <p>FTM/FTA: {state?.teamStats[teamId]?.shooting.ftMade ?? 0}/{state?.teamStats[teamId]?.shooting.ftAttempts ?? 0}</p>
-              <p>Possessions: {state?.possessionsByTeam[teamId] ?? 0}</p>
-              <p>Turnovers: {state?.teamStats[teamId]?.turnovers ?? 0}</p>
-              <p>Team fouls: {state?.teamStats[teamId]?.fouls ?? 0}</p>
-              <p>Bonus: {formatBonusIndicator(state?.bonusByTeam?.[teamId] ?? false)}</p>
-              <p>Subs: {state?.teamStats[teamId]?.substitutions ?? 0}</p>
-              <p>
-                Active: {(state?.activeLineupsByTeam[teamId] ?? []).length > 0
-                  ? state?.activeLineupsByTeam[teamId].join(", ")
-                  : "not set"}
-              </p>
-              <p>
-                Top scorer: {leadersByTeam[teamId]?.scoringLeader
-                  ? `${leadersByTeam[teamId].scoringLeader?.playerId} (${leadersByTeam[teamId].scoringLeader?.points})`
-                  : "none"}
-              </p>
-              <p>
-                Foul trouble: {leadersByTeam[teamId]?.foulLeader
-                  ? formatFoulTroubleLabel(
-                    leadersByTeam[teamId].foulLeader.playerId,
-                    leadersByTeam[teamId].foulLeader.fouls
-                  )
-                  : "none"}
-              </p>
+          {teams.map((teamId, index) => (
+            <article
+              key={teamId}
+              className={`score-item ${index === 0 ? "score-item-home" : "score-item-away"}`}
+            >
+              <header className="score-item-header">
+                <h3>{displayTeamName(teamId)}</h3>
+                <p className="score">{state?.scoreByTeam[teamId] ?? 0}</p>
+              </header>
+
+              <div className="score-meta-grid">
+                <p className="metric-row"><span>FGM / FGA</span><strong>{state?.teamStats[teamId]?.shooting.fgMade ?? 0}/{state?.teamStats[teamId]?.shooting.fgAttempts ?? 0}</strong></p>
+                <p className="metric-row"><span>FTM / FTA</span><strong>{state?.teamStats[teamId]?.shooting.ftMade ?? 0}/{state?.teamStats[teamId]?.shooting.ftAttempts ?? 0}</strong></p>
+                <p className="metric-row"><span>Possessions</span><strong>{state?.possessionsByTeam[teamId] ?? 0}</strong></p>
+                <p className="metric-row"><span>Turnovers</span><strong>{state?.teamStats[teamId]?.turnovers ?? 0}</strong></p>
+                <p className="metric-row"><span>Team fouls</span><strong>{state?.teamStats[teamId]?.fouls ?? 0}</strong></p>
+                <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(state?.bonusByTeam?.[teamId] ?? false)}</strong></p>
+                <p className="metric-row"><span>Subs</span><strong>{state?.teamStats[teamId]?.substitutions ?? 0}</strong></p>
+                <p className="metric-row metric-wrap">
+                  <span>Active lineup</span>
+                  <strong>
+                    {(state?.activeLineupsByTeam[teamId] ?? []).length > 0
+                      ? state?.activeLineupsByTeam[teamId].join(", ")
+                      : "not set"}
+                  </strong>
+                </p>
+                <p className="metric-row metric-wrap">
+                  <span>Top scorer</span>
+                  <strong>
+                    {leadersByTeam[teamId]?.scoringLeader
+                      ? `${leadersByTeam[teamId].scoringLeader?.playerId} (${leadersByTeam[teamId].scoringLeader?.points})`
+                      : "none"}
+                  </strong>
+                </p>
+                <p className="metric-row metric-wrap">
+                  <span>Foul trouble</span>
+                  <strong>
+                    {leadersByTeam[teamId]?.foulLeader
+                      ? formatFoulTroubleLabel(
+                        leadersByTeam[teamId].foulLeader.playerId,
+                        leadersByTeam[teamId].foulLeader.fouls
+                      )
+                      : "none"}
+                  </strong>
+                </p>
+              </div>
             </article>
           ))}
         </div>
