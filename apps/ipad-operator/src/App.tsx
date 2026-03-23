@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import type { GameEvent } from "@pivot/shared-schema";
+import { buildPeriodLabels, getPeriodDefaultClock, isOvertimePeriod, type GameEvent } from "@pivot/shared-schema";
 
 const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";
 const STORE = "pivot-op";
@@ -95,12 +95,13 @@ function playerDisplayName(id: string, allPlayers: Player[]): string {
 
 interface RunningTotals {
   points: number; fgm: number; fga: number; threePm: number; threePa: number;
+  ftm: number; fta: number;
   oreb: number; dreb: number; ast: number; stl: number; blk: number; to: number; fouls: number;
 }
 function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals> {
   const map: Record<string, RunningTotals> = {};
   function get(id: string) {
-    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
+    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
     return map[id];
   }
   for (const e of events) {
@@ -113,6 +114,10 @@ function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals>
         t.points += e.points;
         if (e.points === 3) t.threePm++;
       }
+    } else if (e.type === "free_throw_attempt") {
+      const t = get(e.playerId);
+      t.fta++;
+      if (e.made) { t.ftm++; t.points++; }
     } else if (e.type === "rebound") {
       const t = get(e.playerId);
       if (e.offensive) t.oreb++; else t.dreb++;
@@ -136,6 +141,9 @@ function computeScores(events: GameEvent[]) {
     if (e.type === "shot_attempt" && e.made) {
       const side = e.teamId as TeamSide;
       if (side === "home" || side === "away") s[side] += e.points;
+    } else if (e.type === "free_throw_attempt" && e.made) {
+      const side = e.teamId as TeamSide;
+      if (side === "home" || side === "away") s[side] += 1;
     }
   }
   return s;
@@ -204,12 +212,16 @@ function describeEvent(
       return { main: "block", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "teal" };
     case "substitution":
       return { main: "sub", detail: `${tn(event.teamId)}  ${pn(event.playerOutId)} â†’ ${pn(event.playerInId)}`, accent: "white" };
+    case "free_throw_attempt":
+      return {
+        main: event.made ? "FT made" : "FT miss",
+        detail: `${tn(event.teamId)}  ${pn(event.playerId)}  ${event.attemptNumber}/${event.totalAttempts}`,
+        accent: event.made ? "teal" : "red",
+      };
+    case "period_transition":
+      return { main: `${event.newPeriod} start`, detail: "", accent: "teal" };
     case "possession_start":
       return { main: "possession", detail: tn(event.possessedByTeamId), accent: "white" };
-    case "period_start":
-      return { main: `Q${event.period} start`, detail: "", accent: "teal" };
-    case "period_end":
-      return { main: `Q${event.period} end`, detail: "", accent: "white" };
     default:
       return { main: (event as GameEvent).type, detail: "", accent: "white" };
   }
@@ -411,7 +423,7 @@ async function exportGamePDF(
     const d = describeEvent(e, homeName, awayName, allPlayers, pTotals);
     const mins = Math.floor(e.clockSecondsRemaining / 60);
     const secs = String(e.clockSecondsRemaining % 60).padStart(2, "0");
-    const clock = `Q${e.period}  ${mins}:${secs}`;
+    const clock = `${e.period}  ${mins}:${secs}`;
     const team  = e.teamId === "home" ? homeAbbr : e.teamId === "away" ? awayAbbr : "";
     return [clock, team, d.main, d.detail ?? ""];
   });
@@ -488,14 +500,15 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcS
   for (const e of events) {
     if (e.type === "shot_attempt") {
       const t = get(e.playerId);
-      if (e.points === 1) {              // free throw
-        t.ft_att++;
-        if (e.made) { t.ft_made++; t.pts++; }
-      } else {                           // field goal (2pt or 3pt)
-        t.fg_att++;
-        if (e.points === 3) t.fg3_att++;
-        if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
-      }
+      // Field goals only (2pt/3pt)
+      t.fg_att++;
+      if (e.points === 3) t.fg3_att++;
+      if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
+    } else if (e.type === "free_throw_attempt") {
+      // Individual free throw events per NFHS rules
+      const t = get(e.playerId);
+      t.ft_att++;
+      if (e.made) { t.ft_made++; t.pts++; }
     } else if (e.type === "rebound") {
       const t = get(e.playerId); if (e.offensive) t.oreb++; else t.dreb++;
     } else if (e.type === "assist")  { get(e.playerId).ast++;   }
@@ -537,8 +550,9 @@ function computeTeamStats(events: GameEvent[], teamSide: TeamSide) {
   for (const e of events) {
     if (e.teamId !== teamSide) continue;
     if (e.type === "shot_attempt") {
-      if (e.points === 1) { fta++; if (e.made) ft++; }
-      else { fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; } }
+      fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; }
+    } else if (e.type === "free_throw_attempt") {
+      fta++; if (e.made) ft++;
     } else if (e.type === "rebound")  { if (e.offensive) oreb++; else dreb++; }
     else if (e.type === "assist")     { asst++;  }
     else if (e.type === "steal")      { stl++;   }
@@ -551,7 +565,9 @@ function computeTeamStats(events: GameEvent[], teamSide: TeamSide) {
 
 // ---- Modal types ----
 type Modal =
-  | { kind: "shot"; teamId: TeamSide; points: 1 | 2 | 3; made: boolean }
+  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean }
+  | { kind: "ft1"; teamId: TeamSide; totalAttempts: 1 | 2 | 3 }
+  | { kind: "ft2"; teamId: TeamSide; playerId: string; totalAttempts: 1 | 2 | 3; attemptNumber: number }
   | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
   | { kind: "sub1"; teamId: TeamSide }
@@ -579,8 +595,8 @@ export function App() {
   const [submittedEvents, setSubmittedEvents] = useState<GameEvent[]>([]);
 
   // ---- In-game UI state ----
-  const [period, setPeriod] = useState(1);
-  const [clockInput, setClockInput] = useState("12:00");
+  const [period, setPeriod] = useState<string>("Q1");
+  const [clockInput, setClockInput] = useState("8:00");
   const [activeTeam, setActiveTeam] = useState<TeamSide>("home");
   const [modal, setModal] = useState<Modal | null>(null);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -845,7 +861,7 @@ export function App() {
       playerId,
       made: modal.made,
       points: modal.points,
-      zone: modal.points === 3 ? "above_break_three" : modal.points === 1 ? "free_throw" : "paint",
+      zone: modal.points === 3 ? "above_break_three" : "paint",
     } as GameEvent);
     closeModal();
   }
@@ -857,7 +873,7 @@ export function App() {
     let event: GameEvent | null = null;
     if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false } as GameEvent;
     if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  } as GameEvent;
-    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: "reaching" } as GameEvent;
+    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: "personal" } as GameEvent;
     if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: "bad_pass" } as GameEvent;
     if (stat === "steal")    event = { ...b, teamId, type: "steal",    playerId } as GameEvent;
     if (stat === "block")    event = { ...b, teamId, type: "block",    playerId } as GameEvent;
@@ -893,6 +909,31 @@ export function App() {
       playerInId,
     } as GameEvent);
     closeModal();
+  }
+
+  // Free throw: pick player after total FT count is chosen
+  function confirmFtPlayer(playerId: string) {
+    if (!modal || modal.kind !== "ft1") return;
+    setModal({ kind: "ft2", teamId: modal.teamId, playerId, totalAttempts: modal.totalAttempts, attemptNumber: 1 });
+  }
+
+  // Free throw: record made/missed for the current attempt, advance or close
+  function confirmFtResult(made: boolean) {
+    if (!modal || modal.kind !== "ft2") return;
+    void postEvent({
+      ...base(sequence),
+      teamId: modal.teamId,
+      type: "free_throw_attempt",
+      playerId: modal.playerId,
+      made,
+      attemptNumber: modal.attemptNumber,
+      totalAttempts: modal.totalAttempts,
+    } as GameEvent);
+    if (modal.attemptNumber < modal.totalAttempts) {
+      setModal({ ...modal, attemptNumber: modal.attemptNumber + 1 });
+    } else {
+      closeModal();
+    }
   }
 
   // ---- Modal render ----
@@ -1000,8 +1041,49 @@ export function App() {
       );
     }
 
-    if (modal.kind === "sub1") {
+    if (modal.kind === "ft1") {
       const players = teamPlayers(modal.teamId);
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Free Throw — {tLabel(modal.teamId)} — {modal.totalAttempts} FT{modal.totalAttempts > 1 ? "s" : ""}</span>
+              <button className="modal-close" onClick={closeModal}>{"\u2715"}</button>
+            </div>
+            <div className="player-list">
+              {players.length === 0 && <p className="no-players">{"No players \u2014 set up roster in Settings \u2630"}</p>}
+              {players.map(p => (
+                <button key={p.id} className="player-row" onClick={() => confirmFtPlayer(p.id)}>
+                  <span className="pnum">#{p.number}</span>
+                  <span className="pname">{p.name}</span>
+                  {pTotals[p.id]?.fouls ? <span className="pfoul">{pTotals[p.id].fouls}f</span> : null}
+                  {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "ft2") {
+      return (
+        <div className="modal-overlay">
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">FT {modal.attemptNumber}/{modal.totalAttempts} — {playerDisplayName(modal.playerId, allPlayers)}</span>
+              <button className="modal-close" onClick={closeModal}>{"\u2715"}</button>
+            </div>
+            <div className="made-miss-row">
+              <button className="toggle-btn t-teal" onClick={() => confirmFtResult(true)}>Made</button>
+              <button className="toggle-btn t-red"  onClick={() => confirmFtResult(false)}>Miss</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "sub1") {
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -1066,7 +1148,28 @@ export function App() {
   // ================================================================
   //  GAME VIEW (3-column)
   // ================================================================
-  const periodLabels = ["Q1", "Q2", "Q3", "Q4", "OT"];
+  // NFHS: Q1–Q4 (8 min) + OT periods (4 min) as needed
+  const [otCount, setOtCount] = useState(0);
+  const periodLabels = buildPeriodLabels(otCount);
+
+  function handlePeriodChange(newPeriod: string) {
+    if (newPeriod === period) return;
+    // Fire period_transition event to log the change and reset/carry team fouls per NFHS rules
+    void postEvent({
+      ...base(sequence),
+      teamId: appData.gameSetup.homeTeamId || "home",
+      type: "period_transition",
+      newPeriod,
+    } as GameEvent);
+    setPeriod(newPeriod);
+    // NFHS: 8 min for regulation quarters, 4 min for OT periods
+    setClockInput(getPeriodDefaultClock(newPeriod));
+    // Expand OT list if user clicks further into OT
+    if (isOvertimePeriod(newPeriod)) {
+      const otNum = parseInt(/^OT(\d+)$/.exec(newPeriod)![1], 10);
+      if (otNum > otCount) setOtCount(otNum);
+    }
+  }
 
   return (
     <div className="game-layout">
@@ -1089,8 +1192,9 @@ export function App() {
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 2, made: true })}>2pt</button>
           <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 3, made: true })}>3pt</button>
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 3, made: true })}>3pt</button>
-          <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 1, made: true })}>1pt</button>
-          <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 1, made: true })}>1pt</button>
+          {/* FT button: pick total FTs (1/2/3) then player, then each attempt — 2 FTs most common */}
+          <button className="circle teal" onClick={() => setModal({ kind: "ft1", teamId: "home", totalAttempts: 2 })}>FT</button>
+          <button className="circle red"  onClick={() => setModal({ kind: "ft1", teamId: "away", totalAttempts: 2 })}>FT</button>
         </div>
         <div className="panel-foot">
           <button className="icon-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">{"\u2630"}</button>
@@ -1140,35 +1244,16 @@ export function App() {
         </div>
 
         <div className="period-row">
-          {periodLabels.map((lbl, i) => (
+          {periodLabels.map((lbl) => (
             <button
               key={lbl}
-              className={`period-btn${period === i + 1 ? " period-on" : ""}`}
-              onClick={() => {
-                const newPeriod = i + 1;
-                if (newPeriod === period) return;
-                // Fire period_end for the period we're leaving, then period_start for the new one
-                const endSeq = sequence;
-                void postEvent({
-                  ...base(endSeq),
-                  teamId: appData.gameSetup.homeTeamId || "home",
-                  type: "period_end",
-                  period,
-                } as GameEvent);
-                void postEvent({
-                  ...base(endSeq + 1),
-                  teamId: appData.gameSetup.homeTeamId || "home",
-                  type: "period_start",
-                  period: newPeriod,
-                } as GameEvent);
-                setPeriod(newPeriod);
-                setClockInput("8:00");
-              }}
+              className={`period-btn${period === lbl ? " period-on" : ""}`}
+              onClick={() => handlePeriodChange(lbl)}
             >{lbl}</button>
           ))}
         </div>
         <div className="clock-row">
-          <input className="clock-inp" value={clockInput} onChange={e => setClockInput(e.target.value)} placeholder="12:00" />
+          <input className="clock-inp" value={clockInput} onChange={e => setClockInput(e.target.value)} placeholder="8:00" />
         </div>
         <div className="date-row">
           <input className="date-inp" type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} title="Game date" />

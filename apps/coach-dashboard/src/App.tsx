@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getPeriodDurationSeconds, type Period } from "@pivot/shared-schema";
 import { io } from "socket.io-client";
+import {
+  formatBonusIndicator,
+  formatDashboardAnchorSummary,
+  formatDashboardClock,
+  formatDashboardEventMeta,
+  formatFoulTroubleLabel,
+} from "./display.js";
 
 interface TeamStats {
   shooting: {
-    attempts: number;
-    made: number;
+    fgAttempts: number;
+    fgMade: number;
+    ftAttempts: number;
+    ftMade: number;
     points: number;
   };
   turnovers: number;
@@ -18,8 +28,10 @@ interface PlayerStats {
   playerId: string;
   teamId: string;
   points: number;
-  shotAttempts: number;
-  shotsMade: number;
+  fgAttempts: number;
+  fgMade: number;
+  ftAttempts: number;
+  ftMade: number;
   reboundsOff: number;
   reboundsDef: number;
   turnovers: number;
@@ -31,7 +43,9 @@ interface PlayerStats {
 
 interface GameState {
   gameId: string;
+  currentPeriod: Period;
   scoreByTeam: Record<string, number>;
+  bonusByTeam: Record<string, boolean>;
   possessionsByTeam: Record<string, number>;
   activeLineupsByTeam: Record<string, string[]>;
   teamStats: Record<string, TeamStats>;
@@ -41,7 +55,7 @@ interface GameState {
     type: string;
     sequence: number;
     teamId: string;
-    period: number;
+    period: Period;
     clockSecondsRemaining: number;
   }>;
 }
@@ -65,14 +79,14 @@ interface SyncAnchor {
   id: string;
   videoId: string;
   eventType: "tipoff" | "quarter_start" | "buzzer";
-  period: number;
+  period: Period;
   gameClockSeconds: number;
   videoSecond: number;
 }
 
 interface VideoResolution {
   videoId: string;
-  period: number;
+  period: Period;
   gameClockSeconds: number;
   resolvedVideoSecond: number;
   anchorId: string;
@@ -208,17 +222,7 @@ export function App() {
     return synced?.id ?? videos[0]?.id;
   }, [videos]);
 
-  function formatClock(seconds: number) {
-    const minute = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, "0");
-    const second = Math.floor(seconds % 60)
-      .toString()
-      .padStart(2, "0");
-    return `${minute}:${second}`;
-  }
-
-  async function resolveEventClip(eventId: string, period: number, gameClockSeconds: number) {
+  async function resolveEventClip(eventId: string, period: Period, gameClockSeconds: number) {
     if (!selectedVideoForResolution) {
       setDashboardStatus("No registered video available for clip resolution");
       return;
@@ -275,8 +279,8 @@ export function App() {
         id: `anchor-${Date.now()}`,
         videoId: anchorVideoId,
         eventType: "tipoff",
-        period: 1,
-        gameClockSeconds: 480,
+        period: "Q1",
+        gameClockSeconds: getPeriodDurationSeconds("Q1"),
         videoSecond: Number(videoSecond)
       })
     });
@@ -303,12 +307,16 @@ export function App() {
           <p className="eyebrow">Bench Intelligence</p>
           <h1>Pivot Coach Dashboard</h1>
           <p>{dashboardStatus}</p>
+          <p>NFHS live view: 8:00 quarters, 4:00 overtime, bonus at 5 team fouls.</p>
         </div>
         <div className="header-controls">
           <label>
             Game ID
             <input value={gameId} onChange={(event) => setGameId(event.target.value)} />
           </label>
+          <div className="connection-pill">
+            {state ? `Current period ${state.currentPeriod}` : "Waiting for period state"}
+          </div>
           <div className={`connection-pill ${connected ? "online" : "offline"}`}>
             {connected ? "Live connected" : "Offline"}
           </div>
@@ -323,10 +331,12 @@ export function App() {
             <article key={teamId} className="score-item">
               <h3>{teamId}</h3>
               <p className="score">{state?.scoreByTeam[teamId] ?? 0}</p>
-              <p>FGM/FGA: {state?.teamStats[teamId]?.shooting.made ?? 0}/{state?.teamStats[teamId]?.shooting.attempts ?? 0}</p>
+              <p>FGM/FGA: {state?.teamStats[teamId]?.shooting.fgMade ?? 0}/{state?.teamStats[teamId]?.shooting.fgAttempts ?? 0}</p>
+              <p>FTM/FTA: {state?.teamStats[teamId]?.shooting.ftMade ?? 0}/{state?.teamStats[teamId]?.shooting.ftAttempts ?? 0}</p>
               <p>Possessions: {state?.possessionsByTeam[teamId] ?? 0}</p>
               <p>Turnovers: {state?.teamStats[teamId]?.turnovers ?? 0}</p>
-              <p>Fouls: {state?.teamStats[teamId]?.fouls ?? 0}</p>
+              <p>Team fouls: {state?.teamStats[teamId]?.fouls ?? 0}</p>
+              <p>Bonus: {formatBonusIndicator(state?.bonusByTeam?.[teamId] ?? false)}</p>
               <p>Subs: {state?.teamStats[teamId]?.substitutions ?? 0}</p>
               <p>
                 Active: {(state?.activeLineupsByTeam[teamId] ?? []).length > 0
@@ -340,7 +350,10 @@ export function App() {
               </p>
               <p>
                 Foul trouble: {leadersByTeam[teamId]?.foulLeader
-                  ? `${leadersByTeam[teamId].foulLeader?.playerId} (${leadersByTeam[teamId].foulLeader?.fouls})`
+                  ? formatFoulTroubleLabel(
+                    leadersByTeam[teamId].foulLeader.playerId,
+                    leadersByTeam[teamId].foulLeader.fouls
+                  )
                   : "none"}
               </p>
             </article>
@@ -369,14 +382,12 @@ export function App() {
             <article key={event.id} className="film-card event-card">
               <div>
                 <strong>
-                  #{event.sequence} {event.type}
+                  #{event.sequence} {event.type.replaceAll("_", " ")}
                 </strong>
-                <p>
-                  {event.teamId} · P{event.period} · clock {formatClock(event.clockSecondsRemaining)}
-                </p>
+                <p>{formatDashboardEventMeta(event)}</p>
                 {eventClipMap[event.id] ? (
                   <small>
-                    Clip at {formatClock(eventClipMap[event.id].resolvedVideoSecond)} (video {eventClipMap[event.id].videoId})
+                    Clip at {formatDashboardClock(eventClipMap[event.id].resolvedVideoSecond)} (video {eventClipMap[event.id].videoId})
                   </small>
                 ) : null}
               </div>
@@ -396,7 +407,7 @@ export function App() {
       <section className="card film-grid">
         <div>
           <h2>Film Sync</h2>
-          <p>Register uploaded game film and place manual sync anchors for later analysis.</p>
+          <p>Register uploaded game film and place manual sync anchors against NFHS game timing.</p>
 
           {/* Video player — shown when a source URL is provided */}
           <div className="form-grid" style={{ marginBottom: 12 }}>
@@ -443,7 +454,7 @@ export function App() {
               <input value={videoSecond} onChange={(event) => setVideoSecond(event.target.value)} />
             </label>
             <button className="teal" onClick={() => void addSyncAnchor()}>
-              Save Tipoff Anchor
+              Save Q1 Tipoff Anchor
             </button>
           </div>
         </div>
@@ -471,9 +482,7 @@ export function App() {
                 <article key={anchor.id} className="film-card">
                   <strong>{anchor.eventType.replaceAll("_", " ")}</strong>
                   <p>{anchor.videoId}</p>
-                  <small>
-                    Period {anchor.period} · game {anchor.gameClockSeconds}s · video {anchor.videoSecond}s
-                  </small>
+                  <small>{formatDashboardAnchorSummary(anchor)}</small>
                 </article>
               ))}
             </div>

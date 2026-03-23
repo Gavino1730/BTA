@@ -1,5 +1,6 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
+import type { Period } from "@pivot/shared-schema";
 import {
   addAnchor,
   addVideo,
@@ -61,7 +62,7 @@ app.post("/games/:gameId/sync-anchors", requireApiKey, (req, res) => {
     gameId: req.params.gameId,
     videoId,
     eventType,
-    period: Number(period ?? 1),
+    period: String(period ?? "Q1") as Period,
     gameClockSeconds: Number(gameClockSeconds ?? 0),
     videoSecond: Number(videoSecond ?? 0)
   });
@@ -74,7 +75,7 @@ app.get("/games/:gameId/sync-anchors", requireApiKey, (req, res) => {
 });
 
 app.get("/games/:gameId/videos/:videoId/resolve", requireApiKey, (req, res) => {
-  const period = Number(req.query.period ?? 1);
+  const period = String(req.query.period ?? "Q1") as Period;
   const gameClockSeconds = Number(req.query.gameClockSeconds ?? 0);
 
   const resolution = resolveVideoSecond(

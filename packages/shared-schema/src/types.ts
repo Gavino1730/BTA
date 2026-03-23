@@ -1,5 +1,11 @@
+// Oregon 4A / NFHS rules: period values are Q1, Q2, Q3, Q4, OT1, OT2, ...
+export type Period = "Q1" | "Q2" | "Q3" | "Q4" | `OT${number}`;
+export const REGULAR_PERIODS = ["Q1", "Q2", "Q3", "Q4"] as const;
+export type RegularPeriod = (typeof REGULAR_PERIODS)[number];
+
 export const EVENT_TYPES = [
   "shot_attempt",
+  "free_throw_attempt",
   "rebound",
   "turnover",
   "foul",
@@ -10,47 +16,47 @@ export const EVENT_TYPES = [
   "possession_start",
   "possession_end",
   "timeout",
-  "period_start",
-  "period_end"
+  "period_transition"
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
 
+// Shot zones (field goals only — free throws use free_throw_attempt)
 export const SHOT_ZONES = [
   "rim",
   "paint",
   "midrange",
   "corner_three",
-  "above_break_three",
-  "free_throw"
+  "above_break_three"
 ] as const;
 
 export type ShotZone = (typeof SHOT_ZONES)[number];
 
+// NFHS turnover types
 export const TURNOVER_TYPES = [
+  "traveling",
   "bad_pass",
-  "travel",
-  "double_dribble",
   "offensive_foul",
-  "shot_clock",
-  "lost_ball",
+  "out_of_bounds",
+  "double_dribble",
+  "steal",
   "other"
 ] as const;
 
 export type TurnoverType = (typeof TURNOVER_TYPES)[number];
 
+// NFHS foul types
 export const FOUL_TYPES = [
+  "personal",
   "shooting",
   "offensive",
-  "blocking",
-  "reaching",
   "technical",
-  "loose_ball",
-  "other"
+  "flagrant"
 ] as const;
 
 export type FoulType = (typeof FOUL_TYPES)[number];
 
+// Timeouts — manual tracking per NFHS (exact counts vary by level)
 export const TIMEOUT_TYPES = ["full", "short"] as const;
 
 export type TimeoutType = (typeof TIMEOUT_TYPES)[number];
@@ -60,20 +66,33 @@ export interface GameEventBase {
   gameId: string;
   sequence: number;
   timestampIso: string;
-  period: number;
+  // Period: Q1, Q2, Q3, Q4 for regulation; OT1, OT2, ... for overtime
+  period: string;
   clockSecondsRemaining: number;
   teamId: string;
   operatorId: string;
   type: EventType;
 }
 
+// Field goal attempts only (2pt or 3pt). Free throws use free_throw_attempt.
 export interface ShotAttemptEvent extends GameEventBase {
   type: "shot_attempt";
   playerId: string;
   made: boolean;
-  points: 1 | 2 | 3;
+  points: 2 | 3;
   zone: ShotZone;
   assistedByPlayerId?: string;
+}
+
+// Individual free throw attempt — each FT is a separate event per NFHS rules
+export interface FreeThrowAttemptEvent extends GameEventBase {
+  type: "free_throw_attempt";
+  playerId: string;
+  made: boolean;
+  // Which attempt in the set, e.g. 1 of 2
+  attemptNumber: number;
+  // Total FTs awarded: 2 for bonus/shooting 2pt, 3 for shooting 3pt, 1 for and-one
+  totalAttempts: number;
 }
 
 export interface ReboundEvent extends GameEventBase {
@@ -94,6 +113,10 @@ export interface FoulEvent extends GameEventBase {
   playerId: string;
   foulType: FoulType;
   onPlayerId?: string;
+  // For shooting fouls: points value of the shot attempt (determines free throw count)
+  shootingFoulPoints?: 2 | 3;
+  // True if made basket + foul (and-one: 1 additional free throw)
+  andOne?: boolean;
 }
 
 export interface AssistEvent extends GameEventBase {
@@ -141,18 +164,16 @@ export interface TimeoutEvent extends GameEventBase {
   timeoutType: TimeoutType;
 }
 
-export interface PeriodStartEvent extends GameEventBase {
-  type: "period_start";
-  period: number;
-}
-
-export interface PeriodEndEvent extends GameEventBase {
-  type: "period_end";
-  period: number;
+// Marks the start of a new period — used for team foul reset logic
+export interface PeriodTransitionEvent extends GameEventBase {
+  type: "period_transition";
+  // The period that is beginning (Q1, Q2, Q3, Q4, OT1, OT2, ...)
+  newPeriod: string;
 }
 
 export type GameEvent =
   | ShotAttemptEvent
+  | FreeThrowAttemptEvent
   | ReboundEvent
   | TurnoverEvent
   | FoulEvent
@@ -163,5 +184,4 @@ export type GameEvent =
   | PossessionStartEvent
   | PossessionEndEvent
   | TimeoutEvent
-  | PeriodStartEvent
-  | PeriodEndEvent;
+  | PeriodTransitionEvent;
