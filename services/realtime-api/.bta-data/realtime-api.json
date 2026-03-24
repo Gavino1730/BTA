@@ -1,0 +1,290 @@
+{
+  "sessions": [
+    {
+      "gameId": "smoke-1037",
+      "homeTeamId": "home",
+      "awayTeamId": "away",
+      "events": []
+    },
+    {
+      "gameId": "smoke-8222",
+      "homeTeamId": "home",
+      "awayTeamId": "away",
+      "events": []
+    },
+    {
+      "gameId": "debug-smoke",
+      "homeTeamId": "home",
+      "awayTeamId": "away",
+      "events": [
+        {
+          "id": "evt-1",
+          "gameId": "debug-smoke",
+          "sequence": 1,
+          "timestampIso": "2026-03-18T20:00:00.000Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 470,
+          "teamId": "home",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "h1",
+          "made": true,
+          "points": 2,
+          "zone": "paint"
+        }
+      ]
+    },
+    {
+      "gameId": "debug-smoke-2",
+      "homeTeamId": "home",
+      "awayTeamId": "away",
+      "events": []
+    },
+    {
+      "gameId": "debug-smoke-3",
+      "homeTeamId": "home",
+      "awayTeamId": "away",
+      "events": []
+    },
+    {
+      "gameId": "smoke-9206",
+      "homeTeamId": "home",
+      "awayTeamId": "away",
+      "events": [
+        {
+          "id": "c104ed6d-f5d4-4648-a82c-f066d0a34494",
+          "gameId": "smoke-9206",
+          "sequence": 1,
+          "timestampIso": "2026-03-24T00:43:37.977Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 470,
+          "teamId": "home",
+          "operatorId": "op-1",
+          "type": "period_transition",
+          "newPeriod": "Q1"
+        },
+        {
+          "id": "f3902bfa-9456-47cc-aba6-f346f68b80fc",
+          "gameId": "smoke-9206",
+          "sequence": 2,
+          "timestampIso": "2026-03-24T00:43:37.981Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 460,
+          "teamId": "home",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "p1",
+          "made": true,
+          "points": 2,
+          "zone": "paint"
+        },
+        {
+          "id": "5ba80a0d-799a-45ca-be40-559c14d544f2",
+          "gameId": "smoke-9206",
+          "sequence": 3,
+          "timestampIso": "2026-03-24T00:43:37.981Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 450,
+          "teamId": "home",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "p1",
+          "made": true,
+          "points": 3,
+          "zone": "above_break_three"
+        },
+        {
+          "id": "427273a9-ba4c-4261-933c-117ab99ecc2c",
+          "gameId": "smoke-9206",
+          "sequence": 4,
+          "timestampIso": "2026-03-24T00:43:37.981Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 440,
+          "teamId": "home",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "p2",
+          "made": false,
+          "points": 2,
+          "zone": "paint"
+        },
+        {
+          "id": "4a1c3d48-b040-440d-800d-3c9be3f9aabc",
+          "gameId": "smoke-9206",
+          "sequence": 5,
+          "timestampIso": "2026-03-24T00:43:37.982Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 430,
+          "teamId": "home",
+          "operatorId": "op-1",
+          "type": "foul",
+          "playerId": "p2",
+          "foulType": "personal"
+        }
+      ]
+    },
+    {
+      "gameId": "2026-03-24-jew",
+      "homeTeamId": "team-usa",
+      "awayTeamId": "team-jew",
+      "opponentName": "jew",
+      "opponentTeamId": "team-jew",
+      "events": [
+        {
+          "id": "id-1774324078017-xguqc",
+          "gameId": "2026-03-24-jew",
+          "sequence": 1,
+          "timestampIso": "2026-03-24T03:47:58.017Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-jew",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "away-team",
+          "made": true,
+          "points": 2,
+          "zone": "paint"
+        },
+        {
+          "id": "id-1774324079962-b2p0g",
+          "gameId": "2026-03-24-jew",
+          "sequence": 2,
+          "timestampIso": "2026-03-24T03:47:59.962Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-jew",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "away-team",
+          "made": true,
+          "points": 3,
+          "zone": "above_break_three"
+        },
+        {
+          "id": "id-1774324082154-gdk96",
+          "gameId": "2026-03-24-jew",
+          "sequence": 3,
+          "timestampIso": "2026-03-24T03:48:02.154Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-jew",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "away-team",
+          "made": true,
+          "points": 3,
+          "zone": "above_break_three"
+        },
+        {
+          "id": "id-1774324084612-0wk9z",
+          "gameId": "2026-03-24-jew",
+          "sequence": 4,
+          "timestampIso": "2026-03-24T03:48:04.612Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-usa",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "usa-9",
+          "made": true,
+          "points": 3,
+          "zone": "above_break_three"
+        }
+      ]
+    },
+    {
+      "gameId": "2026-03-24-test",
+      "homeTeamId": "team-usa",
+      "awayTeamId": "team-test",
+      "opponentName": "test",
+      "opponentTeamId": "team-test",
+      "events": []
+    },
+    {
+      "gameId": "2026-03-24-spicy",
+      "homeTeamId": "team-usa",
+      "awayTeamId": "team-spicy",
+      "opponentName": "spicy",
+      "opponentTeamId": "team-spicy",
+      "events": []
+    },
+    {
+      "gameId": "2026-03-24-opps",
+      "homeTeamId": "team-usa",
+      "awayTeamId": "team-opps",
+      "opponentName": "Opps",
+      "opponentTeamId": "team-opps",
+      "events": [
+        {
+          "id": "id-1774322868175-yqbnk",
+          "gameId": "2026-03-24-opps",
+          "sequence": 1,
+          "timestampIso": "2026-03-24T03:27:48.175Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-usa",
+          "operatorId": "op-1",
+          "type": "substitution",
+          "playerOutId": "usa-6",
+          "playerInId": "usa-7"
+        }
+      ]
+    },
+    {
+      "gameId": "2026-03-24-evil",
+      "homeTeamId": "team-usa",
+      "awayTeamId": "team-evil",
+      "opponentName": "Evil",
+      "opponentTeamId": "team-evil",
+      "events": [
+        {
+          "id": "id-1774323056945-t6mbd",
+          "gameId": "2026-03-24-evil",
+          "sequence": 1,
+          "timestampIso": "2026-03-24T03:30:56.945Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-usa",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "usa-6",
+          "made": true,
+          "points": 3,
+          "zone": "above_break_three"
+        },
+        {
+          "id": "id-1774323063329-o02tv",
+          "gameId": "2026-03-24-evil",
+          "sequence": 2,
+          "timestampIso": "2026-03-24T03:31:03.329Z",
+          "period": "Q1",
+          "clockSecondsRemaining": 480,
+          "teamId": "team-evil",
+          "operatorId": "op-1",
+          "type": "shot_attempt",
+          "playerId": "away-team",
+          "made": true,
+          "points": 3,
+          "zone": "above_break_three"
+        }
+      ]
+    }
+  ],
+  "rosterTeams": [
+    {
+      "id": "team-team",
+      "name": "Team",
+      "abbreviation": "TEAM",
+      "players": [
+        {
+          "id": "team-team-12",
+          "number": "12",
+          "name": "T Smith",
+          "position": "",
+          "height": null,
+          "grade": null
+        }
+      ]
+    }
+  ]
+}

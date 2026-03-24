@@ -11,11 +11,29 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 instance/
+.pytest_cache/
+*.db
+*.sqlite
+*.sqlite3
+.tox/
+.coverage
+htmlcov/
 
-# BTA data persistence
-.bta-data/
+# Generated artifacts
+artifacts/
+.railway/
+test_output/
+docs/_build/
+site/
+
+# Local env variants
+.env.local
+.env.*.local
+
+# Data persistence
+.platform-data/
 
 # Stats data (generated)
-services/stats-dashboard/data/season_analysis.json
-services/stats-dashboard/data/player_analysis_cache.json
-services/stats-dashboard/data/team_summary.json
+apps/stats-dashboard/data/season_analysis.json
+apps/stats-dashboard/data/player_analysis_cache.json
+apps/stats-dashboard/data/team_summary.json

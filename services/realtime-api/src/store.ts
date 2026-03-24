@@ -74,7 +74,7 @@ interface PersistedSnapshot {
 const sessions = new Map<string, GameSession>();
 let rosterTeams: RosterTeam[] = [];
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
-const dataDirectory = resolve(process.cwd(), ".bta-data");
+const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
 const OPENAI_API_URL = process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
 const LIVE_AI_MODEL = process.env.BTA_LIVE_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";

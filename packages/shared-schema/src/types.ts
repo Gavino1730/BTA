@@ -185,3 +185,32 @@ export type GameEvent =
   | PossessionEndEvent
   | TimeoutEvent
   | PeriodTransitionEvent;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Roster & Team Management
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface RosterPlayer {
+  id: string;
+  number: string;
+  name: string;
+  position: string;
+  height?: string;
+  grade?: string;
+}
+
+export interface RosterTeam {
+  id: string;
+  name: string;
+  abbreviation: string;
+  players: RosterPlayer[];
+}
+
+export interface RosterSyncEvent {
+  type: "team:created" | "team:updated" | "team:deleted" | "player:added" | "player:updated" | "player:deleted";
+  teamId: string;
+  team?: RosterTeam;
+  playerId?: string;
+  player?: RosterPlayer;
+  timestamp: string;
+}

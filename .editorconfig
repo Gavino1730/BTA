@@ -1,0 +1,22 @@
+# EditorConfig helps maintain consistent coding styles across the monorepo.
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.{js,ts,tsx,jsx,css,html,json,yml,yaml,toml}]
+indent_style = space
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.md]
+trim_trailing_whitespace = false

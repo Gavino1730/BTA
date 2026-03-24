@@ -97,6 +97,160 @@ app.put("/config/roster-teams", requireApiKey, (req, res) => {
   res.json({ teams: saved });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Team Management Routes
+// ─────────────────────────────────────────────────────────────────────────
+
+app.get("/teams", requireApiKey, (_req, res) => {
+  res.json({ teams: getRosterTeams() });
+});
+
+app.post("/teams", requireApiKey, (req, res) => {
+  const { name, abbreviation } = req.body ?? {};
+  if (!name || !abbreviation) {
+    res.status(400).json({ error: "name and abbreviation are required" });
+    return;
+  }
+
+  const teams = getRosterTeams();
+  const id = `team-${Date.now()}`;
+  const newTeam = {
+    id,
+    name,
+    abbreviation,
+    players: []
+  };
+  
+  teams.push(newTeam);
+  saveRosterTeams(teams);
+  io.emit("roster:teams", teams);
+  io.emit("team:created", { team: newTeam });
+  
+  res.status(201).json({ team: newTeam });
+});
+
+app.put("/teams/:teamId", requireApiKey, (req, res) => {
+  const { name, abbreviation } = req.body ?? {};
+  const teams = getRosterTeams();
+  const team = teams.find(t => t.id === req.params.teamId);
+  
+  if (!team) {
+    res.status(404).json({ error: "team not found" });
+    return;
+  }
+  
+  if (name) team.name = name;
+  if (abbreviation) team.abbreviation = abbreviation;
+  
+  saveRosterTeams(teams);
+  io.emit("roster:teams", teams);
+  io.emit("team:updated", { team });
+  
+  res.json({ team });
+});
+
+app.delete("/teams/:teamId", requireApiKey, (req, res) => {
+  const teams = getRosterTeams();
+  const idx = teams.findIndex(t => t.id === req.params.teamId);
+  
+  if (idx < 0) {
+    res.status(404).json({ error: "team not found" });
+    return;
+  }
+  
+  const deleted = teams.splice(idx, 1)[0];
+  saveRosterTeams(teams);
+  io.emit("roster:teams", teams);
+  io.emit("team:deleted", { teamId: deleted.id });
+  
+  res.json({ teamId: deleted.id });
+});
+
+app.post("/teams/:teamId/players", requireApiKey, (req, res) => {
+  const { number, name, position, height, grade } = req.body ?? {};
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+
+  const teams = getRosterTeams();
+  const team = teams.find(t => t.id === req.params.teamId);
+  
+  if (!team) {
+    res.status(404).json({ error: "team not found" });
+    return;
+  }
+  
+  const playerId = `${req.params.teamId}-${Date.now()}`;
+  const player = {
+    id: playerId,
+    number: String(number || ""),
+    name,
+    position: String(position || ""),
+    height: height ? String(height) : undefined,
+    grade: grade ? String(grade) : undefined
+  };
+  
+  team.players.push(player);
+  saveRosterTeams(teams);
+  io.emit("roster:teams", teams);
+  io.emit("player:added", { teamId: req.params.teamId, player });
+  
+  res.status(201).json({ player });
+});
+
+app.put("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
+  const { number, name, position, height, grade } = req.body ?? {};
+  const teams = getRosterTeams();
+  const team = teams.find(t => t.id === req.params.teamId);
+  
+  if (!team) {
+    res.status(404).json({ error: "team not found" });
+    return;
+  }
+  
+  const player = team.players.find(p => p.id === req.params.playerId);
+  if (!player) {
+    res.status(404).json({ error: "player not found" });
+    return;
+  }
+  
+  if (number !== undefined) player.number = String(number);
+  if (name !== undefined) player.name = name;
+  if (position !== undefined) player.position = String(position);
+  if (height !== undefined) player.height = height ? String(height) : undefined;
+  if (grade !== undefined) player.grade = grade ? String(grade) : undefined;
+  
+  saveRosterTeams(teams);
+  io.emit("roster:teams", teams);
+  io.emit("player:updated", { teamId: req.params.teamId, player });
+  
+  res.json({ player });
+});
+
+app.delete("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
+  const teams = getRosterTeams();
+  const team = teams.find(t => t.id === req.params.teamId);
+  
+  if (!team) {
+    res.status(404).json({ error: "team not found" });
+    return;
+  }
+  
+  const idx = team.players.findIndex(p => p.id === req.params.playerId);
+  if (idx < 0) {
+    res.status(404).json({ error: "player not found" });
+    return;
+  }
+  
+  const deleted = team.players.splice(idx, 1)[0];
+  saveRosterTeams(teams);
+  io.emit("roster:teams", teams);
+  io.emit("player:deleted", { teamId: req.params.teamId, playerId: deleted.id });
+  
+  res.json({ playerId: deleted.id });
+});
+
 app.post("/games", requireApiKey, (req, res) => {
   const { gameId, homeTeamId, awayTeamId, opponentName, opponentTeamId } = req.body ?? {};
 

@@ -1,11 +1,15 @@
-/* ---- Reset ---- */
+﻿/* ---- Reset ---- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-  background: #14162b;
+  background: #0b1226;
   color: #e8eaf0;
   --live-bottom-nav-h: 82px;
+  --accent-blue: #4f8cff;
+  --accent-blue-soft: rgba(79,140,255,0.14);
+  --accent-gold: #f2c24b;
+  --accent-gold-soft: rgba(242,194,75,0.16);
 }
 
 html, body {
@@ -43,7 +47,7 @@ html, body {
 }
 
 /* ================================================================
-   LEFT PANEL – Scoring
+   LEFT PANEL â€“ Scoring
    ================================================================ */
 .left-panel {
   gap: 0.75rem;
@@ -87,8 +91,8 @@ html, body {
 }
 .circle:active { opacity: 0.65; }
 
-.circle.teal      { border-color: #2dd4bf; color: #2dd4bf; }
-.circle.teal:hover  { background: rgba(45,212,191,0.12); }
+.circle.teal      { border-color: #4f8cff; color: #4f8cff; }
+.circle.teal:hover  { background: rgba(79,140,255,0.12); }
 .circle.red       { border-color: #f87171; color: #f87171; }
 .circle.red:hover   { background: rgba(248,113,113,0.12); }
 .circle.white     { border-color: rgba(232,234,240,0.65); color: #e8eaf0; }
@@ -127,7 +131,7 @@ html, body {
 .icon-btn:hover { background: rgba(255,255,255,0.08); color: #e8eaf0; }
 
 /* ================================================================
-   CENTER PANEL – Feed
+   CENTER PANEL â€“ Feed
    ================================================================ */
 .center-panel {
   border-right: 1px solid rgba(255,255,255,0.07);
@@ -136,15 +140,15 @@ html, body {
 /* Scoreboard */
 .scoreboard {
   padding: 1.1rem 1.5rem 0.8rem;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid rgba(242,194,75,0.25);
 }
 
 .live-summary-card {
   background: linear-gradient(180deg, rgba(26,30,68,0.95), rgba(22,26,58,0.92));
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid rgba(79,140,255,0.32);
   border-radius: 14px;
   padding: 0.8rem 0.95rem;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(242,194,75,0.35);
 }
 
 .live-summary-meta {
@@ -173,7 +177,7 @@ html, body {
   width: fit-content;
   margin: 0 auto 0.55rem;
   background: rgba(20, 22, 43, 0.86);
-  border: 1px solid rgba(45,212,191,0.4);
+  border: 1px solid rgba(79,140,255,0.4);
   color: rgba(232,234,240,0.92);
   font-size: 0.74rem;
   font-weight: 700;
@@ -192,7 +196,7 @@ html, body {
 }
 .team-lbl { font-size: 1rem; font-weight: 600; }
 .score    { font-size: 1.55rem; font-weight: 800; }
-.teal-txt { color: #2dd4bf; }
+.teal-txt { color: #4f8cff; }
 
 /* Event feed */
 .event-feed {
@@ -219,7 +223,7 @@ html, body {
 .feed-main   { display: block; font-size: 0.95rem; font-weight: 700; }
 .feed-detail { display: block; font-size: 0.75rem; color: rgba(232,234,240,0.55); margin-top: 0.1rem; }
 
-.ac-teal  { color: #2dd4bf; }
+.ac-teal  { color: #4f8cff; }
 .ac-red   { color: #f87171; }
 .ac-white { color: #e8eaf0; }
 
@@ -244,9 +248,9 @@ html, body {
   transition: all 0.12s;
 }
 .period-btn.period-on {
-  background: rgba(45,212,191,0.15);
-  border-color: #2dd4bf;
-  color: #2dd4bf;
+  background: rgba(79,140,255,0.15);
+  border-color: #4f8cff;
+  color: #4f8cff;
 }
 
 /* Clock */
@@ -254,7 +258,7 @@ html, body {
 .clock-inp {
   width: 100%;
   background: rgba(255,255,255,0.05);
-  border: 1.5px solid rgba(45,212,191,0.45);
+  border: 1.5px solid rgba(79,140,255,0.45);
   border-radius: 10px;
   color: #e8eaf0;
   font-size: 1.2rem;
@@ -263,10 +267,10 @@ html, body {
   padding: 0.45rem;
   min-height: 44px;
 }
-.clock-inp:focus { outline: none; border-color: #2dd4bf; }
+.clock-inp:focus { outline: none; border-color: #4f8cff; }
 
 /* ================================================================
-   RIGHT PANEL – Stats
+   RIGHT PANEL â€“ Stats
    ================================================================ */
 .right-panel {
   justify-content: space-between;
@@ -338,8 +342,8 @@ html, body {
 }
 
 .live-nav-btn:hover {
-  border-color: #2dd4bf;
-  color: #2dd4bf;
+  border-color: #4f8cff;
+  color: #4f8cff;
   background: rgba(26, 46, 89, 0.86);
 }
 
@@ -366,7 +370,7 @@ html, body {
   min-height: 44px;
   transition: all 0.12s;
 }
-.tt-teal { background: rgba(45,212,191,0.14); border-color: #2dd4bf; color: #2dd4bf; }
+.tt-teal { background: rgba(79,140,255,0.14); border-color: #4f8cff; color: #4f8cff; }
 .tt-red  { background: rgba(248,113,113,0.14); border-color: #f87171; color: #f87171; }
 
 /* ================================================================
@@ -485,7 +489,7 @@ html, body {
   min-height: 44px;
   transition: all 0.12s;
 }
-.t-teal { background: rgba(45,212,191,0.15); border-color: #2dd4bf; color: #2dd4bf; }
+.t-teal { background: rgba(79,140,255,0.15); border-color: #4f8cff; color: #4f8cff; }
 .t-red  { background: rgba(248,113,113,0.15); border-color: #f87171; color: #f87171; }
 
 /* Team toggle inside stat modal */
@@ -507,7 +511,7 @@ html, body {
   min-height: 40px;
   transition: all 0.1s;
 }
-.modal-team-toggle button.t-teal { background: rgba(45,212,191,0.15); border-color: #2dd4bf; color: #2dd4bf; }
+.modal-team-toggle button.t-teal { background: rgba(79,140,255,0.15); border-color: #4f8cff; color: #4f8cff; }
 .modal-team-toggle button.t-red  { background: rgba(248,113,113,0.15); border-color: #f87171; color: #f87171; }
 
 /* Player list */
@@ -551,7 +555,7 @@ html, body {
 
 .player-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(45,212,191,0.92);
+  border-color: rgba(79,140,255,0.92);
   background: rgba(44, 39, 133, 0.78);
 }
 
@@ -685,7 +689,7 @@ html, body {
    ================================================================ */
 .settings-page {
   min-height: 100vh;
-  background: #14162b;
+  background: #0b1226;
   overflow-y: auto;
   padding-bottom: 2rem;
 }
@@ -698,7 +702,7 @@ html, body {
   border-bottom: 1px solid rgba(255,255,255,0.07);
   position: sticky;
   top: 0;
-  background: #14162b;
+  background: #0b1226;
   z-index: 10;
 }
 .settings-header h2 { font-size: 1.05rem; font-weight: 700; }
@@ -715,10 +719,10 @@ html, body {
   min-height: 44px;
 }
 .save-btn {
-  background: rgba(45,212,191,0.15);
-  border: 1.5px solid #2dd4bf;
+  background: rgba(79,140,255,0.15);
+  border: 1.5px solid #4f8cff;
   border-radius: 10px;
-  color: #2dd4bf;
+  color: #4f8cff;
   padding: 0.45rem 1rem;
   cursor: pointer;
   font-size: 0.88rem;
@@ -757,7 +761,7 @@ html, body {
   min-height: 44px;
   width: 100%;
 }
-.settings-section input:focus { outline: none; border-color: rgba(45,212,191,0.5); }
+.settings-section input:focus { outline: none; border-color: rgba(79,140,255,0.5); }
 
 .add-player-row {
   display: flex;
@@ -766,10 +770,10 @@ html, body {
 .num-inp { width: 4rem !important; flex-shrink: 0; }
 .add-player-row input { flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; color: #e8eaf0; padding: 0.55rem 0.85rem; font-size: 0.93rem; min-height: 44px; }
 .add-btn {
-  background: rgba(45,212,191,0.14);
-  border: 1px solid #2dd4bf;
+  background: rgba(79,140,255,0.14);
+  border: 1px solid #4f8cff;
   border-radius: 10px;
-  color: #2dd4bf;
+  color: #4f8cff;
   padding: 0.55rem 1rem;
   cursor: pointer;
   font-weight: 700;
@@ -799,10 +803,10 @@ html, body {
 }
 
 .start-btn {
-  background: rgba(45,212,191,0.15);
-  border: 1.5px solid #2dd4bf;
+  background: rgba(79,140,255,0.15);
+  border: 1.5px solid #4f8cff;
   border-radius: 12px;
-  color: #2dd4bf;
+  color: #4f8cff;
   padding: 0.7rem 1.4rem;
   cursor: pointer;
   font-size: 0.93rem;
@@ -842,10 +846,10 @@ html, body {
 }
 .team-list-info { display: flex; align-items: center; gap: 0.65rem; flex: 1; }
 .team-abbr-badge {
-  background: rgba(45,212,191,0.15);
-  border: 1px solid rgba(45,212,191,0.3);
+  background: rgba(79,140,255,0.15);
+  border: 1px solid rgba(79,140,255,0.3);
   border-radius: 6px;
-  color: #2dd4bf;
+  color: #4f8cff;
   font-size: 0.72rem;
   font-weight: 800;
   padding: 0.15rem 0.45rem;
@@ -879,7 +883,7 @@ html, body {
   padding: 0.6rem 0.85rem;
 }
 .roster-info { display: flex; align-items: center; gap: 0.6rem; flex: 1; }
-.r-num { color: #2dd4bf; font-weight: 800; font-size: 0.93rem; min-width: 2.4rem; }
+.r-num { color: #4f8cff; font-weight: 800; font-size: 0.93rem; min-width: 2.4rem; }
 .r-name { font-size: 0.9rem; flex: 1; }
 .r-pos { font-size: 0.72rem; color: rgba(232,234,240,0.4); background: rgba(255,255,255,0.07); padding: 0.1rem 0.4rem; border-radius: 4px; }
 .roster-actions { display: flex; gap: 0.4rem; }
@@ -888,8 +892,8 @@ html, body {
   display: flex;
   gap: 0.4rem;
   align-items: center;
-  background: rgba(45,212,191,0.06);
-  border: 1px solid rgba(45,212,191,0.2);
+  background: rgba(79,140,255,0.06);
+  border: 1px solid rgba(79,140,255,0.2);
   border-radius: 10px;
   padding: 0.5rem 0.75rem;
 }
@@ -947,7 +951,7 @@ html, body {
   transition: all 0.12s;
 }
 .team-pick-btn:hover { background: rgba(255,255,255,0.08); }
-.pick-active-teal { background: rgba(45,212,191,0.12) !important; border-color: #2dd4bf !important; }
+.pick-active-teal { background: rgba(79,140,255,0.12) !important; border-color: #4f8cff !important; }
 .pick-active-red  { background: rgba(248,113,113,0.12) !important; border-color: #f87171 !important; }
 
 .tp-abbr {
@@ -975,12 +979,12 @@ html, body {
   font-size: 0.72rem !important;
   font-weight: 700;
   letter-spacing: 0.03em;
-  color: #2dd4bf !important;
-  border: 1px solid rgba(45,212,191,0.3) !important;
+  color: #4f8cff !important;
+  border: 1px solid rgba(79,140,255,0.3) !important;
   border-radius: 8px;
   padding: 0 0.6rem;
 }
-.pdf-btn:hover { background: rgba(45,212,191,0.12) !important; }
+.pdf-btn:hover { background: rgba(79,140,255,0.12) !important; }
 
 /* ---- Game date input ---- */
 .date-row { padding: 0 1rem 0.6rem; }
@@ -996,7 +1000,7 @@ html, body {
   min-height: 44px;
   cursor: pointer;
 }
-.date-inp:focus { outline: none; border-color: rgba(45,212,191,0.4); color: #e8eaf0; }
+.date-inp:focus { outline: none; border-color: rgba(79,140,255,0.4); color: #e8eaf0; }
 /* style the date picker chrome */
 .date-inp::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
 
@@ -1088,11 +1092,11 @@ html, body {
   text-align: center;
   font-size: 0.75rem;
   font-weight: 600;
-  color: rgba(45,212,191,0.65);
+  color: rgba(79,140,255,0.65);
   text-decoration: none;
   padding: 0.25rem;
 }
-.coach-link-btn:hover { color: #2dd4bf; text-decoration: underline; }
+.coach-link-btn:hover { color: #4f8cff; text-decoration: underline; }
 
 /* ---- Pending count badge ---- */
 .pending-badge {
@@ -1163,7 +1167,7 @@ html, body {
   outline: none;
 }
 .opp-inp::placeholder { color: rgba(232,234,240,0.3); }
-.opp-inp:focus { border-color: rgba(45,212,191,0.4); }
+.opp-inp:focus { border-color: rgba(79,140,255,0.4); }
 .vc-side-toggle {
   display: flex;
   border-radius: 8px;
@@ -1185,16 +1189,16 @@ html, body {
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
-  background: rgba(45,212,191,0.15);
-  border: 1px solid rgba(45,212,191,0.4);
-  color: #2dd4bf;
+  background: rgba(79,140,255,0.15);
+  border: 1px solid rgba(79,140,255,0.4);
+  color: #4f8cff;
 }
-.submit-btn:hover:not(:disabled) { background: rgba(45,212,191,0.25); }
+.submit-btn:hover:not(:disabled) { background: rgba(79,140,255,0.25); }
 .submit-btn:disabled { opacity: 0.55; cursor: default; }
 .submit-btn.submit-success {
-  background: rgba(45,212,191,0.2);
-  border-color: #2dd4bf;
-  color: #2dd4bf;
+  background: rgba(79,140,255,0.2);
+  border-color: #4f8cff;
+  color: #4f8cff;
 }
 .submit-btn.submit-error {
   background: rgba(248,113,113,0.15);
@@ -1219,14 +1223,14 @@ html, body {
 }
 
 .submit-banner-pending {
-  border-color: rgba(45,212,191,0.42);
-  background: rgba(45,212,191,0.1);
+  border-color: rgba(79,140,255,0.42);
+  background: rgba(79,140,255,0.1);
   color: #99f6e4;
 }
 
 .submit-banner-success {
-  border-color: rgba(45,212,191,0.45);
-  background: rgba(45,212,191,0.12);
+  border-color: rgba(79,140,255,0.45);
+  background: rgba(79,140,255,0.12);
   color: #ccfbf1;
 }
 
@@ -1266,7 +1270,7 @@ html, body {
   justify-content: center;
   min-height: 100vh;
   padding: 1.5rem;
-  background: #14162b;
+  background: #0b1226;
 }
 
 .pregame-card {
@@ -1288,7 +1292,7 @@ html, body {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.18em;
-  color: #2dd4bf;
+  color: #4f8cff;
   text-transform: uppercase;
   margin-bottom: 0.35rem;
 }
@@ -1309,10 +1313,10 @@ html, body {
 .my-team {
   font-size: 1.05rem;
   font-weight: 700;
-  color: #2dd4bf;
+  color: #4f8cff;
   padding: 0.6rem 0.5rem;
-  background: rgba(45,212,191,0.1);
-  border: 1px solid rgba(45,212,191,0.25);
+  background: rgba(79,140,255,0.1);
+  border: 1px solid rgba(79,140,255,0.25);
   border-radius: 10px;
   min-height: 44px;
   display: flex;
@@ -1350,7 +1354,7 @@ html, body {
 }
 
 .pregame-opp-input::placeholder { color: rgba(232,234,240,0.28); }
-.pregame-opp-input:focus { border-color: rgba(45,212,191,0.5); }
+.pregame-opp-input:focus { border-color: rgba(79,140,255,0.5); }
 
 .pregame-meta {
   display: flex;
@@ -1389,7 +1393,7 @@ html, body {
   outline: none;
 }
 
-.pregame-date-inp:focus { border-color: rgba(45,212,191,0.4); }
+.pregame-date-inp:focus { border-color: rgba(79,140,255,0.4); }
 .pregame-date-inp::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
 
 .pregame-id-inp {
@@ -1408,7 +1412,7 @@ html, body {
 }
 
 .pregame-id-inp:focus {
-  border-color: rgba(45,212,191,0.45);
+  border-color: rgba(79,140,255,0.45);
 }
 
 .pregame-lineup {
@@ -1438,7 +1442,7 @@ html, body {
 .pregame-lineup-count {
   font-size: 0.72rem;
   font-weight: 800;
-  color: #2dd4bf;
+  color: #4f8cff;
 }
 
 .pregame-lineup-grid {
@@ -1465,19 +1469,19 @@ html, body {
 }
 
 .pregame-lineup-player:hover {
-  border-color: rgba(45,212,191,0.6);
+  border-color: rgba(79,140,255,0.6);
   background: rgba(23,33,74,0.82);
 }
 
 .pregame-lineup-player.is-selected {
-  border-color: #2dd4bf;
-  background: rgba(45,212,191,0.12);
+  border-color: #4f8cff;
+  background: rgba(79,140,255,0.12);
 }
 
 .pregame-lineup-number {
   font-size: 0.76rem;
   font-weight: 800;
-  color: #2dd4bf;
+  color: #4f8cff;
 }
 
 .pregame-lineup-name {
@@ -1524,14 +1528,14 @@ html, body {
   letter-spacing: 0.04em;
   cursor: pointer;
   transition: all 0.15s;
-  background: rgba(45,212,191,0.16);
-  border: 2px solid #2dd4bf;
-  color: #2dd4bf;
+  background: rgba(79,140,255,0.16);
+  border: 2px solid #4f8cff;
+  color: #4f8cff;
 }
 
 .pregame-start-btn:hover:not(:disabled) {
-  background: rgba(45,212,191,0.27);
-  box-shadow: 0 0 18px rgba(45,212,191,0.18);
+  background: rgba(79,140,255,0.27);
+  box-shadow: 0 0 18px rgba(79,140,255,0.18);
 }
 
 .pregame-start-btn:disabled { opacity: 0.32; cursor: not-allowed; }
@@ -1540,8 +1544,8 @@ html, body {
   width: 100%;
   min-height: 46px;
   border-radius: 12px;
-  border: 1px solid rgba(45,212,191,0.42);
-  background: rgba(45,212,191,0.12);
+  border: 1px solid rgba(79,140,255,0.42);
+  background: rgba(79,140,255,0.12);
   color: #7ff3df;
   font-size: 0.88rem;
   font-weight: 700;
@@ -1553,8 +1557,8 @@ html, body {
 }
 
 .pregame-connect-btn:hover {
-  background: rgba(45,212,191,0.2);
-  border-color: #2dd4bf;
+  background: rgba(79,140,255,0.2);
+  border-color: #4f8cff;
   color: #ccfbf1;
 }
 
@@ -1607,7 +1611,7 @@ html, body {
   justify-content: center;
   min-height: 100vh;
   padding: 1.5rem;
-  background: #14162b;
+  background: #0b1226;
 }
 
 .postgame-card {
@@ -1677,7 +1681,7 @@ html, body {
 }
 
 .postgame-input:focus {
-  border-color: rgba(45,212,191,0.45);
+  border-color: rgba(79,140,255,0.45);
 }
 
 .postgame-input::-webkit-calendar-picker-indicator {
@@ -1728,7 +1732,7 @@ html, body {
 
 .postgame-score-input:focus {
   outline: none;
-  border-color: rgba(45,212,191,0.5);
+  border-color: rgba(79,140,255,0.5);
 }
 
 .postgame-score-sep {
@@ -1750,16 +1754,16 @@ html, body {
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: all 0.15s;
-  background: rgba(45,212,191,0.16);
-  border: 2px solid #2dd4bf;
-  color: #2dd4bf;
+  background: rgba(79,140,255,0.16);
+  border: 2px solid #4f8cff;
+  color: #4f8cff;
   text-align: center;
   text-decoration: none;
 }
 
 .coach-connect-btn:hover {
-  background: rgba(45,212,191,0.27);
-  box-shadow: 0 0 18px rgba(45,212,191,0.18);
+  background: rgba(79,140,255,0.27);
+  box-shadow: 0 0 18px rgba(79,140,255,0.18);
 }
 
 .postgame-retry-btn {
@@ -1787,14 +1791,14 @@ html, body {
   font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
-  background: rgba(45,212,191,0.12);
-  border: 1px solid rgba(45,212,191,0.45);
+  background: rgba(79,140,255,0.12);
+  border: 1px solid rgba(79,140,255,0.45);
   color: #7ff3df;
   transition: all 0.12s;
 }
 
 .postgame-apply-btn:hover {
-  background: rgba(45,212,191,0.2);
+  background: rgba(79,140,255,0.2);
 }
 
 .postgame-reset-btn,
@@ -1989,3 +1993,4 @@ html, body {
     grid-column: span 1;
   }
 }
+

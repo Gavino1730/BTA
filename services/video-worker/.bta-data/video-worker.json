@@ -1,0 +1,25 @@
+{
+  "videos": [
+    [
+      "2026-03-24-evil",
+      []
+    ]
+  ],
+  "anchors": [
+    [
+      "2026-03-24-evil",
+      [
+        {
+          "id": "anchor-1774323033278",
+          "gameId": "2026-03-24-evil",
+          "videoId": "vid-1",
+          "eventType": "tipoff",
+          "period": "Q1",
+          "gameClockSeconds": 480,
+          "videoSecond": 12,
+          "createdAtIso": "2026-03-24T03:30:32.301Z"
+        }
+      ]
+    ]
+  ]
+}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="ai-insights-page">
+    <div class="ai-insights-layout">
+        <div class="chatbot-container">
+            <div class="ai-chat-shell-header">
+                <div>
+                    <p class="ai-chat-kicker">AI Assistant</p>
+                    <h2>Game Intelligence Chat</h2>
+                </div>
+                <p class="ai-chat-shell-note">Powered by live season context</p>
+            </div>
+
+            <div class="chat-main">
+                <div class="chat-messages-container" id="chat-messages-container">
+                    <div class="welcome-message">
+                        <h3>Ask with context, not guesses</h3>
+                        <p>Start with questions like:</p>
+                        <ul>
+                            <li>Who gives us the best scoring + efficiency combo right now?</li>
+                            <li>What changed in our last 3 games versus our season average?</li>
+                            <li>Give me 3 practice priorities based on turnovers and shot quality.</li>
+                            <li>Who should close games based on plus/minus and decision making?</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="typing-indicator hidden" id="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="quick-prompts" id="quick-prompts">
+                        <button type="button" class="quick-prompt-btn" onclick="sendQuickPrompt('Give me a team summary from this season data.')">Team Summary</button>
+                        <button type="button" class="quick-prompt-btn" onclick="sendQuickPrompt('Who are our top 3 scorers and how efficient are they?')">Top Scorers</button>
+                        <button type="button" class="quick-prompt-btn" onclick="sendQuickPrompt('What are our biggest strengths and weaknesses right now?')">Strengths/Weaknesses</button>
+                        <button type="button" class="quick-prompt-btn" onclick="sendQuickPrompt('Compare our last three games to season averages.')">Last 3 vs Season</button>
+                    </div>
+                    <div class="input-wrapper">
+                        <textarea 
+                            id="chat-input" 
+                            placeholder="Ask anything about your team stats..." 
+                            rows="1"
+                            onkeydown="handleChatKeydown(event)"
+                            oninput="autoResizeInput(this)"></textarea>
+                        <button type="button" id="send-btn" onclick="sendMessage()" class="send-btn">
+                            <span class="send-icon">➤</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <aside class="stats-context-column" id="stats-context-column">
+            <div class="context-card context-card-summary">
+                <div class="context-card-header">
+                    <h3>Live Team Context</h3>
+                    <button type="button" id="refresh-context-btn" class="context-refresh-btn">Refresh</button>
+                </div>
+                <div id="team-record-info">Loading...</div>
+            </div>
+
+            <div class="context-card">
+                <h4>Top Players</h4>
+                <div id="top-players-info">Loading...</div>
+            </div>
+
+            <div class="context-card">
+                <h4>Recent Games</h4>
+                <div id="recent-games-info">Loading...</div>
+            </div>
+
+            <div class="context-card">
+                <h4>Ask Fast</h4>
+                <div class="context-actions">
+                    <button type="button" class="context-action-btn" onclick="sendQuickPrompt('Which lineup profile should we lean on late in games?')">Late-game lineup</button>
+                    <button type="button" class="context-action-btn" onclick="sendQuickPrompt('Where are we leaking points defensively?')">Defensive leaks</button>
+                    <button type="button" class="context-action-btn" onclick="sendQuickPrompt('Who is trending up over the last five games?')">Who is trending up</button>
+                    <button type="button" class="context-action-btn" onclick="sendQuickPrompt('What should tomorrow\'s practice focus on based on these stats?')">Practice plan</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='ai-insights.js') }}?v=1.1"></script>
+{% endblock %}

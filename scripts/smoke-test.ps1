@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  End-to-end smoke test for the BTA Basketball Platform.
+  End-to-end smoke test for the Basketball Platform.
   Requires the realtime-api to be running (npm run dev:api).
 
 .USAGE
@@ -88,7 +88,7 @@ if ($StartApi) {
 }
 
 Write-Host ""
-Write-Host "  BTA Platform - End-to-End Smoke Test" -ForegroundColor White
+Write-Host "  Platform - End-to-End Smoke Test" -ForegroundColor White
 Write-Host ("  Game ID: {0}" -f $GAME_ID)
 Write-Host ("  API: {0}" -f $ApiUrl)
 Write-Host ""

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="players-page">
+    <h1>Players</h1>
+    
+    <div class="players-filter">
+        <div class="view-toggle">
+            <button id="cards-view-btn" class="view-btn active">Cards</button>
+            <button id="rankings-view-btn" class="view-btn">Rankings</button>
+            <button id="sync-btn" class="sync-btn" title="Sync player data with backend">⟳ Sync</button>
+        </div>
+        <input type="text" id="player-search" placeholder="Search player...">
+        <select id="stat-sort" aria-label="Sort players by statistic">
+            <option value="ppg">Sort by PPG</option>
+            <option value="rpg">Sort by RPG</option>
+            <option value="apg">Sort by APG</option>
+            <option value="fg_pct">Sort by FG%</option>
+            <option value="fg3_pct">Sort by 3P%</option>
+            <option value="ft_pct">Sort by FT%</option>
+            <option value="spg">Sort by SPG</option>
+            <option value="bpg">Sort by BPG</option>
+            <option value="tpg">Sort by TPG (Low to High)</option>
+        </select>
+        <select id="ranking-stat" class="hidden" aria-label="Select ranking statistic">
+            <optgroup label="Scoring">
+                <option value="ppg">Points Per Game</option>
+                <option value="pts">Total Points</option>
+                <option value="fg_pct">Field Goal %</option>
+                <option value="fg3_pct">3-Point %</option>
+                <option value="ft_pct">Free Throw %</option>
+                <option value="fg">Field Goals Made</option>
+                <option value="fg3">3-Pointers Made</option>
+                <option value="efg_pct">Effective FG%</option>
+                <option value="ts_pct">True Shooting %</option>
+            </optgroup>
+            <optgroup label="Rebounding">
+                <option value="rpg">Rebounds Per Game</option>
+                <option value="reb">Total Rebounds</option>
+                <option value="oreb">Offensive Rebounds</option>
+                <option value="dreb">Defensive Rebounds</option>
+            </optgroup>
+            <optgroup label="Playmaking">
+                <option value="apg">Assists Per Game</option>
+                <option value="asst">Total Assists</option>
+                <option value="ast_to_ratio">Assist/Turnover Ratio</option>
+                <option value="tpg">Turnovers Per Game</option>
+                <option value="to">Total Turnovers</option>
+            </optgroup>
+            <optgroup label="Defense">
+                <option value="spg">Steals Per Game</option>
+                <option value="bpg">Blocks Per Game</option>
+                <option value="stl">Total Steals</option>
+                <option value="blk">Total Blocks</option>
+            </optgroup>
+            <optgroup label="Efficiency">
+                <option value="per">Player Efficiency Rating</option>
+                <option value="usage_rate">Usage Rate</option>
+                <option value="defensive_rating">Defensive Rating</option>
+            </optgroup>
+            <optgroup label="Other">
+                <option value="games">Games Played</option>
+                <option value="fpg">Fouls Per Game</option>
+                <option value="pm_per_game">Plus/Minus Per Game</option>
+            </optgroup>
+        </select>
+    </div>
+
+    <div id="players-container" class="players-container"></div>
+    <div id="rankings-container" class="rankings-container hidden"></div>
+
+    <!-- Player Detail Modal -->
+    <div id="playerModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="playerDetail"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='players.js') }}?v=1.9"></script>
+{% endblock %}

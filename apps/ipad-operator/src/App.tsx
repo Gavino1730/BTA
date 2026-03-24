@@ -7,9 +7,9 @@ const defaultHost = window.location.hostname || "localhost";
 const DEFAULT_API = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? `http://${defaultHost}:5173`;
 const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
-const STORE = "bta-op";
-const APP_DATA_KEY = "bta-app-data-v3";
-const DEVICE_ID_KEY = "bta-device-id";
+const STORE = "operator-console";
+const APP_DATA_KEY = "shared-app-data-v3";
+const DEVICE_ID_KEY = "operator-device-id";
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
 function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
@@ -48,11 +48,11 @@ function getDefaultDeviceId(): string {
       return existing;
     }
 
-    const next = `ipad-${Math.random().toString(36).slice(2, 8)}`;
+    const next = `device-${Math.random().toString(36).slice(2, 8)}`;
     localStorage.setItem(DEVICE_ID_KEY, next);
     return next;
   } catch {
-    return "ipad-1";
+    return "device-1";
   }
 }
 
@@ -369,7 +369,7 @@ async function exportGamePDF(
   doc.setFontSize(18);
   doc.setTextColor(...TEAL);
   doc.setFont("helvetica", "bold");
-  doc.text("BTA", 14, 13);
+  doc.text("Game Report", 14, 13);
 
   doc.setFontSize(10);
   doc.setTextColor(...LIGHT);
@@ -556,7 +556,7 @@ async function exportGamePDF(
     doc.setFontSize(7);
     doc.setTextColor(100, 104, 130);
     doc.text(
-      `BTA Basketball  •  Generated ${new Date().toLocaleString()}`,
+      `Basketball Platform  •  Generated ${new Date().toLocaleString()}`,
       14, doc.internal.pageSize.getHeight() - 6,
     );
     doc.text(`Page ${i} / ${pages}`, W - 14, doc.internal.pageSize.getHeight() - 6, { align: "right" });
@@ -564,7 +564,7 @@ async function exportGamePDF(
 
   const safeId   = gameId.replace(/[^a-zA-Z0-9\-_]/g, "_");
   const safeDate = gameDate.replace(/[^a-zA-Z0-9\-]/g, "-");
-  doc.save(`bta_${safeDate}_${safeId}.pdf`);
+  doc.save(`game_report_${safeDate}_${safeId}.pdf`);
 }
 
 // ---- Dashboard stats helpers (Stats dashboard integration) ----
@@ -709,7 +709,7 @@ export function App() {
 
   // ---- Game flow phase ----
   const [gamePhase, setGamePhase] = useState<"pre-game" | "live" | "post-game">(() => {
-    const saved = localStorage.getItem("bta-op:phase");
+    const saved = localStorage.getItem("operator-console:phase");
     if (saved === "live" || saved === "post-game" || saved === "pre-game") return saved as "pre-game" | "live" | "post-game";
     // Legacy: if there are already events for this game, land in live view
     return loadPending(loadAppData().gameSetup.gameId).length > 0 ? "live" : "pre-game";
@@ -725,7 +725,7 @@ export function App() {
 
   function persistPhase(phase: "pre-game" | "live" | "post-game") {
     setGamePhase(phase);
-    localStorage.setItem("bta-op:phase", phase);
+    localStorage.setItem("operator-console:phase", phase);
   }
 
   // ---- Derived: home/away teams ----
@@ -774,7 +774,7 @@ export function App() {
       return;
     }
 
-    const deviceId = appData.gameSetup.deviceId?.trim() || "ipad-1";
+    const deviceId = appData.gameSetup.deviceId?.trim() || "device-1";
     const payload = { deviceId, gameId };
     const socket = io(appData.gameSetup.apiUrl, {
       auth: appData.gameSetup.apiKey ? { apiKey: appData.gameSetup.apiKey } : {}
@@ -1576,7 +1576,7 @@ export function App() {
       <div className="pregame-screen">
         <div className="pregame-card">
           <div className="pregame-header">
-            <span className="pregame-eyebrow">BTA Operator</span>
+            <span className="pregame-eyebrow">Operator Console</span>
             <h1 className="pregame-title">Ready to Track</h1>
           </div>
 
@@ -1822,7 +1822,7 @@ export function App() {
         <div className="scoreboard">
           {appData.gameSetup.deviceId && (
             <div className="score-device-id" title="Operator device identifier">
-              iPad ID: {appData.gameSetup.deviceId}
+              Device ID: {appData.gameSetup.deviceId}
             </div>
           )}
           <div className="score-row">
@@ -2163,7 +2163,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       ...appData,
       gameSetup: {
         gameId: gsGameId.trim() || "game-1",
-        deviceId: gsDeviceId.trim() || appData.gameSetup.deviceId || "ipad-1",
+        deviceId: gsDeviceId.trim() || appData.gameSetup.deviceId || "device-1",
         myTeamId: gsMyTeamId,
         apiUrl: gsApiUrl.trim() || DEFAULT_API,
         apiKey: gsApiKey.trim() || undefined,
@@ -2329,7 +2329,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         <section className="settings-section">
           <h3>Device ID</h3>
           <p className="dim-text" style={{ marginBottom: 8 }}>Coach dashboard follows this device and only shows live when it is online.</p>
-          <input value={gsDeviceId} onChange={e => setGsDeviceId(e.target.value)} placeholder="ipad-1" />
+          <input value={gsDeviceId} onChange={e => setGsDeviceId(e.target.value)} placeholder="device-1" />
         </section>
 
         <section className="settings-section">
@@ -2378,7 +2378,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set BTA_API_KEY on the server). Leave blank in development.</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set the API key env var on the server). Leave blank in development.</p>
           <input
             type="password"
             placeholder="Leave blank to disable auth"
@@ -2411,7 +2411,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           </button>
         </section>
 
-        {/* QR code — scan on a second iPad to auto-fill the same config */}
+        {/* QR code — scan on another device to auto-fill the same config */}
         <section className="settings-section">
           <h3>Share Config</h3>
           <p className="dim-text" style={{ marginBottom: 12 }}>
@@ -2424,7 +2424,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             if (gsApiKey.trim()) params.set("apiKey", gsApiKey.trim());
             params.set("dashboardUrl", gsDashboardUrl.trim() || "http://localhost:5000");
             params.set("gameId", gsGameId.trim() || "game-1");
-            params.set("deviceId", gsDeviceId.trim() || "ipad-1");
+            params.set("deviceId", gsDeviceId.trim() || "device-1");
             params.set("opponent", gsOpponent.trim());
             params.set("vcSide", gsVcSide);
             return (

@@ -14,12 +14,13 @@
     "dev:coach": "npm run dev -w @bta/coach-dashboard",
     "dev:operator": "npm run dev -w @bta/ipad-operator",
     "dev:video": "npm run dev -w @bta/video-worker",
-    "dev:stats": "cd services/stats-dashboard && .venv\\Scripts\\python main.py",
+    "dev:stats": ".venv\\Scripts\\python apps\\stats-dashboard\\main.py",
     "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach,video,stats --prefix-colors cyan,green,yellow,magenta,blue \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:video\" \"npm run dev:stats\"",
     "game-day": "pwsh -File scripts/game-day.ps1",
     "smoke-test": "pwsh -File scripts/smoke-test.ps1",
     "audit:ui": "node scripts/ui-audit.mjs",
-    "stats:install": "cd services/stats-dashboard && pip install -r requirements.txt"
+    "stats:install": "powershell -NoProfile -Command \"if (-not (Test-Path '.venv\\Scripts\\python.exe')) { py -3 -m venv .venv }; .\\.venv\\Scripts\\python -m pip install -r requirements.txt\"",
+    "test:stats": ".venv\\Scripts\\python -m pytest apps\\stats-dashboard\\test -q"
   },
   "devDependencies": {
     "@types/node": "^22.15.19",

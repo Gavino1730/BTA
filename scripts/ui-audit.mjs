@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const targets = [
   {
-    name: "operator-ipad",
+    name: "operator-tablet",
     url: "http://localhost:5174",
     viewport: { width: 834, height: 1194 }
   },

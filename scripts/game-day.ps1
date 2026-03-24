@@ -1,8 +1,8 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  Game-day launcher for BTA Basketball Platform.
-  Prints local IPs so the iPad operator can connect, then starts all services.
+  Game-day launcher for the Basketball Platform.
+  Prints local IPs so the operator console can connect, then starts all apps/services.
 
 .USAGE
   From the repo root:
@@ -50,7 +50,7 @@ foreach ($ip in $ips) {
   Write-Host "  │                                                     │" -ForegroundColor DarkGray
 }
 
-Write-Host "  │  iPad Operator → Settings → Game Setup             │" -ForegroundColor White -NoNewline
+Write-Host "  │  Operator Console → Settings → Game Setup          │" -ForegroundColor White -NoNewline
 Write-Host ""
 Write-Host "  │    Realtime API URL: http://<IP>:4000              │" -ForegroundColor White -NoNewline
 Write-Host ""
@@ -60,7 +60,7 @@ Write-Host ""
 # ── API key notice ────────────────────────────────────────────────────────────
 if ($ApiKey) {
   $env:BTA_API_KEY = $ApiKey
-  Write-Host "  🔐  API key configured (BTA_API_KEY is set)." -ForegroundColor Magenta
+  Write-Host "  🔐  API key configured." -ForegroundColor Magenta
 } else {
   Write-Host "  ⚠   No API key — running in open dev mode." -ForegroundColor DarkYellow
   Write-Host "      Run with -ApiKey <secret> to enable auth." -ForegroundColor DarkYellow
@@ -84,21 +84,21 @@ if (-not (Get-Command $pythonCmd -ErrorAction SilentlyContinue)) {
 Write-Host "  ✓  python $(&$pythonCmd --version)" -ForegroundColor Green
 
 # Stats dashboard venv
-$venvPython = Join-Path $PSScriptRoot "..\services\stats-dashboard\.venv\Scripts\python.exe"
+$venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
   Write-Host "  ⚠   Stats dashboard venv not found. Running: npm run stats:install" -ForegroundColor DarkYellow
   & npm run stats:install
 }
 
 # Data directory
-$dataDir = Join-Path $PSScriptRoot "..\services\stats-dashboard\data"
+$dataDir = Join-Path $PSScriptRoot "..\apps\stats-dashboard\data"
 if (-not (Test-Path $dataDir)) {
   New-Item -ItemType Directory -Path $dataDir | Out-Null
   Write-Host "  ✓  Created data/ directory" -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "  Starting all services with concurrently…" -ForegroundColor Cyan
+Write-Host "  Starting all apps/services with concurrently..." -ForegroundColor Cyan
 Write-Host "  (Ctrl-C to stop everything)" -ForegroundColor Gray
 Write-Host ""
 

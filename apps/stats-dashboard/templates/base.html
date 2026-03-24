@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Stats Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=2.1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">Bench IQ</div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-link active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="/games" class="nav-link" data-page="games">Games</a></li>
+                <li><a href="/players" class="nav-link" data-page="players">Players</a></li>
+                <li><a href="/trends" class="nav-link" data-page="trends">Trends</a></li>
+                <li><a href="/ai-insights" class="nav-link" data-page="ai-insights">AI</a></li>
+                <li><a href="http://localhost:5173" class="nav-link" data-page="settings">Settings</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='main.js') }}?v=1.8"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

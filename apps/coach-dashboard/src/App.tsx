@@ -188,7 +188,7 @@ interface PresenceStatus {
 
 // ── Roster Builder ──────────────────────────────────────────────────────────
 // Local storage is fallback only; source of truth is realtime API roster config.
-const ROSTER_STORAGE_KEY = "bta-app-data-v3";
+const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 const POSITIONS = ["PG", "SG", "SF", "PF", "C"] as const;
 
 export interface RosterPlayer {
@@ -299,7 +299,7 @@ export function App() {
 
   const [deviceId, setDeviceId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("deviceId") ?? "ipad-1";
+    return params.get("deviceId") ?? "device-1";
   });
   const [gameId, setGameId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -319,6 +319,7 @@ export function App() {
   const [videoSecond, setVideoSecond] = useState("12");
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [eventClipMap, setEventClipMap] = useState<Record<string, VideoResolution>>({});
+  const [activePage, setActivePage] = useState<"live" | "film" | "roster">("live");
 
   // ── Roster Builder state ─────────────────────────────────────────────────
   const [rosterTeams, setRosterTeamsState] = useState<RosterTeam[]>(loadRosterTeams);
@@ -378,7 +379,7 @@ export function App() {
 
     void hydrateRosterFromApi();
     
-    // Poll for roster changes from other devices (deletions by iPad or stats dashboard)
+    // Poll for roster changes from other devices (deletions by operator console or stats dashboard)
     const pollInterval = setInterval(() => {
       void hydrateRosterFromApi();
     }, 30000); // Poll every 30 seconds for roster deletions from other apps
@@ -448,7 +449,7 @@ export function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "bta-roster.json";
+    a.download = "roster.json";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -500,7 +501,7 @@ export function App() {
     });
 
     // Poll the presence channel every 5s so the coach dashboard can recover
-    // quickly if the iPad reconnects after a temporary network interruption.
+    // quickly if the operator console reconnects after a temporary network interruption.
     let pollInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
       if (socket.connected) {
         socket.emit("join:coach", { deviceId });
@@ -537,7 +538,7 @@ export function App() {
         setGameId((current) => (current === activeGameId ? current : activeGameId));
         socket.emit("join:game", activeGameId);
       } else {
-        setDashboardStatus(`Waiting for iPad device ${deviceId}`);
+        setDashboardStatus(`Waiting for device ${deviceId}`);
       }
     }
 
@@ -1013,27 +1014,44 @@ export function App() {
   }
 
   return (
+    <>
+      <nav className="coach-navbar">
+        <div className="coach-nav-container">
+          <div className="coach-nav-logo">Bench IQ</div>
+          <ul className="coach-nav-links">
+            <li><button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Live</button></li>
+            <li><button className={activePage === "film" ? "nav-active" : ""} onClick={() => setActivePage("film")}>Film</button></li>
+            <li><button className={activePage === "roster" ? "nav-active" : ""} onClick={() => setActivePage("roster")}>Roster</button></li>
+            <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats ↗</a></li>
+          </ul>
+          <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
+            {deviceConnected ? "Device live" : serverConnected ? "Waiting" : "Offline"}
+          </div>
+        </div>
+      </nav>
+
     <div className="page">
       <header className="header card hero-card">
         <div>
           <p className="eyebrow">Bench Intelligence</p>
-          <h1>BTA Coach Dashboard</h1>
+          <h1>Coach Dashboard</h1>
           <p>{dashboardStatus}</p>
         </div>
         <div className="header-controls">
           <label>
-            iPad Device ID
+            Device ID
             <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} />
           </label>
           <div className="connection-pill">
             {state ? `Current period ${state.currentPeriod}` : "Waiting for period state"}
           </div>
           <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`}>
-            {deviceConnected ? "iPad connected" : (serverConnected ? "Waiting for iPad" : "Server offline")}
+            {deviceConnected ? "Device connected" : (serverConnected ? "Waiting for device" : "Server offline")}
           </div>
         </div>
       </header>
 
+      {activePage === "live" && <>
       <section className="card">
         <h2>Scoreboard</h2>
         {teams.length === 0 ? <p>No live game state yet.</p> : null}
@@ -1166,7 +1184,10 @@ export function App() {
           ))}
         </div>
       </section>
+      </>
+      }
 
+      {activePage === "film" &&
       <section className="card film-grid">
         <div>
           <h2>Film Sync</h2>
@@ -1252,14 +1273,16 @@ export function App() {
           </div>
         </div>
       </section>
+      }
 
       {/* ── Roster Builder ─────────────────────────────────────────────── */}
+      {activePage === "roster" &&
       <section className="card">
         <div className="roster-header-row">
           <div>
             <h2>Roster Builder</h2>
             <p className="text-muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
-              Teams created here are shared with the iPad Operator and all other BTA apps automatically.
+              Teams created here are shared with the Operator Console and all other apps automatically.
             </p>
           </div>
           <div className="roster-actions">
@@ -1404,7 +1427,9 @@ export function App() {
           ))}
         </div>
       </section>
+      }
 
     </div>
+    </>
   );
 }
