@@ -1636,6 +1636,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                     <option value="">Pos</option>
                     {POSITIONS.filter(Boolean).map(pos => <option key={pos} value={pos}>{pos}</option>)}
                   </select>
+                  <input className="ht-inp" placeholder='Ht' value={epHt} onChange={e => setEpHt(e.target.value)} style={{ width: 52 }} />
+                  <input className="grade-inp" placeholder='Gr' value={epGrade} onChange={e => setEpGrade(e.target.value)} style={{ width: 36 }} />
                   <button className="add-btn" onClick={saveEditPlayer}>Save</button>
                   <button className="rm-btn" onClick={() => setEditPlayerId(null)}>✕</button>
                 </div>
@@ -1755,7 +1757,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <button
             className="start-btn"
             disabled={setupErrors.length > 0}
-            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onStartGame(); } }}>
+            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); void onStartGame(); } }}>
             Start / Reset Game
           </button>
         </section>

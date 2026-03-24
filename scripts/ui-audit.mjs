@@ -36,7 +36,14 @@ for (const target of targets) {
     const tapTargets = Array.from(document.querySelectorAll("button, input, select, textarea"));
     const smallTapTargets = tapTargets.filter((node) => {
       const element = node;
+      const style = window.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
+      if (style.display === "none" || style.visibility === "hidden") {
+        return false;
+      }
+      if (rect.width === 0 || rect.height === 0) {
+        return false;
+      }
       return rect.width < 40 || rect.height < 40;
     }).length;
 
