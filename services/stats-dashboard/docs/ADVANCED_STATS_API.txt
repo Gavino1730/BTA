@@ -1,5 +1,5 @@
 ==============================================================================
-CEDAR RIDGE RAPTORS BASKETBALL - ADVANCED STATS API
+BTA BASKETBALL - ADVANCED STATS API
 ==============================================================================
 
 All statistics are calculated from box score data only. No play-by-play, no shot

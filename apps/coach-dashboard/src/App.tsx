@@ -151,6 +151,8 @@ interface Insight {
   message: string;
   explanation: string;
   createdAtIso: string;
+  relatedTeamId?: string;
+  relatedPlayerId?: string;
 }
 
 interface VideoAsset {
@@ -177,8 +179,15 @@ interface VideoResolution {
   anchorId: string;
 }
 
+interface PresenceStatus {
+  deviceId: string;
+  online: boolean;
+  gameId: string | null;
+  lastSeenIso: string | null;
+}
+
 // ── Roster Builder ──────────────────────────────────────────────────────────
-// Uses the same localStorage key as the iPad Operator so rosters are shared.
+// Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "bta-app-data-v3";
 const POSITIONS = ["PG", "SG", "SF", "PF", "C"] as const;
 
@@ -234,6 +243,29 @@ function saveRosterTeams(teams: RosterTeam[]): void {
   } catch { /* storage full */ }
 }
 
+function isRosterPlayer(value: unknown): value is RosterPlayer {
+  if (!value || typeof value !== "object") return false;
+  const player = value as Record<string, unknown>;
+  return typeof player.id === "string"
+    && typeof player.number === "string"
+    && typeof player.name === "string"
+    && typeof player.position === "string";
+}
+
+function isRosterTeam(value: unknown): value is RosterTeam {
+  if (!value || typeof value !== "object") return false;
+  const team = value as Record<string, unknown>;
+  return typeof team.id === "string"
+    && typeof team.name === "string"
+    && typeof team.abbreviation === "string"
+    && Array.isArray(team.players)
+    && team.players.every(isRosterPlayer);
+}
+
+function normalizeRosterTeams(value: unknown): RosterTeam[] {
+  return Array.isArray(value) ? value.filter(isRosterTeam) : [];
+}
+
 function slugifyTeamName(name: string): string {
   return `team-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || Date.now()}`;
 }
@@ -243,8 +275,10 @@ function newPlayerId(): string {
 }
 // ────────────────────────────────────────────────────────────────────────────
 
-const apiBase = import.meta.env.VITE_API ?? "http://localhost:4000";
-const videoBase = import.meta.env.VITE_VIDEO_API ?? "http://localhost:4100";
+const defaultHost = window.location.hostname || "localhost";
+const apiBase = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
+const videoBase = import.meta.env.VITE_VIDEO_API ?? `http://${defaultHost}:4100`;
+const statsBase = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
 const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
@@ -263,13 +297,18 @@ export function App() {
     };
   }, []);
 
+  const [deviceId, setDeviceId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("deviceId") ?? "ipad-1";
+  });
   const [gameId, setGameId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("gameId") ?? "game-1";
+    return params.get("gameId") ?? "";
   });
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
-  const [connected, setConnected] = useState(false);
+  const [serverConnected, setServerConnected] = useState(false);
+  const [deviceConnected, setDeviceConnected] = useState(false);
   const [videos, setVideos] = useState<VideoAsset[]>([]);
   const [anchors, setAnchors] = useState<SyncAnchor[]>([]);
   const [videoSrcUrl, setVideoSrcUrl] = useState("");  // URL for the in-page video player
@@ -299,7 +338,56 @@ export function App() {
   function setRosterTeams(next: RosterTeam[]) {
     setRosterTeamsState(next);
     saveRosterTeams(next);
+
+    const preferredTeamId = setupNames.myTeamId || next[0]?.id || "";
+
+    void fetch(`${apiBase}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+      body: JSON.stringify({ teams: next }),
+    }).catch(() => {
+      // Keep local fallback when API is unavailable.
+    });
+
+    void fetch(`${statsBase}/api/roster-sync`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+      body: JSON.stringify({ teams: next, preferredTeamId }),
+    }).catch(() => {
+      // Stats dashboard sync is best-effort; realtime API remains source of truth.
+    });
   }
+
+  useEffect(() => {
+    let isMounted = true;
+    async function hydrateRosterFromApi() {
+      try {
+        const response = await fetch(`${apiBase}/config/roster-teams`, { headers: apiKeyHeader() });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { teams?: unknown };
+        const teams = normalizeRosterTeams(payload.teams);
+        if (!isMounted) return;
+        if (teams.length > 0 || rosterTeams.length === 0) {
+          setRosterTeamsState(teams);
+          saveRosterTeams(teams);
+        }
+      } catch {
+        // Keep local fallback when API is unavailable.
+      }
+    }
+
+    void hydrateRosterFromApi();
+    
+    // Poll for roster changes from other devices (deletions by iPad or stats dashboard)
+    const pollInterval = setInterval(() => {
+      void hydrateRosterFromApi();
+    }, 30000); // Poll every 30 seconds for roster deletions from other apps
+    
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+    };
+  }, []);
 
   function addTeam() {
     if (!newTeamName.trim()) return;
@@ -387,22 +475,36 @@ export function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    let changed = false;
+    if (params.get("deviceId") !== deviceId) {
+      params.set("deviceId", deviceId);
+      changed = true;
+    }
     if (params.get("gameId") !== gameId) {
-      params.set("gameId", gameId);
+      if (gameId) {
+        params.set("gameId", gameId);
+      } else {
+        params.delete("gameId");
+      }
+      changed = true;
+    }
+
+    if (changed) {
       window.history.replaceState({}, "", `?${params.toString()}`);
     }
-  }, [gameId]);
+  }, [deviceId, gameId]);
 
   useEffect(() => {
     const socket = io(apiBase, {
       auth: API_KEY ? { apiKey: API_KEY } : {}
     });
 
-    // Poll for game state every 5 s until a game:state arrives.
-    // This covers the case where the iPad's startGame() hasn't completed yet
-    // when the coach first opens the dashboard.
+    // Poll the presence channel every 5s so the coach dashboard can recover
+    // quickly if the iPad reconnects after a temporary network interruption.
     let pollInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
-      if (socket.connected) socket.emit("join:game", gameId);
+      if (socket.connected) {
+        socket.emit("join:coach", { deviceId });
+      }
     }, 5000);
 
     function stopPoll() {
@@ -413,18 +515,37 @@ export function App() {
     }
 
     socket.on("connect", () => {
-      setConnected(true);
-      socket.emit("join:game", gameId);
+      setServerConnected(true);
+      socket.emit("join:coach", { deviceId });
     });
 
     socket.on("disconnect", () => {
-      setConnected(false);
+      setServerConnected(false);
+      setDeviceConnected(false);
     });
 
-    socket.emit("join:game", gameId);
+    socket.emit("join:coach", { deviceId });
+
+    function handlePresence(status: PresenceStatus) {
+      if (!status || status.deviceId !== deviceId) {
+        return;
+      }
+
+      setDeviceConnected(status.online);
+      const activeGameId = status.gameId;
+      if (status.online && activeGameId) {
+        setGameId((current) => (current === activeGameId ? current : activeGameId));
+        socket.emit("join:game", activeGameId);
+      } else {
+        setDashboardStatus(`Waiting for iPad device ${deviceId}`);
+      }
+    }
+
+    socket.on("presence:status", handlePresence);
 
     socket.on("game:state", (nextState: GameState) => {
       stopPoll();
+      setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
       setState(nextState);
       setDashboardStatus("Live state synced");
     });
@@ -433,13 +554,25 @@ export function App() {
       setInsights(nextInsights);
     });
 
+    socket.on("roster:teams", (nextTeams: unknown) => {
+      const teams = normalizeRosterTeams(nextTeams);
+      setRosterTeamsState(teams);
+      saveRosterTeams(teams);
+    });
+
     return () => {
       stopPoll();
+      socket.off("presence:status", handlePresence);
+      socket.off("roster:teams");
       socket.disconnect();
     };
-  }, [gameId]);
+  }, [deviceId]);
 
   useEffect(() => {
+    if (!gameId) {
+      return;
+    }
+
     async function hydrate() {
       const stateRes = await fetch(`${apiBase}/games/${gameId}/state`, { headers: apiKeyHeader() });
       if (stateRes.ok) {
@@ -578,6 +711,32 @@ export function App() {
     return [...new Set([...preferred, ...Object.keys(aggregatedTeams)])];
   }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId]);
 
+  const rosterLabels = useMemo(() => {
+    const teamNameById: Record<string, string> = {};
+    const playerNameByTeamAndId: Record<string, string> = {};
+    const playerNameById: Record<string, string> = {};
+
+    for (const team of rosterTeams) {
+      const teamDisplay = team.name.trim() || team.abbreviation.trim() || team.id;
+      teamNameById[team.id] = teamDisplay;
+
+      for (const player of team.players) {
+        const playerDisplay = player.name.trim() || (player.number.trim() ? `#${player.number.trim()}` : player.id);
+        playerNameByTeamAndId[`${team.id}:${player.id}`] = playerDisplay;
+
+        if (!playerNameById[player.id]) {
+          playerNameById[player.id] = playerDisplay;
+        }
+      }
+    }
+
+    return {
+      teamNameById,
+      playerNameByTeamAndId,
+      playerNameById,
+    };
+  }, [rosterTeams]);
+
   function toTitleCase(value: string): string {
     return value
       .replace(/[_-]+/g, " ")
@@ -590,35 +749,141 @@ export function App() {
   }
 
   function displayTeamName(teamId: string): string {
+    const canonicalId = canonicalTeamId(teamId);
     const normalized = teamId.toLowerCase();
-    const isHomeAlias = normalized === "home" || normalized === "team-home";
-    const isAwayAlias = normalized === "away" || normalized === "team-away";
+    const canonicalNormalized = canonicalId.toLowerCase();
+    const isHomeAlias = canonicalSideIds.homeAliases.has(teamId)
+      || canonicalSideIds.homeAliases.has(canonicalId)
+      || normalized === "home"
+      || normalized === "team-home"
+      || canonicalNormalized === "home"
+      || canonicalNormalized === "team-home";
+    const isAwayAlias = canonicalSideIds.awayAliases.has(teamId)
+      || canonicalSideIds.awayAliases.has(canonicalId)
+      || normalized === "away"
+      || normalized === "team-away"
+      || canonicalNormalized === "away"
+      || canonicalNormalized === "team-away";
+    const myTeamConfigured = Boolean(setupNames.myTeamName);
+    const opponentName = setupNames.opponentName || state?.opponentName || "";
+    const isOpponentAlias = setupNames.vcSide === "home" ? isAwayAlias : isHomeAlias;
 
-    if (setupNames.myTeamId && teamId === setupNames.myTeamId && setupNames.myTeamName) {
+    if (myTeamConfigured && setupNames.myTeamId && (teamId === setupNames.myTeamId || canonicalId === setupNames.myTeamId)) {
       return setupNames.myTeamName;
     }
 
-    if (setupNames.myTeamName) {
+    if (myTeamConfigured) {
       if (setupNames.vcSide === "home" && isHomeAlias) return setupNames.myTeamName;
       if (setupNames.vcSide === "away" && isAwayAlias) return setupNames.myTeamName;
     }
 
-    // Check both setupNames and game state for opponent name
-    const opponentName = setupNames.opponentName || state?.opponentName || "";
     if (opponentName) {
-      // If the teamId matches the opponent team ID from game state
-      if (state?.opponentTeamId && teamId === state.opponentTeamId) {
+      if (state?.opponentTeamId && (teamId === state.opponentTeamId || canonicalId === state.opponentTeamId)) {
         return opponentName;
       }
-      // Fallback to side-based matching for URL param setup
-      if (setupNames.vcSide === "home" && isAwayAlias) return opponentName;
-      if (setupNames.vcSide === "away" && isHomeAlias) return opponentName;
-      if (setupNames.myTeamId && teamId !== setupNames.myTeamId && teams.length === 2) {
+      if (isOpponentAlias) return opponentName;
+      if (setupNames.myTeamId && canonicalId !== setupNames.myTeamId && teams.length === 2) {
         return opponentName;
       }
     }
 
-    return toTitleCase(teamId);
+    const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
+    if (rosterLabel) {
+      return rosterLabel;
+    }
+
+    const fallback = canonicalId.replace(/^team[-_]/i, "");
+    return toTitleCase(fallback);
+  }
+
+  function displayPlayerName(teamId: string, playerId: string): string {
+    const canonicalId = canonicalTeamId(teamId);
+    const normalizedPlayerId = playerId.toLowerCase();
+    const normalizedTeamId = teamId.toLowerCase();
+    const normalizedCanonicalId = canonicalId.toLowerCase();
+    const teamLevelAliases = new Set<string>([
+      "home-team",
+      "away-team",
+      "team-home",
+      "team-away",
+      normalizedTeamId,
+      normalizedCanonicalId,
+      `${normalizedTeamId}-team`,
+      `${normalizedCanonicalId}-team`,
+    ]);
+
+    if (teamLevelAliases.has(normalizedPlayerId)) {
+      return displayTeamName(teamId);
+    }
+
+    return rosterLabels.playerNameByTeamAndId[`${canonicalId}:${playerId}`]
+      ?? rosterLabels.playerNameByTeamAndId[`${teamId}:${playerId}`]
+      ?? rosterLabels.playerNameById[playerId]
+      ?? playerId;
+  }
+
+  function replaceToken(text: string, token: string, replacement: string): string {
+    const source = token.trim();
+    const target = replacement.trim();
+    if (!source || !target || source === target) {
+      return text;
+    }
+
+    const escapedToken = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`(^|[^A-Za-z0-9_-])(${escapedToken})(?=[^A-Za-z0-9_-]|$)`, "gi");
+    return text.replace(pattern, (_match, prefix: string) => `${prefix}${target}`);
+  }
+
+  function prettifyInsightText(
+    text: string,
+    relatedTeamId?: string,
+    relatedPlayerId?: string
+  ): string {
+    let formatted = text;
+
+    const teamIdsToNormalize = new Set<string>([
+      ...teams,
+      ...rawTeamIds,
+      state?.homeTeamId ?? "",
+      state?.awayTeamId ?? "",
+      state?.opponentTeamId ?? "",
+      relatedTeamId ?? "",
+    ].filter(Boolean));
+
+    for (const teamId of teamIdsToNormalize) {
+      formatted = replaceToken(formatted, teamId, displayTeamName(teamId));
+    }
+
+    if (relatedTeamId && relatedPlayerId) {
+      formatted = replaceToken(
+        formatted,
+        relatedPlayerId,
+        displayPlayerName(relatedTeamId, relatedPlayerId)
+      );
+    }
+
+    for (const [playerId, playerName] of Object.entries(rosterLabels.playerNameById)) {
+      formatted = replaceToken(formatted, playerId, playerName);
+    }
+
+    return formatted;
+  }
+
+  function formatInsightTypeLabel(type: string): string {
+    if (type === "ai_coaching") {
+      return "AI Coaching";
+    }
+
+    return type
+      .split("_")
+      .filter(Boolean)
+      .map((part) => {
+        if (part.toLowerCase() === "ai") {
+          return "AI";
+        }
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      })
+      .join(" ");
   }
 
   const leadersByTeam = useMemo(() => {
@@ -626,9 +891,11 @@ export function App() {
       teams.map((teamId) => {
         const players = Object.values(aggregatedTeams[teamId]?.playerStats ?? {});
         const scoringLeader = players
+          .filter((player) => player.points > 0)
           .slice()
           .sort((left, right) => right.points - left.points || left.playerId.localeCompare(right.playerId))[0];
         const foulLeader = players
+          .filter((player) => player.fouls > 0)
           .slice()
           .sort((left, right) => right.fouls - left.fouls || left.playerId.localeCompare(right.playerId))[0];
 
@@ -642,6 +909,25 @@ export function App() {
       }
     >;
   }, [aggregatedTeams, teams]);
+
+  const aiInsights = useMemo(
+    () => insights.filter((insight) => insight.type === "ai_coaching"),
+    [insights]
+  );
+
+  const rulesInsights = useMemo(
+    () => insights.filter((insight) => insight.type !== "ai_coaching"),
+    [insights]
+  );
+
+  const isOpeningInsightWindow = useMemo(() => {
+    if (!state) {
+      return false;
+    }
+
+    const eventCount = state.events.length;
+    return state.currentPeriod === "Q1" && eventCount < 10;
+  }, [state]);
 
   const selectedVideoForResolution = useMemo(() => {
     const synced = videos.find((video) => video.status === "synced");
@@ -736,14 +1022,14 @@ export function App() {
         </div>
         <div className="header-controls">
           <label>
-            Game ID
-            <input value={gameId} onChange={(event) => setGameId(event.target.value)} />
+            iPad Device ID
+            <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} />
           </label>
           <div className="connection-pill">
             {state ? `Current period ${state.currentPeriod}` : "Waiting for period state"}
           </div>
-          <div className={`connection-pill ${connected ? "online" : "offline"}`}>
-            {connected ? "Live connected" : "Offline"}
+          <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`}>
+            {deviceConnected ? "iPad connected" : (serverConnected ? "Waiting for iPad" : "Server offline")}
           </div>
         </div>
       </header>
@@ -774,7 +1060,9 @@ export function App() {
                   <span>Active lineup</span>
                   <strong>
                     {(aggregatedTeams[teamId]?.activeLineup ?? []).length > 0
-                      ? aggregatedTeams[teamId]?.activeLineup.join(", ")
+                      ? (aggregatedTeams[teamId]?.activeLineup ?? [])
+                        .map((playerId) => displayPlayerName(teamId, playerId))
+                        .join(", ")
                       : "not set"}
                   </strong>
                 </p>
@@ -782,7 +1070,7 @@ export function App() {
                   <span>Top scorer</span>
                   <strong>
                     {leadersByTeam[teamId]?.scoringLeader
-                      ? `${leadersByTeam[teamId].scoringLeader?.playerId} (${leadersByTeam[teamId].scoringLeader?.points})`
+                      ? `${displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)} (${leadersByTeam[teamId].scoringLeader?.points})`
                       : "none"}
                   </strong>
                 </p>
@@ -791,7 +1079,7 @@ export function App() {
                   <strong>
                     {leadersByTeam[teamId]?.foulLeader
                       ? formatFoulTroubleLabel(
-                        leadersByTeam[teamId].foulLeader.playerId,
+                        displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
                         leadersByTeam[teamId].foulLeader.fouls
                       )
                       : "none"}
@@ -805,16 +1093,45 @@ export function App() {
 
       <section className="card">
         <h2>Live Insights</h2>
+        {isOpeningInsightWindow ? (
+          <p className="insight-context-note">Opening sample: early possessions can create noisy reads.</p>
+        ) : null}
         {insights.length === 0 ? <p>No insights yet.</p> : null}
-        <div className="insight-list">
-          {insights.map((insight) => (
-            <article key={insight.id} className="insight-item">
-              <h3>{insight.type.replaceAll("_", " ")}</h3>
-              <p>{insight.message}</p>
-              <small>{insight.explanation}</small>
-            </article>
-          ))}
-        </div>
+        {aiInsights.length > 0 ? (
+          <>
+            <h3 className="insight-subhead">AI Bench Calls</h3>
+            <div className="insight-list">
+              {aiInsights.map((insight) => (
+                <article key={insight.id} className="insight-item insight-item-ai">
+                  <div className="insight-title-row">
+                    <h3>{formatInsightTypeLabel(insight.type)}</h3>
+                    <span className="insight-badge insight-badge-ai">AI</span>
+                  </div>
+                  <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
+                  <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {rulesInsights.length > 0 ? (
+          <>
+            <h3 className="insight-subhead">System Alerts</h3>
+            <div className="insight-list">
+              {rulesInsights.map((insight) => (
+                <article key={insight.id} className="insight-item">
+                  <div className="insight-title-row">
+                    <h3>{formatInsightTypeLabel(insight.type)}</h3>
+                    <span className="insight-badge insight-badge-rules">RULE</span>
+                  </div>
+                  <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
+                  <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : null}
       </section>
 
       <section className="card">
@@ -826,7 +1143,11 @@ export function App() {
                 <strong>
                   #{event.sequence} {event.type.replaceAll("_", " ")}
                 </strong>
-                <p>{formatDashboardEventMeta(event)}</p>
+                <p>{formatDashboardEventMeta({
+                  teamId: displayTeamName(event.teamId),
+                  period: event.period,
+                  clockSecondsRemaining: event.clockSecondsRemaining,
+                })}</p>
                 {eventClipMap[event.id] ? (
                   <small>
                     Clip at {formatDashboardClock(eventClipMap[event.id].resolvedVideoSecond)} (video {eventClipMap[event.id].videoId})

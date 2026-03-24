@@ -17,6 +17,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupModal();
 });
 
+async function readResponsePayload(response) {
+    const raw = await response.text();
+    if (!raw) return null;
+
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return raw;
+    }
+}
+
+function getResponseErrorMessage(payload, fallbackMessage) {
+    if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error.trim()) {
+        return payload.error;
+    }
+    if (typeof payload === 'string' && payload.trim()) {
+        return payload.trim();
+    }
+    return fallbackMessage;
+}
+
 async function loadGames() {
     try {
         const response = await fetch('/api/games');
@@ -53,6 +74,31 @@ async function loadGames() {
     }
 }
 
+async function deleteGame(gameId) {
+    if (!Number.isFinite(Number(gameId))) return;
+
+    const confirmed = window.confirm(`Delete game #${gameId} from stats and synced coach data?`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/game/${encodeURIComponent(String(gameId))}/delete`, {
+            method: 'POST'
+        });
+        const payload = await readResponsePayload(response);
+        if (!response.ok) {
+            throw new Error(getResponseErrorMessage(payload, 'Failed to delete game'));
+        }
+
+        if (gameModal) {
+            gameModal.classList.remove('show');
+        }
+        await loadGames();
+    } catch (error) {
+        console.error('Error deleting game:', error);
+        window.alert(`Failed to delete game: ${error.message}`);
+    }
+}
+
 function displayGames(games) {
     const container = document.getElementById('games-container');
     
@@ -68,6 +114,7 @@ function displayGames(games) {
         const gameCard = document.createElement('div');
         gameCard.className = 'game-card';
         gameCard.innerHTML = `
+            <button class="game-delete-btn" type="button" aria-label="Delete game ${game.gameId}" style="position:absolute;top:10px;right:10px;background:transparent;border:1px solid var(--border);color:var(--danger);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;">Delete</button>
             <div class="game-card-header">
                 <div class="game-card-date">${escapeHtml(game.date)}</div>
                 <span class="result-badge ${game.result === 'W' ? 'win' : 'loss'}">
@@ -84,6 +131,15 @@ function displayGames(games) {
                 ${pointDiff > 0 ? '+' : ''}${pointDiff}
             </div>
         `;
+
+        const deleteBtn = gameCard.querySelector('.game-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void deleteGame(game.gameId);
+            });
+        }
         
         gameCard.addEventListener('click', () => showGameDetail(game));
         container.appendChild(gameCard);
@@ -161,11 +217,16 @@ async function showGameDetail(game) {
             <div class="game-detail-result ${game.result === 'W' ? 'win' : 'loss'}">
                 ${game.result === 'W' ? 'WIN' : 'LOSS'}
             </div>
+            <div>
+                <button id="delete-game-btn" type="button" class="btn-primary game-delete-btn">
+                    Delete Game
+                </button>
+            </div>
         </div>
 
         <div class="game-detail-score">
             <div class="score-column">
-                <div class="score-team">Cedar Ridge Raptors</div>
+                <div class="score-team">BTA Team</div>
                 <div class="score-value">${game.vc_score}</div>
             </div>
             <div class="score-column">
@@ -239,7 +300,7 @@ async function showGameDetail(game) {
             </div>
         </div>
 
-        <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 1rem;">Cedar Ridge Raptors Box Score</h3>
+        <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 1rem;">BTA Team Box Score</h3>
         <table class="box-score-table">
             <thead>
                 <tr>
@@ -301,6 +362,12 @@ async function showGameDetail(game) {
     `;
     
     document.getElementById('gameDetail').innerHTML = detailHtml;
+    const deleteBtn = document.getElementById('delete-game-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => {
+            void deleteGame(game.gameId);
+        });
+    }
     gameModal.classList.add('show');
 }
 

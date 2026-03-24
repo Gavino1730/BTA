@@ -4,11 +4,15 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import {
   createGame,
+  deleteGame,
   deleteEvent,
   getGameEvents,
   getGameInsights,
+  getRosterTeams,
   getGameState,
   ingestEvent,
+  refreshGameAiInsights,
+  saveRosterTeams,
   updateEvent
 } from "./store.js";
 
@@ -34,8 +38,63 @@ const io = new Server(httpServer, {
   }
 });
 
+interface OperatorPresence {
+  deviceId: string;
+  gameId: string;
+  socketId: string;
+  connectedAtIso: string;
+  lastSeenIso: string;
+}
+
+const operatorPresenceBySocketId = new Map<string, OperatorPresence>();
+
+function getOperatorByDeviceId(deviceId: string): OperatorPresence | null {
+  for (const operator of operatorPresenceBySocketId.values()) {
+    if (operator.deviceId === deviceId) {
+      return operator;
+    }
+  }
+
+  return null;
+}
+
+function emitPresence(deviceId: string): void {
+  const operator = getOperatorByDeviceId(deviceId);
+  const payload = {
+    deviceId,
+    online: Boolean(operator),
+    gameId: operator?.gameId ?? null,
+    lastSeenIso: operator?.lastSeenIso ?? null
+  };
+
+  io.to(`device:${deviceId}`).emit("presence:status", payload);
+}
+
+async function refreshAndBroadcastInsights(gameId: string): Promise<void> {
+  const insights = await refreshGameAiInsights(gameId);
+  if (insights) {
+    io.to(gameId).emit("game:insights", insights);
+  }
+}
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/config/roster-teams", requireApiKey, (_req, res) => {
+  res.json({ teams: getRosterTeams() });
+});
+
+app.put("/config/roster-teams", requireApiKey, (req, res) => {
+  const teams = req.body?.teams;
+  if (!Array.isArray(teams)) {
+    res.status(400).json({ error: "teams array is required" });
+    return;
+  }
+
+  const saved = saveRosterTeams(teams);
+  io.emit("roster:teams", saved);
+  res.json({ teams: saved });
 });
 
 app.post("/games", requireApiKey, (req, res) => {
@@ -60,6 +119,17 @@ app.post("/games", requireApiKey, (req, res) => {
   res.status(201).json(state);
 });
 
+app.delete("/games/:gameId", requireApiKey, (req, res) => {
+  const removed = deleteGame(req.params.gameId);
+  if (!removed) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  io.to(req.params.gameId).emit("game:deleted", { gameId: req.params.gameId });
+  res.json({ gameId: req.params.gameId, deleted: true });
+});
+
 app.get("/games/:gameId/state", requireApiKey, (req, res) => {
   const state = getGameState(req.params.gameId);
 
@@ -71,14 +141,15 @@ app.get("/games/:gameId/state", requireApiKey, (req, res) => {
   res.json(state);
 });
 
-app.get("/games/:gameId/insights", requireApiKey, (req, res) => {
+app.get("/games/:gameId/insights", requireApiKey, async (req, res) => {
   const state = getGameState(req.params.gameId);
   if (!state) {
     res.status(404).json({ error: "game not found" });
     return;
   }
 
-  res.json(getGameInsights(req.params.gameId));
+  const insights = await refreshGameAiInsights(req.params.gameId);
+  res.json(insights ?? getGameInsights(req.params.gameId));
 });
 
 app.get("/games/:gameId/events", requireApiKey, (req, res) => {
@@ -103,6 +174,7 @@ app.post("/games/:gameId/events", requireApiKey, (req, res) => {
     io.to(event.gameId).emit("game:event", event);
     io.to(event.gameId).emit("game:state", state);
     io.to(event.gameId).emit("game:insights", insights);
+    void refreshAndBroadcastInsights(event.gameId);
 
     res.status(201).json({ event, state, insights });
   } catch (error) {
@@ -117,6 +189,7 @@ app.delete("/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
     io.to(req.params.gameId).emit("game:event:deleted", { eventId: req.params.eventId });
     io.to(req.params.gameId).emit("game:state", state);
     io.to(req.params.gameId).emit("game:insights", insights);
+    void refreshAndBroadcastInsights(req.params.gameId);
 
     res.json({ state, insights });
   } catch (error) {
@@ -135,6 +208,7 @@ app.put("/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
     io.to(req.params.gameId).emit("game:event:updated", event);
     io.to(req.params.gameId).emit("game:state", state);
     io.to(req.params.gameId).emit("game:insights", insights);
+    void refreshAndBroadcastInsights(req.params.gameId);
 
     res.json({ event, state, insights });
   } catch (error) {
@@ -154,6 +228,39 @@ io.on("connection", (socket) => {
     }
   }
 
+  function registerOperator(rawPayload: unknown): void {
+    const payload = (rawPayload ?? {}) as Record<string, unknown>;
+    const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
+    const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
+
+    if (!deviceId || !gameId) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existing = operatorPresenceBySocketId.get(socket.id);
+
+    operatorPresenceBySocketId.set(socket.id, {
+      deviceId,
+      gameId,
+      socketId: socket.id,
+      connectedAtIso: existing?.connectedAtIso ?? now,
+      lastSeenIso: now
+    });
+
+    socket.join(gameId);
+    socket.join(`device:${deviceId}`);
+    emitPresence(deviceId);
+  }
+
+  socket.on("operator:register", (payload: unknown) => {
+    registerOperator(payload);
+  });
+
+  socket.on("operator:heartbeat", (payload: unknown) => {
+    registerOperator(payload);
+  });
+
   socket.on("join:game", (gameId: string) => {
     if (!gameId) {
       return;
@@ -164,11 +271,50 @@ io.on("connection", (socket) => {
     if (state) {
       socket.emit("game:state", state);
       socket.emit("game:insights", getGameInsights(gameId));
+      void refreshAndBroadcastInsights(gameId);
     }
+  });
+
+  socket.on("join:coach", (rawPayload: unknown) => {
+    const payload = (rawPayload ?? {}) as Record<string, unknown>;
+    const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
+    const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
+
+    if (gameId) {
+      socket.join(gameId);
+      const state = getGameState(gameId);
+      if (state) {
+        socket.emit("game:state", state);
+        socket.emit("game:insights", getGameInsights(gameId));
+        void refreshAndBroadcastInsights(gameId);
+      }
+    }
+
+    if (deviceId) {
+      socket.join(`device:${deviceId}`);
+      const operator = getOperatorByDeviceId(deviceId);
+      socket.emit("presence:status", {
+        deviceId,
+        online: Boolean(operator),
+        gameId: operator?.gameId ?? null,
+        lastSeenIso: operator?.lastSeenIso ?? null
+      });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    const operator = operatorPresenceBySocketId.get(socket.id);
+    if (!operator) {
+      return;
+    }
+
+    operatorPresenceBySocketId.delete(socket.id);
+    emitPresence(operator.deviceId);
   });
 });
 
 const port = Number(process.env.PORT ?? 4000);
-httpServer.listen(port, () => {
-  console.log(`Realtime API listening on port ${port}`);
+const host = process.env.HOST ?? "0.0.0.0";
+httpServer.listen(port, host, () => {
+  console.log(`Realtime API listening on http://${host}:${port}`);
 });

@@ -1,8 +1,8 @@
-# Contributing to Cedar Ridge Raptors Basketball Stats
+# Contributing to BTA Basketball Stats
 
 First off, thank you for considering contributing to this project! 🎉
 
-The following is a set of guidelines for contributing to the Cedar Ridge Raptors Basketball Stats platform. These are mostly guidelines, not rules. Use your best judgment, and feel free to propose changes to this document in a pull request.
+The following is a set of guidelines for contributing to the BTA Basketball Stats platform. These are mostly guidelines, not rules. Use your best judgment, and feel free to propose changes to this document in a pull request.
 
 ## 📋 Table of Contents
 

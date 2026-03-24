@@ -8,6 +8,7 @@
         <div class="view-toggle">
             <button id="cards-view-btn" class="view-btn active">Cards</button>
             <button id="rankings-view-btn" class="view-btn">Rankings</button>
+            <button id="sync-btn" class="sync-btn" title="Sync player data with backend">⟳ Sync</button>
         </div>
         <input type="text" id="player-search" placeholder="Search player...">
         <select id="stat-sort" aria-label="Sort players by statistic">
@@ -79,5 +80,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='players.js') }}?v=1.7"></script>
+<script src="{{ url_for('static', filename='players.js') }}?v=1.8"></script>
 {% endblock %}

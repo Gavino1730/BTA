@@ -1,8 +1,8 @@
-# Cedar Ridge Raptors Stats Output - JSON Structure
+# BTA Team Stats Output - JSON Structure
 
 **File:** `vc_stats_output.json`  
 **Size:** Example output  
-**Team:** Cedar Ridge Raptors  
+**Team:** BTA Team  
 **Season:** 2026-2027 Test Season  
 
 ## Summary Stats
@@ -21,7 +21,7 @@
 ### Root Level
 ```json
 {
-  "team": "Cedar Ridge Raptors",
+  "team": "BTA Team",
   "season": "2026-2027 Test Season",
   "games": [...],
   "player_game_logs": {...},

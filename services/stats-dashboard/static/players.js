@@ -2,6 +2,10 @@
 let allPlayers = [];
 let playerModal = null;
 let currentView = 'cards'; // 'cards' or 'rankings'
+let syncIntervalId = null;
+let lastSyncTime = null;
+const SYNC_INTERVAL_MS = 30000; // Sync every 30 seconds
+const SYNC_API_TIMEOUT_MS = 5000; // 5 second timeout for API calls
 
 const isFiniteNumber = (value) => Number.isFinite(Number(value));
 const safeNumber = (value, fallback = 0) => (isFiniteNumber(value) ? Number(value) : fallback);
@@ -16,6 +20,27 @@ async function fetchJson(url) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
     return response.json();
+}
+
+async function readResponsePayload(response) {
+    const raw = await response.text();
+    if (!raw) return null;
+
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return raw;
+    }
+}
+
+function getResponseErrorMessage(payload, fallbackMessage) {
+    if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error.trim()) {
+        return payload.error;
+    }
+    if (typeof payload === 'string' && payload.trim()) {
+        return payload.trim();
+    }
+    return fallbackMessage;
 }
 
 function sanitizeNumbers(obj) {
@@ -35,16 +60,19 @@ function sanitizeNumbers(obj) {
 document.addEventListener('DOMContentLoaded', async () => {
     showLoader('players-container', 'Loading players...');
     // Load and setup in parallel for faster interaction
-    await loadPlayers();
     setupFilters();
     setupModal();
     setupViewToggle();
+    setupSyncButton();
     
     // Initialize proper view state
     const rankingSelect = document.getElementById('ranking-stat');
     if (rankingSelect) {
         rankingSelect.classList.add('hidden');
     }
+    
+    // Start automatic sync (which loads players immediately then periodically)
+    startAutoSync();
 });
 
 async function loadPlayers() {
@@ -69,6 +97,121 @@ async function loadPlayers() {
     }
 }
 
+async function syncBackendData() {
+    // Call the backend reload endpoint to refresh data from files
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SYNC_API_TIMEOUT_MS);
+        
+        const response = await fetch('/api/reload-data', {
+            method: 'POST',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            console.warn(`Data sync returned status ${response.status}`);
+            return false;
+        }
+        
+        const data = await response.json();
+        lastSyncTime = new Date();
+        console.log('Backend data synced successfully:', data);
+        return true;
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.warn('Backend data sync timed out');
+        } else {
+            console.warn('Failed to sync backend data:', error);
+        }
+        return false;
+    }
+}
+
+async function refreshPlayers() {
+    // Sync backend data and reload players display
+    try {
+        // Show sync indicator
+        const syncBtn = document.getElementById('sync-btn');
+        if (syncBtn) {
+            syncBtn.classList.add('syncing');
+            syncBtn.innerHTML = '⟳ Syncing...';
+        }
+        
+        // Sync backend first
+        await syncBackendData();
+        
+        // Then reload players display
+        await loadPlayers();
+        
+        // Update sync button
+        if (syncBtn) {
+            syncBtn.classList.remove('syncing');
+            syncBtn.innerHTML = '⟳ Sync';
+        }
+    } catch (error) {
+        console.error('Error refreshing players:', error);
+        const syncBtn = document.getElementById('sync-btn');
+        if (syncBtn) {
+            syncBtn.classList.remove('syncing');
+            syncBtn.innerHTML = '⟳ Sync';
+        }
+    }
+}
+
+function startAutoSync() {
+    // Start automatic periodic data syncing
+    // Clear any existing interval
+    if (syncIntervalId) {
+        clearInterval(syncIntervalId);
+    }
+    
+    // Sync immediately on first load
+    refreshPlayers().catch(console.error);
+    
+    // Then sync every interval
+    syncIntervalId = setInterval(() => {
+        refreshPlayers().catch(console.error);
+    }, SYNC_INTERVAL_MS);
+    
+    console.log(`Auto-sync started (interval: ${SYNC_INTERVAL_MS}ms)`);
+}
+
+function stopAutoSync() {
+    // Stop automatic data syncing
+    if (syncIntervalId) {
+        clearInterval(syncIntervalId);
+        syncIntervalId = null;
+        console.log('Auto-sync stopped');
+    }
+}
+
+async function deletePlayer(playerName) {
+    const normalizedName = (playerName || '').trim();
+    if (!normalizedName) return;
+
+    const confirmed = window.confirm(`Delete player ${normalizedName} from stats and synced coach roster?`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/player/${encodeURIComponent(normalizedName)}/delete`, {
+            method: 'POST'
+        });
+        const payload = await readResponsePayload(response);
+        if (!response.ok) {
+            throw new Error(getResponseErrorMessage(payload, 'Failed to delete player'));
+        }
+
+        if (playerModal) {
+            playerModal.classList.remove('show');
+        }
+        await refreshPlayers();
+    } catch (error) {
+        console.error('Error deleting player:', error);
+        window.alert(`Failed to delete player: ${error.message}`);
+    }
+}
+
 function displayPlayers(players) {
     const container = document.getElementById('players-container');
     
@@ -82,10 +225,21 @@ function displayPlayers(players) {
     players.forEach(player => {
         const card = document.createElement('div');
         card.className = 'player-card';
+        const targetName = escapeHtml(player.name || '');
         card.innerHTML = `
+            <button class="player-delete-btn" type="button" aria-label="Delete ${targetName}" style="position:absolute;top:10px;right:10px;background:transparent;border:1px solid var(--border);color:var(--danger);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;">Delete</button>
             <div class="player-number">#${player.number || '-'}</div>
             <div class="player-name">${escapeHtml(player.first_name || player.name)}</div>
         `;
+
+        const deleteBtn = card.querySelector('.player-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void deletePlayer(player.name);
+            });
+        }
         
         card.addEventListener('click', (e) => {
             e.preventDefault();
@@ -134,6 +288,15 @@ function setupViewToggle() {
         rankingSelect.classList.remove('hidden');
         displayRankings();
     });
+}
+
+function setupSyncButton() {
+    const syncBtn = document.getElementById('sync-btn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', () => {
+            refreshPlayers().catch(console.error);
+        });
+    }
 }
 
 function filterPlayers() {
@@ -388,6 +551,11 @@ async function showPlayerDetail(playerName) {
                     ${numberDisplay ? `<div class="player-detail-number">${numberDisplay}</div>` : ''}
                     <div class="player-detail-name">${escapeHtml(displayFirstName)}</div>
                 </div>
+                <div>
+                    <button id="delete-player-btn" type="button" class="btn-primary" style="background-color: var(--danger); color: #fff;">
+                        Delete Player
+                    </button>
+                </div>
             </div>
 
             ${rosterHtml}
@@ -630,6 +798,12 @@ async function showPlayerDetail(playerName) {
         `;
         
         document.getElementById('playerDetail').innerHTML = detailHtml;
+        const deleteBtn = document.getElementById('delete-player-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => {
+                void deletePlayer(playerName);
+            });
+        }
         playerModal.classList.add('show');
     } catch (error) {
         console.error('Error loading player detail:', error);

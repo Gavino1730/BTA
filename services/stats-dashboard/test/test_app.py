@@ -132,6 +132,40 @@ def test_api_game_not_found(client):
     assert r.status_code == 404
 
 
+def test_api_delete_game_returns_json(client):
+    games_response = client.get("/api/games")
+    games = games_response.get_json()
+    assert games
+
+    game_id = games[0]["gameId"]
+    delete_response = client.delete(f"/api/game/{game_id}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.is_json
+    payload = delete_response.get_json()
+    assert payload["gameId"] == game_id
+
+    verify_response = client.get(f"/api/game/{game_id}")
+    assert verify_response.status_code == 404
+
+
+def test_api_delete_player_returns_json(client):
+    players_response = client.get("/api/players")
+    players = players_response.get_json()
+    assert players
+
+    player_name = players[0]["name"]
+    delete_response = client.delete(f"/api/player/{player_name}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.is_json
+    payload = delete_response.get_json()
+    assert payload["player"] == player_name
+
+    verify_response = client.get(f"/api/player/{player_name}")
+    assert verify_response.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # Ingest endpoint — happy path
 # ---------------------------------------------------------------------------

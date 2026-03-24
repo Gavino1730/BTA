@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildPeriodLabels, getPeriodDefaultClock, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
+import { getPeriodDefaultClock, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 import { QRCodeSVG } from "qrcode.react";
+import { io } from "socket.io-client";
 
-const DEFAULT_API = import.meta.env.VITE_API ?? "http://localhost:4000";
-const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? "http://localhost:5173";
+const defaultHost = window.location.hostname || "localhost";
+const DEFAULT_API = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
+const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? `http://${defaultHost}:5173`;
+const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
 const STORE = "bta-op";
 const APP_DATA_KEY = "bta-app-data-v3";
+const DEVICE_ID_KEY = "bta-device-id";
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
 function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
@@ -19,6 +23,7 @@ function apiHeaders(setup: { apiKey?: string }): RequestInit {
 
 function buildCoachViewUrl(
   gameId: string,
+  deviceId: string,
   setup: {
     myTeamId?: string;
     myTeamName?: string;
@@ -27,12 +32,28 @@ function buildCoachViewUrl(
   }
 ): string {
   const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
-  const params = new URLSearchParams({ gameId });
+  const params = new URLSearchParams({ deviceId });
+  if (gameId) params.set("gameId", gameId);
   if (setup.myTeamId) params.set("myTeamId", setup.myTeamId);
   if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);
   if (setup.opponentName) params.set("opponentName", setup.opponentName);
   if (setup.vcSide) params.set("vcSide", setup.vcSide);
   return `${base}/?${params.toString()}`;
+}
+
+function getDefaultDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+    if (existing?.trim()) {
+      return existing;
+    }
+
+    const next = `ipad-${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem(DEVICE_ID_KEY, next);
+    return next;
+  } catch {
+    return "ipad-1";
+  }
 }
 
 type TeamSide = "home" | "away";
@@ -56,6 +77,7 @@ export interface Team {
 
 export interface GameSetup {
   gameId: string;
+  deviceId: string;
   myTeamId: string;      // the team you are tracking
   apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
   apiKey?: string;       // shared secret sent as x-api-key header
@@ -76,7 +98,7 @@ export interface AppData {
 
 const DEFAULT_DATA: AppData = {
   teams: [],
-  gameSetup: { gameId: "game-1", myTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: "http://localhost:5000" },
+  gameSetup: { gameId: "game-1", deviceId: getDefaultDeviceId(), myTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: DEFAULT_STATS_DASHBOARD },
 };
 
 const STANDARD_TEST_TEAM: Team = {
@@ -116,6 +138,7 @@ function loadAppData(): AppData {
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
   if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
+  if (qp.get("deviceId"))    urlSetup.deviceId    = qp.get("deviceId")!;
   if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;
   if (qp.get("vcSide") === "home" || qp.get("vcSide") === "away") urlSetup.vcSide = qp.get("vcSide") as "home" | "away";
 
@@ -163,12 +186,13 @@ function playerDisplayName(id: string, allPlayers: Player[]): string {
 
 interface RunningTotals {
   points: number; fgm: number; fga: number; threePm: number; threePa: number;
+  ftm: number; fta: number;
   oreb: number; dreb: number; ast: number; stl: number; blk: number; to: number; fouls: number;
 }
 function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals> {
   const map: Record<string, RunningTotals> = {};
   function get(id: string) {
-    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
+    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
     return map[id];
   }
   for (const e of events) {
@@ -180,6 +204,13 @@ function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals>
         t.fgm++;
         t.points += e.points;
         if (e.points === 3) t.threePm++;
+      }
+    } else if (e.type === "free_throw_attempt") {
+      const t = get(e.playerId);
+      t.fta++;
+      if (e.made) {
+        t.ftm++;
+        t.points += 1;
       }
     } else if (e.type === "rebound") {
       const t = get(e.playerId);
@@ -205,6 +236,10 @@ function computeScores(events: GameEvent[], homeTeamId: string, awayTeamId: stri
       if (e.teamId === homeTeamId) s.home += e.points;
       if (e.teamId === awayTeamId) s.away += e.points;
     }
+    if (e.type === "free_throw_attempt" && e.made) {
+      if (e.teamId === homeTeamId) s.home += 1;
+      if (e.teamId === awayTeamId) s.away += 1;
+    }
   }
   return s;
 }
@@ -222,14 +257,15 @@ function computePlusMinus(events: GameEvent[], vcTeamId: string): Record<string,
   for (const e of sorted) {
     if (e.type === "substitution") {
       if (e.teamId === vcTeamId) { vcLineup.delete(e.playerOutId); vcLineup.add(e.playerInId); }
-    } else if (e.type === "shot_attempt" || e.type === "rebound" ||
+    } else if (e.type === "shot_attempt" || e.type === "free_throw_attempt" || e.type === "rebound" ||
                e.type === "foul" || e.type === "assist" || e.type === "steal" || e.type === "block") {
       if (e.teamId === vcTeamId) vcLineup.add(e.playerId);
     } else if (e.type === "turnover" && e.playerId) {
       if (e.teamId === vcTeamId) vcLineup.add(e.playerId);
     }
-    if (e.type === "shot_attempt" && e.made) {
-      const delta = e.teamId === vcTeamId ? e.points : -e.points;
+    if ((e.type === "shot_attempt" && e.made) || (e.type === "free_throw_attempt" && e.made)) {
+      const points = e.type === "shot_attempt" ? e.points : 1;
+      const delta = e.teamId === vcTeamId ? points : -points;
       for (const pid of vcLineup) pm[pid] = (pm[pid] ?? 0) + delta;
     }
   }
@@ -257,6 +293,16 @@ function describeEvent(
       return {
         main: event.made ? `${event.points}pt` : `${event.points}pt miss`,
         detail: `${pn(event.playerId)}  ${ptsStr} ${fgStr}`.trim(),
+        accent: event.made ? "teal" : "red",
+      };
+    }
+    case "free_throw_attempt": {
+      const t = pTotals[event.playerId];
+      const ftStr = t ? `${t.ftm}-${t.fta} ft` : "ft";
+      const ptsStr = t ? `${t.points}pts` : "";
+      return {
+        main: event.made ? "ft" : "ft miss",
+        detail: `${pn(event.playerId)}  ${ptsStr} ${ftStr}`.trim(),
         accent: event.made ? "teal" : "red",
       };
     }
@@ -559,6 +605,10 @@ function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcT
       t.fg_att++;
       if (e.points === 3) t.fg3_att++;
       if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
+    } else if (e.type === "free_throw_attempt") {
+      const t = get(e.playerId);
+      t.ft_att++;
+      if (e.made) { t.ft_made++; t.pts += 1; }
     } else if (e.type === "rebound") {
       const t = get(e.playerId); if (e.offensive) t.oreb++; else t.dreb++;
     } else if (e.type === "assist")  { get(e.playerId).ast++;   }
@@ -601,6 +651,8 @@ function computeTeamStats(events: GameEvent[], teamId: string) {
     if (e.teamId !== teamId) continue;
     if (e.type === "shot_attempt") {
       fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; }
+    } else if (e.type === "free_throw_attempt") {
+      fta++; if (e.made) ft++;
     } else if (e.type === "rebound")  { if (e.offensive) oreb++; else dreb++; }
     else if (e.type === "assist")     { asst++;  }
     else if (e.type === "steal")      { stl++;   }
@@ -614,6 +666,7 @@ function computeTeamStats(events: GameEvent[], teamId: string) {
 // ---- Modal types ----
 type Modal =
   | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean }
+  | { kind: "freeThrow"; teamId: TeamSide; made: boolean }
   | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
   | { kind: "sub1"; teamId: TeamSide }
@@ -643,11 +696,24 @@ export function App() {
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
   const [clockInput, setClockInput] = useState("8:00");
-  const [activeTeam, setActiveTeam] = useState<TeamSide>("home");
   const [modal, setModal] = useState<Modal | null>(null);
+  const [overtimeCount, setOvertimeCount] = useState(0);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [submitMessage, setSubmitMessage] = useState<string>("Ready to save final stats to the dashboard.");
+  const [postGameNameInput, setPostGameNameInput] = useState("");
+  const [postGameOpponentInput, setPostGameOpponentInput] = useState("");
+  const [postGameDateInput, setPostGameDateInput] = useState(() => new Date().toISOString().slice(0, 10));
+  const [postGameHomeScoreInput, setPostGameHomeScoreInput] = useState("0");
+  const [postGameAwayScoreInput, setPostGameAwayScoreInput] = useState("0");
+
+  // ---- Game flow phase ----
+  const [gamePhase, setGamePhase] = useState<"pre-game" | "live" | "post-game">(() => {
+    const saved = localStorage.getItem("bta-op:phase");
+    if (saved === "live" || saved === "post-game" || saved === "pre-game") return saved as "pre-game" | "live" | "post-game";
+    // Legacy: if there are already events for this game, land in live view
+    return loadPending(loadAppData().gameSetup.gameId).length > 0 ? "live" : "pre-game";
+  });
 
   // Ref for auto-save interval — always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
@@ -655,6 +721,11 @@ export function App() {
   // Helper to generate team ID from name
   function generateTeamId(name: string): string {
     return `team-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`;
+  }
+
+  function persistPhase(phase: "pre-game" | "live" | "post-game") {
+    setGamePhase(phase);
+    localStorage.setItem("bta-op:phase", phase);
   }
 
   // ---- Derived: home/away teams ----
@@ -697,6 +768,37 @@ export function App() {
     window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
+
+  useEffect(() => {
+    if (gamePhase !== "live") {
+      return;
+    }
+
+    const deviceId = appData.gameSetup.deviceId?.trim() || "ipad-1";
+    const payload = { deviceId, gameId };
+    const socket = io(appData.gameSetup.apiUrl, {
+      auth: appData.gameSetup.apiKey ? { apiKey: appData.gameSetup.apiKey } : {}
+    });
+
+    const register = () => {
+      socket.emit("operator:register", payload);
+    };
+
+    socket.on("connect", register);
+    register();
+
+    const heartbeat = setInterval(() => {
+      if (socket.connected) {
+        socket.emit("operator:heartbeat", payload);
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(heartbeat);
+      socket.off("connect", register);
+      socket.disconnect();
+    };
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.deviceId, gameId, gamePhase]);
 
   useEffect(() => {
     const localPending = loadPending(gameId).map(normalizeEventTeamId);
@@ -841,6 +943,7 @@ export function App() {
     setSequence(1);
     savePending(gid, []);
     saveSeq(gid, 1);
+    persistPhase("live");
   }
 
   /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
@@ -858,10 +961,38 @@ export function App() {
     return true;
   }
 
-  async function submitToDashboard() {
+  /** End game from the live view — submits stats then shows the post-game screen. */
+  async function endGame() {
+    if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
+      await submitToDashboard();
+    }
+    persistPhase("post-game");
+  }
+
+  /** Prepare a fresh game after viewing post-game screen — returns to pre-game setup. */
+  function handleNewGame() {
+    const latest = loadAppData();
+    const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
+    const nextData: AppData = {
+      ...latest,
+      gameSetup: { ...latest.gameSetup, gameId: newId, statsGameId: undefined },
+    };
+    persistData(nextData);
+    setPendingEvents([]);
+    setSubmittedEvents([]);
+    setSequence(1);
+    savePending(newId, []);
+    saveSeq(newId, 1);
+    setGameDate(new Date().toISOString().slice(0, 10));
+    setSubmitStatus("idle");
+    setSubmitMessage("Ready to save final stats to the dashboard.");
+    persistPhase("pre-game");
+  }
+
+  async function submitToDashboard(overrides?: { opponent?: string; date?: string; homeScore?: number; awayScore?: number }) {
     const vcSide = appData.gameSetup.vcSide ?? "home";
     const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
-    const opponent = appData.gameSetup.opponent?.trim() ?? "";
+    const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
     const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
 
     if (!opponent) {
@@ -883,12 +1014,19 @@ export function App() {
     setSubmitMessage(`Saving final stats to ${dashboardUrl}...`);
 
     // Format date to match Stats dashboard convention: "Dec 3, 2025"
-    const dateParts = new Date(gameDate + "T12:00:00").toLocaleDateString("en-US", {
+    const effectiveDate = overrides?.date || gameDate;
+    const dateParts = new Date(effectiveDate + "T12:00:00").toLocaleDateString("en-US", {
       month: "short", day: "numeric", year: "numeric",
     });
 
-    const vcScore = scores[vcSide];
-    const oppScore = scores[oppSide];
+    const computedVcScore = scores[vcSide];
+    const computedOppScore = scores[oppSide];
+    const vcScore = vcSide === "home"
+      ? (overrides?.homeScore ?? computedVcScore)
+      : (overrides?.awayScore ?? computedVcScore);
+    const oppScore = vcSide === "home"
+      ? (overrides?.awayScore ?? computedOppScore)
+      : (overrides?.homeScore ?? computedOppScore);
     const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
     const teamStats = computeTeamStats(allEventObjs, vcTeamId);
 
@@ -973,6 +1111,86 @@ export function App() {
     const vcPl = appData.gameSetup.vcSide === "home" ? homePlayers : awayPlayers;
     return vcPl.filter(p => (pTotals[p.id]?.fouls ?? 0) >= 4);
   }, [appData.gameSetup.vcSide, homePlayers, awayPlayers, pTotals]);
+  const maxOtInEvents = useMemo(() => {
+    return allEventObjs.reduce((maxOt, event) => {
+      if (!isOvertimePeriod(event.period)) return maxOt;
+      const otNumber = Number.parseInt(event.period.slice(2), 10);
+      return Number.isFinite(otNumber) ? Math.max(maxOt, otNumber) : maxOt;
+    }, 0);
+  }, [allEventObjs]);
+
+  useEffect(() => {
+    const currentOt = isOvertimePeriod(period) ? Number.parseInt(period.slice(2), 10) : 0;
+    setOvertimeCount((current) => Math.max(current, maxOtInEvents, Number.isFinite(currentOt) ? currentOt : 0));
+  }, [maxOtInEvents, period]);
+
+  async function deleteOvertimePeriod(periodLabel: string) {
+    if (!isOvertimePeriod(periodLabel)) return;
+
+    const pendingToRemove = pendingEvents.filter((event) => event.period === periodLabel);
+    const submittedToRemove = submittedEvents.filter((event) => event.period === periodLabel);
+
+    if (submittedToRemove.length > 0 && !navigator.onLine) {
+      alert("Cannot delete overtime while offline because submitted events must be removed from the API first.");
+      return;
+    }
+
+    setPendingEvents((current) => current.filter((event) => event.period !== periodLabel));
+
+    const failedDeletes: string[] = [];
+    for (const event of submittedToRemove) {
+      try {
+        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${event.id}`, {
+          method: "DELETE",
+          headers: apiKeyHeader(appData.gameSetup),
+        });
+        if (!res.ok) {
+          failedDeletes.push(event.id);
+        }
+      } catch {
+        failedDeletes.push(event.id);
+      }
+    }
+
+    if (failedDeletes.length > 0) {
+      const failed = new Set(failedDeletes);
+      setSubmittedEvents((current) => current.filter((event) => event.period !== periodLabel || failed.has(event.id)));
+      alert(`Could not delete ${failedDeletes.length} submitted OT events from the server. Remaining OT events were kept.`);
+      return;
+    }
+
+    setSubmittedEvents((current) => current.filter((event) => event.period !== periodLabel));
+    const nextCount = Number.parseInt(periodLabel.slice(2), 10) - 1;
+    setOvertimeCount(Math.max(0, nextCount));
+
+    if (period === periodLabel) {
+      setPeriod("Q4");
+      setClockInput(getPeriodDefaultClock("Q4"));
+    }
+
+    if (pendingToRemove.length + submittedToRemove.length > 0) {
+      setSubmitMessage(`Deleted ${periodLabel} and removed ${pendingToRemove.length + submittedToRemove.length} events.`);
+    } else {
+      setSubmitMessage(`Deleted ${periodLabel}.`);
+    }
+  }
+
+  function addOvertimePeriod() {
+    const next = overtimeCount + 1;
+    const label = `OT${next}`;
+    setOvertimeCount(next);
+    if (period !== label) {
+      const endSeq = sequence;
+      void postEvent({
+        ...base(endSeq),
+        teamId: homeTeamId,
+        type: "period_transition",
+        newPeriod: label,
+      });
+      setPeriod(label);
+      setClockInput(getPeriodDefaultClock(label));
+    }
+  }
 
   // Keep the ref current so the interval always has the latest values
   useEffect(() => {
@@ -982,6 +1200,89 @@ export function App() {
       }
     };
   });
+
+  useEffect(() => {
+    if (gamePhase !== "post-game") return;
+    setPostGameNameInput(appData.gameSetup.gameId || "");
+    setPostGameOpponentInput(appData.gameSetup.opponent || "");
+    setPostGameDateInput(gameDate);
+    setPostGameHomeScoreInput(String(scores.home));
+    setPostGameAwayScoreInput(String(scores.away));
+  }, [gamePhase, appData.gameSetup.gameId, appData.gameSetup.opponent, gameDate, scores.home, scores.away]);
+
+  function parseScoreInput(value: string, fallback: number) {
+    const n = Number.parseInt(value, 10);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return n;
+  }
+
+  function applyPostGameEdits() {
+    const name = postGameNameInput.trim() || appData.gameSetup.gameId;
+    const opponent = postGameOpponentInput.trim();
+    const date = postGameDateInput || gameDate;
+    setGameDate(date);
+    persistData({
+      ...appData,
+      gameSetup: {
+        ...appData.gameSetup,
+        gameId: name,
+        opponent,
+      },
+    });
+    return {
+      gameId: name,
+      opponent,
+      date,
+      homeScore: parseScoreInput(postGameHomeScoreInput, scores.home),
+      awayScore: parseScoreInput(postGameAwayScoreInput, scores.away),
+    };
+  }
+
+  function resetGameStateFor(gameIdToReset: string) {
+    setPendingEvents([]);
+    setSubmittedEvents([]);
+    setSequence(1);
+    savePending(gameIdToReset, []);
+    saveSeq(gameIdToReset, 1);
+    setSubmitStatus("idle");
+    setSubmitMessage("Ready to save final stats to the dashboard.");
+  }
+
+  function resetFromPostGame() {
+    const edits = applyPostGameEdits();
+    const baseId = edits.gameId || generateGameId(edits.opponent, edits.date);
+    const freshId = `${baseId}-reset-${Date.now().toString().slice(-4)}`;
+    persistData({
+      ...appData,
+      gameSetup: {
+        ...appData.gameSetup,
+        gameId: freshId,
+        opponent: edits.opponent,
+        statsGameId: undefined,
+      },
+    });
+    resetGameStateFor(freshId);
+    persistPhase("pre-game");
+  }
+
+  function discardFromPostGame() {
+    const ok = window.confirm("Discard this finished game? This clears tracked events and returns to pre-game setup.");
+    if (!ok) return;
+    const edits = applyPostGameEdits();
+    const freshId = generateGameId(edits.opponent, new Date().toISOString().slice(0, 10));
+    persistData({
+      ...appData,
+      gameSetup: {
+        ...appData.gameSetup,
+        gameId: freshId,
+        opponent: "",
+        statsGameId: undefined,
+      },
+    });
+    setGameDate(new Date().toISOString().slice(0, 10));
+    resetGameStateFor(freshId);
+    persistPhase("pre-game");
+  }
 
   // Auto-save every 3 minutes — interval reads from ref so no deps needed
   useEffect(() => {
@@ -1015,6 +1316,20 @@ export function App() {
       made: modal.made,
       points: modal.points,
       zone: modal.points === 3 ? "above_break_three" : "paint",
+    } as GameEvent);
+    closeModal();
+  }
+
+  function confirmFreeThrow(playerId: string) {
+    if (!modal || modal.kind !== "freeThrow") return;
+    void postEvent({
+      ...base(sequence),
+      teamId: resolveTeamId(modal.teamId),
+      type: "free_throw_attempt",
+      playerId,
+      made: modal.made,
+      attemptNumber: 1,
+      totalAttempts: 1,
     } as GameEvent);
     closeModal();
   }
@@ -1071,13 +1386,13 @@ export function App() {
     const teamPlayers = (side: TeamSide) => side === "home" ? homePlayers : awayPlayers;
     const tLabel = (side: TeamSide) => side === "home" ? homeTeamName : awayTeamName;
 
-    if (modal.kind === "shot") {
+    if (modal.kind === "shot" || modal.kind === "freeThrow") {
       const players = teamPlayers(modal.teamId);
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.points}pt — {tLabel(modal.teamId)}</span>
+              <span className="modal-title">{modal.kind === "shot" ? `${modal.points}pt` : "FT"} — {tLabel(modal.teamId)}</span>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="made-miss-row">
@@ -1087,7 +1402,7 @@ export function App() {
             <div className="player-list">
               {players.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
               {players.map(p => (
-                <button key={p.id} className="player-row" onClick={() => confirmShot(p.id)}>
+                <button key={p.id} className="player-row" onClick={() => (modal.kind === "shot" ? confirmShot(p.id) : confirmFreeThrow(p.id))}>
                   <span className="pnum">#{p.number}</span>
                   <span className="pname">{p.name}</span>
                   {p.position && <span className="ppos">{p.position}</span>}
@@ -1099,7 +1414,7 @@ export function App() {
                   {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
                 </button>
               ))}
-              <button className="player-row team-row" onClick={() => confirmShot(`${modal.teamId}-team`)}>Team (no player)</button>
+              <button className="player-row team-row" onClick={() => (modal.kind === "shot" ? confirmShot(`${modal.teamId}-team`) : confirmFreeThrow(`${modal.teamId}-team`))}>Team (no player)</button>
             </div>
           </div>
         </div>
@@ -1111,7 +1426,10 @@ export function App() {
         def_reb: "Def Rebound", off_reb: "Off Rebound", turnover: "Turnover",
         steal: "Steal", assist: "Assist — pick passer", block: "Block", foul: "Foul",
       };
-      const players = teamPlayers(modal.teamId);
+      const trackedSide = vcSideSetup;
+      const opponentSide: TeamSide = vcSideSetup === "home" ? "away" : "home";
+      const trackedPlayers = teamPlayers(trackedSide);
+      const isTrackedSelection = modal.teamId === trackedSide;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -1119,28 +1437,36 @@ export function App() {
               <div>
                 <span className="modal-title">{statLabels[modal.stat]}</span>
                 <div className="modal-team-toggle">
-                  <button className={modal.teamId === "home" ? "t-teal" : ""} onClick={() => setModal({ ...modal, teamId: "home" })}>{homeTeamName}</button>
-                  <button className={modal.teamId === "away" ? "t-red" : ""} onClick={() => setModal({ ...modal, teamId: "away" })}>{awayTeamName}</button>
+                  <button className={isTrackedSelection ? "t-teal" : ""} onClick={() => setModal({ ...modal, teamId: trackedSide })}>{vcSideSetup === "home" ? homeTeamName : awayTeamName}</button>
+                  <button className={!isTrackedSelection ? "t-red" : ""} onClick={() => setModal({ ...modal, teamId: opponentSide })}>{vcSideSetup === "home" ? awayTeamName : homeTeamName} team</button>
                 </div>
               </div>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="player-list">
-              {players.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
-              {players.map(p => (
-                <button key={p.id} className="player-row" onClick={() => confirmStat(p.id)}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                  {p.position && <span className="ppos">{p.position}</span>}
-                  {pTotals[p.id]?.fouls ? (
-                    <span className={`pfoul${pTotals[p.id].fouls >= 5 ? " pfoul-out" : pTotals[p.id].fouls >= 4 ? " pfoul-warn" : ""}`}>
-                      {pTotals[p.id].fouls}f{pTotals[p.id].fouls >= 5 ? " OUT" : ""}
-                    </span>
-                  ) : null}
-                  {pTotals[p.id]?.points ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
-                </button>
-              ))}
-              <button className="player-row team-row" onClick={() => confirmStat(`${modal.teamId}-team`)}>Team (no player)</button>
+              {isTrackedSelection ? (
+                <>
+                  {trackedPlayers.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
+                  {trackedPlayers.map(p => (
+                    <button key={p.id} className="player-row" onClick={() => confirmStat(p.id)}>
+                      <span className="pnum">#{p.number}</span>
+                      <span className="pname">{p.name}</span>
+                      {p.position && <span className="ppos">{p.position}</span>}
+                      {pTotals[p.id]?.fouls ? (
+                        <span className={`pfoul${pTotals[p.id].fouls >= 5 ? " pfoul-out" : pTotals[p.id].fouls >= 4 ? " pfoul-warn" : ""}`}>
+                          {pTotals[p.id].fouls}f{pTotals[p.id].fouls >= 5 ? " OUT" : ""}
+                        </span>
+                      ) : null}
+                      {pTotals[p.id]?.points ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <p className="no-players">Opponent tracked as team only.</p>
+              )}
+              <button className="player-row team-row" onClick={() => confirmStat(`${modal.teamId}-team`)}>
+                {isTrackedSelection ? "Team (no player)" : "Opponent team"}
+              </button>
             </div>
           </div>
         </div>
@@ -1241,7 +1567,229 @@ export function App() {
   // ================================================================
   //  GAME VIEW (3-column)
   // ================================================================
-  const periodLabels = buildPeriodLabels(0);
+
+  // ---- PRE-GAME SCREEN ----
+  if (gamePhase === "pre-game") {
+    const canStart = !!appData.gameSetup.myTeamId && !!appData.gameSetup.opponent?.trim();
+    const myTeamDisplay = myTeam?.name ?? null;
+    return (
+      <div className="pregame-screen">
+        <div className="pregame-card">
+          <div className="pregame-header">
+            <span className="pregame-eyebrow">BTA Operator</span>
+            <h1 className="pregame-title">Ready to Track</h1>
+          </div>
+
+          <div className="pregame-matchup">
+            <div className="pregame-team my-team">
+              {myTeamDisplay ?? <span className="pregame-no-team">No team</span>}
+            </div>
+            <div className="pregame-vs">vs</div>
+            <div className="pregame-team opp-team">
+              <input
+                className="pregame-opp-input"
+                placeholder="Opponent name"
+                value={appData.gameSetup.opponent ?? ""}
+                onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
+              />
+            </div>
+          </div>
+
+          <div className="pregame-meta">
+            <div className="pregame-meta-row">
+              <span className="pregame-meta-label">Date</span>
+              <input
+                type="date"
+                className="pregame-date-inp"
+                value={gameDate}
+                onChange={e => setGameDate(e.target.value)}
+              />
+            </div>
+            <div className="pregame-meta-row">
+              <span className="pregame-meta-label">Side</span>
+              <div className="pregame-side-toggle">
+                <button
+                  className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
+                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
+                  Home
+                </button>
+                <button
+                  className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
+                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
+                  Away
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {!appData.gameSetup.myTeamId && (
+            <p className="pregame-error">⚠ No team selected — go to Settings to choose your team.</p>
+          )}
+          {!appData.gameSetup.opponent?.trim() && appData.gameSetup.myTeamId && (
+            <p className="pregame-error">⚠ Enter the opponent name above to continue.</p>
+          )}
+
+          <button
+            className="pregame-start-btn"
+            disabled={!canStart}
+            onClick={async () => {
+              const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
+              await startGame(newId);
+            }}>
+            ▶ Start Game
+          </button>
+
+          <button
+            className="pregame-settings-link"
+            onClick={() => { setSettingsView("menu"); setView("settings"); }}>
+            ⚙ Settings &amp; Roster
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- POST-GAME SCREEN ----
+  if (gamePhase === "post-game") {
+    const editedHomeScore = parseScoreInput(postGameHomeScoreInput, scores.home);
+    const editedAwayScore = parseScoreInput(postGameAwayScoreInput, scores.away);
+    const coachUrl = buildCoachViewUrl(gameId, appData.gameSetup.deviceId, {
+      myTeamId: appData.gameSetup.myTeamId,
+      myTeamName: myTeam?.name,
+      opponentName: appData.gameSetup.opponent,
+      vcSide: appData.gameSetup.vcSide,
+    });
+    return (
+      <div className="postgame-screen">
+        <div className="postgame-card">
+          <div className="postgame-header">
+            <span className="postgame-eyebrow">Game Over</span>
+            <h1 className="postgame-title">Finalize game details</h1>
+          </div>
+
+          <div className="postgame-edit-grid">
+            <label className="postgame-field">
+              <span className="postgame-field-label">Game Name</span>
+              <input
+                className="postgame-input"
+                value={postGameNameInput}
+                onChange={e => setPostGameNameInput(e.target.value)}
+                placeholder="Game name"
+              />
+            </label>
+            <label className="postgame-field">
+              <span className="postgame-field-label">Date</span>
+              <input
+                type="date"
+                className="postgame-input"
+                value={postGameDateInput}
+                onChange={e => setPostGameDateInput(e.target.value)}
+              />
+            </label>
+            <label className="postgame-field postgame-field-wide">
+              <span className="postgame-field-label">Opponent</span>
+              <input
+                className="postgame-input"
+                value={postGameOpponentInput}
+                onChange={e => setPostGameOpponentInput(e.target.value)}
+                placeholder="Opponent name"
+              />
+            </label>
+          </div>
+
+          <div className="postgame-score">
+            <div className="postgame-score-team">
+              <span className="postgame-score-name">{homeTeamName}</span>
+              <input
+                className="postgame-score-input"
+                inputMode="numeric"
+                value={postGameHomeScoreInput}
+                onChange={e => setPostGameHomeScoreInput(e.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </div>
+            <div className="postgame-score-sep">–</div>
+            <div className="postgame-score-team">
+              <span className="postgame-score-name">{awayTeamName}</span>
+              <input
+                className="postgame-score-input"
+                inputMode="numeric"
+                value={postGameAwayScoreInput}
+                onChange={e => setPostGameAwayScoreInput(e.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </div>
+          </div>
+
+          <button
+            className="postgame-apply-btn"
+            onClick={() => {
+              applyPostGameEdits();
+              setSubmitMessage("Updated game details.");
+            }}>
+            Save Name/Date/Score Changes
+          </button>
+
+          <div className={`submit-banner submit-banner-${submitStatus}`} role="status">
+            {submitMessage}
+          </div>
+
+          <a
+            className="coach-connect-btn"
+            href={coachUrl}
+            target="_blank"
+            rel="noreferrer">
+            📺 Open Coach Dashboard
+          </a>
+
+          <button
+            className="postgame-retry-btn"
+            onClick={() => {
+              const edits = applyPostGameEdits();
+              void submitToDashboard({
+                opponent: edits.opponent,
+                date: edits.date,
+                homeScore: editedHomeScore,
+                awayScore: editedAwayScore,
+              });
+            }}
+            disabled={submitStatus === "pending"}>
+            {submitStatus === "pending" ? "Saving…" : "↑ Re-save Stats"}
+          </button>
+
+          <button
+            className="postgame-reset-btn"
+            onClick={() => {
+              const ok = window.confirm("Reset this game and start over with a fresh game id?");
+              if (!ok) return;
+              resetFromPostGame();
+            }}>
+            Reset This Game
+          </button>
+
+          <button className="postgame-discard-btn" onClick={discardFromPostGame}>
+            Discard This Game
+          </button>
+
+          <button className="postgame-new-btn" onClick={handleNewGame}>
+            ▶ Start New Game
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const periodLabels = [
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    ...Array.from({ length: overtimeCount }, (_, index) => `OT${index + 1}`),
+  ];
+  const liveCoachUrl = buildCoachViewUrl(gameId, appData.gameSetup.deviceId, {
+    myTeamId: appData.gameSetup.myTeamId,
+    myTeamName: myTeam?.name,
+    opponentName: appData.gameSetup.opponent,
+    vcSide: appData.gameSetup.vcSide,
+  });
 
   return (
     <div className="game-layout">
@@ -1264,70 +1812,19 @@ export function App() {
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 2, made: true })}>2pt</button>
           <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 3, made: true })}>3pt</button>
           <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 3, made: true })}>3pt</button>
-        </div>
-        <div className="panel-foot">
-          <button className="icon-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">☰</button>
-          <button className="icon-btn" onClick={() => void undoLast()} title="Undo last">↩</button>
-          <button className="icon-btn pdf-btn"
-            title="Export PDF"
-            onClick={() => void exportGamePDF(gameId, gameDate, homeTeam, awayTeam, allEventObjs)}>
-            ⬇ PDF
-          </button>
-        </div>
-        <div className="end-game-section">
-          <div className="end-game-divider"><span>END OF GAME</span></div>
-          <div className="submit-meta">
-            <input
-              className="opp-inp"
-              placeholder="Opponent name"
-              value={appData.gameSetup.opponent ?? ""}
-              onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
-            />
-            <div className="vc-side-toggle">
-              <button
-                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
-                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
-                {liveHomeSideLabel}
-              </button>
-              <button
-                className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
-                onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
-                {liveAwaySideLabel}
-              </button>
-            </div>
-          </div>
-          <button
-            className={`submit-btn submit-${submitStatus}`}
-            onClick={() => void submitToDashboard()}
-            disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Saving…"
-              : submitStatus === "success" ? "✓ Saved to Dashboard!"
-              : submitStatus === "error"   ? "⚠ Error — Retry"
-              : "🏁 Save Final Stats"}
-          </button>
-          <div className={`submit-banner submit-banner-${submitStatus}`} role="status" aria-live="polite">
-            {submitMessage}
-          </div>
-          <a
-            className="coach-link-btn"
-            href={buildCoachViewUrl(gameId, {
-              myTeamId: appData.gameSetup.myTeamId,
-              myTeamName: myTeam?.name,
-              opponentName: appData.gameSetup.opponent,
-              vcSide: appData.gameSetup.vcSide,
-            })}
-            target="_blank"
-            rel="noreferrer"
-            title={`Open Coach Dashboard · ${gameId}`}
-          >
-            📺 Coach View
-          </a>
+          <button className="circle teal" onClick={() => setModal({ kind: "freeThrow", teamId: "home", made: true })}>ft</button>
+          <button className="circle red"  onClick={() => setModal({ kind: "freeThrow", teamId: "away", made: true })}>ft</button>
         </div>
       </div>
 
       {/* CENTER: Feed */}
       <div className="panel center-panel">
         <div className="scoreboard">
+          {appData.gameSetup.deviceId && (
+            <div className="score-device-id" title="Operator device identifier">
+              iPad ID: {appData.gameSetup.deviceId}
+            </div>
+          )}
           <div className="score-row">
             <span className="team-lbl teal-txt">{homeTeamName}</span>
             <span className="score teal-txt">{scores.home}</span>
@@ -1361,26 +1858,83 @@ export function App() {
           })}
         </div>
 
-        <div className="period-row">
-          {periodLabels.map((lbl) => (
-            <button
-              key={lbl}
-              className={`period-btn${period === lbl ? " period-on" : ""}`}
-              onClick={() => {
-                if (lbl === period) return;
-                // Fire period_transition for the new period
-                const endSeq = sequence;
-                void postEvent({
-                  ...base(endSeq),
-                  teamId: homeTeamId,
-                  type: "period_transition",
-                  newPeriod: lbl,
-                });
-                setPeriod(lbl);
-                setClockInput(getPeriodDefaultClock(lbl));
-              }}
-            >{lbl}</button>
-          ))}
+        <div className="period-row" style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", padding: "0.55rem 1rem" }}>
+          {periodLabels.map((lbl) => {
+            const isOt = isOvertimePeriod(lbl);
+            return (
+              <div key={lbl} className="period-chip" style={{ display: "flex", gap: "0.2rem", flex: 1, minWidth: "72px" }}>
+                <button
+                  className={`period-btn${period === lbl ? " period-on" : ""}`}
+                  style={{
+                    flex: 1,
+                    minHeight: "44px",
+                    borderRadius: "8px",
+                    border: period === lbl ? "1px solid #2dd4bf" : "1px solid rgba(255,255,255,0.15)",
+                    background: period === lbl ? "rgba(45,212,191,0.16)" : "rgba(255,255,255,0.06)",
+                    color: period === lbl ? "#2dd4bf" : "rgba(232,234,240,0.78)",
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => {
+                    if (lbl === period) return;
+                    // Fire period_transition for the new period
+                    const endSeq = sequence;
+                    void postEvent({
+                      ...base(endSeq),
+                      teamId: homeTeamId,
+                      type: "period_transition",
+                      newPeriod: lbl,
+                    });
+                    setPeriod(lbl);
+                    setClockInput(getPeriodDefaultClock(lbl));
+                  }}
+                >{lbl}</button>
+                {isOt && (
+                  <button
+                    className="period-delete-btn"
+                    style={{
+                      minWidth: "30px",
+                      minHeight: "44px",
+                      borderRadius: "8px",
+                      border: "1px solid rgba(248,113,113,0.5)",
+                      background: "rgba(248,113,113,0.14)",
+                      color: "#f87171",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                    title={`Delete ${lbl}`}
+                    onClick={() => {
+                      const ok = window.confirm(`Delete ${lbl}? This removes all events in that overtime period.`);
+                      if (!ok) return;
+                      void deleteOvertimePeriod(lbl);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            className="period-add-btn"
+            style={{
+              minWidth: "74px",
+              minHeight: "44px",
+              borderRadius: "8px",
+              border: "1px solid rgba(45,212,191,0.55)",
+              background: "rgba(45,212,191,0.14)",
+              color: "#2dd4bf",
+              fontSize: "0.82rem",
+              fontWeight: 800,
+              letterSpacing: "0.04em",
+              padding: "0.35rem 0.6rem",
+              cursor: "pointer",
+            }}
+            onClick={addOvertimePeriod}
+          >
+            + OT
+          </button>
         </div>
         <div className="clock-row">
           <input className="clock-inp" value={clockInput} onChange={e => setClockInput(e.target.value)} placeholder="8:00" />
@@ -1393,19 +1947,32 @@ export function App() {
       {/* RIGHT: Stats */}
       <div className="panel right-panel">
         <div className="stat-grid">
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: activeTeam })}>def<br/><span className="sub-lbl">reb</span></button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: activeTeam })}>off<br/><span className="sub-lbl">reb</span></button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: activeTeam })}>to</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: activeTeam })}>stl</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: activeTeam })}>asst</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: activeTeam })}>blk</button>
-          <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: activeTeam })}>sub</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "foul",   teamId: activeTeam })}>foul</button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: vcSideSetup })}>def<br/><span className="sub-lbl">reb</span></button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: vcSideSetup })}>off<br/><span className="sub-lbl">reb</span></button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: vcSideSetup })}>stl</button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
+          <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
+          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "foul",   teamId: vcSideSetup })}>foul</button>
         </div>
-        <div className="team-toggle">
-          <button className={`tt-btn${activeTeam === "home" ? " tt-teal" : ""}`} onClick={() => setActiveTeam("home")}>{homeTeamName}</button>
-          <button className={`tt-btn${activeTeam === "away" ? " tt-red"  : ""}`} onClick={() => setActiveTeam("away")}>{awayTeamName}</button>
-        </div>
+      </div>
+
+      <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
+        <button className="live-nav-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">☰ Settings</button>
+        <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">↩ Undo</button>
+        <button
+          className="live-nav-btn"
+          title="Export PDF"
+          onClick={() => void exportGamePDF(gameId, gameDate, homeTeam, awayTeam, allEventObjs)}>
+          ⬇ PDF
+        </button>
+        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Coach Dashboard · ${gameId}`}>
+          Coach
+        </a>
+        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
+          🛑 End Game
+        </button>
       </div>
     </div>
   );
@@ -1430,6 +1997,7 @@ const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];
 function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav, onEditTeam, onBack, onStartGame }: SettingsScreenProps) {
   // ---- Game setup local state ----
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
+  const [gsDeviceId, setGsDeviceId] = useState(appData.gameSetup.deviceId || getDefaultDeviceId());
   const [gsMyTeamId, setGsMyTeamId] = useState(appData.gameSetup.myTeamId);
   const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
@@ -1473,6 +2041,72 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     setEtAbbr(editingTeam?.abbreviation ?? "");
     setEditPlayerId(null);
   }, [editingTeamId]);
+
+  function syncRosterDeletionToBackend(teams: Team[]) {
+    // Sync roster changes (including deletions) to the stats dashboard
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const myTeamId = appData.gameSetup.myTeamId;
+    const myTeam = teams.find(t => t.id === myTeamId);
+    
+    if (!myTeam) return; // Only sync if we have a tracked team
+    
+    const rosterPayload = myTeam.players.map(p => ({
+      number: parseInt(p.number, 10) || 0,
+      name: p.name,
+      position: p.position || undefined,
+      height: p.height || undefined,
+      grade: p.grade || undefined,
+    }));
+    
+    fetch(`${dashboardUrl}/api/roster-sync`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+      body: JSON.stringify({ 
+        teams: [{ 
+          id: myTeam.id, 
+          name: myTeam.name, 
+          abbreviation: myTeam.abbreviation, 
+          players: rosterPayload 
+        }], 
+        preferredTeamId: myTeamId 
+      }),
+    }).catch(() => {
+      // Silently fail if dashboard is unavailable
+    });
+  }
+
+  async function syncRosterFromBackend() {
+    // Pull roster deletions from stats dashboard to detect when other apps deleted players
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const myTeamId = appData.gameSetup.myTeamId;
+    if (!myTeamId) return;
+    
+    try {
+      const response = await fetch(`${dashboardUrl}/api/players`, {
+        headers: apiKeyHeader(appData.gameSetup),
+      });
+      if (!response.ok) return;
+      
+      const players = (await response.json()) as Array<{ name: string; number?: number; position?: string; height?: string; grade?: string }>;
+      
+      // Get the tracked team and sync its players with backend roster  
+      const updatedTeams = appData.teams.map(team => {
+        if (team.id !== myTeamId) return team;
+        
+        // Keep only players that exist in backend roster
+        const backendPlayerNames = new Set(players.map(p => p.name));
+        const filteredPlayers = team.players.filter(p => backendPlayerNames.has(p.name));
+        
+        return { ...team, players: filteredPlayers };
+      });
+      
+      if (JSON.stringify(updatedTeams) !== JSON.stringify(appData.teams)) {
+        onPersist({ ...appData, teams: updatedTeams });
+      }
+    } catch {
+      // Silently fail if dashboard is unavailable
+    }
+  }
 
   // ---- Team CRUD ----
   function createTeam() {
@@ -1529,6 +2163,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       ...appData,
       gameSetup: {
         gameId: gsGameId.trim() || "game-1",
+        deviceId: gsDeviceId.trim() || appData.gameSetup.deviceId || "ipad-1",
         myTeamId: gsMyTeamId,
         apiUrl: gsApiUrl.trim() || DEFAULT_API,
         apiKey: gsApiKey.trim() || undefined,
@@ -1543,6 +2178,14 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   // ================================================================
   //  RENDER: Teams list
   // ================================================================
+  
+  // Sync roster from backend when viewing teams to detect deletions from other apps
+  useEffect(() => {
+    if (settingsView === "teams" || settingsView === "team-edit") {
+      void syncRosterFromBackend();
+    }
+  }, [settingsView]);
+  
   if (settingsView === "teams") {
     return (
       <div className="settings-page">
@@ -1684,6 +2327,12 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
+          <h3>Device ID</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Coach dashboard follows this device and only shows live when it is online.</p>
+          <input value={gsDeviceId} onChange={e => setGsDeviceId(e.target.value)} placeholder="ipad-1" />
+        </section>
+
+        <section className="settings-section">
           <h3>Your Team</h3>
           {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
           <div className="team-picker">
@@ -1775,6 +2424,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             if (gsApiKey.trim()) params.set("apiKey", gsApiKey.trim());
             params.set("dashboardUrl", gsDashboardUrl.trim() || "http://localhost:5000");
             params.set("gameId", gsGameId.trim() || "game-1");
+            params.set("deviceId", gsDeviceId.trim() || "ipad-1");
             params.set("opponent", gsOpponent.trim());
             params.set("vcSide", gsVcSide);
             return (

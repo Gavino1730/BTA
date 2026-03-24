@@ -1,4 +1,4 @@
-# Cedar Ridge Raptors Basketball Stats - Contributors
+# BTA Basketball Stats - Contributors
 
 Thank you to everyone who has contributed to this project! 🎉🏀
 
@@ -60,7 +60,7 @@ To add yourself as a contributor, please follow these steps:
 
 ## Special Thanks
 
-- Cedar Ridge Athletics for supporting this project
+- Athletics Program for supporting this project
 - The open-source community for amazing tools and libraries
 - OpenAI for providing AI capabilities
 - All users who provide feedback and suggestions
@@ -69,6 +69,6 @@ To add yourself as a contributor, please follow these steps:
 
 <div align="center">
 
-**Built by the community, for Cedar Ridge Raptors Basketball**
+**Built by the community, for BTA Basketball**
 
 </div>

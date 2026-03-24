@@ -14,7 +14,8 @@
     "jspdf-autotable": "^5.0.7",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",

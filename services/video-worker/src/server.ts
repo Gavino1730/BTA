@@ -94,6 +94,7 @@ app.get("/games/:gameId/videos/:videoId/resolve", requireApiKey, (req, res) => {
 });
 
 const port = Number(process.env.VIDEO_PORT ?? 4100);
-app.listen(port, () => {
-  console.log(`Video worker listening on port ${port}`);
+const host = process.env.HOST ?? "0.0.0.0";
+app.listen(port, host, () => {
+  console.log(`Video worker listening on http://${host}:${port}`);
 });

@@ -211,9 +211,90 @@ body {
 
 .insight-item {
   border-left: 3px solid var(--teal);
-  padding: 0.6rem 0.85rem;
+  padding: 0.72rem 0.9rem 0.78rem;
   background: var(--surface-2);
   border-radius: 0 8px 8px 0;
+  box-shadow: 0 10px 20px rgba(5, 9, 20, 0.18);
+}
+
+.insight-item-ai {
+  border-left-color: #f4d35e;
+  background: linear-gradient(90deg, rgba(244, 211, 94, 0.2), rgba(28, 34, 66, 0.94));
+}
+
+.insight-item h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #f8f8ff;
+}
+
+.insight-item p {
+  margin: 0.38rem 0 0;
+  color: #f6f8ff;
+  font-size: 1.05rem;
+  line-height: 1.32;
+  font-weight: 700;
+}
+
+.insight-item small {
+  display: block;
+  margin-top: 0.3rem;
+  color: rgba(230, 236, 252, 0.92);
+  line-height: 1.38;
+  font-size: 0.94rem;
+}
+
+.insight-subhead {
+  margin: 0.7rem 0 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.insight-context-note {
+  margin: 0.15rem 0 0.55rem;
+  padding: 0.42rem 0.58rem;
+  border-radius: 8px;
+  border: 1px solid rgba(244, 211, 94, 0.34);
+  background: rgba(244, 211, 94, 0.1);
+  color: #f5dfa0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.insight-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.insight-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4rem;
+  height: 1.25rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.insight-badge-ai {
+  background: rgba(244, 211, 94, 0.22);
+  color: #f4d35e;
+  border: 1px solid rgba(244, 211, 94, 0.5);
+}
+
+.insight-badge-rules {
+  background: rgba(74, 222, 128, 0.16);
+  color: #74efaf;
+  border: 1px solid rgba(74, 222, 128, 0.45);
 }
 
 /* ---- Film grid ---- */

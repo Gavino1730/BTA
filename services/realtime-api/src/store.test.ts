@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createGame,
   deleteEvent,
   getGameEvents,
+  getGameInsights,
   getGameState,
   ingestEvent,
+  refreshGameAiInsights,
   updateEvent
 } from "./store.js";
 
@@ -182,5 +184,72 @@ describe("store", () => {
         zone: "paint"
       })
     ).toThrow(/already belongs/);
+  });
+
+  it("adds ai coaching insights when OpenAI is configured", async () => {
+    const originalFetch = global.fetch;
+    const originalApiKey = process.env.OPENAI_API_KEY;
+
+    process.env.OPENAI_API_KEY = "test-openai-key";
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                insights: [
+                  {
+                    message: "home needs stronger paint pressure",
+                    explanation: "Recent possessions settled early; attack downhill before the help is set.",
+                    relatedTeamId: "home",
+                    confidence: "medium"
+                  }
+                ]
+              })
+            }
+          }
+        ]
+      })
+    }) as typeof fetch;
+
+    try {
+      createGame({
+        gameId: "game-ai",
+        homeTeamId: "home",
+        awayTeamId: "away"
+      });
+
+      for (const [sequence, teamId] of ["home", "away", "home", "away"].map((team, index) => [index + 1, team] as const)) {
+        ingestEvent({
+          id: `evt-ai-${sequence}`,
+          gameId: "game-ai",
+          sequence,
+          timestampIso: `2026-03-18T20:0${sequence}:00.000Z`,
+          period: "Q1",
+          clockSecondsRemaining: 480 - sequence,
+          teamId,
+          operatorId: "op-1",
+          type: "shot_attempt",
+          playerId: `${teamId}-${sequence}`,
+          made: sequence % 2 === 1,
+          points: 2,
+          zone: "paint"
+        });
+      }
+
+      const refreshed = await refreshGameAiInsights("game-ai");
+
+      expect(refreshed?.some((insight) => insight.type === "ai_coaching")).toBe(true);
+      expect(getGameInsights("game-ai").some((insight) => insight.type === "ai_coaching")).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+      global.fetch = originalFetch;
+    }
   });
 });

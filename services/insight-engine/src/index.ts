@@ -2,6 +2,7 @@ import type { GameState } from "@bta/game-state";
 import type { GameEvent } from "@bta/shared-schema";
 
 export type InsightType =
+  | "ai_coaching"
   | "run_detection"
   | "foul_trouble"
   | "turnover_pressure"
@@ -26,9 +27,58 @@ export interface InsightContext {
 
 const MAX_RECENT_EVENTS = 8;
 
+function toTitleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function prettifyTeamId(teamId: string): string {
+  const normalized = teamId.toLowerCase();
+  if (normalized === "home" || normalized === "team-home") {
+    return "Home";
+  }
+
+  if (normalized === "away" || normalized === "team-away") {
+    return "Away";
+  }
+
+  return toTitleCase(teamId.replace(/^team[-_]/i, ""));
+}
+
+function resolveTeamLabel(state: GameState, teamId: string): string {
+  const opponentName = state.opponentName?.trim();
+  if (opponentName && state.opponentTeamId === teamId) {
+    return opponentName;
+  }
+
+  return prettifyTeamId(teamId);
+}
+
+function resolvePlayerLabel(playerId: string, teamLabel: string): string {
+  const normalized = playerId.toLowerCase();
+  if (
+    normalized === "home-team"
+    || normalized === "away-team"
+    || normalized === "team-home"
+    || normalized === "team-away"
+    || normalized.endsWith("-team")
+  ) {
+    return `${teamLabel} team`;
+  }
+
+  return playerId;
+}
+
 export function generateInsights(context: InsightContext): LiveInsight[] {
   const insights: LiveInsight[] = [];
   const { state, latestEvent } = context;
+  const teamLabel = resolveTeamLabel(state, latestEvent.teamId);
 
   const recentEvents = state.events.slice(-MAX_RECENT_EVENTS);
   const now = new Date().toISOString();
@@ -36,13 +86,15 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   if (latestEvent.type === "foul") {
     const foulCount = state.playerFouls[latestEvent.playerId] ?? 0;
     if (foulCount >= 3) {
+      const playerLabel = resolvePlayerLabel(latestEvent.playerId, teamLabel);
+      const foulSubject = playerLabel.toLowerCase().endsWith(" team") ? playerLabel : `Player ${playerLabel}`;
       insights.push({
         id: `${latestEvent.id}-foul-trouble`,
         gameId: latestEvent.gameId,
         type: "foul_trouble",
         createdAtIso: now,
         confidence: "high",
-        message: `Player ${latestEvent.playerId} has ${foulCount} fouls`,
+        message: `${foulSubject} has ${foulCount} fouls`,
         explanation: "Foul threshold reached; substitution or coverage adjustment may be needed.",
         relatedTeamId: latestEvent.teamId,
         relatedPlayerId: latestEvent.playerId
@@ -60,7 +112,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
       type: "turnover_pressure",
       createdAtIso: now,
       confidence: "medium",
-      message: `${latestEvent.teamId} has ${recentTurnovers} turnovers in recent possessions`,
+      message: `${teamLabel} has ${recentTurnovers} turnovers in recent possessions`,
       explanation: "Ball pressure appears to be disrupting offense; simplify entries and spacing.",
       relatedTeamId: latestEvent.teamId
     });
@@ -81,7 +133,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
       type: "run_detection",
       createdAtIso: now,
       confidence: "high",
-      message: `${latestEvent.teamId} is on an ${runPoints}-point run`,
+      message: `${teamLabel} is on an ${runPoints}-point run`,
       explanation: "Recent made shots show momentum swing; consider timeout or matchup change.",
       relatedTeamId: latestEvent.teamId
     });
@@ -101,7 +153,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         type: "shot_profile",
         createdAtIso: now,
         confidence: "medium",
-        message: `${latestEvent.teamId} is heavily relying on perimeter attempts`,
+        message: `${teamLabel} is heavily relying on perimeter attempts`,
         explanation:
           "Recent shot mix is perimeter-heavy; evaluate rim pressure and paint touches.",
         relatedTeamId: latestEvent.teamId

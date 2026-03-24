@@ -3,13 +3,17 @@ Basketball Stats - Flask Application
 Clean, refactored version with organized routes and services.
 """
 
-from flask import Flask, render_template, jsonify, request, make_response, make_response
+from flask import Flask, render_template, jsonify, request, make_response
 from functools import lru_cache
 import json
 import os
 import logging
 import threading
 from datetime import datetime
+from urllib.parse import quote
+from http import HTTPStatus
+from werkzeug.exceptions import HTTPException
+import requests
 from dotenv import load_dotenv
 
 from src.config import Config, EXCLUDED_PLAYERS, MAX_TOKENS
@@ -28,6 +32,89 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+REALTIME_API_BASE = os.environ.get("BTA_REALTIME_API", "http://localhost:4000").rstrip("/")
+SYNC_API_KEY = os.environ.get("BTA_API_KEY", "")
+
+
+def _sync_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if SYNC_API_KEY:
+        headers["x-api-key"] = SYNC_API_KEY
+    return headers
+
+
+def _slugify_team_name(name: str) -> str:
+    normalized = "".join(ch.lower() if ch.isalnum() else "-" for ch in name)
+    normalized = "-".join(part for part in normalized.split("-") if part)
+    return normalized or "team"
+
+
+def _build_realtime_roster_teams(roster_payload: dict) -> list:
+    team_name = str(roster_payload.get("team") or "Team").strip() or "Team"
+    abbreviation = "".join(ch for ch in team_name if ch.isalnum()).upper()[:4] or "TEAM"
+    team_id = f"team-{_slugify_team_name(team_name)}"
+
+    players = []
+    for player in roster_payload.get("roster", []):
+        if not isinstance(player, dict):
+            continue
+        name = str(player.get("name") or "").strip()
+        if not name:
+            continue
+
+        number = str(player.get("number") or "").strip()
+        player_slug = _slugify_team_name(name)
+        player_id = f"{team_id}-{number or player_slug}"
+
+        players.append(
+            {
+                "id": player_id,
+                "number": number,
+                "name": name,
+                "position": str(player.get("position") or "").strip() or "",
+                "height": str(player.get("height") or "").strip() or None,
+                "grade": str(player.get("grade") or "").strip() or None,
+            }
+        )
+
+    return [
+        {
+            "id": team_id,
+            "name": team_name,
+            "abbreviation": abbreviation,
+            "players": players,
+        }
+    ]
+
+
+def _sync_roster_to_realtime(roster_payload: dict) -> None:
+    payload = {"teams": _build_realtime_roster_teams(roster_payload)}
+    try:
+        response = requests.put(
+            f"{REALTIME_API_BASE}/config/roster-teams",
+            headers=_sync_headers(),
+            data=json.dumps(payload),
+            timeout=3,
+        )
+        if response.status_code >= 400:
+            logger.warning("Roster sync to realtime failed: %s %s", response.status_code, response.text)
+    except requests.RequestException as exc:
+        logger.warning("Roster sync to realtime request failed: %s", exc)
+
+
+def _sync_game_delete_to_realtime(game_id: int) -> None:
+    encoded_game_id = quote(str(game_id), safe="")
+    try:
+        response = requests.delete(
+            f"{REALTIME_API_BASE}/games/{encoded_game_id}",
+            headers=_sync_headers(),
+            timeout=3,
+        )
+        if response.status_code not in (200, 404):
+            logger.warning("Game delete sync to realtime failed: %s %s", response.status_code, response.text)
+    except requests.RequestException as exc:
+        logger.warning("Game delete sync to realtime request failed: %s", exc)
+
 # Initialize Flask app
 app = Flask(
     __name__,
@@ -44,6 +131,40 @@ data = get_data_manager()
 advanced_calc = AdvancedStatsCalculator(data.stats_data)
 
 
+def _is_api_request() -> bool:
+    return request.path.startswith("/api/")
+
+
+def _build_api_error_response(status_code: int, message: str):
+    payload = {
+        "error": message,
+        "status": status_code,
+    }
+    return jsonify(payload), status_code
+
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(error):
+    if not _is_api_request():
+        return error
+
+    try:
+        message = error.description or HTTPStatus(error.code).phrase
+    except ValueError:
+        message = error.description or "Request failed"
+
+    return _build_api_error_response(error.code or 500, message)
+
+
+@app.errorhandler(Exception)
+def handle_api_exception(error):
+    if not _is_api_request():
+        raise error
+
+    logger.exception("Unhandled API error on %s", request.path)
+    return _build_api_error_response(500, "Internal server error")
+
+
 # =============================================================================
 # Middleware
 # =============================================================================
@@ -56,11 +177,11 @@ def add_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Allow the iPad operator app to call the ingest endpoint cross-origin
-    if request.path == "/api/ingest-game":
+    # Allow cross-origin writes from iPad and coach dashboard apps.
+    if request.path in ["/api/ingest-game", "/api/roster-sync"]:
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Api-Key"
+        response.headers["Access-Control-Allow-Methods"] = "POST, PUT, OPTIONS"
     return response
 
 
@@ -168,9 +289,146 @@ def _build_game_dict(game_id: int, payload: dict) -> dict:
     }
 
 
-def _recompute_season_stats(stats: dict) -> None:
+def _is_nonempty_string(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _coerce_roster_number(value):
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return value
+
+
+def _normalize_roster_player(player: dict) -> dict:
+    normalized = {
+        "name": str(player.get("name", "")).strip(),
+    }
+
+    number = _coerce_roster_number(player.get("number"))
+    if number is not None:
+        normalized["number"] = number
+
+    for field in ["position", "height", "grade"]:
+        value = player.get(field)
+        if _is_nonempty_string(value):
+            normalized[field] = value.strip()
+
+    return normalized
+
+
+def _select_sync_team(teams: list, preferred_team_id: str | None):
+    if preferred_team_id:
+        for team in teams:
+            if team.get("id") == preferred_team_id and isinstance(team.get("players"), list):
+                return team
+
+    for team in teams:
+        if isinstance(team.get("players"), list) and len(team.get("players", [])) > 0:
+            return team
+
+    return teams[0] if teams else None
+
+
+def _build_roster_payload_from_teams(teams: list, preferred_team_id: str | None) -> dict:
+    selected = _select_sync_team(teams, preferred_team_id)
+    if not selected:
+        return {"team": "", "season": "", "roster": []}
+
+    team_name = str(selected.get("name") or "").strip()
+    season = str(datetime.now().year)
+
+    players = selected.get("players") if isinstance(selected.get("players"), list) else []
+    normalized_players = []
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        normalized = _normalize_roster_player(player)
+        if _is_nonempty_string(normalized.get("name")):
+            normalized_players.append(normalized)
+
+    def _sort_number(value):
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+        return 9999
+
+    normalized_players.sort(key=lambda p: (_sort_number(p.get("number")), p.get("name", "")))
+
+    return {
+        "team": team_name,
+        "season": season,
+        "roster": normalized_players,
+    }
+
+
+def _abbreviate_name(name: str) -> str:
+    parts = [part for part in name.strip().split(" ") if part]
+    if len(parts) < 2:
+        return name.strip()
+    return f"{parts[0][0]} {parts[-1]}"
+
+
+def _build_roster_payload_from_roster_file(roster_data: dict) -> dict:
+    return {
+        "team": str(roster_data.get("team") or "").strip(),
+        "season": str(roster_data.get("season") or "").strip(),
+        "roster": [
+            _normalize_roster_player(player)
+            for player in roster_data.get("roster", [])
+            if isinstance(player, dict) and _is_nonempty_string(player.get("name"))
+        ],
+    }
+
+
+def _delete_player_from_data(stats: dict, roster_data: dict, raw_player_name: str) -> tuple[int, int]:
+    target_name = raw_player_name.strip()
+    if not target_name:
+        return (0, 0)
+
+    lowered_variants = {target_name.lower(), _abbreviate_name(target_name).lower()}
+
+    removed_roster = 0
+    kept_roster = []
+    for player in roster_data.get("roster", []):
+        if not isinstance(player, dict):
+            continue
+        full_name = str(player.get("name") or "").strip()
+        if not full_name:
+            continue
+        abbrev = _abbreviate_name(full_name)
+        if full_name.lower() in lowered_variants or abbrev.lower() in lowered_variants:
+            removed_roster += 1
+            lowered_variants.add(full_name.lower())
+            lowered_variants.add(abbrev.lower())
+            continue
+        kept_roster.append(player)
+    roster_data["roster"] = kept_roster
+
+    removed_game_rows = 0
+    for game in stats.get("games", []):
+        player_stats = game.get("player_stats", [])
+        kept_player_stats = []
+        for row in player_stats:
+            row_name = str(row.get("name") or "").strip()
+            if row_name.lower() in lowered_variants:
+                removed_game_rows += 1
+                continue
+            kept_player_stats.append(row)
+        game["player_stats"] = kept_player_stats
+
+    _recompute_season_stats(stats, roster_data.get("roster"))
+    return (removed_roster, removed_game_rows)
+
+
+def _recompute_season_stats(stats: dict, roster: list = None) -> None:
     """Rebuild season_player_stats, season_team_stats, and player_game_logs
-    from scratch by iterating all games[]. Modifies stats in-place."""
+    from scratch by iterating all games[]. Also includes all roster players
+    with zero stats if they don't appear in game data. Modifies stats in-place."""
     games = stats.get("games", [])
     season_player_stats: dict = {}
     player_game_logs: dict = {}
@@ -246,6 +504,26 @@ def _recompute_season_stats(stats: dict) -> None:
         sp["fg_pct"] = round(sp["fg"] / sp["fga"] * 100, 1) if sp["fga"] > 0 else 0.0
         sp["fg3_pct"] = round(sp["fg3"] / sp["fg3a"] * 100, 1) if sp["fg3a"] > 0 else 0.0
         sp["ft_pct"] = round(sp["ft"] / sp["fta"] * 100, 1) if sp["fta"] > 0 else 0.0
+
+    # Also include all roster players with zero stats (in case season hasn't started or they haven't played)
+    if roster:
+        for roster_player in roster:
+            player_name = (roster_player.get("name") or "").strip()
+            if player_name and player_name not in season_player_stats:
+                season_player_stats[player_name] = {
+                    "name": player_name,
+                    "number": roster_player.get("number"),
+                    "position": roster_player.get("position"),
+                    "height": roster_player.get("height"),
+                    "grade": roster_player.get("grade"),
+                    "games": 0,
+                    "pts": 0, "fg": 0, "fga": 0, "fg3": 0, "fg3a": 0,
+                    "ft": 0, "fta": 0, "oreb": 0, "dreb": 0, "reb": 0,
+                    "asst": 0, "to": 0, "stl": 0, "blk": 0, "fouls": 0,
+                    "plus_minus": 0,
+                    "ppg": 0.0, "rpg": 0.0, "apg": 0.0,
+                    "fg_pct": 0.0, "fg3_pct": 0.0, "ft_pct": 0.0,
+                }
 
     g_total = max(team_totals["games"], 1)
     stats["season_player_stats"] = season_player_stats
@@ -335,7 +613,7 @@ def ingest_game():
                 logger.info(f"Inserted new game #{gid} (auto-assigned ID)")
 
             stats["games"].sort(key=lambda g: g["gameId"])
-            _recompute_season_stats(stats)
+            _recompute_season_stats(stats, data.roster)
 
             with open(Config.STATS_FILE, "w") as f:
                 json.dump(stats, f, indent=2)
@@ -431,6 +709,53 @@ def ingest_game():
             return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route("/api/roster-sync", methods=["PUT", "OPTIONS"])
+def roster_sync():
+    """Sync roster from coach dashboard/realtime API into roster.json and reload data."""
+    if request.method == "OPTIONS":
+        response = make_response("", 204)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Api-Key"
+        response.headers["Access-Control-Allow-Methods"] = "PUT, OPTIONS"
+        return response
+
+    payload = request.get_json(force=True, silent=True)
+    if not payload or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    teams = payload.get("teams")
+    if not isinstance(teams, list):
+        return jsonify({"error": "teams array is required"}), 400
+
+    preferred_team_id = payload.get("preferredTeamId")
+    preferred_team_id = preferred_team_id if isinstance(preferred_team_id, str) else None
+
+    roster_payload = _build_roster_payload_from_teams(teams, preferred_team_id)
+
+    with reload_lock:
+        try:
+            with open(Config.ROSTER_FILE, "w") as f:
+                json.dump(roster_payload, f, indent=2)
+
+            data.reload()
+            global advanced_calc
+            advanced_calc = AdvancedStatsCalculator(data.stats_data)
+
+            return jsonify(
+                {
+                    "message": "Roster synced successfully",
+                    "team": roster_payload.get("team", ""),
+                    "players_loaded": len(roster_payload.get("roster", [])),
+                }
+            )
+        except OSError as e:
+            logger.error(f"Roster sync file error: {e}")
+            return jsonify({"error": "Failed to write roster file"}), 500
+        except Exception as e:
+            logger.error(f"Roster sync error: {e}")
+            return jsonify({"error": "Internal server error"}), 500
+
+
 # =============================================================================
 # Data API Routes
 # =============================================================================
@@ -466,12 +791,47 @@ def api_games():
     return jsonify(games_list)
 
 
-@app.route("/api/game/<int:game_id>")
+def _delete_game_from_stats(game_id: int):
+    with reload_lock:
+        stats = data.stats_data
+        games = stats.get("games", [])
+        before_count = len(games)
+        stats["games"] = [g for g in games if g.get("gameId") != game_id]
+
+        if len(stats["games"]) == before_count:
+            return jsonify({"error": "Game not found"}), 404
+
+        _recompute_season_stats(stats, data.roster)
+
+        try:
+            with open(Config.STATS_FILE, "w") as f:
+                json.dump(stats, f, indent=2)
+
+            data.reload()
+            global advanced_calc
+            advanced_calc = AdvancedStatsCalculator(data.stats_data)
+            _sync_game_delete_to_realtime(game_id)
+
+            return jsonify({"message": "Game deleted", "gameId": game_id})
+        except OSError as e:
+            logger.error(f"Game delete file error: {e}")
+            return jsonify({"error": "Failed to write stats file"}), 500
+
+
+@app.route("/api/game/<int:game_id>", methods=["GET", "DELETE"])
 def api_game(game_id):
-    game = data.get_game_by_id(game_id)
-    if game:
-        return jsonify(game)
-    return jsonify({"error": "Game not found"}), 404
+    if request.method == "GET":
+        game = data.get_game_by_id(game_id)
+        if game:
+            return jsonify(game)
+        return jsonify({"error": "Game not found"}), 404
+
+    return _delete_game_from_stats(game_id)
+
+
+@app.route("/api/game/<int:game_id>/delete", methods=["POST"])
+def api_game_delete(game_id):
+    return _delete_game_from_stats(game_id)
 
 
 @app.route("/api/players")
@@ -539,11 +899,48 @@ def api_players():
     return jsonify(sorted(enhanced, key=lambda x: x.get("ppg", 0), reverse=True))
 
 
-@app.route("/api/player/<player_name>")
+@app.route("/api/player/<player_name>", methods=["GET", "DELETE"])
 def api_player(player_name):
     player_name = player_name.strip()
     if not player_name or len(player_name) > 100:
         return jsonify({"error": "Invalid player name"}), 400
+
+    if request.method == "DELETE":
+        with reload_lock:
+            stats_payload = data.stats_data
+            roster_payload = data.roster_data
+            removed_roster, removed_rows = _delete_player_from_data(
+                stats_payload,
+                roster_payload,
+                player_name,
+            )
+
+            if removed_roster == 0 and removed_rows == 0:
+                return jsonify({"error": "Player not found"}), 404
+
+            try:
+                with open(Config.STATS_FILE, "w") as sf:
+                    json.dump(stats_payload, sf, indent=2)
+                with open(Config.ROSTER_FILE, "w") as rf:
+                    json.dump(roster_payload, rf, indent=2)
+
+                _sync_roster_to_realtime(_build_roster_payload_from_roster_file(roster_payload))
+
+                data.reload()
+                global advanced_calc
+                advanced_calc = AdvancedStatsCalculator(data.stats_data)
+
+                return jsonify(
+                    {
+                        "message": "Player deleted",
+                        "player": player_name,
+                        "removed_roster_entries": removed_roster,
+                        "removed_game_rows": removed_rows,
+                    }
+                )
+            except OSError as e:
+                logger.error(f"Player delete file error: {e}")
+                return jsonify({"error": "Failed to write stats files"}), 500
 
     stats = data.get_player_stats(player_name)
     if stats:
@@ -1043,95 +1440,51 @@ def api_comprehensive_insights():
 # =============================================================================
 
 
-@app.route("/api/ai/chat", methods=["POST"])
-def ai_chat():
-    """Chat endpoint with conversation history"""
-    try:
-        if not request.json:
-            return jsonify({"error": "Invalid JSON data"}), 400
+def _delete_player_from_stats(player_name: str):
+    with reload_lock:
+        stats_payload = data.stats_data
+        roster_payload = data.roster_data
+        removed_roster, removed_rows = _delete_player_from_data(
+            stats_payload,
+            roster_payload,
+            player_name,
+        )
 
-        message = request.json.get("message", "").strip()
-        history = request.json.get("history", [])
+        if removed_roster == 0 and removed_rows == 0:
+            return jsonify({"error": "Player not found"}), 404
 
-        if not message:
-            return jsonify({"error": "No message provided"}), 400
-        if len(message) > 1000:
-            return jsonify({"error": "Message too long"}), 400
+        try:
+            with open(Config.STATS_FILE, "w") as sf:
+                json.dump(stats_payload, sf, indent=2)
+            with open(Config.ROSTER_FILE, "w") as rf:
+                json.dump(roster_payload, rf, indent=2)
 
-        ai = get_ai_service()
-        if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
+            _sync_roster_to_realtime(_build_roster_payload_from_roster_file(roster_payload))
 
-        # Clean history with better validation
-        clean_history = []
-        for msg in (history or [])[-20:]:
-            if not isinstance(msg, dict):
-                continue
-            if "role" not in msg or "content" not in msg:
-                continue
-            if msg["role"] not in ["user", "assistant"]:
-                continue
-            if not isinstance(msg["content"], (str, int, float)):
-                continue
-            content = str(msg["content"]).strip()
-            if len(content) > 2000:
-                continue
-            clean_history.append({"role": msg["role"], "content": content})
+            data.reload()
+            global advanced_calc
+            advanced_calc = AdvancedStatsCalculator(data.stats_data)
 
-        # Always get fresh stats context (no caching)
-        context = build_stats_context(data)
-        system_prompt = f"""You are an expert basketball statistics analyst. Use ONLY the provided stats data.
-Always reference exact numbers from the data. Never make up statistics.
-
-TEAM STATS DATA:
-{context}"""
-
-        response = ai.call_with_history(system_prompt, message, clean_history)
-        return jsonify({"response": response, "message": message})
-
-    except APIError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
-        return jsonify({"error": str(e)}), 500
+            return jsonify(
+                {
+                    "message": "Player deleted",
+                    "player": player_name,
+                    "removed_roster_entries": removed_roster,
+                    "removed_game_rows": removed_rows,
+                }
+            )
+        except OSError as e:
+            logger.error(f"Player delete file error: {e}")
+            return jsonify({"error": "Failed to write stats files"}), 500
 
 
-@app.route("/api/ai/analyze", methods=["POST"])
-def ai_analyze():
-    """General AI analysis endpoint"""
-    try:
-        if not request.json:
-            return jsonify({"error": "Invalid JSON data"}), 400
+@app.route("/api/player/<player_name>/delete", methods=["POST"])
+def api_player_delete(player_name):
+    player_name = player_name.strip()
+    if not player_name or len(player_name) > 100:
+        return jsonify({"error": "Invalid player name"}), 400
 
-        query = request.json.get("query", "").strip()
-        analysis_type = request.json.get("type", "general").strip().lower()
-
-        if not query:
-            return jsonify({"error": "No query provided"}), 400
-        if len(query) > 1000:
-            return jsonify({"error": "Query too long"}), 400
-
-        ai = get_ai_service()
-        if not ai.is_configured:
-            return jsonify({"error": "AI features unavailable \u2014 set OPENAI_API_KEY to enable", "code": "ai_unavailable"}), 503
-
-        valid_types = {"general", "player", "team", "trends", "coaching"}
-        if analysis_type not in valid_types:
-            analysis_type = "general"
-
-        # Always get fresh stats context (no caching)
-        context = build_stats_context(data)
-        prompt = ANALYSIS_PROMPTS.get(analysis_type, ANALYSIS_PROMPTS["general"])
-        system_prompt = f"{prompt}\n\nTEAM DATA:\n{context}"
-
-        analysis = ai.call_api(system_prompt, query, max_tokens=1500)
-        return jsonify({"analysis": analysis, "type": analysis_type, "query": query})
-
-    except APIError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.error(f"Analysis error: {e}")
-        return jsonify({"error": str(e)}), 500
+    return _delete_player_from_stats(player_name)
 
 
 @app.route("/api/ai/player-insights/<player_name>")

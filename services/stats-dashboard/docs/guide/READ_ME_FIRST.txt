@@ -1,7 +1,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
 ║          BASKETBALL STATS AUDIT - CRITICAL ISSUES FOUND                      ║
-║          Cedar Ridge Raptors Basketball Team                                 ║
+║          BTA Basketball Team                                 ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 

@@ -175,7 +175,7 @@ def migrate_season_stats(stats_data):
     
     # Check if season stats already exist
     existing_season = SeasonStats.query.filter_by(
-        team_name="Cedar Ridge Raptors",
+        team_name="BTA Team",
         season="2026-2027 Test Season"
     ).first()
     
@@ -184,7 +184,7 @@ def migrate_season_stats(stats_data):
         season = existing_season
     else:
         season = SeasonStats(
-            team_name="Cedar Ridge Raptors",
+            team_name="BTA Team",
             season="2026-2027 Test Season"
         )
     

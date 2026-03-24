@@ -1,5 +1,5 @@
 {
-  "team": "Cedar Ridge Raptors",
+  "team": "BTA Team",
   "season": "2026-2027 Test Season",
   "games": [
     {
@@ -94,7 +94,7 @@
       "opponent": "Jefferson",
       "location": "home",
       "type": "Tournament",
-      "tournament": "Cedar Ridge Invitational",
+      "tournament": "Season Invitational",
       "result": "W",
       "vc_score": 97,
       "opp_score": 13,
@@ -109,7 +109,7 @@
       "opponent": "Mid Pacific (HI)",
       "location": "home",
       "type": "Tournament",
-      "tournament": "Cedar Ridge Invitational",
+      "tournament": "Season Invitational",
       "result": "W",
       "vc_score": 80,
       "opp_score": 54,
@@ -124,7 +124,7 @@
       "opponent": "Regis",
       "location": "home",
       "type": "Tournament",
-      "tournament": "Cedar Ridge Invitational",
+      "tournament": "Season Invitational",
       "result": "W",
       "vc_score": 92,
       "opp_score": 86,

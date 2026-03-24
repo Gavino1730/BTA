@@ -11,7 +11,7 @@ We release patches for security vulnerabilities for the following versions:
 
 ## 🚨 Reporting a Vulnerability
 
-We take the security of Cedar Ridge Raptors Basketball Stats seriously. If you believe you have found a security vulnerability, please report it to us as described below.
+We take the security of BTA Basketball Stats seriously. If you believe you have found a security vulnerability, please report it to us as described below.
 
 ### Please Do NOT:
 
@@ -134,4 +134,4 @@ For general questions: **[your-email@example.com]**
 
 ---
 
-**Thank you for helping keep Cedar Ridge Raptors Basketball Stats secure.**
+**Thank you for helping keep BTA Basketball Stats secure.**
