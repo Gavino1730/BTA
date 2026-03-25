@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Video Worker: Camera -->
+  <rect width="100" height="100" fill="#1f2937" rx="20"/>
+  <g transform="translate(50, 50)">
+    <!-- Camera body -->
+    <rect x="-18" y="-12" width="36" height="24" fill="#8b5cf6" rx="2"/>
+    <!-- Lens -->
+    <circle cx="0" cy="0" r="8" fill="#6d28d9"/>
+    <circle cx="0" cy="0" r="6" fill="#8b5cf6"/>
+    <!-- Viewfinder/flash -->
+    <rect x="-12" y="-9" width="4" height="3" fill="#f3f4f6" rx="1"/>
+    <rect x="10" y="-9" width="4" height="3" fill="#f3f4f6" rx="1"/>
+  </g>
+</svg>

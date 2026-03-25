@@ -1,0 +1,102 @@
+{
+  "teams": [
+    {
+      "id": "team-valley-catholic",
+      "name": "Valley Catholic",
+      "abbreviation": "VC",
+      "players": [
+        {
+          "id": "vc-1",
+          "number": "1",
+          "name": "Cooper Bonnett",
+          "position": "G",
+          "grade": "12"
+        },
+        {
+          "id": "vc-2",
+          "number": "2",
+          "name": "Alex Post",
+          "position": "G",
+          "grade": "11"
+        },
+        {
+          "id": "vc-3",
+          "number": "3",
+          "name": "Gavin Galan",
+          "position": "F",
+          "grade": "12"
+        },
+        {
+          "id": "vc-4",
+          "number": "4",
+          "name": "Kye Fixter",
+          "position": "F",
+          "grade": "11"
+        },
+        {
+          "id": "vc-5",
+          "number": "5",
+          "name": "Marcos Mueller",
+          "position": "G",
+          "grade": "12"
+        },
+        {
+          "id": "vc-10",
+          "number": "10",
+          "name": "Matthew Gunther",
+          "position": "G",
+          "grade": "12"
+        },
+        {
+          "id": "vc-11",
+          "number": "11",
+          "name": "Tyler Eddy",
+          "position": "G",
+          "grade": "10"
+        },
+        {
+          "id": "vc-15",
+          "number": "15",
+          "name": "Elijah Schaal",
+          "position": "G",
+          "grade": "12"
+        },
+        {
+          "id": "vc-20",
+          "number": "20",
+          "name": "Hank Lomber",
+          "position": "F",
+          "grade": "11"
+        },
+        {
+          "id": "vc-22",
+          "number": "22",
+          "name": "Sam Robbins",
+          "position": "F",
+          "grade": "10"
+        },
+        {
+          "id": "vc-23",
+          "number": "23",
+          "name": "Garrett Frank",
+          "position": "G",
+          "grade": "11"
+        },
+        {
+          "id": "vc-24",
+          "number": "24",
+          "name": "Michael Mehta",
+          "position": "G",
+          "grade": "12"
+        },
+        {
+          "id": "vc-44",
+          "number": "44",
+          "name": "Liam Plep",
+          "position": "C",
+          "grade": "12"
+        }
+      ]
+    }
+  ]
+}

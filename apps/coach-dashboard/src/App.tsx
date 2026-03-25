@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getPeriodDurationSeconds, type Period } from "@bta/shared-schema";
+import { getPeriodDurationSeconds, type GameEvent, type Period } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
   formatBonusIndicator,
@@ -54,14 +54,27 @@ interface GameState {
   activeLineupsByTeam: Record<string, string[]>;
   teamStats: Record<string, TeamStats>;
   playerStatsByTeam: Record<string, Record<string, PlayerStats>>;
-  events: Array<{
-    id: string;
-    type: string;
-    sequence: number;
-    teamId: string;
-    period: Period;
-    clockSecondsRemaining: number;
-  }>;
+  events: GameEvent[];
+}
+
+interface BoxScoreTeamTotals {
+  points: number;
+  fgMade: number;
+  fgAttempts: number;
+  ftMade: number;
+  ftAttempts: number;
+  reboundsOff: number;
+  reboundsDef: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fouls: number;
+}
+
+interface BoxScorePlayerLine extends BoxScoreTeamTotals {
+  playerId: string;
+  teamId: string;
 }
 
 function emptyTeamStats(): TeamStats {
@@ -145,9 +158,27 @@ function mergePlayerStats(
   return target;
 }
 
+function emptyBoxScoreTotals(): BoxScoreTeamTotals {
+  return {
+    points: 0,
+    fgMade: 0,
+    fgAttempts: 0,
+    ftMade: 0,
+    ftAttempts: 0,
+    reboundsOff: 0,
+    reboundsDef: 0,
+    assists: 0,
+    steals: 0,
+    blocks: 0,
+    turnovers: 0,
+    fouls: 0,
+  };
+}
+
 interface Insight {
   id: string;
   type: string;
+  confidence?: "high" | "medium";
   message: string;
   explanation: string;
   createdAtIso: string;
@@ -179,6 +210,12 @@ interface VideoResolution {
   anchorId: string;
 }
 
+interface RotationWatchNote {
+  playerId: string;
+  level: "high" | "medium";
+  reason: string;
+}
+
 interface PresenceStatus {
   deviceId: string;
   online: boolean;
@@ -186,10 +223,93 @@ interface PresenceStatus {
   lastSeenIso: string | null;
 }
 
+type CoachInsightFocus =
+  | "timeouts"
+  | "substitutions"
+  | "foul_management"
+  | "momentum"
+  | "shot_selection"
+  | "ball_security"
+  | "hot_hand"
+  | "defense";
+
+interface CoachAiSettings {
+  playingStyle: string;
+  teamContext: string;
+  customPrompt: string;
+  focusInsights: CoachInsightFocus[];
+}
+
+interface AiPromptPreview {
+  model: string;
+  userPrompt: string;
+  systemGuide: string[];
+  coachSettings: CoachAiSettings;
+  recentEventCount: number;
+  generatedAtIso: string;
+}
+
+interface AiChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAtIso: string;
+}
+
+interface AiChatResponse {
+  answer: string;
+  suggestions: string[];
+  generatedAtIso: string;
+  usedHistoricalContext: boolean;
+}
+
+interface AiSignalCard {
+  id: string;
+  title: string;
+  detail: string;
+  tone: "high" | "medium" | "default";
+}
+
+type BoxScoreFilter = "game" | "first-half" | "second-half" | Period;
+
+const AI_FOCUS_OPTIONS: Array<{ id: CoachInsightFocus; label: string }> = [
+  { id: "timeouts", label: "Timeout management" },
+  { id: "substitutions", label: "Substitutions" },
+  { id: "foul_management", label: "Foul management" },
+  { id: "momentum", label: "Momentum swings" },
+  { id: "shot_selection", label: "Shot selection" },
+  { id: "ball_security", label: "Ball security" },
+  { id: "hot_hand", label: "Hot hand usage" },
+  { id: "defense", label: "Defensive calls" },
+];
+
+function defaultCoachAiSettings(): CoachAiSettings {
+  return {
+    playingStyle: "",
+    teamContext: "",
+    customPrompt: "",
+    focusInsights: AI_FOCUS_OPTIONS.map((option) => option.id),
+  };
+}
+
+function extractHistoricalContextFromPrompt(prompt: string): string {
+  const line = prompt
+    .split("\n")
+    .find((entry) => entry.toLowerCase().startsWith("historical context from stats dashboard:"));
+  if (!line) {
+    return "";
+  }
+
+  return line
+    .slice("Historical context from stats dashboard:".length)
+    .trim();
+}
+
 // ── Roster Builder ──────────────────────────────────────────────────────────
 // Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 const POSITIONS = ["PG", "SG", "SF", "PF", "C"] as const;
+const ROLE_OPTIONS = ["Starter", "Bench", "Rotation", "Sixth Man", "Specialist"] as const;
 
 export interface RosterPlayer {
   id: string;
@@ -198,34 +318,28 @@ export interface RosterPlayer {
   position: string;
   height?: string;
   grade?: string;
+  role?: string;
+  notes?: string;
 }
 
 export interface RosterTeam {
   id: string;
   name: string;
   abbreviation: string;
+  teamColor?: string;
+  coachStyle?: string;
   players: RosterPlayer[];
 }
 
-const SAMPLE_TEAMS: RosterTeam[] = [
-  {
-    id: "team-usa",
-    name: "USA",
-    abbreviation: "USA",
-    players: [
-      { id: "usa-4", number: "4", name: "Stephen Curry", position: "PG", height: "6'2\"", grade: "Pro" },
-      { id: "usa-6", number: "6", name: "LeBron James", position: "SF", height: "6'9\"", grade: "Pro" },
-      { id: "usa-7", number: "7", name: "Kevin Durant", position: "SF", height: "6'10\"", grade: "Pro" },
-      { id: "usa-8", number: "8", name: "Kobe Bryant", position: "SG", height: "6'6\"", grade: "Pro" },
-      { id: "usa-9", number: "9", name: "Michael Jordan", position: "SG", height: "6'6\"", grade: "Pro" },
-      { id: "usa-10", number: "10", name: "Magic Johnson", position: "PG", height: "6'9\"", grade: "Pro" },
-      { id: "usa-11", number: "11", name: "Kyrie Irving", position: "PG", height: "6'2\"", grade: "Pro" },
-      { id: "usa-13", number: "13", name: "Anthony Davis", position: "PF", height: "6'10\"", grade: "Pro" },
-      { id: "usa-15", number: "15", name: "Carmelo Anthony", position: "PF", height: "6'7\"", grade: "Pro" },
-      { id: "usa-34", number: "34", name: "Shaquille O'Neal", position: "C", height: "7'1\"", grade: "Pro" },
-    ],
-  },
-];
+function normalizeTeamColor(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(normalized)) return normalized;
+  if (/^#[0-9a-f]{3}$/.test(normalized)) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return undefined;
+}
 
 function loadRosterTeams(): RosterTeam[] {
   try {
@@ -249,7 +363,9 @@ function isRosterPlayer(value: unknown): value is RosterPlayer {
   return typeof player.id === "string"
     && typeof player.number === "string"
     && typeof player.name === "string"
-    && typeof player.position === "string";
+    && typeof player.position === "string"
+    && (player.role === undefined || typeof player.role === "string")
+    && (player.notes === undefined || typeof player.notes === "string");
 }
 
 function isRosterTeam(value: unknown): value is RosterTeam {
@@ -258,6 +374,8 @@ function isRosterTeam(value: unknown): value is RosterTeam {
   return typeof team.id === "string"
     && typeof team.name === "string"
     && typeof team.abbreviation === "string"
+    && (team.teamColor === undefined || typeof team.teamColor === "string")
+    && (team.coachStyle === undefined || typeof team.coachStyle === "string")
     && Array.isArray(team.players)
     && team.players.every(isRosterPlayer);
 }
@@ -279,6 +397,7 @@ const defaultHost = window.location.hostname || "localhost";
 const apiBase = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
 const videoBase = import.meta.env.VITE_VIDEO_API ?? `http://${defaultHost}:4100`;
 const statsBase = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
+const operatorBase = import.meta.env.VITE_OPERATOR_CONSOLE ?? `http://${defaultHost}:5174`;
 const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
@@ -318,8 +437,35 @@ export function App() {
   const [anchorVideoId, setAnchorVideoId] = useState("vid-1");
   const [videoSecond, setVideoSecond] = useState("12");
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
+  const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
+  const [aiRefreshError, setAiRefreshError] = useState("");
   const [eventClipMap, setEventClipMap] = useState<Record<string, VideoResolution>>({});
-  const [activePage, setActivePage] = useState<"live" | "film" | "roster">("live");
+  const [activePage, setActivePage] = useState<"live" | "ai" | "film" | "roster" | "settings">("live");
+  const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
+  const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
+  const [aiSettingsStatus, setAiSettingsStatus] = useState("No saved settings for this game yet.");
+  const [boxScoreFilter, setBoxScoreFilter] = useState<BoxScoreFilter>("game");
+  const [promptPreview, setPromptPreview] = useState<AiPromptPreview | null>(null);
+  const [promptPreviewStatus, setPromptPreviewStatus] = useState("Prompt preview not loaded.");
+  const [aiChatMessages, setAiChatMessages] = useState<AiChatMessage[]>([]);
+  const [aiChatInput, setAiChatInput] = useState("");
+  const [aiChatStatus, setAiChatStatus] = useState("Ask the live assistant about subs, foul danger, hot hands, or matchup decisions.");
+  const [isSendingAiChat, setIsSendingAiChat] = useState(false);
+  const [aiChatSuggestions, setAiChatSuggestions] = useState<string[]>([]);
+  const historicalPromptContext = useMemo(
+    () => extractHistoricalContextFromPrompt(promptPreview?.userPrompt ?? ""),
+    [promptPreview?.userPrompt]
+  );
+  const operatorConsoleUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (deviceId) params.set("deviceId", deviceId);
+    if (gameId) params.set("gameId", gameId);
+    if (setupNames.myTeamId) params.set("myTeamId", setupNames.myTeamId);
+    if (setupNames.myTeamName) params.set("myTeamName", setupNames.myTeamName);
+    if (setupNames.opponentName) params.set("opponent", setupNames.opponentName);
+    if (setupNames.vcSide) params.set("vcSide", setupNames.vcSide);
+    return `${operatorBase.replace(/\/$/, "")}/?${params.toString()}`;
+  }, [deviceId, gameId, setupNames]);
 
   // ── Roster Builder state ─────────────────────────────────────────────────
   const [rosterTeams, setRosterTeamsState] = useState<RosterTeam[]>(loadRosterTeams);
@@ -329,12 +475,15 @@ export function App() {
   const [showNewTeamForm, setShowNewTeamForm] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamAbbr, setNewTeamAbbr] = useState("");
+  const [newTeamColor, setNewTeamColor] = useState("#4f8cff");
   const [addingPlayerForTeam, setAddingPlayerForTeam] = useState<string | null>(null);
   const [newPlayerNum, setNewPlayerNum] = useState("");
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerPos, setNewPlayerPos] = useState("PG");
   const [newPlayerHeight, setNewPlayerHeight] = useState("");
   const [newPlayerGrade, setNewPlayerGrade] = useState("");
+  const [newPlayerRole, setNewPlayerRole] = useState("Bench");
+  const [newPlayerNotes, setNewPlayerNotes] = useState("");
 
   function setRosterTeams(next: RosterTeam[]) {
     setRosterTeamsState(next);
@@ -342,21 +491,33 @@ export function App() {
 
     const preferredTeamId = setupNames.myTeamId || next[0]?.id || "";
 
-    void fetch(`${apiBase}/config/roster-teams`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-      body: JSON.stringify({ teams: next }),
-    }).catch(() => {
-      // Keep local fallback when API is unavailable.
-    });
+    void (async () => {
+      try {
+        const realtimeRes = await fetch(`${apiBase}/config/roster-teams`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+          body: JSON.stringify({ teams: next }),
+        });
+        if (!realtimeRes.ok) {
+          console.warn("Roster save to realtime API failed", realtimeRes.status);
+        }
+      } catch {
+        // Keep local fallback when API is unavailable.
+      }
 
-    void fetch(`${statsBase}/api/roster-sync`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-      body: JSON.stringify({ teams: next, preferredTeamId }),
-    }).catch(() => {
-      // Stats dashboard sync is best-effort; realtime API remains source of truth.
-    });
+      try {
+        const statsRes = await fetch(`${statsBase}/api/roster-sync`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+          body: JSON.stringify({ teams: next, preferredTeamId }),
+        });
+        if (!statsRes.ok) {
+          console.warn("Roster sync to stats dashboard failed", statsRes.status, statsBase);
+        }
+      } catch {
+        console.warn("Roster sync request to stats dashboard failed", statsBase);
+      }
+    })();
   }
 
   useEffect(() => {
@@ -396,10 +557,17 @@ export function App() {
     let suffix = 2;
     while (rosterTeams.some((t) => t.id === id)) { id = `${slugifyTeamName(newTeamName)}-${suffix++}`; }
     const abbr = newTeamAbbr.trim().toUpperCase().slice(0, 4) || newTeamName.trim().slice(0, 3).toUpperCase();
-    const team: RosterTeam = { id, name: newTeamName.trim(), abbreviation: abbr, players: [] };
+    const team: RosterTeam = {
+      id,
+      name: newTeamName.trim(),
+      abbreviation: abbr,
+      teamColor: normalizeTeamColor(newTeamColor),
+      players: []
+    };
     setRosterTeams([...rosterTeams, team]);
     setNewTeamName("");
     setNewTeamAbbr("");
+    setNewTeamColor("#4f8cff");
     setShowNewTeamForm(false);
     setExpandedTeamId(id);
   }
@@ -408,6 +576,28 @@ export function App() {
     if (!window.confirm(`Remove team "${rosterTeams.find((t) => t.id === id)?.name ?? id}"?`)) return;
     setRosterTeams(rosterTeams.filter((t) => t.id !== id));
     if (expandedTeamId === id) setExpandedTeamId(null);
+  }
+
+  function updateTeamCoachStyle(teamId: string, coachStyle: string) {
+    const nextCoachStyle = coachStyle.trim();
+    setRosterTeams(
+      rosterTeams.map((team) =>
+        team.id === teamId
+          ? { ...team, coachStyle: nextCoachStyle || undefined }
+          : team
+      )
+    );
+  }
+
+  function updateTeamColor(teamId: string, teamColor: string) {
+    const nextTeamColor = normalizeTeamColor(teamColor);
+    setRosterTeams(
+      rosterTeams.map((team) =>
+        team.id === teamId
+          ? { ...team, teamColor: nextTeamColor }
+          : team
+      )
+    );
   }
 
   function addPlayer(teamId: string) {
@@ -419,6 +609,8 @@ export function App() {
       position: newPlayerPos,
       height: newPlayerHeight.trim() || undefined,
       grade: newPlayerGrade.trim() || undefined,
+      role: newPlayerRole.trim() || undefined,
+      notes: newPlayerNotes.trim() || undefined,
     };
     setRosterTeams(rosterTeams.map((t) => t.id === teamId ? { ...t, players: [...t.players, player] } : t));
     setAddingPlayerForTeam(null);
@@ -427,6 +619,8 @@ export function App() {
     setNewPlayerPos("PG");
     setNewPlayerHeight("");
     setNewPlayerGrade("");
+    setNewPlayerRole("Bench");
+    setNewPlayerNotes("");
   }
 
   function removePlayer(teamId: string, playerId: string) {
@@ -436,8 +630,18 @@ export function App() {
 
   function saveEditedPlayer(teamId: string) {
     if (!editPlayerDraft) return;
+    const normalizedDraft: RosterPlayer = {
+      ...editPlayerDraft,
+      number: editPlayerDraft.number.trim(),
+      name: editPlayerDraft.name.trim(),
+      position: editPlayerDraft.position.trim(),
+      height: editPlayerDraft.height?.trim() || undefined,
+      grade: editPlayerDraft.grade?.trim() || undefined,
+      role: editPlayerDraft.role?.trim() || undefined,
+      notes: editPlayerDraft.notes?.trim() || undefined,
+    };
     setRosterTeams(rosterTeams.map((t) =>
-      t.id === teamId ? { ...t, players: t.players.map((p) => p.id === editPlayerDraft.id ? editPlayerDraft : p) } : t
+      t.id === teamId ? { ...t, players: t.players.map((p) => p.id === normalizedDraft.id ? normalizedDraft : p) } : t
     ));
     setEditingPlayerId(null);
     setEditPlayerDraft(null);
@@ -463,15 +667,6 @@ export function App() {
       } catch { /* invalid JSON */ }
     };
     reader.readAsText(file);
-  }
-
-  function loadSampleTeams() {
-    if (rosterTeams.length > 0 && !window.confirm("This will replace your current roster with sample teams. Continue?")) return;
-    setRosterTeams(SAMPLE_TEAMS);
-    setExpandedTeamId(SAMPLE_TEAMS[0]?.id ?? null);
-    setEditingPlayerId(null);
-    setEditPlayerDraft(null);
-    setAddingPlayerForTeam(null);
   }
 
   useEffect(() => {
@@ -606,6 +801,189 @@ export function App() {
     });
   }, [gameId]);
 
+  useEffect(() => {
+    if (!gameId) {
+      setAiSettings(defaultCoachAiSettings());
+      setAiSettingsDraft(defaultCoachAiSettings());
+      setAiSettingsStatus("Connect to a live game to save AI settings.");
+      setPromptPreview(null);
+      setPromptPreviewStatus("Connect to a live game to load prompt preview.");
+      return;
+    }
+
+    let cancelled = false;
+    async function hydrateAiSettings() {
+      try {
+        const response = await fetch(`${apiBase}/games/${gameId}/ai-settings`, {
+          headers: apiKeyHeader(),
+        });
+        if (!response.ok) {
+          if (!cancelled) {
+            setAiSettings(defaultCoachAiSettings());
+            setAiSettingsDraft(defaultCoachAiSettings());
+            setAiSettingsStatus("Using defaults. Save to create custom AI settings for this game.");
+          }
+          return;
+        }
+
+        const payload = (await response.json()) as CoachAiSettings | null;
+        const next = payload ?? defaultCoachAiSettings();
+        if (!cancelled) {
+          setAiSettings(next);
+          setAiSettingsDraft(next);
+          setAiSettingsStatus("Loaded AI settings for this game.");
+        }
+      } catch {
+        if (!cancelled) {
+          setAiSettingsStatus("Could not load AI settings from realtime API.");
+        }
+      }
+    }
+
+    void hydrateAiSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
+
+  async function saveAiSettings(): Promise<void> {
+    if (!gameId) {
+      setAiSettingsStatus("Connect to a live game first, then save AI settings.");
+      return;
+    }
+
+    setAiSettingsStatus("Saving AI settings...");
+    try {
+      const response = await fetch(`${apiBase}/games/${gameId}/ai-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+        body: JSON.stringify(aiSettingsDraft),
+      });
+
+      if (!response.ok) {
+        setAiSettingsStatus(`Save failed (${response.status}).`);
+        return;
+      }
+
+      const saved = (await response.json()) as CoachAiSettings;
+      setAiSettings(saved);
+      setAiSettingsDraft(saved);
+      setAiSettingsStatus("AI settings saved and applied to live coaching insights.");
+      setPromptPreviewStatus("Settings saved. Refresh prompt preview to inspect current AI input.");
+    } catch {
+      setAiSettingsStatus("Save failed: could not reach realtime API.");
+    }
+  }
+
+  async function loadPromptPreview(): Promise<void> {
+    if (!gameId) {
+      setPromptPreviewStatus("Connect to a live game first.");
+      return;
+    }
+
+    setPromptPreviewStatus("Loading prompt preview...");
+    try {
+      const response = await fetch(`${apiBase}/games/${gameId}/ai-prompt-preview`, {
+        headers: apiKeyHeader(),
+      });
+      if (!response.ok) {
+        setPromptPreview(null);
+        setPromptPreviewStatus(`Prompt preview unavailable (${response.status}).`);
+        return;
+      }
+
+      const payload = (await response.json()) as AiPromptPreview;
+      setPromptPreview(payload);
+      setPromptPreviewStatus("Prompt preview loaded.");
+    } catch {
+      setPromptPreview(null);
+      setPromptPreviewStatus("Could not load prompt preview from realtime API.");
+    }
+  }
+
+  async function sendAiChat(questionOverride?: string): Promise<void> {
+    const question = (questionOverride ?? aiChatInput).trim();
+    if (!gameId) {
+      setAiChatStatus("Connect to a live game first.");
+      return;
+    }
+
+    if (!question) {
+      setAiChatStatus("Enter a question for the in-game assistant.");
+      return;
+    }
+
+    const userMessage: AiChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: question,
+      createdAtIso: new Date().toISOString(),
+    };
+
+    const historyPayload = aiChatMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+    setAiChatMessages((current) => [...current, userMessage]);
+    setAiChatInput("");
+    setAiChatStatus("Thinking through live and historical context...");
+    setIsSendingAiChat(true);
+
+    try {
+      const response = await fetch(`${apiBase}/games/${gameId}/ai-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+        body: JSON.stringify({
+          question,
+          history: historyPayload,
+        }),
+      });
+
+      if (!response.ok) {
+        setAiChatStatus(`AI chat unavailable (${response.status}).`);
+        return;
+      }
+
+      const payload = (await response.json()) as AiChatResponse;
+      setAiChatMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: payload.answer,
+          createdAtIso: payload.generatedAtIso,
+        }
+      ]);
+      setAiChatSuggestions(payload.suggestions);
+      setAiChatStatus(payload.usedHistoricalContext
+        ? "Answered with live game state plus historical team and player context."
+        : "Answered with current live game context.");
+    } catch {
+      setAiChatStatus("AI chat request failed. Realtime API may be unavailable.");
+    } finally {
+      setIsSendingAiChat(false);
+    }
+  }
+
+  function toggleFocusInsight(focus: CoachInsightFocus): void {
+    setAiSettingsDraft((current) => {
+      const exists = current.focusInsights.includes(focus);
+      if (exists) {
+        const next = current.focusInsights.filter((item) => item !== focus);
+        return {
+          ...current,
+          focusInsights: next.length > 0 ? next : current.focusInsights,
+        };
+      }
+
+      return {
+        ...current,
+        focusInsights: [...current.focusInsights, focus],
+      };
+    });
+  }
+
   const canonicalSideIds = useMemo(() => {
     const homeId = setupNames.vcSide === "home"
       ? (setupNames.myTeamId || state?.homeTeamId || "home")
@@ -738,6 +1116,14 @@ export function App() {
     };
   }, [rosterTeams]);
 
+  const playersByTeamId = useMemo(() => {
+    const byTeamId: Record<string, RosterPlayer[]> = {};
+    for (const team of rosterTeams) {
+      byTeamId[team.id] = team.players;
+    }
+    return byTeamId;
+  }, [rosterTeams]);
+
   function toTitleCase(value: string): string {
     return value
       .replace(/[_-]+/g, " ")
@@ -823,6 +1209,65 @@ export function App() {
       ?? playerId;
   }
 
+  function getScoreboardLineup(teamId: string): { playerIds: string[]; isEstimated: boolean } {
+    const canonicalId = canonicalTeamId(teamId);
+    const liveLineup = [...new Set(aggregatedTeams[teamId]?.activeLineup ?? [])].filter(Boolean);
+    if (liveLineup.length >= 5) {
+      return { playerIds: liveLineup.slice(0, 5), isEstimated: false };
+    }
+
+    const statEntries = Object.entries(aggregatedTeams[teamId]?.playerStats ?? {});
+    const activeByStats = statEntries
+      .filter(([, statLine]) => {
+        const touches =
+          statLine.points
+          + statLine.fgAttempts
+          + statLine.ftAttempts
+          + statLine.reboundsOff
+          + statLine.reboundsDef
+          + statLine.assists
+          + statLine.steals
+          + statLine.blocks
+          + statLine.turnovers
+          + statLine.fouls;
+        return touches > 0;
+      })
+      .sort((left, right) => {
+        const leftTouches =
+          left[1].points
+          + left[1].fgAttempts
+          + left[1].ftAttempts
+          + left[1].reboundsOff
+          + left[1].reboundsDef
+          + left[1].assists
+          + left[1].steals
+          + left[1].blocks
+          + left[1].turnovers
+          + left[1].fouls;
+        const rightTouches =
+          right[1].points
+          + right[1].fgAttempts
+          + right[1].ftAttempts
+          + right[1].reboundsOff
+          + right[1].reboundsDef
+          + right[1].assists
+          + right[1].steals
+          + right[1].blocks
+          + right[1].turnovers
+          + right[1].fouls;
+        return rightTouches - leftTouches;
+      })
+      .map(([playerId]) => playerId);
+
+    const rosterOrder = (playersByTeamId[canonicalId] ?? playersByTeamId[teamId] ?? []).map((player) => player.id);
+    const combined = [...new Set([...liveLineup, ...activeByStats, ...rosterOrder])].filter(Boolean).slice(0, 5);
+
+    return {
+      playerIds: combined,
+      isEstimated: combined.length > liveLineup.length,
+    };
+  }
+
   function replaceToken(text: string, token: string, replacement: string): string {
     const source = token.trim();
     const target = replacement.trim();
@@ -871,20 +1316,65 @@ export function App() {
   }
 
   function formatInsightTypeLabel(type: string): string {
-    if (type === "ai_coaching") {
-      return "AI Coaching";
-    }
+    const labels: Record<string, string> = {
+      ai_coaching: "AI Coaching",
+      pre_game: "Pre-Game",
+      foul_trouble: "Foul Trouble",
+      foul_warning: "Foul Warning",
+      team_foul_warning: "Team Fouls / Bonus",
+      sub_suggestion: "Sub Suggestion",
+      timeout_suggestion: "Timeout",
+      hot_hand: "Hot Hand",
+      ot_awareness: "Overtime",
+      run_detection: "Run Alert",
+      turnover_pressure: "Turnover Pressure",
+      shot_profile: "Shot Profile",
+    };
+    if (labels[type]) return labels[type];
 
     return type
       .split("_")
       .filter(Boolean)
       .map((part) => {
-        if (part.toLowerCase() === "ai") {
-          return "AI";
-        }
+        if (part.toLowerCase() === "ai") return "AI";
         return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
       })
       .join(" ");
+  }
+
+  function getRuleInsightImportanceClass(insight: Insight): string {
+    // High-urgency types always get high styling
+    if (
+      insight.type === "foul_warning" ||
+      insight.type === "team_foul_warning" ||
+      insight.type === "sub_suggestion" ||
+      insight.type === "timeout_suggestion" ||
+      insight.type === "ot_awareness"
+    ) {
+      return "insight-item-rule-high";
+    }
+
+    if (insight.confidence === "high") {
+      return "insight-item-rule-high";
+    }
+
+    if (insight.confidence === "medium") {
+      return "insight-item-rule-medium";
+    }
+
+    return "insight-item-rule-default";
+  }
+
+  function getRuleBadgeImportanceClass(insight: Insight): string {
+    if (insight.confidence === "high") {
+      return "insight-badge-rules-high";
+    }
+
+    if (insight.confidence === "medium") {
+      return "insight-badge-rules-medium";
+    }
+
+    return "insight-badge-rules-default";
   }
 
   const leadersByTeam = useMemo(() => {
@@ -911,6 +1401,98 @@ export function App() {
     >;
   }, [aggregatedTeams, teams]);
 
+  const coachedTeamId = useMemo(() => {
+    if (setupNames.myTeamId) {
+      return canonicalTeamId(setupNames.myTeamId);
+    }
+
+    return setupNames.vcSide === "away" ? canonicalSideIds.awayId : canonicalSideIds.homeId;
+  }, [canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.myTeamId, setupNames.vcSide]);
+
+  const rotationContext = useMemo(() => {
+    if (!coachedTeamId) {
+      return null;
+    }
+
+    const teamId = coachedTeamId;
+    const liveOnCourt = [...new Set(aggregatedTeams[teamId]?.activeLineup ?? [])].filter(Boolean);
+    const playerStats = aggregatedTeams[teamId]?.playerStats ?? {};
+    const rosterTeam = rosterTeams.find((team) => team.id === canonicalTeamId(teamId) || team.id === teamId);
+
+    const activeByStats = Object.values(playerStats)
+      .map((player) => ({
+        playerId: player.playerId,
+        activityScore: (
+          player.points
+          + player.fgAttempts
+          + player.ftAttempts
+          + player.reboundsOff
+          + player.reboundsDef
+          + player.assists
+          + player.steals
+          + player.blocks
+          + player.turnovers
+          + player.fouls
+        )
+      }))
+      .filter((player) => player.activityScore > 0)
+      .sort((left, right) => right.activityScore - left.activityScore)
+      .map((player) => player.playerId);
+
+    const rosterOrder = rosterTeam?.players.map((player) => player.id) ?? [];
+    const onCourt = [...new Set([...liveOnCourt, ...activeByStats, ...rosterOrder])].slice(0, 5);
+    const isEstimatedLineup = liveOnCourt.length < 5 && onCourt.length > liveOnCourt.length;
+
+    const knownPlayerIds = new Set<string>([
+      ...onCourt,
+      ...Object.keys(playerStats),
+      ...rosterOrder,
+    ]);
+
+    const bench = [...knownPlayerIds].filter((playerId) => !onCourt.includes(playerId));
+
+    const watchNotes: RotationWatchNote[] = onCourt.flatMap((playerId) => {
+      const stats = playerStats[playerId];
+      if (!stats) {
+        return [];
+      }
+
+      const notes: RotationWatchNote[] = [];
+      if (stats.fouls >= 4) {
+        notes.push({
+          playerId,
+          level: "high",
+          reason: `Foul-out risk (${stats.fouls} fouls)`
+        });
+      } else if (stats.fouls === 3) {
+        notes.push({
+          playerId,
+          level: "medium",
+          reason: "Foul pressure (3 fouls)"
+        });
+      }
+
+      if (stats.turnovers >= 3) {
+        notes.push({
+          playerId,
+          level: "medium",
+          reason: `${stats.turnovers} turnovers in current sample`
+        });
+      }
+
+      return notes;
+    });
+
+    return {
+      teamId,
+      onCourt,
+      bench,
+      watchNotes,
+      isEstimatedLineup,
+      liveCount: liveOnCourt.length,
+    };
+  }, [aggregatedTeams, canonicalTeamId, coachedTeamId, rosterTeams]);
+
   const aiInsights = useMemo(
     () => insights.filter((insight) => insight.type === "ai_coaching"),
     [insights]
@@ -930,10 +1512,288 @@ export function App() {
     return state.currentPeriod === "Q1" && eventCount < 10;
   }, [state]);
 
+  const hasGameStarted = (state?.events.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (activePage !== "ai" || !gameId) {
+      return;
+    }
+
+    if (!promptPreview) {
+      void loadPromptPreview();
+    }
+  }, [activePage, gameId, promptPreview]);
+
+  const boxScorePeriods = useMemo(() => {
+    const periods = [...new Set((state?.events ?? []).map((event) => event.period))];
+    const periodRank = (period: string): number => {
+      if (period === "Q1") return 1;
+      if (period === "Q2") return 2;
+      if (period === "Q3") return 3;
+      if (period === "Q4") return 4;
+      const otMatch = /^OT(\d+)$/.exec(period);
+      if (otMatch) return 4 + Number(otMatch[1]);
+      return 99;
+    };
+
+    return periods.sort((left, right) => periodRank(left) - periodRank(right));
+  }, [state?.events]);
+
+  const boxScoreFilterOptions = useMemo(
+    () => [
+      { value: "game" as BoxScoreFilter, label: "Full Game" },
+      { value: "first-half" as BoxScoreFilter, label: "1st Half" },
+      { value: "second-half" as BoxScoreFilter, label: "2nd Half" },
+      ...boxScorePeriods.map((period) => ({ value: period as BoxScoreFilter, label: period })),
+    ],
+    [boxScorePeriods]
+  );
+
+  const filteredBoxScoreEvents = useMemo(() => {
+    const events = state?.events ?? [];
+    if (boxScoreFilter === "game") {
+      return events;
+    }
+
+    if (boxScoreFilter === "first-half") {
+      return events.filter((event) => event.period === "Q1" || event.period === "Q2");
+    }
+
+    if (boxScoreFilter === "second-half") {
+      return events.filter((event) => event.period === "Q3" || event.period === "Q4" || /^OT\d+$/.test(event.period));
+    }
+
+    return events.filter((event) => event.period === boxScoreFilter);
+  }, [boxScoreFilter, state?.events]);
+
+  const boxScoreByTeam = useMemo(() => {
+    const byTeam: Record<string, { totals: BoxScoreTeamTotals; players: Record<string, BoxScorePlayerLine> }> = {};
+
+    function ensureTeam(teamId: string) {
+      byTeam[teamId] ??= { totals: emptyBoxScoreTotals(), players: {} };
+      return byTeam[teamId];
+    }
+
+    function ensurePlayer(teamId: string, playerId: string) {
+      const team = ensureTeam(teamId);
+      team.players[playerId] ??= {
+        ...emptyBoxScoreTotals(),
+        playerId,
+        teamId,
+      };
+      return team.players[playerId];
+    }
+
+    for (const event of filteredBoxScoreEvents) {
+      const teamId = canonicalTeamId(event.teamId);
+      const team = ensureTeam(teamId);
+
+      switch (event.type) {
+        case "shot_attempt": {
+          team.totals.fgAttempts += 1;
+          const player = ensurePlayer(teamId, event.playerId);
+          player.fgAttempts += 1;
+
+          if (event.made) {
+            team.totals.fgMade += 1;
+            team.totals.points += event.points;
+            player.fgMade += 1;
+            player.points += event.points;
+          }
+          break;
+        }
+        case "free_throw_attempt": {
+          team.totals.ftAttempts += 1;
+          const player = ensurePlayer(teamId, event.playerId);
+          player.ftAttempts += 1;
+          if (event.made) {
+            team.totals.ftMade += 1;
+            team.totals.points += 1;
+            player.ftMade += 1;
+            player.points += 1;
+          }
+          break;
+        }
+        case "rebound": {
+          if (event.offensive) {
+            team.totals.reboundsOff += 1;
+          } else {
+            team.totals.reboundsDef += 1;
+          }
+          const player = ensurePlayer(teamId, event.playerId);
+          if (event.offensive) {
+            player.reboundsOff += 1;
+          } else {
+            player.reboundsDef += 1;
+          }
+          break;
+        }
+        case "assist": {
+          team.totals.assists += 1;
+          const player = ensurePlayer(teamId, event.playerId);
+          player.assists += 1;
+          break;
+        }
+        case "steal": {
+          team.totals.steals += 1;
+          const player = ensurePlayer(teamId, event.playerId);
+          player.steals += 1;
+          break;
+        }
+        case "block": {
+          team.totals.blocks += 1;
+          const player = ensurePlayer(teamId, event.playerId);
+          player.blocks += 1;
+          break;
+        }
+        case "turnover": {
+          team.totals.turnovers += 1;
+          if (event.playerId) {
+            const player = ensurePlayer(teamId, event.playerId);
+            player.turnovers += 1;
+          }
+          break;
+        }
+        case "foul": {
+          team.totals.fouls += 1;
+          const player = ensurePlayer(teamId, event.playerId);
+          player.fouls += 1;
+          break;
+        }
+      }
+    }
+
+    for (const teamId of teams) {
+      ensureTeam(teamId);
+    }
+
+    return byTeam;
+  }, [canonicalTeamId, filteredBoxScoreEvents, teams]);
+
   const selectedVideoForResolution = useMemo(() => {
     const synced = videos.find((video) => video.status === "synced");
     return synced?.id ?? videos[0]?.id;
   }, [videos]);
+
+  const aiSubSuggestionCards = useMemo(() => {
+    const cards: AiSignalCard[] = [];
+
+    for (const insight of [...aiInsights, ...rulesInsights]) {
+      if (insight.type === "sub_suggestion" || /\bsub\b|lineup|rest/i.test(`${insight.message} ${insight.explanation}`)) {
+        cards.push({
+          id: `sub-${insight.id}`,
+          title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
+          detail: prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId),
+          tone: insight.confidence === "high" ? "high" : "medium",
+        });
+      }
+    }
+
+    if (cards.length === 0 && rotationContext?.watchNotes.some((note) => note.level === "high")) {
+      for (const note of rotationContext.watchNotes.filter((entry) => entry.level === "high").slice(0, 2)) {
+        cards.push({
+          id: `fallback-sub-${note.playerId}`,
+          title: `Consider a sub for ${displayPlayerName(rotationContext.teamId, note.playerId)}`,
+          detail: note.reason,
+          tone: "high",
+        });
+      }
+    }
+
+    return cards.slice(0, 4);
+  }, [aiInsights, displayPlayerName, prettifyInsightText, rotationContext, rulesInsights]);
+
+  const aiFoulAlertCards = useMemo(() => {
+    const cards: AiSignalCard[] = [];
+
+    for (const insight of [...rulesInsights, ...aiInsights]) {
+      if (["foul_warning", "foul_trouble", "team_foul_warning"].includes(insight.type) || /foul|bonus/i.test(`${insight.message} ${insight.explanation}`)) {
+        cards.push({
+          id: `foul-${insight.id}`,
+          title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
+          detail: prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId),
+          tone: insight.confidence === "high" ? "high" : "medium",
+        });
+      }
+    }
+
+    return cards.slice(0, 5);
+  }, [aiInsights, prettifyInsightText, rulesInsights]);
+
+  const aiEfficiencyCards = useMemo(() => {
+    const cards: AiSignalCard[] = [];
+
+    for (const insight of [...rulesInsights, ...aiInsights]) {
+      if (["hot_hand", "shot_profile"].includes(insight.type) || /efficient|hot hand|shooting|scoring/i.test(`${insight.message} ${insight.explanation}`)) {
+        cards.push({
+          id: `eff-${insight.id}`,
+          title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
+          detail: prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId),
+          tone: insight.confidence === "high" ? "high" : "default",
+        });
+      }
+    }
+
+    if (coachedTeamId) {
+      const efficientPlayers = Object.values(aggregatedTeams[coachedTeamId]?.playerStats ?? {})
+        .filter((player) => player.fgAttempts >= 4 && player.fgMade / Math.max(player.fgAttempts, 1) >= 0.55)
+        .sort((left, right) => right.points - left.points || right.fgMade - left.fgMade)
+        .slice(0, 3);
+
+      for (const player of efficientPlayers) {
+        const fgPct = Math.round((player.fgMade / Math.max(player.fgAttempts, 1)) * 100);
+        cards.push({
+          id: `eff-live-${player.playerId}`,
+          title: `${displayPlayerName(coachedTeamId, player.playerId)} is producing efficiently`,
+          detail: `${player.points} pts on ${player.fgMade}/${player.fgAttempts} FG (${fgPct}%), plus ${player.assists} ast and ${player.reboundsOff + player.reboundsDef} reb.`,
+          tone: player.points >= 12 ? "high" : "default",
+        });
+      }
+    }
+
+    return cards.slice(0, 5);
+  }, [aggregatedTeams, aiInsights, coachedTeamId, displayPlayerName, prettifyInsightText, rulesInsights]);
+
+  const aiQuickQuestions = useMemo(() => {
+    if (aiChatSuggestions.length > 0) {
+      return aiChatSuggestions;
+    }
+
+    return [
+      "Who should we sub next and why?",
+      "Which player is most efficient right now?",
+      "Are we in team foul trouble soon?",
+      "What should be our next coaching adjustment?",
+    ];
+  }, [aiChatSuggestions]);
+
+  async function refreshAiBenchCalls() {
+    if (!gameId || isRefreshingAiInsights) {
+      return;
+    }
+
+    setIsRefreshingAiInsights(true);
+    setAiRefreshError("");
+
+    try {
+      const query = new URLSearchParams({ force: "1" });
+      const response = await fetch(`${apiBase}/games/${gameId}/insights?${query.toString()}`, {
+        headers: apiKeyHeader()
+      });
+
+      if (!response.ok) {
+        throw new Error(`Insight refresh failed with status ${response.status}`);
+      }
+
+      const payload = (await response.json()) as Insight[];
+      setInsights(payload);
+      setDashboardStatus("AI bench calls refreshed");
+    } catch {
+      setAiRefreshError("Could not refresh AI bench calls right now.");
+    } finally {
+      setIsRefreshingAiInsights(false);
+    }
+  }
 
   async function resolveEventClip(eventId: string, period: Period, gameClockSeconds: number) {
     if (!selectedVideoForResolution) {
@@ -1020,8 +1880,11 @@ export function App() {
           <div className="coach-nav-logo">Bench IQ</div>
           <ul className="coach-nav-links">
             <li><button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Live</button></li>
+            <li><button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI</button></li>
             <li><button className={activePage === "film" ? "nav-active" : ""} onClick={() => setActivePage("film")}>Film</button></li>
             <li><button className={activePage === "roster" ? "nav-active" : ""} onClick={() => setActivePage("roster")}>Roster</button></li>
+            <li><button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Settings</button></li>
+            <li><a href={operatorConsoleUrl} className="coach-nav-ext-link">Score Operator</a></li>
             <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats ↗</a></li>
           </ul>
           <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
@@ -1056,136 +1919,443 @@ export function App() {
         <h2>Scoreboard</h2>
         {teams.length === 0 ? <p>No live game state yet.</p> : null}
         <div className="scoreboard">
-          {teams.map((teamId, index) => (
-            <article
-              key={teamId}
-              className={`score-item ${index === 0 ? "score-item-home" : "score-item-away"}`}
-            >
-              <header className="score-item-header">
-                <h3>{displayTeamName(teamId)}</h3>
-                <p className="score">{aggregatedTeams[teamId]?.score ?? 0}</p>
-              </header>
+          {teams.map((teamId, index) => {
+            const scoreboardLineup = getScoreboardLineup(teamId);
+            return (
+              <article
+                key={teamId}
+                className={`score-item ${index === 0 ? "score-item-home" : "score-item-away"}`}
+              >
+                <header className="score-item-header">
+                  <h3>{displayTeamName(teamId)}</h3>
+                  <p className="score">{aggregatedTeams[teamId]?.score ?? 0}</p>
+                </header>
 
-              <div className="score-meta-grid">
-                <p className="metric-row"><span>FGM / FGA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.fgMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.fgAttempts ?? 0}</strong></p>
-                <p className="metric-row"><span>FTM / FTA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.ftMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.ftAttempts ?? 0}</strong></p>
-                <p className="metric-row"><span>Possessions</span><strong>{aggregatedTeams[teamId]?.possessions ?? 0}</strong></p>
-                <p className="metric-row"><span>Turnovers</span><strong>{aggregatedTeams[teamId]?.teamStats.turnovers ?? 0}</strong></p>
-                <p className="metric-row"><span>Team fouls</span><strong>{aggregatedTeams[teamId]?.teamStats.fouls ?? 0}</strong></p>
-                <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(aggregatedTeams[teamId]?.bonus ?? false)}</strong></p>
-                <p className="metric-row"><span>Subs</span><strong>{aggregatedTeams[teamId]?.teamStats.substitutions ?? 0}</strong></p>
-                <p className="metric-row metric-wrap">
-                  <span>Active lineup</span>
-                  <strong>
-                    {(aggregatedTeams[teamId]?.activeLineup ?? []).length > 0
-                      ? (aggregatedTeams[teamId]?.activeLineup ?? [])
-                        .map((playerId) => displayPlayerName(teamId, playerId))
-                        .join(", ")
-                      : "not set"}
-                  </strong>
-                </p>
-                <p className="metric-row metric-wrap">
-                  <span>Top scorer</span>
-                  <strong>
-                    {leadersByTeam[teamId]?.scoringLeader
-                      ? `${displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)} (${leadersByTeam[teamId].scoringLeader?.points})`
-                      : "none"}
-                  </strong>
-                </p>
-                <p className="metric-row metric-wrap">
-                  <span>Foul trouble</span>
-                  <strong>
-                    {leadersByTeam[teamId]?.foulLeader
-                      ? formatFoulTroubleLabel(
-                        displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
-                        leadersByTeam[teamId].foulLeader.fouls
-                      )
-                      : "none"}
-                  </strong>
-                </p>
-              </div>
-            </article>
-          ))}
+                <div className="score-meta-grid">
+                  <p className="metric-row"><span>FGM / FGA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.fgMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.fgAttempts ?? 0}</strong></p>
+                  <p className="metric-row"><span>FTM / FTA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.ftMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.ftAttempts ?? 0}</strong></p>
+                  <p className="metric-row"><span>Possessions</span><strong>{aggregatedTeams[teamId]?.possessions ?? 0}</strong></p>
+                  <p className="metric-row"><span>Turnovers</span><strong>{aggregatedTeams[teamId]?.teamStats.turnovers ?? 0}</strong></p>
+                  <p className="metric-row"><span>Team fouls</span><strong>{aggregatedTeams[teamId]?.teamStats.fouls ?? 0}</strong></p>
+                  <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(aggregatedTeams[teamId]?.bonus ?? false)}</strong></p>
+                  <p className="metric-row"><span>Subs</span><strong>{aggregatedTeams[teamId]?.teamStats.substitutions ?? 0}</strong></p>
+                  <p className="metric-row metric-wrap">
+                    <span>Active lineup</span>
+                    <strong>
+                      {scoreboardLineup.playerIds.length > 0
+                        ? `${scoreboardLineup.playerIds.map((playerId) => displayPlayerName(teamId, playerId)).join(", ")}${scoreboardLineup.isEstimated ? " (estimated)" : ""}`
+                        : "not set"}
+                    </strong>
+                  </p>
+                  <p className="metric-row metric-wrap">
+                    <span>Top scorer</span>
+                    <strong>
+                      {leadersByTeam[teamId]?.scoringLeader
+                        ? `${displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)} (${leadersByTeam[teamId].scoringLeader?.points})`
+                        : "none"}
+                    </strong>
+                  </p>
+                  <p className="metric-row metric-wrap">
+                    <span>Foul trouble</span>
+                    <strong>
+                      {leadersByTeam[teamId]?.foulLeader
+                        ? formatFoulTroubleLabel(
+                          displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
+                          leadersByTeam[teamId].foulLeader.fouls
+                        )
+                        : "none"}
+                    </strong>
+                  </p>
+                </div>
+              </article>
+            );
+          })}
         </div>
+      </section>
+
+      <section className="card box-score-card">
+        <div className="box-score-header">
+          <h2>Box Score</h2>
+          <div className="box-score-filter-group" aria-label="Box score filter">
+            {boxScoreFilterOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`box-score-filter-chip${boxScoreFilter === option.value ? " box-score-filter-chip-active" : ""}`}
+                onClick={() => setBoxScoreFilter(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {teams.map((teamId) => {
+          const teamTotals = boxScoreByTeam[teamId]?.totals ?? emptyBoxScoreTotals();
+          const playerLines = Object.values(boxScoreByTeam[teamId]?.players ?? {})
+            .map((line) => {
+              const player = playersByTeamId[teamId]?.find((candidate) => candidate.id === line.playerId);
+              return {
+                ...line,
+                name: player?.name ?? `#${line.playerId}`,
+                number: player?.number ?? "",
+              };
+            })
+            .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));
+
+          return (
+            <section key={`box-${teamId}`} className="box-score-team-section">
+              <h3>{displayTeamName(teamId)}</h3>
+              <div className="box-score-table-wrap">
+                <table className="box-score-table">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>PTS</th>
+                      <th>FG</th>
+                      <th>FT</th>
+                      <th>REB</th>
+                      <th>AST</th>
+                      <th>STL</th>
+                      <th>BLK</th>
+                      <th>TO</th>
+                      <th>PF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {playerLines.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="box-score-empty">
+                          No tracked stats for this filter yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      playerLines.map((line) => {
+                        const rebounds = line.reboundsDef + line.reboundsOff;
+                        const playerLabel = line.number ? `${line.number} ${line.name}` : line.name;
+                        return (
+                          <tr key={`${teamId}-${line.playerId}`}>
+                            <td>{playerLabel}</td>
+                            <td>{line.points}</td>
+                            <td>{line.fgMade}-{line.fgAttempts}</td>
+                            <td>{line.ftMade}-{line.ftAttempts}</td>
+                            <td>{rebounds}</td>
+                            <td>{line.assists}</td>
+                            <td>{line.steals}</td>
+                            <td>{line.blocks}</td>
+                            <td>{line.turnovers}</td>
+                            <td>{line.fouls}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Team Totals</td>
+                      <td>{teamTotals.points}</td>
+                      <td>{teamTotals.fgMade}-{teamTotals.fgAttempts}</td>
+                      <td>{teamTotals.ftMade}-{teamTotals.ftAttempts}</td>
+                      <td>{teamTotals.reboundsDef + teamTotals.reboundsOff}</td>
+                      <td>{teamTotals.assists}</td>
+                      <td>{teamTotals.steals}</td>
+                      <td>{teamTotals.blocks}</td>
+                      <td>{teamTotals.turnovers}</td>
+                      <td>{teamTotals.fouls}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
+          );
+        })}
       </section>
 
       <section className="card">
         <h2>Live Insights</h2>
-        {isOpeningInsightWindow ? (
+        {!hasGameStarted ? (
+          <p className="insight-context-note">Game has not started yet. Insights will appear once play begins.</p>
+        ) : null}
+        {hasGameStarted && isOpeningInsightWindow ? (
           <p className="insight-context-note">Opening sample: early possessions can create noisy reads.</p>
         ) : null}
-        {insights.length === 0 ? <p>No insights yet.</p> : null}
-        {aiInsights.length > 0 ? (
+        {hasGameStarted && insights.length === 0 ? (
+          <p className="insight-context-note">No live calls yet. Capture a few more possessions.</p>
+        ) : null}
+        {aiInsights.length > 0 || (hasGameStarted && gameId) || aiRefreshError ? (
           <>
-            <h3 className="insight-subhead">AI Bench Calls</h3>
+            <div className="insight-subhead-row">
+              <h3 className="insight-subhead">AI Bench Calls</h3>
+              <button
+                className="secondary insight-refresh-button"
+                onClick={() => void refreshAiBenchCalls()}
+                disabled={!gameId || isRefreshingAiInsights}
+              >
+                {isRefreshingAiInsights ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+            {aiRefreshError ? <p className="insight-context-note insight-context-note-error">{aiRefreshError}</p> : null}
+            {aiInsights.length > 0 ? (
+              <div className="insight-list">
+                {aiInsights.map((insight) => (
+                  <article key={insight.id} className="insight-item insight-item-ai">
+                    <div className="insight-title-row">
+                      <h3>{formatInsightTypeLabel(insight.type)}</h3>
+                      <span className="insight-badge insight-badge-ai">AI</span>
+                    </div>
+                    <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
+                    <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="insight-context-note">Refresh AI bench calls to load the latest suggestions.</p>
+            )}
+          </>
+        ) : null}
+
+        {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
+          <>
+            <h3 className="insight-subhead">Urgent Coaching Calls</h3>
             <div className="insight-list">
-              {aiInsights.map((insight) => (
-                <article key={insight.id} className="insight-item insight-item-ai">
-                  <div className="insight-title-row">
-                    <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                    <span className="insight-badge insight-badge-ai">AI</span>
-                  </div>
-                  <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
-                  <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
-                </article>
-              ))}
+              {rulesInsights
+                .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type))
+                .map((insight) => (
+                  <article
+                    key={insight.id}
+                    className={`insight-item ${getRuleInsightImportanceClass(insight)}`}
+                  >
+                    <div className="insight-title-row">
+                      <h3>{formatInsightTypeLabel(insight.type)}</h3>
+                      <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
+                        RULE
+                      </span>
+                    </div>
+                    <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
+                    <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
+                  </article>
+                ))}
             </div>
           </>
         ) : null}
 
-        {rulesInsights.length > 0 ? (
+        {rulesInsights.filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
           <>
             <h3 className="insight-subhead">System Alerts</h3>
             <div className="insight-list">
-              {rulesInsights.map((insight) => (
-                <article key={insight.id} className="insight-item">
-                  <div className="insight-title-row">
-                    <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                    <span className="insight-badge insight-badge-rules">RULE</span>
-                  </div>
-                  <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
-                  <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
-                </article>
-              ))}
+              {rulesInsights
+                .filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type))
+                .map((insight) => (
+                  <article
+                    key={insight.id}
+                    className={`insight-item ${getRuleInsightImportanceClass(insight)}`}
+                  >
+                    <div className="insight-title-row">
+                      <h3>{formatInsightTypeLabel(insight.type)}</h3>
+                      <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
+                        RULE
+                      </span>
+                    </div>
+                    <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
+                    <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
+                  </article>
+                ))}
             </div>
           </>
         ) : null}
       </section>
 
       <section className="card">
-        <h2>Recent Events</h2>
-        <div className="stack-list">
-          {(state?.events ?? []).slice(-8).reverse().map((event) => (
-            <article key={event.id} className="film-card event-card">
-              <div>
-                <strong>
-                  #{event.sequence} {event.type.replaceAll("_", " ")}
-                </strong>
-                <p>{formatDashboardEventMeta({
-                  teamId: displayTeamName(event.teamId),
-                  period: event.period,
-                  clockSecondsRemaining: event.clockSecondsRemaining,
-                })}</p>
-                {eventClipMap[event.id] ? (
-                  <small>
-                    Clip at {formatDashboardClock(eventClipMap[event.id].resolvedVideoSecond)} (video {eventClipMap[event.id].videoId})
-                  </small>
-                ) : null}
-              </div>
-              <button
-                className="teal"
-                onClick={() =>
-                  void resolveEventClip(event.id, event.period, event.clockSecondsRemaining)
-                }
-              >
-                Clip
-              </button>
+        <h2>On-Court Rotation</h2>
+        {!rotationContext ? <p>No lineup data yet.</p> : null}
+        <div className="rotation-grid">
+          {rotationContext ? (
+            <article key={rotationContext.teamId} className="film-card rotation-card">
+              <h3>{displayTeamName(rotationContext.teamId)}</h3>
+
+              <p className="rotation-label">Currently in game</p>
+              {rotationContext.onCourt.length === 0 ? (
+                <p className="text-muted">No active lineup reported.</p>
+              ) : (
+                <>
+                  {rotationContext.isEstimatedLineup ? (
+                    <p className="rotation-estimate-note">
+                      Live lineup feed currently has {rotationContext.liveCount}. Filled remaining spots from activity/roster context.
+                    </p>
+                  ) : null}
+                  <div className="rotation-chip-row">
+                    {rotationContext.onCourt.map((playerId) => (
+                      <span key={`${rotationContext.teamId}-on-${playerId}`} className="rotation-chip rotation-chip-on">
+                        {displayPlayerName(rotationContext.teamId, playerId)}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <p className="rotation-label">Sub context</p>
+              {rotationContext.watchNotes.length === 0 ? (
+                <p className="text-muted">No urgent substitution pressure detected.</p>
+              ) : (
+                <div className="stack-list">
+                  {rotationContext.watchNotes.map((note) => (
+                    <p key={`${rotationContext.teamId}-${note.playerId}-${note.reason}`} className={`rotation-note rotation-note-${note.level}`}>
+                      <strong>{displayPlayerName(rotationContext.teamId, note.playerId)}:</strong> {note.reason}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <p className="rotation-label">Available bench</p>
+              {rotationContext.bench.length === 0 ? (
+                <p className="text-muted">No bench list available from roster/state.</p>
+              ) : (
+                <p className="text-muted">{rotationContext.bench.map((playerId) => displayPlayerName(rotationContext.teamId, playerId)).join(", ")}</p>
+              )}
             </article>
-          ))}
+          ) : null}
         </div>
       </section>
+
       </>
       }
+
+      {activePage === "ai" && <>
+      <section className="card ai-page-hero">
+        <div>
+          <p className="eyebrow">Game Intelligence</p>
+          <h2>AI Bench Assistant</h2>
+          <p className="text-muted">Live Q&amp;A, sub recommendations, foul danger, and hot-hand context powered by the current game plus previous-game player trends.</p>
+        </div>
+        <div className="ai-page-actions">
+          <button
+            className="secondary insight-refresh-button"
+            onClick={() => void refreshAiBenchCalls()}
+            disabled={!gameId || isRefreshingAiInsights}
+          >
+            {isRefreshingAiInsights ? "Refreshing..." : "Refresh AI Insights"}
+          </button>
+          <button className="secondary" onClick={() => void loadPromptPreview()} disabled={!gameId}>
+            Refresh Context
+          </button>
+        </div>
+      </section>
+
+      <section className="ai-page-layout">
+        <div className="card ai-chat-card">
+          <div className="ai-chat-header">
+            <div>
+              <h2>In-Game Chat</h2>
+              <p className="text-muted">Ask what adjustment to make right now, who should sub, which player is efficient, or what foul risk is building.</p>
+            </div>
+          </div>
+
+          <div className="ai-quick-question-row">
+            {aiQuickQuestions.map((question) => (
+              <button
+                key={question}
+                className="secondary ai-quick-question"
+                onClick={() => void sendAiChat(question)}
+                disabled={!gameId || isSendingAiChat}
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+
+          <div className="ai-chat-thread">
+            {aiChatMessages.length === 0 ? (
+              <p className="ai-chat-empty">No chat yet. Start with a question about subs, foul trouble, efficiency, or late-game decisions.</p>
+            ) : (
+              aiChatMessages.map((message) => (
+                <article key={message.id} className={`ai-chat-bubble ai-chat-bubble-${message.role}`}>
+                  <div className="ai-chat-bubble-label">{message.role === "assistant" ? "Assistant" : "Coach"}</div>
+                  <p>{message.content}</p>
+                </article>
+              ))
+            )}
+          </div>
+
+          <form
+            className="ai-chat-compose"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendAiChat();
+            }}
+          >
+            <textarea
+              value={aiChatInput}
+              onChange={(event) => setAiChatInput(event.target.value)}
+              placeholder="Ask AI a live coaching question..."
+            />
+            <div className="ai-chat-compose-row">
+              <p className="text-muted ai-chat-status">{aiChatStatus}</p>
+              <button type="submit" disabled={!gameId || isSendingAiChat}>
+                {isSendingAiChat ? "Asking..." : "Ask AI"}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="ai-page-sidebar">
+          <section className="card ai-signal-card-wrap">
+            <h2>Suggested Subs</h2>
+            {aiSubSuggestionCards.length === 0 ? (
+              <p className="text-muted">No immediate sub recommendation right now.</p>
+            ) : (
+              <div className="ai-signal-list">
+                {aiSubSuggestionCards.map((card) => (
+                  <article key={card.id} className={`ai-signal-card ai-signal-card-${card.tone}`}>
+                    <h3>{card.title}</h3>
+                    <p>{card.detail}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card ai-signal-card-wrap">
+            <h2>Foul And Bonus Alerts</h2>
+            {aiFoulAlertCards.length === 0 ? (
+              <p className="text-muted">No major foul or bonus pressure right now.</p>
+            ) : (
+              <div className="ai-signal-list">
+                {aiFoulAlertCards.map((card) => (
+                  <article key={card.id} className={`ai-signal-card ai-signal-card-${card.tone}`}>
+                    <h3>{card.title}</h3>
+                    <p>{card.detail}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card ai-signal-card-wrap">
+            <h2>Hot Hand And Efficiency</h2>
+            {aiEfficiencyCards.length === 0 ? (
+              <p className="text-muted">No clear efficiency edge yet.</p>
+            ) : (
+              <div className="ai-signal-list">
+                {aiEfficiencyCards.map((card) => (
+                  <article key={card.id} className={`ai-signal-card ai-signal-card-${card.tone}`}>
+                    <h3>{card.title}</h3>
+                    <p>{card.detail}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card ai-signal-card-wrap">
+            <h2>Historical Context</h2>
+            <p className="text-muted">{promptPreviewStatus}</p>
+            <div className="ai-history-context">
+              {historicalPromptContext || "Historical team and player context will appear here after the AI context refreshes."}
+            </div>
+          </section>
+        </div>
+      </section>
+      </>}
 
       {activePage === "film" &&
       <section className="card film-grid">
@@ -1272,6 +2442,39 @@ export function App() {
             </div>
           </div>
         </div>
+
+        <div>
+          <h3>Recent Events</h3>
+          <div className="stack-list">
+            {(state?.events ?? []).slice(-8).reverse().map((event) => (
+              <article key={event.id} className="film-card event-card">
+                <div>
+                  <strong>
+                    #{event.sequence} {event.type.replaceAll("_", " ")}
+                  </strong>
+                  <p>{formatDashboardEventMeta({
+                    teamId: displayTeamName(event.teamId),
+                    period: event.period,
+                    clockSecondsRemaining: event.clockSecondsRemaining,
+                  })}</p>
+                  {eventClipMap[event.id] ? (
+                    <small>
+                      Clip at {formatDashboardClock(eventClipMap[event.id].resolvedVideoSecond)} (video {eventClipMap[event.id].videoId})
+                    </small>
+                  ) : null}
+                </div>
+                <button
+                  className="teal"
+                  onClick={() =>
+                    void resolveEventClip(event.id, event.period, event.clockSecondsRemaining)
+                  }
+                >
+                  Clip
+                </button>
+              </article>
+            ))}
+          </div>
+        </div>
       </section>
       }
 
@@ -1296,14 +2499,13 @@ export function App() {
                 onChange={(e) => { if (e.target.files?.[0]) importRoster(e.target.files[0]); e.target.value = ""; }}
               />
             </label>
-            <button className="secondary" onClick={loadSampleTeams}>Load Samples</button>
             <button onClick={() => { setShowNewTeamForm(true); setExpandedTeamId(null); }}>+ New Team</button>
           </div>
         </div>
 
         {rosterTeams.length === 0 && !showNewTeamForm && (
           <p className="text-muted" style={{ marginTop: "0.75rem" }}>
-            No teams yet — click <strong>+ New Team</strong> or <strong>Load Samples</strong> to get started.
+            No teams yet — click <strong>+ New Team</strong> or <strong>Import JSON</strong> to get started.
           </p>
         )}
 
@@ -1327,8 +2529,16 @@ export function App() {
                 maxLength={4}
               />
             </label>
+            <label>
+              Team Color
+              <input
+                type="color"
+                value={newTeamColor}
+                onChange={(e) => setNewTeamColor(e.target.value)}
+              />
+            </label>
             <button onClick={addTeam}>Create Team</button>
-            <button className="secondary" onClick={() => { setShowNewTeamForm(false); setNewTeamName(""); setNewTeamAbbr(""); }}>
+            <button className="secondary" onClick={() => { setShowNewTeamForm(false); setNewTeamName(""); setNewTeamAbbr(""); setNewTeamColor("#4f8cff"); }}>
               Cancel
             </button>
           </div>
@@ -1340,8 +2550,10 @@ export function App() {
               <div className="roster-team-header">
                 <div className="roster-team-identity">
                   <strong className="roster-team-name">{team.name}</strong>
-                  <span className="roster-abbr">{team.abbreviation}</span>
+                  <span className="roster-abbr" style={{ borderColor: team.teamColor ?? undefined, color: team.teamColor ?? undefined }}>{team.abbreviation}</span>
+                  {team.teamColor ? <span className="roster-team-color-swatch" style={{ background: team.teamColor }} aria-hidden="true" /> : null}
                   <span className="text-dim">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
+                  {team.coachStyle ? <span className="roster-coach-style-pill">Coach Style Saved</span> : null}
                 </div>
                 <div className="roster-team-btns">
                   <button
@@ -1363,6 +2575,29 @@ export function App() {
 
               {expandedTeamId === team.id && (
                 <div className="roster-players-area">
+                  <label className="roster-team-note-field">
+                    Team Color
+                    <input
+                      className="roster-inline-input"
+                      type="color"
+                      value={team.teamColor ?? "#4f8cff"}
+                      onChange={(event) => updateTeamColor(team.id, event.target.value)}
+                      style={{ width: "4.5rem", padding: "0.25rem" }}
+                    />
+                  </label>
+                  <label className="roster-team-note-field">
+                    Coaching Style For AI
+                    <textarea
+                      className="roster-team-textarea"
+                      defaultValue={team.coachStyle ?? ""}
+                      placeholder="Example: We want to play fast, pressure the ball, and trust our bench in second-quarter runs."
+                      onBlur={(event) => {
+                        if ((team.coachStyle ?? "") !== event.target.value) {
+                          updateTeamCoachStyle(team.id, event.target.value);
+                        }
+                      }}
+                    />
+                  </label>
                   {team.players.length === 0 && (
                     <p className="text-dim" style={{ marginBottom: "0.5rem" }}>No players yet.</p>
                   )}
@@ -1372,8 +2607,10 @@ export function App() {
                         <th>#</th>
                         <th>Name</th>
                         <th>Pos</th>
+                        <th>Role</th>
                         <th>Height</th>
                         <th>Grade</th>
+                        <th>AI Context</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -1384,8 +2621,10 @@ export function App() {
                             <td><input className="roster-inline-input" value={editPlayerDraft.number} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, number: e.target.value })} style={{ width: "3.5rem" }} /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.name} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, name: e.target.value })} style={{ width: "100%" }} /></td>
                             <td><select className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.role ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, role: e.target.value || undefined })} style={{ width: "8rem" }} placeholder="Bench" list="roster-role-options" /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.height ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, height: e.target.value || undefined })} style={{ width: "4.5rem" }} placeholder={"6'2\""} /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.grade ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, grade: e.target.value || undefined })} style={{ width: "3rem" }} placeholder="11" /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.notes ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, notes: e.target.value || undefined })} style={{ width: "100%" }} placeholder="Minutes cap, ankle soreness, spark off bench" /></td>
                             <td className="roster-row-actions">
                               <button style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => saveEditedPlayer(team.id)}>Save</button>
                               <button className="secondary" style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => { setEditingPlayerId(null); setEditPlayerDraft(null); }}>✕</button>
@@ -1396,8 +2635,10 @@ export function App() {
                             <td><strong>#{player.number}</strong></td>
                             <td>{player.name}</td>
                             <td><span className="pos-badge">{player.position}</span></td>
+                            <td className="text-dim">{player.role ?? "—"}</td>
                             <td className="text-dim">{player.height ?? "—"}</td>
                             <td className="text-dim">{player.grade ? `Gr ${player.grade}` : "—"}</td>
+                            <td className="text-dim roster-notes-cell">{player.notes ?? "—"}</td>
                             <td className="roster-row-actions">
                               <button className="secondary" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => { setEditingPlayerId(player.id); setEditPlayerDraft({ ...player }); }}>Edit</button>
                               <button className="secondary danger-btn" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => removePlayer(team.id, player.id)}>✕</button>
@@ -1413,18 +2654,129 @@ export function App() {
                       <label>Jersey #<input value={newPlayerNum} onChange={(e) => setNewPlayerNum(e.target.value)} placeholder="23" /></label>
                       <label>Name<input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="Player Name" onKeyDown={(e) => e.key === "Enter" && addPlayer(team.id)} /></label>
                       <label>Position<select value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
+                      <label>Role<input value={newPlayerRole} onChange={(e) => setNewPlayerRole(e.target.value)} placeholder="Bench" list="roster-role-options" /></label>
                       <label>Height<input value={newPlayerHeight} onChange={(e) => setNewPlayerHeight(e.target.value)} placeholder={"6'2\""} /></label>
                       <label>Grade<input value={newPlayerGrade} onChange={(e) => setNewPlayerGrade(e.target.value)} placeholder="11" /></label>
+                      <label style={{ gridColumn: "1 / -1" }}>AI Context / Notes<input value={newPlayerNotes} onChange={(e) => setNewPlayerNotes(e.target.value)} placeholder="Injury status, matchup notes, minutes cap, confidence notes" /></label>
                       <button onClick={() => addPlayer(team.id)}>Add Player</button>
                       <button className="secondary" onClick={() => setAddingPlayerForTeam(null)}>Cancel</button>
                     </div>
                   ) : (
-                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos("PG"); setNewPlayerHeight(""); setNewPlayerGrade(""); }}>+ Add Player</button>
+                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos("PG"); setNewPlayerRole("Bench"); setNewPlayerHeight(""); setNewPlayerGrade(""); setNewPlayerNotes(""); }}>+ Add Player</button>
                   )}
                 </div>
               )}
             </div>
           ))}
+        </div>
+        <datalist id="roster-role-options">
+          {ROLE_OPTIONS.map((role) => <option key={role} value={role} />)}
+        </datalist>
+      </section>
+      }
+
+      {activePage === "settings" &&
+      <section className="card">
+        <div className="settings-header-row">
+          <div>
+            <h2>Coach AI Settings</h2>
+            <p className="text-muted">Customize how live coaching insights are generated for this game.</p>
+          </div>
+          <div className="settings-header-actions">
+            <button className="secondary" onClick={() => void loadPromptPreview()}>Show Current Prompt</button>
+            <button onClick={() => void saveAiSettings()}>Save AI Settings</button>
+          </div>
+        </div>
+
+        <p className="settings-status text-muted">{aiSettingsStatus}</p>
+
+        <div className="form-grid">
+          <label style={{ gridColumn: "1 / -1" }}>
+            Team Playing Style
+            <textarea
+              className="settings-textarea"
+              value={aiSettingsDraft.playingStyle}
+              onChange={(event) => setAiSettingsDraft((current) => ({ ...current, playingStyle: event.target.value }))}
+              placeholder="Example: We play fast in transition, pressure passing lanes, and prioritize paint touches."
+            />
+          </label>
+
+          <label style={{ gridColumn: "1 / -1" }}>
+            Team Notes and Context
+            <textarea
+              className="settings-textarea"
+              value={aiSettingsDraft.teamContext}
+              onChange={(event) => setAiSettingsDraft((current) => ({ ...current, teamContext: event.target.value }))}
+              placeholder="Anything a coach wants AI to remember: player limits, matchup concerns, depth, who can handle pressure, etc."
+            />
+          </label>
+
+          <label style={{ gridColumn: "1 / -1" }}>
+            Custom Prompt Modification
+            <textarea
+              className="settings-textarea"
+              value={aiSettingsDraft.customPrompt}
+              onChange={(event) => setAiSettingsDraft((current) => ({ ...current, customPrompt: event.target.value }))}
+              placeholder="Custom instruction for AI output style or priorities."
+            />
+          </label>
+        </div>
+
+        <h3 style={{ marginTop: "1rem" }}>Focus Insight Types</h3>
+        <div className="settings-chip-grid">
+          {AI_FOCUS_OPTIONS.map((option) => {
+            const active = aiSettingsDraft.focusInsights.includes(option.id);
+            return (
+              <button
+                key={option.id}
+                className={`settings-chip ${active ? "settings-chip-active" : "settings-chip-inactive"}`}
+                onClick={() => toggleFocusInsight(option.id)}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="text-muted" style={{ marginTop: "1rem" }}>
+          Saved settings now drive live coach insights. Stats dashboard and operator customization screens can use the same model next.
+        </p>
+
+        {(aiSettings.playingStyle || aiSettings.teamContext || aiSettings.customPrompt) ? (
+          <div className="card" style={{ marginTop: "1rem" }}>
+            <h3>Current Applied Settings</h3>
+            {aiSettings.playingStyle ? <p><strong>Style:</strong> {aiSettings.playingStyle}</p> : null}
+            {aiSettings.teamContext ? <p><strong>Context:</strong> {aiSettings.teamContext}</p> : null}
+            {aiSettings.customPrompt ? <p><strong>Custom Prompt:</strong> {aiSettings.customPrompt}</p> : null}
+          </div>
+        ) : null}
+
+        <div className="card" style={{ marginTop: "1rem" }}>
+          <h3>Prompt Preview (Read-Only)</h3>
+          <p className="text-muted">{promptPreviewStatus}</p>
+          {promptPreview ? (
+            <>
+              <p className="text-muted">
+                Model: {promptPreview.model} • Recent events: {promptPreview.recentEventCount}
+              </p>
+              <div className="prompt-preview-historical-card">
+                <strong>Historical Context (Season + Recent Games)</strong>
+                <p className="text-muted prompt-preview-historical-text">
+                  {historicalPromptContext || "Historical context is not currently available in this prompt."}
+                </p>
+              </div>
+              <label>
+                Current AI Input Prompt
+                <textarea className="settings-textarea prompt-preview-textarea" value={promptPreview.userPrompt} readOnly />
+              </label>
+              <div className="stack-list" style={{ marginTop: "0.6rem" }}>
+                <strong>System Guide Summary</strong>
+                {promptPreview.systemGuide.map((line) => (
+                  <p key={line} className="text-muted" style={{ margin: 0 }}>{line}</p>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       </section>
       }

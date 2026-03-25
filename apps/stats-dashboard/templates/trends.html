@@ -266,17 +266,17 @@
         <div class="stats-grid trends-volatility-grid">
             <div class="stat-card">
                 <div class="stat-label">PPG Range</div>
-                <div class="stat-value" id="ppg-range">--</div>
+                <div class="stat-value" id="ppg-range">0.0</div>
                 <div class="stat-detail">Scoring Variance</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">FG% Std Dev</div>
-                <div class="stat-value" id="fg-std">--</div>
+                <div class="stat-value" id="fg-std">0.0%</div>
                 <div class="stat-detail">Shooting Consistency</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">TO Std Dev</div>
-                <div class="stat-value" id="to-std">--</div>
+                <div class="stat-value" id="to-std">0.0</div>
                 <div class="stat-detail">Turnover Consistency</div>
             </div>
         </div>
@@ -363,5 +363,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='trends.js') }}?v=1.7"></script>
+<script src="{{ url_for('static', filename='trends.js') }}?v=3.1"></script>
 {% endblock %}

@@ -4,6 +4,8 @@ let playerModal = null;
 let currentView = 'cards'; // 'cards' or 'rankings'
 let syncIntervalId = null;
 let lastSyncTime = null;
+let teamCoachStyle = '';
+const EMPTY_STATS_LABEL = 'No Stats';
 const SYNC_INTERVAL_MS = 30000; // Sync every 30 seconds
 const SYNC_API_TIMEOUT_MS = 5000; // 5 second timeout for API calls
 
@@ -13,6 +15,47 @@ const safeFixed = (value, decimals = 1, fallback = '0.0') => {
     const num = Number(value);
     return Number.isFinite(num) ? num.toFixed(decimals) : fallback;
 };
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderCoachStyle() {
+    const coachStyleEl = document.getElementById('players-coach-style');
+    if (!coachStyleEl) return;
+
+    const trimmed = (teamCoachStyle || '').trim();
+    if (!trimmed) {
+        coachStyleEl.classList.add('hidden');
+        coachStyleEl.innerHTML = '';
+        return;
+    }
+
+    coachStyleEl.classList.remove('hidden');
+    coachStyleEl.innerHTML = `
+        <div class="players-coach-style-label">Coaching Style</div>
+        <div class="players-coach-style-text">${escapeHtml(trimmed)}</div>
+    `;
+}
+
+function getRosterRole(player) {
+    return player?.roster_info?.role || '';
+}
+
+function getRosterNotes(player) {
+    return player?.roster_info?.notes || '';
+}
+
+function getNotesSnippet(notes) {
+    const trimmed = (notes || '').trim();
+    if (!trimmed) return '';
+    return trimmed.length > 90 ? `${trimmed.slice(0, 87)}...` : trimmed;
+}
 
 async function fetchJson(url) {
     const response = await fetch(url);
@@ -82,9 +125,11 @@ async function loadPlayers() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         allPlayers = await response.json();
+        teamCoachStyle = allPlayers.find((player) => (player.coach_style || '').trim())?.coach_style || '';
+        renderCoachStyle();
         
         if (allPlayers.length === 0) {
-            showEmptyState('players-container', 'No players recorded yet', '👥');
+            renderZeroPlayerState();
             return;
         }
         
@@ -93,8 +138,22 @@ async function loadPlayers() {
         displayPlayers(allPlayers);
     } catch (error) {
         console.error('Error loading players:', error);
+        teamCoachStyle = '';
+        renderCoachStyle();
         showError('players-container', 'Failed to load players. Please refresh the page.');
     }
+}
+
+function renderZeroPlayerState() {
+    const container = document.getElementById('players-container');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="player-card" style="cursor:default; opacity:0.9;">
+            <div class="player-number">#0</div>
+            <div class="player-name">${EMPTY_STATS_LABEL}</div>
+        </div>
+    `;
 }
 
 async function syncBackendData() {
@@ -212,6 +271,28 @@ async function deletePlayer(playerName) {
     }
 }
 
+function parseOptionalInteger(value) {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return null;
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function savePlayerProfile(playerName, payload) {
+    const response = await fetch(`/api/player/${encodeURIComponent(playerName)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    const responsePayload = await readResponsePayload(response);
+    if (!response.ok) {
+        throw new Error(getResponseErrorMessage(responsePayload, 'Failed to save player profile'));
+    }
+
+    return responsePayload;
+}
+
 function displayPlayers(players) {
     const container = document.getElementById('players-container');
     
@@ -226,10 +307,19 @@ function displayPlayers(players) {
         const card = document.createElement('div');
         card.className = 'player-card';
         const targetName = escapeHtml(player.name || '');
+        const rosterRole = getRosterRole(player);
+        const rosterNotes = getRosterNotes(player);
+        const notesSnippet = getNotesSnippet(rosterNotes);
         card.innerHTML = `
             <button class="player-delete-btn" type="button" aria-label="Delete ${targetName}" style="position:absolute;top:10px;right:10px;background:transparent;border:1px solid var(--border);color:var(--danger);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;">Delete</button>
             <div class="player-number">#${player.number || '-'}</div>
             <div class="player-name">${escapeHtml(player.first_name || player.name)}</div>
+            ${(rosterRole || notesSnippet) ? `
+                <div class="player-card-meta">
+                    ${rosterRole ? `<span class="player-meta-pill">${escapeHtml(rosterRole)}</span>` : ''}
+                    ${notesSnippet ? `<div class="player-meta-note">${escapeHtml(notesSnippet)}</div>` : ''}
+                </div>
+            ` : ''}
         `;
 
         const deleteBtn = card.querySelector('.player-delete-btn');
@@ -354,21 +444,47 @@ async function showPlayerDetail(playerName) {
         // Build roster info section if available
         let rosterHtml = '';
         if (data.roster_info) {
+            const roleHtml = data.roster_info.role ? `
+                <div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-light); font-weight: 700; letter-spacing: 0.5px;">Team Role</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: var(--primary);">${escapeHtml(data.roster_info.role)}</div>
+                </div>
+            ` : '';
+            const notesHtml = data.roster_info.notes ? `
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-light); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 0.35rem;">AI Context / Notes</div>
+                    <div style="font-size: 0.95rem; line-height: 1.5; color: var(--text); white-space: pre-wrap;">${escapeHtml(data.roster_info.notes)}</div>
+                </div>
+            ` : '';
+
             rosterHtml = `
                 <div class="roster-info" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--light-bg); border-radius: 6px; border: 1px solid var(--border);">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem;">
                         <div>
                             <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-light); font-weight: 700; letter-spacing: 0.5px;">Grade</div>
-                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary);">${data.roster_info.grade}</div>
+                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary);">${data.roster_info.grade || '—'}</div>
                         </div>
                         <div>
                             <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-light); font-weight: 700; letter-spacing: 0.5px;">Number</div>
-                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary);">#${data.roster_info.number}</div>
+                            <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary);">${data.roster_info.number ? `#${escapeHtml(String(data.roster_info.number))}` : '—'}</div>
                         </div>
+                        <div>
+                            <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-light); font-weight: 700; letter-spacing: 0.5px;">Position</div>
+                            <div style="font-size: 1rem; font-weight: 700; color: var(--primary);">${escapeHtml(data.roster_info.position || '—')}</div>
+                        </div>
+                        ${roleHtml}
                     </div>
+                    ${notesHtml}
                 </div>
             `;
         }
+
+        const coachStyleHtml = data.coach_style ? `
+            <div class="player-detail-coach-style">
+                <div class="player-detail-coach-style-label">Coaching Style</div>
+                <div class="player-detail-coach-style-text">${escapeHtml(data.coach_style)}</div>
+            </div>
+        ` : '';
         
         // Build advanced stats section if available
         let advancedHtml = '';
@@ -551,14 +667,57 @@ async function showPlayerDetail(playerName) {
                     ${numberDisplay ? `<div class="player-detail-number">${numberDisplay}</div>` : ''}
                     <div class="player-detail-name">${escapeHtml(displayFirstName)}</div>
                 </div>
-                <div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    <button id="edit-player-profile-btn" type="button" class="btn-primary" style="background:transparent;color:var(--primary);border:1px solid rgba(79,140,255,0.45);">
+                        Edit Profile
+                    </button>
                     <button id="delete-player-btn" type="button" class="btn-primary" style="background-color: var(--danger); color: #fff;">
                         Delete Player
                     </button>
                 </div>
             </div>
 
+            ${coachStyleHtml}
             ${rosterHtml}
+
+            <div id="player-profile-editor" class="hidden" style="margin: 1rem 0 1.5rem; padding: 1rem; background: var(--light-bg); border-radius: 6px; border: 1px solid var(--border);">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.8rem;">
+                    <h3 style="margin:0;font-size:1rem;color:var(--primary);">Edit Player Profile</h3>
+                    <div style="font-size:0.82rem;color:var(--text-light);">Update roster metadata used across the site.</div>
+                </div>
+                <form id="player-profile-form">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;">
+                        <label style="display:flex;flex-direction:column;gap:0.35rem;">
+                            <span style="font-size:0.75rem;text-transform:uppercase;color:var(--text-light);">Number</span>
+                            <input type="number" min="0" name="number" value="${escapeHtml(String(data.roster_info?.number ?? data.season_stats.number ?? ''))}" style="padding:0.6rem;border-radius:7px;">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:0.35rem;">
+                            <span style="font-size:0.75rem;text-transform:uppercase;color:var(--text-light);">Grade</span>
+                            <input type="text" name="grade" value="${escapeHtml(String(data.roster_info?.grade ?? ''))}" style="padding:0.6rem;border-radius:7px;">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:0.35rem;">
+                            <span style="font-size:0.75rem;text-transform:uppercase;color:var(--text-light);">Position</span>
+                            <input type="text" name="position" value="${escapeHtml(String(data.roster_info?.position ?? ''))}" style="padding:0.6rem;border-radius:7px;">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:0.35rem;">
+                            <span style="font-size:0.75rem;text-transform:uppercase;color:var(--text-light);">Height</span>
+                            <input type="text" name="height" value="${escapeHtml(String(data.roster_info?.height ?? ''))}" style="padding:0.6rem;border-radius:7px;">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:0.35rem;grid-column:1/-1;">
+                            <span style="font-size:0.75rem;text-transform:uppercase;color:var(--text-light);">Role</span>
+                            <input type="text" name="role" value="${escapeHtml(String(data.roster_info?.role ?? ''))}" style="padding:0.6rem;border-radius:7px;">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:0.35rem;grid-column:1/-1;">
+                            <span style="font-size:0.75rem;text-transform:uppercase;color:var(--text-light);">Notes</span>
+                            <textarea name="notes" rows="3" style="padding:0.6rem;border-radius:7px;resize:vertical;">${escapeHtml(String(data.roster_info?.notes ?? ''))}</textarea>
+                        </label>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.9rem;flex-wrap:wrap;">
+                        <button type="button" id="cancel-player-profile-btn" class="btn-primary" style="background:transparent;color:var(--text);border:1px solid var(--border);">Cancel</button>
+                        <button type="submit" id="save-player-profile-btn" class="btn-primary">Save Profile</button>
+                    </div>
+                </form>
+            </div>
             
             <!-- Season Totals -->
             <div style="margin: 1.5rem 0;">
@@ -738,6 +897,7 @@ async function showPlayerDetail(playerName) {
                         <th>Date</th>
                         <th>Opponent</th>
                         <th>W/L</th>
+                        <th>Edit</th>
                         <th>PTS</th>
                         <th>FG</th>
                         <th>FG%</th>
@@ -773,6 +933,7 @@ async function showPlayerDetail(playerName) {
                                 <td>${game.date}</td>
                                 <td>${game.location === 'away' ? '@' : 'vs'} ${game.opponent}</td>
                                 <td style="font-weight: 700; color: ${game.result === 'W' ? 'var(--success)' : '#dc3545'};">${game.result}</td>
+                                <td><a href="/games?editGameId=${encodeURIComponent(String(game.gameId))}" class="btn-primary" style="display:inline-block;padding:0.3rem 0.55rem;font-size:0.72rem;text-decoration:none;">Edit</a></td>
                                 <td style="font-weight: 700;">${stats.pts}</td>
                                 <td>${stats.fg_made}-${stats.fg_att}</td>
                                 <td>${fgPct}%</td>
@@ -798,6 +959,60 @@ async function showPlayerDetail(playerName) {
         `;
         
         document.getElementById('playerDetail').innerHTML = detailHtml;
+        const editProfileBtn = document.getElementById('edit-player-profile-btn');
+        const profileEditor = document.getElementById('player-profile-editor');
+        const cancelProfileBtn = document.getElementById('cancel-player-profile-btn');
+        const profileForm = document.getElementById('player-profile-form');
+        const saveProfileBtn = document.getElementById('save-player-profile-btn');
+
+        if (editProfileBtn && profileEditor) {
+            editProfileBtn.addEventListener('click', () => {
+                profileEditor.classList.toggle('hidden');
+            });
+        }
+
+        if (cancelProfileBtn && profileEditor) {
+            cancelProfileBtn.addEventListener('click', () => {
+                profileEditor.classList.add('hidden');
+            });
+        }
+
+        if (profileForm) {
+            profileForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+
+                const formData = new FormData(profileForm);
+                const profilePayload = {
+                    number: parseOptionalInteger(formData.get('number')),
+                    grade: String(formData.get('grade') || '').trim(),
+                    position: String(formData.get('position') || '').trim(),
+                    height: String(formData.get('height') || '').trim(),
+                    role: String(formData.get('role') || '').trim(),
+                    notes: String(formData.get('notes') || '').trim()
+                };
+
+                const originalLabel = saveProfileBtn?.textContent || 'Save Profile';
+                try {
+                    if (saveProfileBtn) {
+                        saveProfileBtn.disabled = true;
+                        saveProfileBtn.textContent = 'Saving...';
+                    }
+
+                    await savePlayerProfile(playerName, profilePayload);
+                    await refreshPlayers();
+                    await showPlayerDetail(playerName);
+                } catch (saveError) {
+                    console.error('Error saving player profile:', saveError);
+                    window.alert(`Failed to save player profile: ${saveError.message}`);
+                } finally {
+                    if (saveProfileBtn) {
+                        saveProfileBtn.disabled = false;
+                        saveProfileBtn.textContent = originalLabel;
+                    }
+                }
+            });
+        }
+
         const deleteBtn = document.getElementById('delete-player-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', () => {

@@ -3,9 +3,17 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import {
+  answerGameAiChat,
+  type CoachAiChatResponse,
+  type AiPromptPreview,
+  type GameAiContext,
+  type CoachAiSettings,
   createGame,
   deleteGame,
   deleteEvent,
+  getGameAiContext,
+  getGameAiPromptPreview,
+  getGameAiSettings,
   getGameEvents,
   getGameInsights,
   getRosterTeams,
@@ -13,12 +21,53 @@ import {
   ingestEvent,
   refreshGameAiInsights,
   saveRosterTeams,
+  updateGameAiContext,
+  updateGameAiSettings,
   updateEvent
 } from "./store.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const STATS_DASHBOARD_BASE = (process.env.STATS_DASHBOARD_BASE ?? "http://localhost:5000").replace(/\/+$/, "");
+
+function normalizeTeamColor(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return /^#(?:[0-9a-f]{6}|[0-9a-f]{3})$/.test(normalized) ? normalized : undefined;
+}
+
+function buildStatsSyncHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
+  }
+  return headers;
+}
+
+function syncRosterTeamsToStatsDashboard(teams: unknown[]): void {
+  const preferredTeamId = typeof teams[0] === "object" && teams[0] !== null && "id" in teams[0]
+    ? String((teams[0] as { id?: unknown }).id ?? "")
+    : "";
+
+  void fetch(`${STATS_DASHBOARD_BASE}/api/roster-sync`, {
+    method: "PUT",
+    headers: buildStatsSyncHeaders(),
+    body: JSON.stringify({ teams, preferredTeamId })
+  })
+    .then((response) => {
+      if (!response.ok) {
+        console.warn("[realtime-api] stats roster-sync returned non-OK", response.status);
+      }
+    })
+    .catch((error: unknown) => {
+      console.warn("[realtime-api] stats roster-sync request failed", error);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Optional API-key auth. Set BTA_API_KEY env var to enable.
@@ -94,6 +143,7 @@ app.put("/config/roster-teams", requireApiKey, (req, res) => {
 
   const saved = saveRosterTeams(teams);
   io.emit("roster:teams", saved);
+  syncRosterTeamsToStatsDashboard(saved);
   res.json({ teams: saved });
 });
 
@@ -107,6 +157,7 @@ app.get("/teams", requireApiKey, (_req, res) => {
 
 app.post("/teams", requireApiKey, (req, res) => {
   const { name, abbreviation } = req.body ?? {};
+  const teamColor = normalizeTeamColor(req.body?.teamColor);
   if (!name || !abbreviation) {
     res.status(400).json({ error: "name and abbreviation are required" });
     return;
@@ -118,6 +169,7 @@ app.post("/teams", requireApiKey, (req, res) => {
     id,
     name,
     abbreviation,
+    teamColor,
     players: []
   };
   
@@ -125,12 +177,14 @@ app.post("/teams", requireApiKey, (req, res) => {
   saveRosterTeams(teams);
   io.emit("roster:teams", teams);
   io.emit("team:created", { team: newTeam });
+  syncRosterTeamsToStatsDashboard(teams);
   
   res.status(201).json({ team: newTeam });
 });
 
 app.put("/teams/:teamId", requireApiKey, (req, res) => {
   const { name, abbreviation } = req.body ?? {};
+  const teamColor = normalizeTeamColor(req.body?.teamColor);
   const teams = getRosterTeams();
   const team = teams.find(t => t.id === req.params.teamId);
   
@@ -141,10 +195,14 @@ app.put("/teams/:teamId", requireApiKey, (req, res) => {
   
   if (name) team.name = name;
   if (abbreviation) team.abbreviation = abbreviation;
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, "teamColor")) {
+    team.teamColor = teamColor;
+  }
   
   saveRosterTeams(teams);
   io.emit("roster:teams", teams);
   io.emit("team:updated", { team });
+  syncRosterTeamsToStatsDashboard(teams);
   
   res.json({ team });
 });
@@ -162,6 +220,7 @@ app.delete("/teams/:teamId", requireApiKey, (req, res) => {
   saveRosterTeams(teams);
   io.emit("roster:teams", teams);
   io.emit("team:deleted", { teamId: deleted.id });
+  syncRosterTeamsToStatsDashboard(teams);
   
   res.json({ teamId: deleted.id });
 });
@@ -195,6 +254,7 @@ app.post("/teams/:teamId/players", requireApiKey, (req, res) => {
   saveRosterTeams(teams);
   io.emit("roster:teams", teams);
   io.emit("player:added", { teamId: req.params.teamId, player });
+  syncRosterTeamsToStatsDashboard(teams);
   
   res.status(201).json({ player });
 });
@@ -224,6 +284,7 @@ app.put("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
   saveRosterTeams(teams);
   io.emit("roster:teams", teams);
   io.emit("player:updated", { teamId: req.params.teamId, player });
+  syncRosterTeamsToStatsDashboard(teams);
   
   res.json({ player });
 });
@@ -247,12 +308,21 @@ app.delete("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
   saveRosterTeams(teams);
   io.emit("roster:teams", teams);
   io.emit("player:deleted", { teamId: req.params.teamId, playerId: deleted.id });
+  syncRosterTeamsToStatsDashboard(teams);
   
   res.json({ playerId: deleted.id });
 });
 
 app.post("/games", requireApiKey, (req, res) => {
-  const { gameId, homeTeamId, awayTeamId, opponentName, opponentTeamId } = req.body ?? {};
+  const {
+    gameId,
+    homeTeamId,
+    awayTeamId,
+    opponentName,
+    opponentTeamId,
+    startingLineupByTeam,
+    aiContext
+  } = req.body ?? {};
 
   if (!gameId || !homeTeamId || !awayTeamId) {
     res.status(400).json({ error: "gameId, homeTeamId, awayTeamId are required" });
@@ -264,7 +334,9 @@ app.post("/games", requireApiKey, (req, res) => {
     homeTeamId,
     awayTeamId,
     opponentName,
-    opponentTeamId
+    opponentTeamId,
+    startingLineupByTeam,
+    aiContext
   });
 
   io.to(gameId).emit("game:state", state);
@@ -302,8 +374,113 @@ app.get("/games/:gameId/insights", requireApiKey, async (req, res) => {
     return;
   }
 
-  const insights = await refreshGameAiInsights(req.params.gameId);
+  const forceRefresh = req.query.force === "1" || req.query.force === "true";
+  const insights = await refreshGameAiInsights(req.params.gameId, { force: forceRefresh });
   res.json(insights ?? getGameInsights(req.params.gameId));
+});
+
+app.get("/games/:gameId/ai-settings", requireApiKey, (req, res) => {
+  const state = getGameState(req.params.gameId);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const settings = getGameAiSettings(req.params.gameId);
+  res.json(settings);
+});
+
+app.put("/games/:gameId/ai-settings", requireApiKey, async (req, res) => {
+  const state = getGameState(req.params.gameId);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Partial<CoachAiSettings>;
+  const updated = updateGameAiSettings(req.params.gameId, payload);
+  if (!updated) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const insights = await refreshGameAiInsights(req.params.gameId);
+  if (insights) {
+    io.to(req.params.gameId).emit("game:insights", insights);
+  }
+
+  res.json(updated);
+});
+
+app.get("/games/:gameId/ai-context", requireApiKey, (req, res) => {
+  const state = getGameState(req.params.gameId);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const context = getGameAiContext(req.params.gameId);
+  res.json(context);
+});
+
+app.put("/games/:gameId/ai-context", requireApiKey, async (req, res) => {
+  const state = getGameState(req.params.gameId);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Partial<GameAiContext>;
+  const updated = updateGameAiContext(req.params.gameId, payload);
+  if (!updated) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const insights = await refreshGameAiInsights(req.params.gameId, { force: true });
+  if (insights) {
+    io.to(req.params.gameId).emit("game:insights", insights);
+  }
+
+  res.json(updated);
+});
+
+app.get("/games/:gameId/ai-prompt-preview", requireApiKey, (req, res) => {
+  const state = getGameState(req.params.gameId);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const preview = getGameAiPromptPreview(req.params.gameId);
+  if (!preview) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  res.json(preview as AiPromptPreview);
+});
+
+app.post("/games/:gameId/ai-chat", requireApiKey, async (req, res) => {
+  const state = getGameState(req.params.gameId);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  const question = typeof req.body?.question === "string" ? req.body.question : "";
+  if (!question.trim()) {
+    res.status(400).json({ error: "question is required" });
+    return;
+  }
+
+  const response = await answerGameAiChat(req.params.gameId, question, req.body?.history);
+  if (!response) {
+    res.status(503).json({ error: "ai chat unavailable" });
+    return;
+  }
+
+  res.json(response as CoachAiChatResponse);
 });
 
 app.get("/games/:gameId/events", requireApiKey, (req, res) => {

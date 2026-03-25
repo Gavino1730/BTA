@@ -3,6 +3,7 @@
 {% block content %}
 <div class="players-page">
     <h1>Players</h1>
+    <div id="players-coach-style" class="players-coach-style hidden"></div>
     
     <div class="players-filter">
         <div class="view-toggle">
@@ -80,5 +81,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='players.js') }}?v=1.9"></script>
+<script src="{{ url_for('static', filename='players.js') }}?v=3.3"></script>
 {% endblock %}

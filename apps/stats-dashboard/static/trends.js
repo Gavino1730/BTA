@@ -4,6 +4,16 @@ let playerCharts = {};
 let allPlayers = [];
 let currentTrendsData = null;
 let comprehensiveInsights = null;
+const EMPTY_STATS_LABEL = 'No Stats';
+const COMPARISON_STATS = [
+    { key: 'ppg', label: 'Points Per Game' },
+    { key: 'rpg', label: 'Rebounds Per Game' },
+    { key: 'apg', label: 'Assists Per Game' },
+    { key: 'tpg', label: 'Turnovers Per Game', lowerBetter: true },
+    { key: 'fg_pct', label: 'Field Goal %' },
+    { key: 'fg3_pct', label: '3-Point %' },
+    { key: 'ft_pct', label: 'Free Throw %' }
+];
 
 const isFiniteNumber = (value) => Number.isFinite(Number(value));
 const toNumber = (value, fallback = 0) => (isFiniteNumber(value) ? Number(value) : fallback);
@@ -17,6 +27,42 @@ const safeFixed = (value, decimals = 1, fallback = '0.0') => {
     const num = Number(value);
     return Number.isFinite(num) ? num.toFixed(decimals) : fallback;
 };
+
+function createZeroTeamTrends() {
+    return {
+        games: [0],
+        opponents: [EMPTY_STATS_LABEL],
+        dates: [''],
+        vc_score: [0],
+        opp_score: [0],
+        fg_pct: [0],
+        fg3_pct: [0],
+        asst: [0],
+        to: [0],
+        reb: [0],
+        oreb: [0],
+        dreb: [0],
+        stl: [0],
+        blk: [0],
+        ft: [0],
+        fta: [0]
+    };
+}
+
+function createZeroPlayerTrends() {
+    return {
+        games: [0],
+        opponents: [EMPTY_STATS_LABEL],
+        dates: [''],
+        pts: [0],
+        fg: [0],
+        fg_att: [0],
+        fg3: [0],
+        fg3_att: [0],
+        reb: [0],
+        asst: [0]
+    };
+}
 
 async function fetchJson(url) {
     const response = await fetch(url);
@@ -125,6 +171,15 @@ function setupPlayerSelector() {
     while (select.options.length > 1) {
         select.remove(1);
     }
+
+    if (allPlayers.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = EMPTY_STATS_LABEL;
+        select.appendChild(option);
+        void loadPlayerTrends('');
+        return;
+    }
     
     allPlayers.forEach(player => {
         const option = document.createElement('option');
@@ -141,15 +196,16 @@ function setupPlayerSelector() {
 }
 
 async function loadTeamTrends() {
+    let trends = createZeroTeamTrends();
+
     try {
-        const trends = await fetchJson('/api/team-trends');
-        currentTrendsData = trends;  // Store for AI analysis
-        
-        // Validate data
-        if (!trends || !trends.games || trends.games.length === 0) {
+        const response = await fetchJson('/api/team-trends');
+        if (response && response.games && response.games.length > 0) {
+            trends = response;
+        } else {
             console.warn('No game data available for trends');
-            return;
         }
+        currentTrendsData = trends;  // Store for AI analysis
         
         // Sort by date to ensure chronological order
         const gameIds = trends.games;
@@ -660,15 +716,98 @@ async function loadTeamTrends() {
         }
     } catch (error) {
         console.error('Error loading team trends:', error);
+        currentTrendsData = trends;
+
+        const gameIds = trends.games;
+        const sortedIndices = gameIds.map((_, i) => i);
+        const sortedOpp = sortedIndices.map(i => trends.opponents[i]);
+        const sortedVcScore = sortedIndices.map(i => toNumber(trends.vc_score[i]));
+        const sortedOppScore = sortedIndices.map(i => toNumber(trends.opp_score[i]));
+        const sortedFgPct = sortedIndices.map(i => toNumber(trends.fg_pct[i]));
+        const sortedFg3Pct = sortedIndices.map(i => toNumber(trends.fg3_pct[i]));
+        const sortedAsst = sortedIndices.map(i => toNumber(trends.asst[i]));
+        const sortedTo = sortedIndices.map(i => toNumber(trends.to[i]));
+        const sortedReb = sortedIndices.map(i => toNumber(trends.reb[i]));
+        const sortedOreb = sortedIndices.map(i => toNumber(trends.oreb[i]));
+        const sortedStl = sortedIndices.map(i => toNumber(trends.stl[i]));
+        const sortedBlk = sortedIndices.map(i => toNumber(trends.blk[i]));
+        const sortedFt = sortedIndices.map(i => toNumber(trends.ft[i]));
+        const sortedFta = sortedIndices.map(i => toNumber(trends.fta[i]));
+        const isMobile = window.innerWidth < 768;
+
+        const scoringCtx = document.getElementById('teamScoringChart')?.getContext('2d');
+        if (scoringCtx) {
+            if (teamCharts.scoring) teamCharts.scoring.destroy();
+            teamCharts.scoring = new Chart(scoringCtx, {
+                type: 'line',
+                data: { labels: sortedOpp, datasets: [{ label: 'Team', data: sortedVcScore, borderColor: '#4169E1', backgroundColor: 'rgba(65, 105, 225, 0.1)', tension: 0.3, fill: true, pointRadius: 5, pointBackgroundColor: '#4169E1', borderWidth: 2 }, { label: 'Opponents', data: sortedOppScore, borderColor: '#9E9E9E', backgroundColor: 'rgba(158, 158, 158, 0.1)', tension: 0.3, fill: true, pointRadius: 5, pointBackgroundColor: '#9E9E9E', borderWidth: 2 }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        const shootingCtx = document.getElementById('teamShootingChart')?.getContext('2d');
+        if (shootingCtx) {
+            if (teamCharts.shooting) teamCharts.shooting.destroy();
+            teamCharts.shooting = new Chart(shootingCtx, {
+                type: 'bar',
+                data: { labels: sortedOpp, datasets: [{ label: 'FG%', data: sortedFgPct, backgroundColor: 'rgba(65, 105, 225, 0.8)', borderColor: '#4169E1', borderWidth: 1 }, { label: '3P%', data: sortedFg3Pct, backgroundColor: 'rgba(158, 158, 158, 0.8)', borderColor: '#9E9E9E', borderWidth: 1 }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        const reboundingCtx = document.getElementById('teamReboundingChart')?.getContext('2d');
+        if (reboundingCtx) {
+            if (teamCharts.rebounding) teamCharts.rebounding.destroy();
+            teamCharts.rebounding = new Chart(reboundingCtx, {
+                type: 'line',
+                data: { labels: sortedOpp, datasets: [{ label: 'Total Rebounds', data: sortedReb, borderColor: '#4169E1', backgroundColor: 'rgba(65, 105, 225, 0.15)', tension: 0.35, fill: true, pointRadius: isMobile ? 4 : 6, pointBackgroundColor: '#4169E1', pointBorderColor: '#fff', pointBorderWidth: 2, borderWidth: 3 }, { label: 'Offensive Rebounds', data: sortedOreb, borderColor: '#32CD32', backgroundColor: 'rgba(50, 205, 50, 0.15)', tension: 0.35, fill: true, pointRadius: isMobile ? 4 : 6, pointBackgroundColor: '#32CD32', pointBorderColor: '#fff', pointBorderWidth: 2, borderWidth: 3 }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        const astCtx = document.getElementById('teamAstChart')?.getContext('2d');
+        if (astCtx) {
+            if (teamCharts.ast) teamCharts.ast.destroy();
+            teamCharts.ast = new Chart(astCtx, {
+                type: 'line',
+                data: { labels: sortedOpp, datasets: [{ label: 'Assists', data: sortedAsst, borderColor: '#4169E1', backgroundColor: 'rgba(65, 105, 225, 0.1)', tension: 0.3, fill: true, pointRadius: 5, pointBackgroundColor: '#4169E1', borderWidth: 2 }, { label: 'Turnovers', data: sortedTo, borderColor: '#9E9E9E', backgroundColor: 'rgba(158, 158, 158, 0.1)', tension: 0.3, fill: true, pointRadius: 5, pointBackgroundColor: '#9E9E9E', borderWidth: 2 }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        const defenseCtx = document.getElementById('teamDefenseChart')?.getContext('2d');
+        if (defenseCtx) {
+            if (teamCharts.defense) teamCharts.defense.destroy();
+            teamCharts.defense = new Chart(defenseCtx, {
+                type: 'bar',
+                data: { labels: sortedOpp, datasets: [{ label: 'Steals', data: sortedStl, backgroundColor: 'rgba(255, 140, 0, 0.85)' }, { label: 'Blocks', data: sortedBlk, backgroundColor: 'rgba(220, 20, 60, 0.85)' }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        const ftCtx = document.getElementById('teamFTChart')?.getContext('2d');
+        if (ftCtx) {
+            if (teamCharts.ft) teamCharts.ft.destroy();
+            teamCharts.ft = new Chart(ftCtx, {
+                type: 'line',
+                data: { labels: sortedOpp, datasets: [{ label: 'FT%', data: sortedFt.map((ft, idx) => safeRatio(ft, sortedFta[idx], 100)), borderColor: '#9932CC', backgroundColor: 'rgba(153, 50, 204, 0.15)', tension: 0.35, fill: true, pointRadius: isMobile ? 4 : 6, pointBackgroundColor: '#9932CC', pointBorderColor: '#fff', pointBorderWidth: 2, borderWidth: 3 }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
     }
 }
 
 async function loadPlayerTrends(playerName) {
+    let trends = createZeroPlayerTrends();
+
     try {
-        const trends = await fetchJson(`/api/player-trends/${playerName}`);
-        if (!trends || !trends.games || trends.games.length === 0) {
-            console.warn('No game data available for player trends');
-            return;
+        if (playerName) {
+            const response = await fetchJson(`/api/player-trends/${playerName}`);
+            if (response && response.games && response.games.length > 0) {
+                trends = response;
+            } else {
+                console.warn('No game data available for player trends');
+            }
         }
         
         // Sort by date to ensure chronological order
@@ -1009,6 +1148,9 @@ async function loadPlayerTrends(playerName) {
         });
     } catch (error) {
         console.error('Error loading player trends:', error);
+        if (playerName) {
+            return loadPlayerTrends('');
+        }
     }
 }
 
@@ -1067,6 +1209,54 @@ function displayComprehensiveInsights() {
     
     // Display player insights
     displayPlayerInsights();
+}
+
+function renderZeroComparisonState(title = '0 vs 0') {
+    const container = document.getElementById('comparison-results');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    const headerDiv = document.createElement('div');
+    headerDiv.style.gridColumn = '1 / -1';
+    headerDiv.style.textAlign = 'center';
+    headerDiv.style.marginBottom = '1rem';
+    const h3 = document.createElement('h3');
+    h3.textContent = title;
+    headerDiv.appendChild(h3);
+    container.appendChild(headerDiv);
+
+    COMPARISON_STATS.forEach((stat) => {
+        const statDiv = document.createElement('div');
+        statDiv.className = 'comparison-stat';
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'comparison-stat-name';
+        nameDiv.textContent = stat.label;
+        statDiv.appendChild(nameDiv);
+
+        const valuesDiv = document.createElement('div');
+        valuesDiv.className = 'comparison-values';
+
+        const value1Div = document.createElement('div');
+        value1Div.className = 'comparison-value';
+        value1Div.textContent = formatStatValue(0, stat.key);
+        valuesDiv.appendChild(value1Div);
+
+        const vsDiv = document.createElement('div');
+        vsDiv.style.color = 'var(--text-light)';
+        vsDiv.style.fontSize = '0.8rem';
+        vsDiv.textContent = 'vs';
+        valuesDiv.appendChild(vsDiv);
+
+        const value2Div = document.createElement('div');
+        value2Div.className = 'comparison-value';
+        value2Div.textContent = formatStatValue(0, stat.key);
+        valuesDiv.appendChild(value2Div);
+
+        statDiv.appendChild(valuesDiv);
+        container.appendChild(statDiv);
+    });
 }
 
 function displayTeamInsights() {
@@ -1271,6 +1461,15 @@ function setupComparisonSelectors() {
     while (player2Select.options.length > 1) {
         player2Select.remove(1);
     }
+
+    renderZeroComparisonState();
+
+    if (allPlayers.length === 0) {
+        compareButton.disabled = true;
+        return;
+    }
+
+    compareButton.disabled = false;
     
     // Populate player options
     allPlayers.forEach(player => {
@@ -1312,22 +1511,12 @@ function displayComparison(comparison) {
     const container = document.getElementById('comparison-results');
     
     if (!comparison.players || comparison.players.length < 2) {
-        container.innerHTML = '<div class="error">Unable to load comparison data</div>';
+        renderZeroComparisonState();
         return;
     }
     
     const player1 = comparison.players[0];
     const player2 = comparison.players[1];
-    
-    const compareStats = [
-        { key: 'ppg', label: 'Points Per Game' },
-        { key: 'rpg', label: 'Rebounds Per Game' },
-        { key: 'apg', label: 'Assists Per Game' },
-        { key: 'tpg', label: 'Turnovers Per Game', lowerBetter: true },
-        { key: 'fg_pct', label: 'Field Goal %' },
-        { key: 'fg3_pct', label: '3-Point %' },
-        { key: 'ft_pct', label: 'Free Throw %' }
-    ];
     
     // Clear container
     container.innerHTML = '';
@@ -1343,7 +1532,7 @@ function displayComparison(comparison) {
     container.appendChild(headerDiv);
     
     // Add comparison stats
-    compareStats.forEach(stat => {
+    COMPARISON_STATS.forEach(stat => {
         const val1 = player1.basic_stats?.[stat.key] || 0;
         const val2 = player2.basic_stats?.[stat.key] || 0;
         

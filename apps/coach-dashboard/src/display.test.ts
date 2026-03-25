@@ -23,10 +23,11 @@ describe("coach dashboard NFHS display helpers", () => {
     expect(formatDashboardAnchorSummary({ period: "Q1", gameClockSeconds: 480, videoSecond: 12 })).toBe("Q1 · game 08:00 · video 00:12");
   });
 
-  it("shows bonus state and foul-out risk using NFHS thresholds", () => {
+  it("shows bonus state, foul-out risk, and fouled-out status using NFHS thresholds", () => {
     expect(formatBonusIndicator(true)).toBe("ON");
     expect(formatBonusIndicator(false)).toBe("OFF");
     expect(formatFoulTroubleLabel("p4", 4)).toBe("p4 (4) foul-out risk");
+    expect(formatFoulTroubleLabel("p5", 5)).toBe("p5 (5) FOULED OUT");
     expect(formatFoulTroubleLabel("p2", 2)).toBe("p2 (2)");
   });
 });

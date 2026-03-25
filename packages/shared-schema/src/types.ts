@@ -197,12 +197,16 @@ export interface RosterPlayer {
   position: string;
   height?: string;
   grade?: string;
+  role?: string;
+  notes?: string;
 }
 
 export interface RosterTeam {
   id: string;
   name: string;
   abbreviation: string;
+  teamColor?: string;
+  coachStyle?: string;
   players: RosterPlayer[];
 }
 

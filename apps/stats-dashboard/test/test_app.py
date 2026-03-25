@@ -192,6 +192,135 @@ def test_api_delete_player_returns_json(client):
     assert verify_response.status_code == 404
 
 
+def test_api_update_game_recomputes_stats(client):
+    player_name = "Edit Game Test"
+    game_id = _seed_test_game(client, "Editable Academy", player_name=player_name)
+
+    update_payload = {
+        "date": "Mar 23, 2026",
+        "opponent": "Editable Academy Updated",
+        "vc_score": 61,
+        "opp_score": 52,
+        "location": "away",
+        "team_stats": {
+            "fg": 21,
+            "fga": 44,
+            "fg3": 5,
+            "fg3a": 12,
+            "ft": 14,
+            "fta": 17,
+            "oreb": 6,
+            "dreb": 23,
+            "reb": 29,
+            "asst": 15,
+            "to": 8,
+            "stl": 8,
+            "blk": 4,
+            "fouls": 13,
+        },
+        "player_stats": [
+            {
+                "number": 87,
+                "name": player_name,
+                "fg_made": 8,
+                "fg_att": 15,
+                "fg3_made": 2,
+                "fg3_att": 5,
+                "ft_made": 4,
+                "ft_att": 5,
+                "oreb": 2,
+                "dreb": 5,
+                "fouls": 1,
+                "stl": 3,
+                "to": 2,
+                "blk": 1,
+                "asst": 4,
+                "plus_minus": 11,
+            }
+        ],
+    }
+
+    response = client.put(
+        f"/api/game/{game_id}",
+        data=json.dumps(update_payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["gameId"] == game_id
+    assert payload["game"]["opponent"] == "Editable Academy Updated"
+    assert payload["game"]["team_stats"]["reb"] == 29
+
+    game_response = client.get(f"/api/game/{game_id}")
+    assert game_response.status_code == 200
+    game_payload = game_response.get_json()
+    assert game_payload["location"] == "away"
+    assert game_payload["player_stats"][0]["pts"] == 22
+
+    player_response = client.get(f"/api/player/{player_name}")
+    assert player_response.status_code == 200
+    player_payload = player_response.get_json()
+    assert player_payload["season_stats"]["pts"] == 22
+    assert player_payload["season_stats"]["asst"] == 4
+    assert player_payload["season_stats"]["reb"] == 7
+
+
+def test_api_update_game_rejects_invalid_box_score(client):
+    game_id = _seed_test_game(client, "Invalid Edit Academy", player_name="Invalid Edit Test")
+    invalid_payload = {
+        "date": "Mar 24, 2026",
+        "opponent": "Invalid Edit Academy",
+        "vc_score": 50,
+        "opp_score": 49,
+        "location": "home",
+        "team_stats": {
+            "fg": 10,
+            "fga": 20,
+            "fg3": 2,
+            "fg3a": 7,
+            "ft": 8,
+            "fta": 10,
+            "oreb": 4,
+            "dreb": 18,
+            "reb": 22,
+            "asst": 7,
+            "to": 6,
+            "stl": 5,
+            "blk": 1,
+            "fouls": 9,
+        },
+        "player_stats": [
+            {
+                "number": 7,
+                "name": "Invalid Edit Test",
+                "fg_made": 6,
+                "fg_att": 5,
+                "fg3_made": 1,
+                "fg3_att": 2,
+                "ft_made": 1,
+                "ft_att": 2,
+                "oreb": 1,
+                "dreb": 2,
+                "fouls": 1,
+                "stl": 1,
+                "to": 1,
+                "blk": 0,
+                "asst": 1,
+                "plus_minus": 3,
+            }
+        ],
+    }
+
+    response = client.put(
+        f"/api/game/{game_id}",
+        data=json.dumps(invalid_payload),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert "fg_made cannot exceed fg_att" in response.get_json()["error"]
+
+
 # ---------------------------------------------------------------------------
 # Ingest endpoint — happy path
 # ---------------------------------------------------------------------------
@@ -258,6 +387,200 @@ def test_ingest_game_upsert(client):
     r3 = client.get(f"/api/game/{game_id}")
     assert r3.status_code == 200
     assert r3.get_json()["vc_score"] == 60
+
+
+def test_ingest_abbreviated_name_maps_to_roster_player(client):
+    roster_payload = {
+        "teams": [
+            {
+                "id": "team-test",
+                "name": "Test Team",
+                "players": [
+                    {
+                        "number": 12,
+                        "name": "Taylor Morgan",
+                        "position": "G",
+                    }
+                ],
+            }
+        ],
+        "preferredTeamId": "team-test",
+    }
+    roster_response = client.put(
+        "/api/roster-sync",
+        data=json.dumps(roster_payload),
+        content_type="application/json",
+    )
+    assert roster_response.status_code == 200
+
+    ingest_payload = {
+        "date": "Mar 26, 2026",
+        "opponent": "Alias Mapping Academy",
+        "vc_score": 40,
+        "opp_score": 35,
+        "location": "home",
+        "team_stats": {
+            "fg": 14,
+            "fga": 30,
+            "fg3": 2,
+            "fg3a": 8,
+            "ft": 10,
+            "fta": 12,
+            "oreb": 4,
+            "dreb": 18,
+            "reb": 22,
+            "asst": 9,
+            "to": 7,
+            "stl": 5,
+            "blk": 2,
+            "fouls": 11,
+        },
+        "player_stats": [
+            {
+                "number": 12,
+                "name": "T Morgan",
+                "fg_made": 4,
+                "fg_att": 10,
+                "fg3_made": 1,
+                "fg3_att": 3,
+                "ft_made": 3,
+                "ft_att": 4,
+                "oreb": 1,
+                "dreb": 3,
+                "fouls": 2,
+                "stl": 1,
+                "to": 1,
+                "blk": 0,
+                "asst": 2,
+                "pts": 12,
+                "plus_minus": 6,
+            }
+        ],
+    }
+    ingest_response = client.post(
+        "/api/ingest-game",
+        data=json.dumps(ingest_payload),
+        content_type="application/json",
+    )
+    assert ingest_response.status_code == 201
+
+    players_response = client.get("/api/players")
+    assert players_response.status_code == 200
+    players = players_response.get_json()
+
+    alias_entries = [
+        p for p in players
+        if p.get("name") in ("T Morgan", "Taylor Morgan")
+    ]
+    assert len(alias_entries) == 1
+    assert alias_entries[0]["name"] == "Taylor Morgan"
+    assert alias_entries[0].get("games", 0) >= 1
+
+
+def test_roster_sync_exposes_player_context_fields(client):
+    roster_payload = {
+        "teams": [
+            {
+                "id": "team-context",
+                "name": "Context Team",
+                "teamColor": "#12abef",
+                "coachStyle": "Play fast, trust the bench, and pressure passing lanes.",
+                "players": [
+                    {
+                        "number": 7,
+                        "name": "Jordan Fields",
+                        "position": "G",
+                        "grade": "11",
+                        "role": "Bench guard",
+                        "notes": "Returning from ankle sprain; keep first shift short.",
+                    }
+                ],
+            }
+        ],
+        "preferredTeamId": "team-context",
+    }
+
+    roster_response = client.put(
+        "/api/roster-sync",
+        data=json.dumps(roster_payload),
+        content_type="application/json",
+    )
+    assert roster_response.status_code == 200
+
+    players_response = client.get("/api/players")
+    assert players_response.status_code == 200
+    players = players_response.get_json()
+    context_player = next((p for p in players if p.get("name") == "Jordan Fields"), None)
+    assert context_player is not None
+    assert context_player.get("coach_style") == "Play fast, trust the bench, and pressure passing lanes."
+    assert context_player.get("roster_info", {}).get("role") == "Bench guard"
+    assert context_player.get("roster_info", {}).get("notes") == "Returning from ankle sprain; keep first shift short."
+
+    detail_response = client.get("/api/player/Jordan%20Fields")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.get_json()
+    assert detail_payload.get("coach_style") == "Play fast, trust the bench, and pressure passing lanes."
+    assert detail_payload.get("roster_info", {}).get("role") == "Bench guard"
+    assert detail_payload.get("roster_info", {}).get("notes") == "Returning from ankle sprain; keep first shift short."
+
+    teams_response = client.get("/api/teams")
+    assert teams_response.status_code == 200
+    primary_team = teams_response.get_json()["teams"][0]
+    assert primary_team.get("teamColor") == "#12abef"
+
+
+def test_update_player_profile_via_abbreviated_name_updates_existing_roster_entry(client):
+    roster_payload = {
+        "teams": [
+            {
+                "id": "team-profile-edit",
+                "name": "Profile Team",
+                "players": [
+                    {
+                        "number": 13,
+                        "name": "Taylor Morgan",
+                        "position": "G",
+                        "grade": "11",
+                    }
+                ],
+            }
+        ],
+        "preferredTeamId": "team-profile-edit",
+    }
+
+    roster_response = client.put(
+        "/api/roster-sync",
+        data=json.dumps(roster_payload),
+        content_type="application/json",
+    )
+    assert roster_response.status_code == 200
+
+    update_response = client.post(
+        "/api/player/T%20Morgan",
+        data=json.dumps(
+            {
+                "number": 23,
+                "grade": "12",
+                "position": "F",
+                "height": "6'2\"",
+                "role": "Wing stopper",
+                "notes": "Updated from player modal",
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert update_response.status_code == 201
+    saved_player = update_response.get_json()["player"]
+    assert saved_player["name"] == "Taylor Morgan"
+    assert saved_player["number"] == 23
+    assert saved_player["grade"] == "12"
+    assert saved_player["position"] == "F"
+    assert saved_player["role"] == "Wing stopper"
+
+    roster_players = client.get("/api/roster/players").get_json()
+    matching_entries = [p for p in roster_players if p.get("name") in ("Taylor Morgan", "T Morgan")]
+    assert len(matching_entries) == 1
 
 
 # ---------------------------------------------------------------------------

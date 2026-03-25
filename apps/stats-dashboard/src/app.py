@@ -8,6 +8,7 @@ from functools import lru_cache
 import json
 import os
 import logging
+import re
 import threading
 from datetime import datetime
 from urllib.parse import quote
@@ -49,10 +50,23 @@ def _slugify_team_name(name: str) -> str:
     return normalized or "team"
 
 
+def _normalize_team_color(value) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    normalized = value.strip().lower()
+    if re.fullmatch(r"#(?:[0-9a-f]{6}|[0-9a-f]{3})", normalized):
+        return normalized
+
+    return ""
+
+
 def _build_realtime_roster_teams(roster_payload: dict) -> list:
     team_name = str(roster_payload.get("team") or "Team").strip() or "Team"
     abbreviation = "".join(ch for ch in team_name if ch.isalnum()).upper()[:4] or "TEAM"
     team_id = f"team-{_slugify_team_name(team_name)}"
+    team_color = _normalize_team_color(roster_payload.get("teamColor"))
+    coach_style = str(roster_payload.get("coachStyle") or "").strip()
 
     players = []
     for player in roster_payload.get("roster", []):
@@ -74,6 +88,8 @@ def _build_realtime_roster_teams(roster_payload: dict) -> list:
                 "position": str(player.get("position") or "").strip() or "",
                 "height": str(player.get("height") or "").strip() or None,
                 "grade": str(player.get("grade") or "").strip() or None,
+                "role": str(player.get("role") or "").strip() or None,
+                "notes": str(player.get("notes") or "").strip() or None,
             }
         )
 
@@ -82,6 +98,8 @@ def _build_realtime_roster_teams(roster_payload: dict) -> list:
             "id": team_id,
             "name": team_name,
             "abbreviation": abbreviation,
+            "teamColor": team_color or None,
+            "coachStyle": coach_style or None,
             "players": players,
         }
     ]
@@ -177,11 +195,11 @@ def add_security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Allow cross-origin writes from operator and coach dashboard apps.
-    if request.path in ["/api/ingest-game", "/api/roster-sync"]:
+    # Allow cross-origin API requests from operator and coach dashboard apps.
+    if request.path in ["/api/ingest-game", "/api/roster-sync"] or request.path.startswith("/api/ai/"):
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Api-Key"
-        response.headers["Access-Control-Allow-Methods"] = "POST, PUT, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     return response
 
 
@@ -241,6 +259,9 @@ def reload_data():
     with reload_lock:
         try:
             data.reload()
+            _recompute_season_stats(data.stats_data, data.roster)
+            with open(Config.STATS_FILE, "w") as sf:
+                json.dump(data.stats_data, sf, indent=2)
             # Also reinitialize advanced stats calculator with fresh data
             global advanced_calc
             advanced_calc = AdvancedStatsCalculator(data.stats_data)
@@ -289,6 +310,188 @@ def _build_game_dict(game_id: int, payload: dict) -> dict:
     }
 
 
+TEAM_STAT_FIELDS = (
+    "fg",
+    "fga",
+    "fg3",
+    "fg3a",
+    "ft",
+    "fta",
+    "oreb",
+    "dreb",
+    "reb",
+    "asst",
+    "to",
+    "stl",
+    "blk",
+    "fouls",
+)
+
+PLAYER_STAT_FIELDS = (
+    "fg_made",
+    "fg_att",
+    "fg3_made",
+    "fg3_att",
+    "ft_made",
+    "ft_att",
+    "oreb",
+    "dreb",
+    "fouls",
+    "stl",
+    "to",
+    "blk",
+    "asst",
+    "plus_minus",
+)
+
+ALLOWED_GAME_LOCATIONS = {"home", "away", "neutral"}
+
+
+def _coerce_int_field(value, field_name: str, allow_negative: bool = False) -> int:
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+
+    if not allow_negative and coerced < 0:
+        raise ValueError(f"{field_name} cannot be negative")
+
+    return coerced
+
+
+def _build_team_stats_from_players(player_stats: list[dict]) -> dict:
+    totals = {field: 0 for field in TEAM_STAT_FIELDS}
+    for player in player_stats:
+        totals["fg"] += player.get("fg_made", 0)
+        totals["fga"] += player.get("fg_att", 0)
+        totals["fg3"] += player.get("fg3_made", 0)
+        totals["fg3a"] += player.get("fg3_att", 0)
+        totals["ft"] += player.get("ft_made", 0)
+        totals["fta"] += player.get("ft_att", 0)
+        totals["oreb"] += player.get("oreb", 0)
+        totals["dreb"] += player.get("dreb", 0)
+        totals["asst"] += player.get("asst", 0)
+        totals["to"] += player.get("to", 0)
+        totals["stl"] += player.get("stl", 0)
+        totals["blk"] += player.get("blk", 0)
+        totals["fouls"] += player.get("fouls", 0)
+
+    totals["reb"] = totals["oreb"] + totals["dreb"]
+    return totals
+
+
+def _sanitize_team_stats(team_stats: dict | None, player_stats: list[dict]) -> dict:
+    if team_stats is None:
+        return _build_team_stats_from_players(player_stats)
+
+    if not isinstance(team_stats, dict):
+        raise ValueError("team_stats must be an object")
+
+    sanitized = {}
+    for field in TEAM_STAT_FIELDS:
+        if field == "reb":
+            continue
+        sanitized[field] = _coerce_int_field(team_stats.get(field, 0), f"team_stats.{field}")
+
+    sanitized["reb"] = sanitized["oreb"] + sanitized["dreb"]
+    return sanitized
+
+
+def _sanitize_player_stats(player_stats: list) -> list[dict]:
+    if not isinstance(player_stats, list):
+        raise ValueError("player_stats must be an array")
+
+    sanitized_players = []
+    for index, row in enumerate(player_stats):
+        if not isinstance(row, dict):
+            raise ValueError(f"player_stats[{index}] must be an object")
+
+        name = str(row.get("name") or "").strip()
+        if not name:
+            raise ValueError(f"player_stats[{index}].name is required")
+
+        sanitized_row = {"name": name}
+        normalized_number = _coerce_roster_number(row.get("number"))
+        if normalized_number not in (None, ""):
+            sanitized_row["number"] = normalized_number
+
+        for field in PLAYER_STAT_FIELDS:
+            sanitized_row[field] = _coerce_int_field(
+                row.get(field, 0),
+                f"player_stats[{index}].{field}",
+                allow_negative=field == "plus_minus",
+            )
+
+        if sanitized_row["fg_made"] > sanitized_row["fg_att"]:
+            raise ValueError(f"player_stats[{index}].fg_made cannot exceed fg_att")
+        if sanitized_row["fg3_made"] > sanitized_row["fg3_att"]:
+            raise ValueError(f"player_stats[{index}].fg3_made cannot exceed fg3_att")
+        if sanitized_row["ft_made"] > sanitized_row["ft_att"]:
+            raise ValueError(f"player_stats[{index}].ft_made cannot exceed ft_att")
+        if sanitized_row["fg3_att"] > sanitized_row["fg_att"]:
+            raise ValueError(f"player_stats[{index}].fg3_att cannot exceed fg_att")
+        if sanitized_row["fg3_made"] > sanitized_row["fg_made"]:
+            raise ValueError(f"player_stats[{index}].fg3_made cannot exceed fg_made")
+
+        sanitized_row["reb"] = sanitized_row["oreb"] + sanitized_row["dreb"]
+        sanitized_row["pts"] = (
+            (sanitized_row["fg_made"] - sanitized_row["fg3_made"]) * 2
+            + sanitized_row["fg3_made"] * 3
+            + sanitized_row["ft_made"]
+        )
+        sanitized_players.append(sanitized_row)
+
+    return sanitized_players
+
+
+def _sanitize_game_payload(payload: dict) -> dict:
+    if not payload or not isinstance(payload, dict):
+        raise ValueError("Invalid or missing JSON payload")
+
+    date = str(payload.get("date") or "").strip()
+    opponent = str(payload.get("opponent") or "").strip()
+    if not date or not opponent:
+        raise ValueError("date and opponent must be non-empty")
+
+    location = str(payload.get("location") or "home").strip().lower() or "home"
+    if location not in ALLOWED_GAME_LOCATIONS:
+        raise ValueError("location must be one of: home, away, neutral")
+
+    player_stats = _sanitize_player_stats(payload.get("player_stats", []))
+    team_stats = _sanitize_team_stats(payload.get("team_stats"), player_stats)
+
+    sanitized = {
+        "date": date[:50],
+        "opponent": opponent[:100],
+        "location": location,
+        "vc_score": _coerce_int_field(payload.get("vc_score"), "vc_score"),
+        "opp_score": _coerce_int_field(payload.get("opp_score"), "opp_score"),
+        "team_stats": team_stats,
+        "player_stats": player_stats,
+        "roster": payload.get("roster", []),
+    }
+
+    if payload.get("gameId") is not None:
+        sanitized["gameId"] = _coerce_int_field(payload.get("gameId"), "gameId")
+
+    return sanitized
+
+
+def _refresh_stats_state() -> None:
+    data.reload()
+    global advanced_calc
+    advanced_calc = AdvancedStatsCalculator(data.stats_data)
+
+
+def _clear_generated_caches() -> None:
+    for cache_path in [Config.TEAM_CACHE, Config.ANALYSIS_CACHE]:
+        try:
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
+        except OSError:
+            pass
+
+
 def _is_nonempty_string(value) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
@@ -312,7 +515,7 @@ def _normalize_roster_player(player: dict) -> dict:
     if number is not None:
         normalized["number"] = number
 
-    for field in ["position", "height", "grade"]:
+    for field in ["position", "height", "grade", "role", "notes"]:
         value = player.get(field)
         if _is_nonempty_string(value):
             normalized[field] = value.strip()
@@ -336,10 +539,12 @@ def _select_sync_team(teams: list, preferred_team_id: str | None):
 def _build_roster_payload_from_teams(teams: list, preferred_team_id: str | None) -> dict:
     selected = _select_sync_team(teams, preferred_team_id)
     if not selected:
-        return {"team": "", "season": "", "roster": []}
+        return {"team": "", "season": "", "teamColor": "", "coachStyle": "", "roster": []}
 
     team_name = str(selected.get("name") or "").strip()
     season = str(datetime.now().year)
+    team_color = _normalize_team_color(selected.get("teamColor"))
+    coach_style = str(selected.get("coachStyle") or "").strip()
 
     players = selected.get("players") if isinstance(selected.get("players"), list) else []
     normalized_players = []
@@ -362,6 +567,8 @@ def _build_roster_payload_from_teams(teams: list, preferred_team_id: str | None)
     return {
         "team": team_name,
         "season": season,
+        "teamColor": team_color,
+        "coachStyle": coach_style,
         "roster": normalized_players,
     }
 
@@ -373,10 +580,38 @@ def _abbreviate_name(name: str) -> str:
     return f"{parts[0][0]} {parts[-1]}"
 
 
+def _normalize_name_key(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+def _canonicalize_player_name(
+    raw_name: str,
+    raw_number,
+    roster_by_number: dict,
+    roster_by_name: dict,
+    roster_by_abbrev: dict,
+) -> str:
+    normalized_name = _normalize_name_key(raw_name)
+
+    number = _coerce_roster_number(raw_number)
+    if number in roster_by_number:
+        return roster_by_number[number]
+
+    if normalized_name in roster_by_name:
+        return roster_by_name[normalized_name]
+
+    if normalized_name in roster_by_abbrev:
+        return roster_by_abbrev[normalized_name]
+
+    return raw_name.strip()
+
+
 def _build_roster_payload_from_roster_file(roster_data: dict) -> dict:
     return {
         "team": str(roster_data.get("team") or "").strip(),
         "season": str(roster_data.get("season") or "").strip(),
+        "teamColor": _normalize_team_color(roster_data.get("teamColor")),
+        "coachStyle": str(roster_data.get("coachStyle") or "").strip(),
         "roster": [
             _normalize_roster_player(player)
             for player in roster_data.get("roster", [])
@@ -439,6 +674,25 @@ def _recompute_season_stats(stats: dict, roster: list = None) -> None:
         "win": 0, "loss": 0, "vc_total": 0, "games": 0,
     }
 
+    roster_by_number = {}
+    roster_by_name = {}
+    roster_by_abbrev = {}
+    if roster:
+        for roster_player in roster:
+            if not isinstance(roster_player, dict):
+                continue
+
+            full_name = str(roster_player.get("name") or "").strip()
+            if not full_name:
+                continue
+
+            roster_by_name[_normalize_name_key(full_name)] = full_name
+            roster_by_abbrev[_normalize_name_key(_abbreviate_name(full_name))] = full_name
+
+            number = _coerce_roster_number(roster_player.get("number"))
+            if number is not None:
+                roster_by_number[number] = full_name
+
     for game in games:
         ts = game.get("team_stats", {})
         result = game.get("result", "")
@@ -454,9 +708,17 @@ def _recompute_season_stats(stats: dict, roster: list = None) -> None:
             team_totals["loss"] += 1
 
         for ps in game.get("player_stats", []):
-            name = ps.get("name", "").strip()
-            if not name:
+            raw_name = str(ps.get("name") or "").strip()
+            if not raw_name:
                 continue
+
+            name = _canonicalize_player_name(
+                raw_name,
+                ps.get("number"),
+                roster_by_number,
+                roster_by_name,
+                roster_by_abbrev,
+            )
             if name not in season_player_stats:
                 season_player_stats[name] = {
                     "name": name, "games": 0,
@@ -516,6 +778,8 @@ def _recompute_season_stats(stats: dict, roster: list = None) -> None:
                     "position": roster_player.get("position"),
                     "height": roster_player.get("height"),
                     "grade": roster_player.get("grade"),
+                    "role": roster_player.get("role"),
+                    "notes": roster_player.get("notes"),
                     "games": 0,
                     "pts": 0, "fg": 0, "fga": 0, "fg3": 0, "fg3a": 0,
                     "ft": 0, "fta": 0, "oreb": 0, "dreb": 0, "reb": 0,
@@ -567,22 +831,10 @@ def ingest_game():
         return "", 204
 
     payload = request.get_json(force=True, silent=True)
-    if not payload or not isinstance(payload, dict):
-        return jsonify({"error": "Invalid or missing JSON payload"}), 400
-
-    required_fields = ["date", "opponent", "vc_score", "opp_score", "team_stats", "player_stats"]
-    for field in required_fields:
-        if field not in payload:
-            return jsonify({"error": f"Missing required field: {field}"}), 400
-
-    if not str(payload["date"]).strip() or not str(payload["opponent"]).strip():
-        return jsonify({"error": "date and opponent must be non-empty"}), 400
-
     try:
-        int(payload["vc_score"])
-        int(payload["opp_score"])
-    except (ValueError, TypeError):
-        return jsonify({"error": "vc_score and opp_score must be integers"}), 400
+        payload = _sanitize_game_payload(payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     with reload_lock:
         try:
@@ -665,39 +917,57 @@ def ingest_game():
                         with open(Config.ROSTER_FILE, "w") as rf:
                             json.dump(roster_data, rf, indent=2)
                 else:
-                    # Fallback: add any completely unknown abbreviated names
-                    existing_names = {p["name"].lower() for p in roster_data.get("roster", [])}
+                    # Fallback: only add players that cannot be matched by jersey, full name, or abbreviation.
+                    existing_by_number = {}
+                    existing_names = set()
+                    existing_abbrev = set()
+                    for roster_player in roster_data.get("roster", []):
+                        if not isinstance(roster_player, dict):
+                            continue
+
+                        full_name = str(roster_player.get("name") or "").strip()
+                        if not full_name:
+                            continue
+
+                        existing_names.add(_normalize_name_key(full_name))
+                        existing_abbrev.add(_normalize_name_key(_abbreviate_name(full_name)))
+
+                        roster_number = _coerce_roster_number(roster_player.get("number"))
+                        if roster_number is not None:
+                            existing_by_number[roster_number] = roster_player
+
                     added_any = False
                     for ps in payload.get("player_stats", []):
                         player_name = (ps.get("name") or "").strip()
-                        if player_name and player_name.lower() not in existing_names:
-                            new_entry = {"name": player_name}
-                            jersey = ps.get("number")
-                            if jersey is not None:
-                                try:
-                                    new_entry["number"] = int(jersey)
-                                except (ValueError, TypeError):
-                                    pass
-                            roster_data.setdefault("roster", []).append(new_entry)
-                            existing_names.add(player_name.lower())
-                            added_any = True
-                            logger.info(f"Auto-added player (fallback) to roster: {player_name}")
+                        if not player_name:
+                            continue
+
+                        normalized_name = _normalize_name_key(player_name)
+                        jersey = _coerce_roster_number(ps.get("number"))
+
+                        if normalized_name in existing_names or normalized_name in existing_abbrev:
+                            continue
+                        if jersey is not None and jersey in existing_by_number:
+                            continue
+
+                        new_entry = {"name": player_name}
+                        if jersey is not None:
+                            new_entry["number"] = jersey
+                            existing_by_number[jersey] = new_entry
+
+                        roster_data.setdefault("roster", []).append(new_entry)
+                        existing_names.add(normalized_name)
+                        existing_abbrev.add(_normalize_name_key(_abbreviate_name(player_name)))
+                        added_any = True
+                        logger.info(f"Auto-added player (fallback) to roster: {player_name}")
                     if added_any:
                         with open(Config.ROSTER_FILE, "w") as rf:
                             json.dump(roster_data, rf, indent=2)
             except OSError as roster_err:
                 logger.warning(f"Could not update roster.json: {roster_err}")
 
-            data.reload()
-            global advanced_calc
-            advanced_calc = AdvancedStatsCalculator(data.stats_data)
-
-            for cache_path in [Config.TEAM_CACHE, Config.ANALYSIS_CACHE]:
-                try:
-                    if os.path.exists(cache_path):
-                        os.remove(cache_path)
-                except OSError:
-                    pass
+            _refresh_stats_state()
+            _clear_generated_caches()
 
             return jsonify({"message": "Game saved successfully", "gameId": gid}), 201
 
@@ -737,6 +1007,11 @@ def roster_sync():
             with open(Config.ROSTER_FILE, "w") as f:
                 json.dump(roster_payload, f, indent=2)
 
+            stats = data.stats_data
+            _recompute_season_stats(stats, roster_payload.get("roster", []))
+            with open(Config.STATS_FILE, "w") as sf:
+                json.dump(stats, sf, indent=2)
+
             data.reload()
             global advanced_calc
             advanced_calc = AdvancedStatsCalculator(data.stats_data)
@@ -771,13 +1046,18 @@ def _get_roster_data() -> dict:
 
 
 def _save_roster_data(roster_data: dict) -> None:
-    """Save roster to file and reload data."""
+    """Save roster, recompute season aggregates, and reload data."""
     with reload_lock:
         with open(Config.ROSTER_FILE, "w") as f:
             json.dump(roster_data, f, indent=2)
-        data.reload()
-        global advanced_calc
-        advanced_calc = AdvancedStatsCalculator(data.stats_data)
+
+        stats = data.stats_data
+        _recompute_season_stats(stats, roster_data.get("roster", []))
+        with open(Config.STATS_FILE, "w") as sf:
+            json.dump(stats, sf, indent=2)
+
+        _refresh_stats_state()
+        _clear_generated_caches()
 
 
 def _sync_to_realtime_api(roster_data: dict) -> None:
@@ -799,6 +1079,8 @@ def api_get_teams():
             "name": team_name,
             "abbreviation": "".join(ch for ch in team_name if ch.isalnum()).upper()[:4] or "TEAM",
             "season": season,
+            "teamColor": _normalize_team_color(roster.get("teamColor")),
+            "coachStyle": roster.get("coachStyle", ""),
             "players": players
         }]
     })
@@ -817,6 +1099,11 @@ def api_create_team():
     
     roster_data = _get_roster_data()
     roster_data["team"] = name
+    team_color = _normalize_team_color(payload.get("teamColor"))
+    if team_color:
+        roster_data["teamColor"] = team_color
+    elif "teamColor" in payload:
+        roster_data.pop("teamColor", None)
     
     try:
         _save_roster_data(roster_data)
@@ -830,11 +1117,12 @@ def api_create_team():
         return jsonify({"error": "Failed to create team"}), 500
 
 
-@app.route("/api/players", methods=["GET"])
+@app.route("/api/roster/players", methods=["GET"])
 def api_get_players():
     """Get all players with season stats and roster information."""
     roster_data = _get_roster_data()
     roster_players = {p.get("name"): p for p in roster_data.get("roster", []) if p.get("name")}
+    coach_style = roster_data.get("coachStyle", "")
     
     players_list = []
     for player_name, stats in data.season_player_stats.items():
@@ -842,6 +1130,7 @@ def api_get_players():
         player_data = {
             "name": player_name,
             **stats,
+            "coach_style": coach_style,
             "roster_info": roster_info
         }
         players_list.append(player_data)
@@ -860,32 +1149,61 @@ def api_add_player(player_name):
     
     roster_data = _get_roster_data()
     roster = roster_data.get("roster", [])
+
+    def _apply_optional_text_field(player: dict, field_name: str) -> None:
+        if field_name not in payload:
+            return
+        value = str(payload.get(field_name) or "").strip()
+        if value:
+            player[field_name] = value
+        else:
+            player.pop(field_name, None)
+
+    def _apply_optional_number_field(player: dict, field_name: str) -> None:
+        if field_name not in payload:
+            return
+        raw_value = payload.get(field_name)
+        if raw_value in (None, ""):
+            player.pop(field_name, None)
+            return
+        player[field_name] = _coerce_roster_number(raw_value)
     
     # Find existing player
     existing = next((p for p in roster if p.get("name") == player_name), None)
+    if existing is None:
+        requested_name_key = _normalize_name_key(player_name)
+        requested_abbrev_key = _normalize_name_key(_abbreviate_name(player_name))
+
+        for roster_player in roster:
+            existing_name = str(roster_player.get("name") or "").strip()
+            if not existing_name:
+                continue
+
+            existing_name_key = _normalize_name_key(existing_name)
+            existing_abbrev_key = _normalize_name_key(_abbreviate_name(existing_name))
+            if requested_name_key in (existing_name_key, existing_abbrev_key) or requested_abbrev_key in (existing_name_key, existing_abbrev_key):
+                existing = roster_player
+                break
     
     if existing:
         # Update existing
-        if "number" in payload and payload["number"] is not None:
-            existing["number"] = payload["number"]
-        if "position" in payload and payload.get("position"):
-            existing["position"] = payload["position"]
-        if "height" in payload and payload.get("height"):
-            existing["height"] = payload["height"]
-        if "grade" in payload and payload.get("grade"):
-            existing["grade"] = payload["grade"]
+        _apply_optional_number_field(existing, "number")
+        _apply_optional_text_field(existing, "position")
+        _apply_optional_text_field(existing, "height")
+        _apply_optional_text_field(existing, "grade")
+        _apply_optional_text_field(existing, "role")
+        _apply_optional_text_field(existing, "notes")
     else:
         # Add new
         player = {"name": player_name}
-        if "number" in payload and payload["number"] is not None:
-            player["number"] = payload["number"]
-        if "position" in payload and payload.get("position"):
-            player["position"] = payload["position"]
-        if "height" in payload and payload.get("height"):
-            player["height"] = payload["height"]
-        if "grade" in payload and payload.get("grade"):
-            player["grade"] = payload["grade"]
+        _apply_optional_number_field(player, "number")
+        _apply_optional_text_field(player, "position")
+        _apply_optional_text_field(player, "height")
+        _apply_optional_text_field(player, "grade")
+        _apply_optional_text_field(player, "role")
+        _apply_optional_text_field(player, "notes")
         roster.append(player)
+        existing = player
     
     roster_data["roster"] = roster
     
@@ -894,14 +1212,14 @@ def api_add_player(player_name):
         _sync_to_realtime_api(roster_data)
         return jsonify({
             "message": "Player saved successfully",
-            "player": existing or {**payload, "name": player_name}
+            "player": existing
         }), 201
     except Exception as e:
         logger.error(f"Player save error: {e}")
         return jsonify({"error": "Failed to save player"}), 500
 
 
-@app.route("/api/player/<player_name>", methods=["DELETE"])
+@app.route("/api/roster/player/<player_name>", methods=["DELETE"])
 def api_delete_player_route(player_name):
     """Delete a player from the roster."""
     player_name = player_name.strip()
@@ -977,9 +1295,8 @@ def _delete_game_from_stats(game_id: int):
             with open(Config.STATS_FILE, "w") as f:
                 json.dump(stats, f, indent=2)
 
-            data.reload()
-            global advanced_calc
-            advanced_calc = AdvancedStatsCalculator(data.stats_data)
+            _refresh_stats_state()
+            _clear_generated_caches()
             _sync_game_delete_to_realtime(game_id)
 
             return jsonify({"message": "Game deleted", "gameId": game_id})
@@ -988,13 +1305,51 @@ def _delete_game_from_stats(game_id: int):
             return jsonify({"error": "Failed to write stats file"}), 500
 
 
-@app.route("/api/game/<int:game_id>", methods=["GET", "DELETE"])
+@app.route("/api/game/<int:game_id>", methods=["GET", "PUT", "DELETE"])
 def api_game(game_id):
     if request.method == "GET":
         game = data.get_game_by_id(game_id)
         if game:
             return jsonify(game)
         return jsonify({"error": "Game not found"}), 404
+
+    if request.method == "PUT":
+        payload = request.get_json(force=True, silent=True)
+        try:
+            payload = _sanitize_game_payload(payload)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        with reload_lock:
+            stats = data.stats_data
+            existing_game = next((g for g in stats.get("games", []) if g.get("gameId") == game_id), None)
+            if existing_game is None:
+                return jsonify({"error": "Game not found"}), 404
+
+            updated_game = _build_game_dict(game_id, payload)
+            stats["games"] = [
+                updated_game if g.get("gameId") == game_id else g
+                for g in stats.get("games", [])
+            ]
+            _recompute_season_stats(stats, data.roster)
+
+            try:
+                with open(Config.STATS_FILE, "w") as f:
+                    json.dump(stats, f, indent=2)
+
+                _refresh_stats_state()
+                _clear_generated_caches()
+
+                return jsonify(
+                    {
+                        "message": "Game updated successfully",
+                        "gameId": game_id,
+                        "game": updated_game,
+                    }
+                )
+            except OSError as e:
+                logger.error(f"Game update file error: {e}")
+                return jsonify({"error": "Failed to write stats file"}), 500
 
     return _delete_game_from_stats(game_id)
 
@@ -1007,8 +1362,13 @@ def api_game_delete(game_id):
 @app.route("/api/players")
 def api_players():
     """Get all player stats with enhanced metrics"""
+    with reload_lock:
+        _recompute_season_stats(data.stats_data, data.roster)
+
     players = list(data.season_player_stats.values())
     roster_dict = data.get_roster_dict()
+    roster_data = _get_roster_data()
+    coach_style = roster_data.get("coachStyle", "")
 
     # Create roster lookup by abbreviated name (first initial + last name)
     roster_by_abbrev = {}
@@ -1022,7 +1382,7 @@ def api_players():
     enhanced = []
     for player in players:
         p = player.copy()
-        games = player.get("games", 1)
+        games = player.get("games", 0)
         player_name = player.get("name", "")
 
         # Try to match abbreviated name to roster
@@ -1032,23 +1392,33 @@ def api_players():
             p["first_name"] = roster_player.get("name", "").split(" ")[0]
             p["number"] = roster_player.get("number")
             p["grade"] = roster_player.get("grade")
+            p["roster_info"] = roster_player
         elif player_name in roster_dict:
             # Direct name match (if full name is used)
             p["full_name"] = roster_dict[player_name].get("name")
             p["first_name"] = roster_dict[player_name].get("name", "").split(" ")[0]
             p["number"] = roster_dict[player_name].get("number")
             p["grade"] = roster_dict[player_name].get("grade")
+            p["roster_info"] = roster_dict[player_name]
         else:
             # Use abbreviated name if no match found
             p["full_name"] = player_name
             p["first_name"] = player_name.split(" ")[0]
+            p["roster_info"] = None
 
         # Add per-game stats
-        p["spg"] = player.get("stl", 0) / games
-        p["bpg"] = player.get("blk", 0) / games
-        p["tpg"] = player.get("to", 0) / games
-        p["fpg"] = player.get("fouls", 0) / games
+        if games and games > 0:
+            p["spg"] = player.get("stl", 0) / games
+            p["bpg"] = player.get("blk", 0) / games
+            p["tpg"] = player.get("to", 0) / games
+            p["fpg"] = player.get("fouls", 0) / games
+        else:
+            p["spg"] = 0
+            p["bpg"] = 0
+            p["tpg"] = 0
+            p["fpg"] = 0
         p["plus_minus"] = player.get("plus_minus", 0)
+        p["coach_style"] = coach_style
 
         # Add advanced metrics
         advanced = advanced_calc.calculate_player_advanced_stats(player["name"])
@@ -1116,16 +1486,24 @@ def api_player(player_name):
     if stats:
         # Enrich stats with per-game averages (same as /api/players endpoint)
         enhanced_stats = stats.copy()
-        games = stats.get("games", 1)
+        games = stats.get("games", 0)
 
         # Add per-game stats if not present
-        enhanced_stats["spg"] = stats.get("stl", 0) / games
-        enhanced_stats["bpg"] = stats.get("blk", 0) / games
-        enhanced_stats["tpg"] = stats.get("to", 0) / games
-        enhanced_stats["fpg"] = stats.get("fouls", 0) / games
+        if games and games > 0:
+            enhanced_stats["spg"] = stats.get("stl", 0) / games
+            enhanced_stats["bpg"] = stats.get("blk", 0) / games
+            enhanced_stats["tpg"] = stats.get("to", 0) / games
+            enhanced_stats["fpg"] = stats.get("fouls", 0) / games
+        else:
+            enhanced_stats["spg"] = 0
+            enhanced_stats["bpg"] = 0
+            enhanced_stats["tpg"] = 0
+            enhanced_stats["fpg"] = 0
         enhanced_stats["plus_minus"] = stats.get("plus_minus", 0)
 
         # Add roster info
+        roster_data = _get_roster_data()
+        coach_style = roster_data.get("coachStyle", "")
         roster_info = next((p for p in data.roster if p["name"] == player_name), None)
         roster_match = roster_info
         if roster_match is None:
@@ -1152,6 +1530,7 @@ def api_player(player_name):
             {
                 "season_stats": enhanced_stats,
                 "game_logs": data.get_player_game_logs(player_name),
+                "coach_style": coach_style,
                 "roster_info": roster_info,
             }
         )
@@ -1693,7 +2072,7 @@ def ai_chat():
             f"DATA:\n{context}",
             message,
             history,
-            max_tokens=MAX_TOKENS,
+            max_tokens=MAX_TOKENS.get("chat", 1000),
         )
 
         return jsonify({"reply": reply})
@@ -1727,7 +2106,7 @@ def ai_analyze():
         analysis = ai.call_api(
             f"{system_prompt}\n\nDATA:\n{context}",
             query,
-            max_tokens=MAX_TOKENS,
+            max_tokens=MAX_TOKENS.get(analysis_type, MAX_TOKENS.get("general", 1000)),
             temperature=0.2,
         )
 

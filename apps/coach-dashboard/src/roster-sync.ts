@@ -92,6 +92,7 @@ export async function createTeamViaRealtime(
   apiUrl: string,
   name: string,
   abbreviation: string,
+  teamColor?: string,
   apiKey?: string
 ): Promise<RosterTeam | null> {
   try {
@@ -105,7 +106,7 @@ export async function createTeamViaRealtime(
     const response = await fetch(`${apiUrl}/teams`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ name, abbreviation }),
+      body: JSON.stringify({ name, abbreviation, teamColor }),
     });
 
     if (!response.ok) {
@@ -128,6 +129,7 @@ export async function updateTeamViaRealtime(
   teamId: string,
   name: string,
   abbreviation: string,
+  teamColor?: string,
   apiKey?: string
 ): Promise<RosterTeam | null> {
   try {
@@ -141,7 +143,7 @@ export async function updateTeamViaRealtime(
     const response = await fetch(`${apiUrl}/teams/${teamId}`, {
       method: "PUT",
       headers,
-      body: JSON.stringify({ name, abbreviation }),
+      body: JSON.stringify({ name, abbreviation, teamColor }),
     });
 
     if (!response.ok) {

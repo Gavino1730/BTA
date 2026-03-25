@@ -1,6 +1,7 @@
 // AI Insights JavaScript - Chatbot Version
 let conversationHistory = [];
 let statsContext = null;
+const CHAT_USED_STORAGE_KEY = 'ai-chat-has-used';
 
 const safeFixed = (value, decimals = 1, fallback = '0.0') => {
     const num = Number(value);
@@ -12,6 +13,46 @@ const safeRatio = (numerator, denominator, scale = 1) => {
     if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
     return (num / den) * scale;
 };
+
+function getResultClass(result) {
+    if (result === 'W') return 'win';
+    if (result === 'L') return 'loss';
+    return 'tie';
+}
+
+function hasUsedChatBefore() {
+    try {
+        return localStorage.getItem(CHAT_USED_STORAGE_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function markChatAsUsed() {
+    try {
+        localStorage.setItem(CHAT_USED_STORAGE_KEY, '1');
+    } catch {
+        // Ignore storage errors in restricted modes.
+    }
+}
+
+function summarizeText(text, limit = 180) {
+    if (typeof text !== 'string') return 'No summary available.';
+    const compact = text.replace(/\s+/g, ' ').trim();
+    if (compact.length <= limit) return compact;
+    return `${compact.slice(0, limit - 1)}...`;
+}
+
+function getRecentUserQueries(limit = 4) {
+    return conversationHistory
+        .filter((message) => message && message.role === 'user' && typeof message.content === 'string')
+        .slice(-limit)
+        .reverse();
+}
+
+function getWelcomeMessageMarkup() {
+    return '';
+}
 
 async function fetchJson(url, options = {}) {
     const response = await fetch(url, options);
@@ -123,7 +164,7 @@ function updateStatsPanel() {
         if (Array.isArray(statsContext.games) && statsContext.games.length > 0) {
             const recentGames = statsContext.games.slice(-5).reverse();
             recentGamesElement.innerHTML = recentGames.map(game => `
-                <div class="game-item ${game.result === 'W' ? 'win' : 'loss'}">
+                <div class="game-item ${getResultClass(game.result)}">
                     <span class="game-result">${game.result || '?'}</span>
                     <span class="game-info">${game.opponent || 'Unknown'} ${game.vc_score || 0}-${game.opp_score || 0}</span>
                 </div>
@@ -152,8 +193,8 @@ function loadConversationHistory() {
             if (!Array.isArray(conversationHistory)) {
                 conversationHistory = [];
             }
-            displayConversationHistory();
         }
+        displayConversationHistory();
     } catch (error) {
         console.error('Failed to load chat history:', error);
         conversationHistory = [];
@@ -162,6 +203,7 @@ function loadConversationHistory() {
         } catch (e) {
             console.error('Failed to clear invalid chat history:', e);
         }
+        displayConversationHistory();
     }
 }
 
@@ -199,16 +241,44 @@ function displayConversationHistory() {
         return;
     }
     
-    // Clear welcome message if there's history
-    if (conversationHistory.length > 0) {
+    container.innerHTML = '';
+
+    if (conversationHistory.length === 0) {
         container.innerHTML = '';
+        updateConversationWidgets();
+        return;
     }
     
     conversationHistory.forEach(msg => {
         addMessageToUI(msg.role, msg.content, false);
     });
+
+    updateConversationWidgets();
     
     scrollToBottom();
+}
+
+function updateConversationWidgets() {
+    const recentQueriesElement = document.getElementById('recent-queries-info');
+    if (recentQueriesElement) {
+        const recentQueries = getRecentUserQueries(5);
+        recentQueriesElement.innerHTML = recentQueries.length > 0
+            ? recentQueries
+                .map((query) => `<div class="query-item">${escapeHtml(query.content)}</div>`)
+                .join('')
+            : '<div class="query-empty">No recent queries yet.</div>';
+    }
+
+    const latestInsightElement = document.getElementById('latest-insight-info');
+    if (latestInsightElement) {
+        const latestAssistantReply = [...conversationHistory]
+            .reverse()
+            .find((message) => message && message.role === 'assistant' && typeof message.content === 'string');
+
+        latestInsightElement.innerHTML = latestAssistantReply
+            ? `<p>${escapeHtml(summarizeText(latestAssistantReply.content))}</p>`
+            : '<p>Ask a question to generate your first insight.</p>';
+    }
 }
 
 // Add a message to the UI
@@ -265,6 +335,8 @@ async function sendMessage() {
     const message = input.value.trim();
     
     if (!message) return;
+
+    markChatAsUsed();
     
     // Clear input and disable send button
     input.value = '';
@@ -278,6 +350,7 @@ async function sendMessage() {
     conversationHistory.push({ role: 'user', content: message });
     addMessageToUI('user', message);
     saveConversationHistory();
+    updateConversationWidgets();
     
     // Show typing indicator
     showTypingIndicator();
@@ -305,6 +378,7 @@ async function sendMessage() {
         }
         
         saveConversationHistory();
+        updateConversationWidgets();
     } catch (error) {
         hideTypingIndicator();
         console.error('Chat error:', error);
@@ -312,6 +386,7 @@ async function sendMessage() {
         conversationHistory.push({ role: 'assistant', content: errorMsg });
         addMessageToUI('assistant', errorMsg);
         saveConversationHistory();
+        updateConversationWidgets();
     } finally {
         if (sendBtn) {
             sendBtn.disabled = false;
@@ -339,21 +414,10 @@ function clearChatHistory() {
         
         const container = document.getElementById('chat-messages-container');
         if (container) {
-            container.innerHTML = `
-                <div class="welcome-message">
-                    <h3>👋 Hi! I'm your AI Stats Assistant</h3>
-                    <p>I have access to all your team and player statistics. You can ask me:</p>
-                    <ul>
-                        <li>💪 "Who are our top scorers?"</li>
-                        <li>📈 "Show me John's shooting trends"</li>
-                        <li>🎯 "How can we improve our three-point shooting?"</li>
-                        <li>🏆 "Compare our last 3 games"</li>
-                        <li>📊 "What's our defensive rebound average?"</li>
-                    </ul>
-                    <p>Just type your question below!</p>
-                </div>
-            `;
+            container.innerHTML = getWelcomeMessageMarkup();
         }
+
+        updateConversationWidgets();
     }
 }
 

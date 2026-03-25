@@ -4,6 +4,8 @@ export interface Team {
   id: string;
   name: string;
   abbreviation: string;
+  teamColor?: string;
+  coachStyle?: string;
   players: Player[];
 }
 
@@ -14,6 +16,8 @@ export interface Player {
   position: string;
   height?: string;
   grade?: string;
+  role?: string;
+  notes?: string;
 }
 
 /**
@@ -53,6 +57,8 @@ export function convertRosterTeamToAppTeam(rosterTeam: RosterTeam): Team {
     id: rosterTeam.id,
     name: rosterTeam.name,
     abbreviation: rosterTeam.abbreviation,
+    teamColor: rosterTeam.teamColor,
+    coachStyle: rosterTeam.coachStyle,
     players: rosterTeam.players.map((p) => ({
       id: p.id,
       number: p.number,
@@ -60,6 +66,8 @@ export function convertRosterTeamToAppTeam(rosterTeam: RosterTeam): Team {
       position: p.position,
       height: p.height,
       grade: p.grade,
+      role: p.role,
+      notes: p.notes,
     })),
   };
 }
@@ -72,6 +80,8 @@ export function convertAppTeamToRosterTeam(team: Team): RosterTeam {
     id: team.id,
     name: team.name,
     abbreviation: team.abbreviation,
+    teamColor: team.teamColor,
+    coachStyle: team.coachStyle,
     players: team.players.map((p) => ({
       id: p.id,
       number: p.number,
@@ -79,6 +89,8 @@ export function convertAppTeamToRosterTeam(team: Team): RosterTeam {
       position: p.position,
       height: p.height,
       grade: p.grade,
+      role: p.role,
+      notes: p.notes,
     })),
   };
 }
@@ -143,6 +155,7 @@ export async function createTeamViaRealtime(
   apiUrl: string,
   name: string,
   abbreviation: string,
+  teamColor?: string,
   apiKey?: string
 ): Promise<Team | null> {
   try {
@@ -156,7 +169,7 @@ export async function createTeamViaRealtime(
     const response = await fetch(`${apiUrl}/teams`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ name, abbreviation }),
+      body: JSON.stringify({ name, abbreviation, teamColor }),
     });
 
     if (!response.ok) {
@@ -179,6 +192,7 @@ export async function updateTeamViaRealtime(
   teamId: string,
   name: string,
   abbreviation: string,
+  teamColor?: string,
   apiKey?: string
 ): Promise<Team | null> {
   try {
@@ -192,7 +206,7 @@ export async function updateTeamViaRealtime(
     const response = await fetch(`${apiUrl}/teams/${teamId}`, {
       method: "PUT",
       headers,
-      body: JSON.stringify({ name, abbreviation }),
+      body: JSON.stringify({ name, abbreviation, teamColor }),
     });
 
     if (!response.ok) {

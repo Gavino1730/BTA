@@ -1,5 +1,5 @@
 // Service Worker for offline support and caching
-const CACHE_NAME = 'vc-stats-v1.5';  // Bumped version to clear stale cache
+const CACHE_NAME = 'vc-stats-v3.0';  // Bumped version to clear stale cache
 const urlsToCache = [
     '/static/style.css',
     '/static/main.js',

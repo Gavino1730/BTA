@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  answerGameAiChat,
   createGame,
   deleteEvent,
   getGameEvents,
@@ -11,6 +12,23 @@ import {
 } from "./store.js";
 
 describe("store", () => {
+  it("seeds active lineup when provided at game creation", () => {
+    const state = createGame({
+      gameId: "game-seeded-lineup",
+      homeTeamId: "home",
+      awayTeamId: "away",
+      startingLineupByTeam: {
+        home: ["h1", "h2", "h3", "h4", "h5", "h6"],
+        away: ["a1", "a2", "a3", "a4", "a5"],
+        other: ["x1", "x2"]
+      }
+    });
+
+    expect(state.activeLineupsByTeam.home).toEqual(["h1", "h2", "h3", "h4", "h5"]);
+    expect(state.activeLineupsByTeam.away).toEqual(["a1", "a2", "a3", "a4", "a5"]);
+    expect(state.activeLineupsByTeam).not.toHaveProperty("other");
+  });
+
   it("creates a game and ingests event idempotently", () => {
     createGame({
       gameId: "game-1",
@@ -191,27 +209,53 @@ describe("store", () => {
     const originalApiKey = process.env.OPENAI_API_KEY;
 
     process.env.OPENAI_API_KEY = "test-openai-key";
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                insights: [
-                  {
-                    message: "home needs stronger paint pressure",
-                    explanation: "Recent possessions settled early; attack downhill before the help is set.",
-                    relatedTeamId: "home",
-                    confidence: "medium"
-                  }
-                ]
-              })
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/season-stats")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            wins: 12,
+            losses: 5,
+            ppg: 62.4,
+            opp_ppg: 54.8,
+            fg_pct: 0.45,
+            fg3_pct: 0.34,
+            to_avg: 11.3
+          })
+        });
+      }
+      if (url.includes("/api/games")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { gameId: 1, opponent: "Team A", vc_score: 64, opp_score: 58 },
+            { gameId: 2, opponent: "Team B", vc_score: 55, opp_score: 60 }
+          ]
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  insights: [
+                    {
+                      message: "home needs stronger paint pressure",
+                      explanation: "Recent possessions settled early; attack downhill before the help is set.",
+                      relatedTeamId: "home",
+                      confidence: "medium"
+                    }
+                  ]
+                })
+              }
             }
-          }
-        ]
-      })
-    }) as typeof fetch;
+          ]
+        })
+      });
+    }) as unknown as typeof fetch;
 
     try {
       createGame({
@@ -242,7 +286,217 @@ describe("store", () => {
 
       expect(refreshed?.some((insight) => insight.type === "ai_coaching")).toBe(true);
       expect(getGameInsights("game-ai").some((insight) => insight.type === "ai_coaching")).toBe(true);
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("forces ai coaching refresh on demand even without new events", async () => {
+    const originalFetch = global.fetch;
+    const originalApiKey = process.env.OPENAI_API_KEY;
+
+    process.env.OPENAI_API_KEY = "test-openai-key";
+    let openAiCallCount = 0;
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/season-stats")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ wins: 10, losses: 4, ppg: 60.1, opp_ppg: 52.2, fg_pct: 0.44, fg3_pct: 0.33, to_avg: 10.9 })
+        });
+      }
+      if (url.includes("/api/games")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { gameId: 1, opponent: "Team C", vc_score: 58, opp_score: 52 },
+            { gameId: 2, opponent: "Team D", vc_score: 49, opp_score: 51 }
+          ]
+        });
+      }
+      if (url.includes("/api/players")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { name: "A Player", full_name: "A Player", number: "2", ppg: 13.4, rpg: 4.2, apg: 3.1, fg_pct: 48.7, efg_pct: 53.2, ts_pct: 56.4, fpg: 2.0 },
+            { name: "B Player", full_name: "B Player", number: "5", ppg: 9.8, rpg: 3.8, apg: 1.9, fg_pct: 42.1, efg_pct: 45.3, ts_pct: 49.5, fpg: 1.7 }
+          ]
+        });
+      }
+
+      openAiCallCount += 1;
+      const message = openAiCallCount === 1 ? "First bench call" : "Second bench call";
+      const explanation = openAiCallCount === 1 ? "First refresh payload." : "Forced refresh payload.";
+      const confidence = openAiCallCount === 1 ? "medium" : "high";
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  insights: [
+                    {
+                      message,
+                      explanation,
+                      relatedTeamId: "home",
+                      confidence
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      createGame({
+        gameId: "game-ai-force",
+        homeTeamId: "home",
+        awayTeamId: "away"
+      });
+
+      for (const [sequence, teamId] of ["home", "away", "home", "away"].map((team, index) => [index + 1, team] as const)) {
+        ingestEvent({
+          id: `evt-ai-force-${sequence}`,
+          gameId: "game-ai-force",
+          sequence,
+          timestampIso: `2026-03-18T20:1${sequence}:00.000Z`,
+          period: "Q1",
+          clockSecondsRemaining: 470 - sequence,
+          teamId,
+          operatorId: "op-1",
+          type: "shot_attempt",
+          playerId: `${teamId}-${sequence}`,
+          made: sequence % 2 === 0,
+          points: 2,
+          zone: "paint"
+        });
+      }
+
+      const firstRefresh = await refreshGameAiInsights("game-ai-force");
+      const forcedRefresh = await refreshGameAiInsights("game-ai-force", { force: true });
+
+      expect(firstRefresh?.some((insight) => insight.message === "First bench call")).toBe(true);
+      expect(forcedRefresh?.some((insight) => insight.message === "Second bench call")).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(5);
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("answers in-game ai chat with live and historical context", async () => {
+    const originalFetch = global.fetch;
+    const originalApiKey = process.env.OPENAI_API_KEY;
+
+    process.env.OPENAI_API_KEY = "test-openai-key";
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/season-stats")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ wins: 14, losses: 6, ppg: 64.2, opp_ppg: 55.1, fg_pct: 0.47, fg3_pct: 0.36, to_avg: 10.4 })
+        });
+      }
+      if (url.includes("/api/games")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { gameId: 10, opponent: "Team E", vc_score: 61, opp_score: 54 },
+            { gameId: 11, opponent: "Team F", vc_score: 58, opp_score: 62 }
+          ]
+        });
+      }
+      if (url.includes("/api/players")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { name: "A Player", full_name: "A Player", number: "2", ppg: 15.2, rpg: 5.1, apg: 3.4, fg_pct: 49.3, efg_pct: 55.1, ts_pct: 58.8, fpg: 2.2 },
+            { name: "B Player", full_name: "B Player", number: "5", ppg: 10.4, rpg: 4.0, apg: 2.1, fg_pct: 44.0, efg_pct: 47.2, ts_pct: 50.4, fpg: 1.8 }
+          ]
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  answer: "Keep A Player on the floor and run another touch for them. They are scoring efficiently and the current game sample supports staying with them.",
+                  suggestions: [
+                    "Who should we sub if A Player picks up a fourth foul?",
+                    "Are we in danger of bonus trouble next quarter?"
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      createGame({
+        gameId: "game-ai-chat",
+        homeTeamId: "home",
+        awayTeamId: "away",
+        opponentTeamId: "away"
+      });
+
+      ingestEvent({
+        id: "evt-chat-1",
+        gameId: "game-ai-chat",
+        sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 420,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "shot_attempt",
+        playerId: "A Player",
+        made: true,
+        points: 2,
+        zone: "paint"
+      });
+
+      ingestEvent({
+        id: "evt-chat-2",
+        gameId: "game-ai-chat",
+        sequence: 2,
+        timestampIso: "2026-03-18T20:01:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 398,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "assist",
+        playerId: "B Player",
+        scorerPlayerId: "A Player"
+      });
+
+      const response = await answerGameAiChat("game-ai-chat", "Who is playing best right now?", [
+        { role: "user", content: "How are we handling fouls so far?" },
+        { role: "assistant", content: "No serious foul trouble yet." }
+      ]);
+
+      expect(response?.answer).toContain("A Player");
+      expect(response?.suggestions).toHaveLength(2);
+      expect(response?.usedHistoricalContext).toBe(true);
     } finally {
       if (originalApiKey === undefined) {
         delete process.env.OPENAI_API_KEY;

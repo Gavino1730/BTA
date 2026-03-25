@@ -52,9 +52,31 @@ function clearElement(elementId) {
     }
 }
 
+function scrubLegacyTeamLabels() {
+    const replacementLabel = 'Team Box Score';
+
+    if (typeof document.title === 'string' && /box score/i.test(document.title)) {
+        document.title = 'Stats Dashboard';
+    }
+
+    const targets = document.querySelectorAll('h1, h2, h3, h4, .game-detail-opponent, .score-team, title');
+    targets.forEach(node => {
+        if (typeof node.textContent === 'string' && /box score/i.test(node.textContent)) {
+            node.textContent = replacementLabel;
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Ensure browser tab title is consistent even when old HTML is cached.
     document.title = 'Stats Dashboard';
+    scrubLegacyTeamLabels();
+
+    // Protect against late-rendered stale cached snippets.
+    const observer = new MutationObserver(() => {
+        scrubLegacyTeamLabels();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
     const navLinks = document.querySelectorAll('.nav-link');
     

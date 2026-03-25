@@ -1,6 +1,7 @@
 // Dashboard JavaScript
 let scoringChart = null;
 let shootingChart = null;
+const EMPTY_STATS_LABEL = 'No Stats';
 
 const safeFixed = (value, decimals = 1, fallback = '0.0') => {
     const num = Number(value);
@@ -13,6 +14,54 @@ const safeRatio = (numerator, denominator, scale = 1) => {
     if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
     return (num / den) * scale;
 };
+
+function getResultState(result) {
+    if (result === 'W') {
+        return { className: 'win', longLabel: 'WIN' };
+    }
+    if (result === 'L') {
+        return { className: 'loss', longLabel: 'LOSS' };
+    }
+    return { className: 'tie', longLabel: 'TIE' };
+}
+
+function renderZeroAdvancedStats() {
+    const efgPctEl = document.getElementById('efg-pct');
+    if (efgPctEl) efgPctEl.textContent = '0.0%';
+
+    const tsPctEl = document.getElementById('ts-pct');
+    if (tsPctEl) tsPctEl.textContent = '0.0%';
+
+    const pppEl = document.getElementById('ppp');
+    if (pppEl) pppEl.textContent = '0.00';
+
+    const astRateEl = document.getElementById('ast-rate');
+    if (astRateEl) astRateEl.textContent = '0.0%';
+}
+
+function renderZeroLeaderboardRows(elementId) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    element.innerHTML = Array.from({ length: 5 }, () => `
+        <tr>
+            <td><strong>0</strong></td>
+            <td>0</td>
+        </tr>
+    `).join('');
+}
+
+function getZeroTrendSnapshot() {
+    return {
+        games: [0],
+        opponents: [EMPTY_STATS_LABEL],
+        dates: [''],
+        vc_score: [0],
+        opp_score: [0],
+        fg_pct: [0],
+        fg3_pct: [0]
+    };
+}
 
 async function fetchJson(url) {
     const response = await fetch(url);
@@ -115,26 +164,31 @@ async function loadSeasonStats() {
 async function loadAdvancedStats() {
     try {
         const stats = await fetchJson('/api/advanced/team');
-        
-        if (!stats || !stats.scoring_efficiency || !stats.ball_movement) {
+
+        if (!stats) {
             console.error('Invalid advanced stats data structure:', stats);
+            renderZeroAdvancedStats();
             return;
         }
-        
+
+        const scoringEfficiency = stats.scoring_efficiency || {};
+        const ballMovement = stats.ball_movement || {};
+
         // Update advanced efficiency metrics
         const efgPctEl = document.getElementById('efg-pct');
-        if (efgPctEl) efgPctEl.textContent = safeFixed(stats.scoring_efficiency.efg_pct, 1) + '%';
-        
+        if (efgPctEl) efgPctEl.textContent = safeFixed(scoringEfficiency.efg_pct, 1) + '%';
+
         const tsPctEl = document.getElementById('ts-pct');
-        if (tsPctEl) tsPctEl.textContent = safeFixed(stats.scoring_efficiency.ts_pct, 1) + '%';
-        
+        if (tsPctEl) tsPctEl.textContent = safeFixed(scoringEfficiency.ts_pct, 1) + '%';
+
         const pppEl = document.getElementById('ppp');
-        if (pppEl) pppEl.textContent = safeFixed(stats.scoring_efficiency.ppp, 2);
-        
+        if (pppEl) pppEl.textContent = safeFixed(scoringEfficiency.ppp, 2, '0.00');
+
         const astRateEl = document.getElementById('ast-rate');
-        if (astRateEl) astRateEl.textContent = safeFixed(stats.ball_movement.assisted_scoring_rate, 1) + '%';
+        if (astRateEl) astRateEl.textContent = safeFixed(ballMovement.assisted_scoring_rate, 1) + '%';
     } catch (error) {
         console.error('Error loading advanced stats:', error);
+        renderZeroAdvancedStats();
     }
 }
 
@@ -145,7 +199,9 @@ async function loadLeaderboards() {
         // Validate data structure
         if (!leaderboards || !leaderboards.pts || !leaderboards.reb || !leaderboards.asst) {
             console.error('Invalid leaderboards data structure:', leaderboards);
-            showEmptyState('top-scorers-container', 'No scorer data available', '🏀');
+            renderZeroLeaderboardRows('top-scorers');
+            renderZeroLeaderboardRows('top-rebounders');
+            renderZeroLeaderboardRows('top-assists');
             return;
         }
 
@@ -153,7 +209,7 @@ async function loadLeaderboards() {
         const topScorersEl = document.getElementById('top-scorers');
         if (topScorersEl) {
             if (leaderboards.pts.length === 0) {
-                showEmptyState('top-scorers-container', 'No scorer data available', '🏀');
+                renderZeroLeaderboardRows('top-scorers');
             } else {
                 const scorersHtml = leaderboards.pts.slice(0, 5).map(p => `
                     <tr>
@@ -169,7 +225,7 @@ async function loadLeaderboards() {
         const topReboundersEl = document.getElementById('top-rebounders');
         if (topReboundersEl) {
             if (leaderboards.reb.length === 0) {
-                showEmptyState('top-rebounders-container', 'No rebound data available', '📦');
+                renderZeroLeaderboardRows('top-rebounders');
             } else {
                 const reboundersHtml = leaderboards.reb.slice(0, 5).map(p => `
                     <tr>
@@ -185,7 +241,7 @@ async function loadLeaderboards() {
         const topAssistsEl = document.getElementById('top-assists');
         if (topAssistsEl) {
             if (leaderboards.asst.length === 0) {
-                showEmptyState('top-assists-container', 'No assist data available', '🎯');
+                renderZeroLeaderboardRows('top-assists');
             } else {
                 const assistsHtml = leaderboards.asst.slice(0, 5).map(p => `
                     <tr>
@@ -198,7 +254,9 @@ async function loadLeaderboards() {
         }
     } catch (error) {
         console.error('Error loading leaderboards:', error);
-        showError('top-scorers', 'Failed to load leaderboard data. Please refresh the page.');
+        renderZeroLeaderboardRows('top-scorers');
+        renderZeroLeaderboardRows('top-rebounders');
+        renderZeroLeaderboardRows('top-assists');
     }
 }
 
@@ -218,11 +276,29 @@ async function loadRecentGames() {
         const recentGames = games.slice(-5).reverse();
         
         if (recentGames.length === 0) {
-            showEmptyState('games-list', 'No games recorded yet', '🏀');
+            if (gamesList) {
+                gamesList.innerHTML = `
+                    <div class="game-card">
+                        <div class="game-info">
+                            <div class="game-date">0</div>
+                            <div class="game-opponent">vs ${EMPTY_STATS_LABEL}</div>
+                        </div>
+                        <div class="game-score">
+                            <span class="score-vc">0</span>
+                            <span class="score-separator">-</span>
+                            <span class="score-opp">0</span>
+                            <span class="result-badge loss">0</span>
+                        </div>
+                    </div>
+                `;
+            }
             return;
         }
 
         gamesList.innerHTML = recentGames.map(game => `
+            ${(() => {
+                const resultState = getResultState(game.result);
+                return `
             <div class="game-card">
                 <div class="game-info">
                     <div class="game-date">${game.date}</div>
@@ -234,11 +310,13 @@ async function loadRecentGames() {
                     <span class="score-vc">${game.vc_score}</span>
                     <span class="score-separator">-</span>
                     <span class="score-opp">${game.opp_score}</span>
-                    <span class="result-badge ${game.result === 'W' ? 'win' : 'loss'}">
-                        ${game.result === 'W' ? 'WIN' : 'LOSS'}
+                    <span class="result-badge ${resultState.className}">
+                        ${resultState.longLabel}
                     </span>
                 </div>
             </div>
+        `;
+            })()}
         `).join('');
     } catch (error) {
         console.error('Error loading games:', error);
@@ -248,12 +326,12 @@ async function loadRecentGames() {
 
 async function loadCharts() {
     try {
-        const trends = await fetchJson('/api/team-trends');
+        let trends = await fetchJson('/api/team-trends');
         
         // Validate data
         if (!trends || !trends.games || trends.games.length === 0) {
             console.warn('No game data available for charts');
-            return;
+            trends = getZeroTrendSnapshot();
         }
         
         // Sort by date to ensure chronological order

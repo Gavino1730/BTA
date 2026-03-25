@@ -8,47 +8,47 @@
     <div class="stats-grid">
         <div class="stat-card record">
             <div class="stat-label">Record</div>
-            <div class="stat-value" id="record">--</div>
-            <div class="stat-detail" id="win-pct">Win Percentage: --</div>
+            <div class="stat-value" id="record">0-0</div>
+            <div class="stat-detail" id="win-pct">Win Percentage: 0%</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">PPG</div>
-            <div class="stat-value" id="ppg">--</div>
+            <div class="stat-value" id="ppg">0.0</div>
             <div class="stat-detail">Points Per Game</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">FG%</div>
-            <div class="stat-value" id="fg-pct">--</div>
+            <div class="stat-value" id="fg-pct">0.0%</div>
             <div class="stat-detail">Field Goal %</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">eFG%</div>
-            <div class="stat-value" id="efg-pct">--</div>
+            <div class="stat-value" id="efg-pct">0.0%</div>
             <div class="stat-detail">Effective FG%</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">TS%</div>
-            <div class="stat-value" id="ts-pct">--</div>
+            <div class="stat-value" id="ts-pct">0.0%</div>
             <div class="stat-detail">True Shooting %</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">PPP</div>
-            <div class="stat-value" id="ppp">--</div>
+            <div class="stat-value" id="ppp">0.00</div>
             <div class="stat-detail">Points Per Possession</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">RPG</div>
-            <div class="stat-value" id="rpg">--</div>
+            <div class="stat-value" id="rpg">0.0</div>
             <div class="stat-detail">Rebounds Per Game</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">APG</div>
-            <div class="stat-value" id="apg">--</div>
+            <div class="stat-value" id="apg">0.0</div>
             <div class="stat-detail">Assists Per Game</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">AST%</div>
-            <div class="stat-value" id="ast-rate">--</div>
+            <div class="stat-value" id="ast-rate">0.0%</div>
             <div class="stat-detail">Assisted Scoring Rate</div>
         </div>
     </div>
@@ -110,5 +110,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='dashboard.js') }}?v=1.7"></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}?v=3.3"></script>
 {% endblock %}

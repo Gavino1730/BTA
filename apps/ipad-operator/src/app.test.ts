@@ -10,6 +10,15 @@ function clockToSec(clock: string): number {
   return (m || 0) * 60 + (s || 0);
 }
 
+function upsertSortedEvent(events: GameEvent[], nextEvent: GameEvent): GameEvent[] {
+  return [...events.filter((event) => event.id !== nextEvent.id), nextEvent]
+    .sort((left, right) => left.sequence - right.sequence);
+}
+
+function removeEventById(events: GameEvent[], eventId: string): GameEvent[] {
+  return events.filter((event) => event.id !== eventId);
+}
+
 interface RunningTotals {
   points: number; fgm: number; fga: number; threePm: number; threePa: number;
   ftm: number; fta: number;
@@ -256,5 +265,26 @@ describe("computePlayerTotals", () => {
     expect(t.stl).toBe(1);
     expect(t.blk).toBe(1);
     expect(t.to).toBe(1);
+  });
+});
+
+describe("event list mutations", () => {
+  it("replaces an existing event and preserves sequence order", () => {
+    const existing = shot({ id: "evt-1", teamId: "home", playerId: "h1", made: true, points: 2, sequence: 1 });
+    const later = shot({ id: "evt-2", teamId: "away", playerId: "a1", made: true, points: 3, sequence: 2 });
+    const updated = shot({ id: "evt-1", teamId: "home", playerId: "h2", made: false, points: 2, sequence: 1 });
+
+    const result = upsertSortedEvent([later, existing], updated);
+
+    expect(result.map((event) => event.id)).toEqual(["evt-1", "evt-2"]);
+    expect((result[0] as Extract<GameEvent, { type: "shot_attempt" }>).playerId).toBe("h2");
+    expect((result[0] as Extract<GameEvent, { type: "shot_attempt" }>).made).toBe(false);
+  });
+
+  it("removes an event by id without affecting others", () => {
+    const first = shot({ id: "evt-1", teamId: "home", playerId: "h1", made: true, points: 2, sequence: 1 });
+    const second = shot({ id: "evt-2", teamId: "away", playerId: "a1", made: false, points: 3, sequence: 2 });
+
+    expect(removeEventById([first, second], "evt-1")).toEqual([second]);
   });
 });

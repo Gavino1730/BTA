@@ -2,6 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getPeriodDefaultClock, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 import { QRCodeSVG } from "qrcode.react";
 import { io } from "socket.io-client";
+import {
+  addPlayerViaRealtime,
+  convertRosterTeamToAppTeam,
+  createTeamViaRealtime,
+  deletePlayerViaRealtime,
+  deleteTeamViaRealtime,
+  fetchTeamsFromRealtime,
+  updatePlayerViaRealtime,
+  updateTeamViaRealtime,
+} from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
 const DEFAULT_API = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
@@ -10,6 +20,49 @@ const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
 const DEVICE_ID_KEY = "operator-device-id";
+const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
+const DEFAULT_AWAY_TEAM_COLOR = "#f87171";
+const OPPONENT_TRACK_STAT_OPTIONS = [
+  "points",
+  "free_throws",
+  "def_reb",
+  "off_reb",
+  "turnover",
+  "steal",
+  "assist",
+  "block",
+  "foul",
+] as const;
+type OpponentTrackStat = (typeof OPPONENT_TRACK_STAT_OPTIONS)[number];
+
+const DEFAULT_OPPONENT_TRACK_STATS: OpponentTrackStat[] = [...OPPONENT_TRACK_STAT_OPTIONS];
+
+function normalizeOpponentTrackStats(value: string[] | undefined): OpponentTrackStat[] {
+  if (!value || value.length === 0) return [...DEFAULT_OPPONENT_TRACK_STATS];
+  const normalized = value
+    .map((x) => x.trim())
+    .filter((x): x is OpponentTrackStat => (OPPONENT_TRACK_STAT_OPTIONS as readonly string[]).includes(x));
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : [...DEFAULT_OPPONENT_TRACK_STATS];
+}
+
+const TEAM_COLOR_OPTIONS = [
+  "#4f8cff",
+  "#22c55e",
+  "#f59e0b",
+  "#a855f7",
+  "#ef4444",
+  "#14b8a6",
+] as const;
+
+function normalizeTeamColor(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(normalized)) return normalized;
+  if (/^#[0-9a-f]{3}$/.test(normalized)) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return fallback;
+}
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
 function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
@@ -19,6 +72,22 @@ function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
 function apiHeaders(setup: { apiKey?: string }): RequestInit {
   const h = apiKeyHeader(setup);
   return Object.keys(h).length ? { headers: h } : {};
+}
+
+function buildAiContextFromSetup(setup: GameSetup): {
+  clockEnabled: boolean;
+  opponentStatsLimited: boolean;
+  opponentTrackedStats: string[];
+} {
+  const opponentTrackedStats = normalizeOpponentTrackStats(setup.opponentTrackStats);
+  const limitedSet = new Set<OpponentTrackStat>(["points", "foul"]);
+  const opponentStatsLimited = opponentTrackedStats.every((stat) => limitedSet.has(stat));
+
+  return {
+    clockEnabled: (setup.clockEnabled ?? true) && (setup.trackClock ?? true),
+    opponentStatsLimited,
+    opponentTrackedStats
+  };
 }
 
 function buildCoachViewUrl(
@@ -32,7 +101,7 @@ function buildCoachViewUrl(
   }
 ): string {
   const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
-  const params = new URLSearchParams({ deviceId });
+  const params = new URLSearchParams({ deviceId: normalizeDeviceId(deviceId) });
   if (gameId) params.set("gameId", gameId);
   if (setup.myTeamId) params.set("myTeamId", setup.myTeamId);
   if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);
@@ -41,18 +110,26 @@ function buildCoachViewUrl(
   return `${base}/?${params.toString()}`;
 }
 
+function normalizeDeviceId(value: string | null | undefined): string {
+  const normalized = (value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9_-]/g, "");
+  return normalized || "device1";
+}
+
 function getDefaultDeviceId(): string {
   try {
     const existing = localStorage.getItem(DEVICE_ID_KEY);
     if (existing?.trim()) {
-      return existing;
+      return normalizeDeviceId(existing);
     }
 
-    const next = `device-${Math.random().toString(36).slice(2, 8)}`;
+    const next = "device1";
     localStorage.setItem(DEVICE_ID_KEY, next);
     return next;
   } catch {
-    return "device-1";
+    return "device1";
   }
 }
 
@@ -72,6 +149,7 @@ export interface Team {
   id: string;
   name: string;
   abbreviation: string;
+  teamColor?: string;
   players: Player[];
 }
 
@@ -84,7 +162,16 @@ export interface GameSetup {
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
+  clockVisible?: boolean;
+  clockEnabled?: boolean;
+  trackClock?: boolean;
+  trackPossession?: boolean;
+  trackTimeouts?: boolean;
+  opponentTrackStats?: OpponentTrackStat[];
+  homeTeamColor?: string;
+  awayTeamColor?: string;
   statsGameId?: number;  // returned by dashboard on first successful submit
+  startingLineup?: string[];  // player IDs in the starting lineup
   /** @deprecated use myTeamId + vcSide instead */
   homeTeamId?: string;
   /** @deprecated use myTeamId + vcSide instead */
@@ -98,7 +185,23 @@ export interface AppData {
 
 const DEFAULT_DATA: AppData = {
   teams: [],
-  gameSetup: { gameId: "game-1", deviceId: getDefaultDeviceId(), myTeamId: "", apiUrl: DEFAULT_API, opponent: "", vcSide: "home", dashboardUrl: DEFAULT_STATS_DASHBOARD },
+  gameSetup: {
+    gameId: "game-1",
+    deviceId: getDefaultDeviceId(),
+    myTeamId: "",
+    apiUrl: DEFAULT_API,
+    opponent: "",
+    vcSide: "home",
+    dashboardUrl: DEFAULT_STATS_DASHBOARD,
+    clockVisible: true,
+    clockEnabled: true,
+    trackClock: true,
+    trackPossession: true,
+    trackTimeouts: true,
+    opponentTrackStats: [...DEFAULT_OPPONENT_TRACK_STATS],
+    homeTeamColor: DEFAULT_HOME_TEAM_COLOR,
+    awayTeamColor: DEFAULT_AWAY_TEAM_COLOR,
+  },
 };
 
 const STANDARD_TEST_TEAM: Team = {
@@ -138,9 +241,17 @@ function loadAppData(): AppData {
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
   if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
-  if (qp.get("deviceId"))    urlSetup.deviceId    = qp.get("deviceId")!;
+  if (qp.get("deviceId"))    urlSetup.deviceId    = normalizeDeviceId(qp.get("deviceId"));
   if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;
   if (qp.get("vcSide") === "home" || qp.get("vcSide") === "away") urlSetup.vcSide = qp.get("vcSide") as "home" | "away";
+  if (qp.get("clockVisible") === "1" || qp.get("clockVisible") === "0") urlSetup.clockVisible = qp.get("clockVisible") === "1";
+  if (qp.get("clockEnabled") === "1" || qp.get("clockEnabled") === "0") urlSetup.clockEnabled = qp.get("clockEnabled") === "1";
+  if (qp.get("trackClock") === "1" || qp.get("trackClock") === "0") urlSetup.trackClock = qp.get("trackClock") === "1";
+  if (qp.get("trackPossession") === "1" || qp.get("trackPossession") === "0") urlSetup.trackPossession = qp.get("trackPossession") === "1";
+  if (qp.get("trackTimeouts") === "1" || qp.get("trackTimeouts") === "0") urlSetup.trackTimeouts = qp.get("trackTimeouts") === "1";
+  if (qp.get("opponentTrackStats")) urlSetup.opponentTrackStats = normalizeOpponentTrackStats((qp.get("opponentTrackStats") ?? "").split(","));
+  if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined, DEFAULT_HOME_TEAM_COLOR);
+  if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined, DEFAULT_AWAY_TEAM_COLOR);
 
   try {
     const s = localStorage.getItem(APP_DATA_KEY);
@@ -153,6 +264,13 @@ function loadAppData(): AppData {
         const legacyId = side === "home" ? (gs as GameSetup).homeTeamId : (gs as GameSetup).awayTeamId;
         if (legacyId) gs.myTeamId = legacyId;
       }
+      gs.deviceId = normalizeDeviceId(gs.deviceId);
+      gs.trackClock = gs.trackClock ?? true;
+      gs.trackPossession = gs.trackPossession ?? true;
+      gs.trackTimeouts = gs.trackTimeouts ?? true;
+      gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
+      gs.homeTeamColor = normalizeTeamColor(gs.homeTeamColor, DEFAULT_HOME_TEAM_COLOR);
+      gs.awayTeamColor = normalizeTeamColor(gs.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR);
       return withStandardizedTeams({
         ...DEFAULT_DATA,
         ...parsed,
@@ -179,6 +297,31 @@ function clockToSec(clock: string): number {
   const [m, s] = clock.split(":").map(Number);
   return (m || 0) * 60 + (s || 0);
 }
+
+function formatClockFromSeconds(totalSeconds: number): string {
+  const safe = Math.max(0, totalSeconds);
+  if (safe < 60) {
+    const tenthsTotal = Math.floor((safe * 10) + 1e-6);
+    const s = Math.floor(tenthsTotal / 10);
+    const t = tenthsTotal % 10;
+    return `0:${String(s).padStart(2, "0")}.${t}`;
+  }
+  const whole = Math.floor(safe + 1e-6);
+  const m = Math.floor(whole / 60);
+  const s = whole % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatClockFromDigits(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  if (!digits) return "0:00";
+  const minuteDigits = digits.length <= 2 ? "0" : digits.slice(0, -2);
+  const secondDigits = digits.length <= 2 ? digits : digits.slice(-2);
+  const m = Number.parseInt(minuteDigits || "0", 10) || 0;
+  const s = Number.parseInt(secondDigits || "0", 10) || 0;
+  return formatClockFromSeconds((m * 60) + Math.min(s, 59));
+}
+
 function playerDisplayName(id: string, allPlayers: Player[]): string {
   const p = allPlayers.find(x => x.id === id);
   return p ? `#${p.number} ${p.name}` : id;
@@ -272,6 +415,24 @@ function computePlusMinus(events: GameEvent[], vcTeamId: string): Record<string,
   return pm;
 }
 
+function computeCurrentLineup(events: GameEvent[], teamId: string, startingLineup: string[], allTeamPlayers: Player[]): { onCourt: Player[], bench: Player[] } {
+  const onCourt = new Set<string>(startingLineup);
+  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
+  
+  for (const e of sorted) {
+    if (e.type === "substitution" && e.teamId === teamId) {
+      onCourt.delete(e.playerOutId);
+      onCourt.add(e.playerInId);
+    }
+  }
+
+  const onCourtPlayers = allTeamPlayers.filter(p => onCourt.has(p.id));
+  const benchPlayers = allTeamPlayers.filter(p => !onCourt.has(p.id));
+  
+  return { onCourt: onCourtPlayers, bench: benchPlayers };
+}
+
+
 function describeEvent(
   event: GameEvent,
   homeTeamName: string,
@@ -282,7 +443,11 @@ function describeEvent(
   awayTeamId = "away"
 ) {
   const tn = (id: string) => id === homeTeamId ? homeTeamName : id === awayTeamId ? awayTeamName : id;
-  const pn = (id: string) => playerDisplayName(id, allPlayers);
+  const pn = (id: string) => {
+    if (id === "home-team" || id === "team-home" || id === `${homeTeamId}-team`) return homeTeamName;
+    if (id === "away-team" || id === "team-away" || id === `${awayTeamId}-team`) return awayTeamName;
+    return playerDisplayName(id, allPlayers);
+  };
   switch (event.type) {
     case "shot_attempt": {
       const t = pTotals[event.playerId];
@@ -322,6 +487,12 @@ function describeEvent(
       return { main: "sub", detail: `${tn(event.teamId)}  ${pn(event.playerOutId)} â†’ ${pn(event.playerInId)}`, accent: "white" };
     case "possession_start":
       return { main: "possession", detail: tn(event.possessedByTeamId), accent: "white" };
+    case "timeout":
+      return {
+        main: event.timeoutType === "full" ? "timeout 60" : "timeout 30",
+        detail: tn(event.teamId),
+        accent: "white",
+      };
     case "period_transition":
       return { main: `${event.newPeriod} start`, detail: "", accent: "teal" };
     default:
@@ -329,242 +500,212 @@ function describeEvent(
   }
 }
 
-// ================================================================
-//  PDF EXPORT
-// ================================================================
-async function exportGamePDF(
-  gameId: string,
-  gameDate: string,
-  homeTeam: Team | undefined,
-  awayTeam: Team | undefined,
-  allEvents: GameEvent[],
-) {
-  const { default: jsPDF } = await import("jspdf");
-  await import("jspdf-autotable");
+function getEventSectionLabel(event: GameEvent): string {
+  switch (event.type) {
+    case "shot_attempt":
+      return "Shot";
+    case "free_throw_attempt":
+      return "FT";
+    case "foul":
+      return "Foul";
+    case "turnover":
+      return "TO";
+    case "rebound":
+      return "Reb";
+    case "assist":
+      return "Ast";
+    case "steal":
+      return "Stl";
+    case "block":
+      return "Blk";
+    case "substitution":
+      return "Sub";
+    case "possession_start":
+      return "Poss";
+    case "timeout":
+      return "Timeout";
+    case "period_transition":
+      return "Period";
+    default:
+      return "Event";
+  }
+}
 
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const W = doc.internal.pageSize.getWidth();
+function getEventTeamBucket(
+  event: GameEvent,
+  homeTeamId: string,
+  awayTeamId: string,
+): "home" | "away" | "neutral" {
+  if (event.type === "period_transition") return "neutral";
+  const eventTeamId = event.type === "possession_start" ? event.possessedByTeamId : event.teamId;
+  if (eventTeamId === homeTeamId) return "home";
+  if (eventTeamId === awayTeamId) return "away";
+  return "neutral";
+}
 
-  const TEAL  = [45, 212, 191] as [number, number, number];
-  const RED   = [248, 113, 113] as [number, number, number];
-  const DARK  = [20, 22, 43]   as [number, number, number];
-  const MID   = [42, 46, 80]   as [number, number, number];
-  const LIGHT = [232, 234, 240] as [number, number, number];
+function getEventTeamSide(eventTeamId: string, homeTeamId: string, awayTeamId: string): TeamSide | null {
+  if (eventTeamId === homeTeamId) return "home";
+  if (eventTeamId === awayTeamId) return "away";
+  return null;
+}
 
-  const homeName = homeTeam?.name ?? "Home";
-  const awayName = awayTeam?.name ?? "Away";
-  const homeAbbr = homeTeam?.abbreviation ?? "HME";
-  const awayAbbr = awayTeam?.abbreviation ?? "AWY";
-  const homePlayers = homeTeam?.players ?? [];
-  const awayPlayers = awayTeam?.players ?? [];
-  const allPlayers  = [...homePlayers, ...awayPlayers];
+function upsertSortedEvent(events: GameEvent[], nextEvent: GameEvent): GameEvent[] {
+  return [...events.filter((event) => event.id !== nextEvent.id), nextEvent]
+    .sort((left, right) => left.sequence - right.sequence);
+}
 
-  const scores  = computeScores(allEvents, homeTeam?.id ?? "home", awayTeam?.id ?? "away");
-  const pTotals = computePlayerTotals(allEvents);
+function removeEventById(events: GameEvent[], eventId: string): GameEvent[] {
+  return events.filter((event) => event.id !== eventId);
+}
 
-  // Header banner
-  doc.setFillColor(...DARK);
-  doc.rect(0, 0, W, 32, "F");
+function formatPct(made: number, attempts: number): string {
+  if (attempts <= 0) return "0%";
+  return `${Math.round((made / attempts) * 100)}%`;
+}
 
-  doc.setFontSize(18);
-  doc.setTextColor(...TEAL);
-  doc.setFont("helvetica", "bold");
-  doc.text("Game Report", 14, 13);
+const INSIGHT_LABEL_COLORS: Record<string, string> = {
+  MOMENTUM:       '#4f8cff',
+  SHOOTING:       '#a78bfa',
+  REBOUNDING:     '#34d399',
+  'BALL SECURITY':'#34c759',
+  'FOUL WATCH':   '#ff9500',
+  'HOT HAND':     '#f2c24b',
+  ROTATION:       '#22d3ee',
+  'GAME PLAN':    '#4ade80',
+};
+function parseInsightSection(s: string): { label: string; text: string } {
+  const m = s.match(/^([A-Z][A-Z &/]+):\s*(.+)$/);
+  if (m) return { label: m[1], text: m[2] };
+  return { label: '', text: s };
+}
 
-  doc.setFontSize(10);
-  doc.setTextColor(...LIGHT);
-  doc.setFont("helvetica", "normal");
-  doc.text("Basketball Game Report", 14, 20);
+interface SharedLiveInsight {
+  id: string;
+  type: string;
+  message: string;
+  explanation: string;
+  confidence: "low" | "medium" | "high";
+  relatedTeamId?: string;
+  relatedPlayerId?: string;
+}
 
-  doc.setFontSize(9);
-  doc.setTextColor(160, 164, 190);
-  doc.text(`Game ID: ${gameId}`, 14, 27);
-  doc.text(`Date: ${gameDate}`, W - 14, 27, { align: "right" });
+function toInsightLabel(type: string): string {
+  const labels: Record<string, string> = {
+    ai_coaching: "COACHING",
+    timeout_suggestion: "TIMEOUT",
+    sub_suggestion: "ROTATION",
+    foul_trouble: "FOUL WATCH",
+    foul_warning: "FOUL WATCH",
+    team_foul_warning: "FOUL WATCH",
+    hot_hand: "HOT HAND",
+    run_detection: "MOMENTUM",
+    turnover_pressure: "BALL SECURITY",
+    shot_profile: "SHOOTING",
+    ot_awareness: "GAME PLAN",
+    pre_game: "GAME PLAN",
+  };
+  return labels[type] ?? "GAME PLAN";
+}
 
-  // Score box
-  let y = 38;
-  doc.setFillColor(...MID);
-  doc.roundedRect(14, y, W - 28, 22, 3, 3, "F");
+function playerNameFromId(playerId: string | undefined, players: Player[]): string {
+  if (!playerId) return "Team";
+  const match = players.find((p) => p.id === playerId);
+  return match?.name ?? playerId;
+}
 
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...TEAL);
-  doc.text(homeName, 22, y + 8);
-  doc.setFontSize(20);
-  doc.text(String(scores.home), 22, y + 18);
+function createAiInsights(args: {
+  trackedTeamName: string;
+  opponentTeamName: string;
+  trackedScore: number;
+  opponentScore: number;
+  trackedStats: ReturnType<typeof computeTeamStats>;
+  opponentStats: ReturnType<typeof computeTeamStats>;
+  topScorer?: { name: string; points: number };
+  foulAlerts: Player[];
+  playerTotals: Record<string, RunningTotals>;
+  gameMoment?: string;
+  isPreGame?: boolean;
+}): string[] {
+  const {
+    trackedTeamName,
+    opponentTeamName,
+    trackedScore,
+    opponentScore,
+    trackedStats,
+    opponentStats,
+    topScorer,
+    foulAlerts,
+    playerTotals,
+    gameMoment,
+    isPreGame,
+  } = args;
 
-  doc.setFontSize(11);
-  doc.setTextColor(160, 164, 190);
-  doc.text("vs", W / 2, y + 13, { align: "center" });
+  // Pre-game: don't invent insights from zero data
+  if (isPreGame) {
+    return [`Good luck out there! 🏀 ${trackedTeamName} vs ${opponentTeamName} is about to tip off. Insights will appear after the first few possessions.`];
+  }
 
-  doc.setFontSize(11);
-  doc.setTextColor(...RED);
-  doc.text(awayName, W - 22, y + 8, { align: "right" });
-  doc.setFontSize(20);
-  doc.text(String(scores.away), W - 22, y + 18, { align: "right" });
-
-  const winLabel = scores.home > scores.away
-    ? `${homeAbbr} wins`
-    : scores.away > scores.home ? `${awayAbbr} wins` : "Tie";
-  doc.setFontSize(8);
-  doc.setTextColor(160, 164, 190);
-  doc.text(winLabel, W / 2, y + 19, { align: "center" });
-
-  y += 28;
-
-  // Box score table helper
-  function boxScoreTable(team: Team | undefined, side: "home" | "away") {
-    const players = side === "home" ? homePlayers : awayPlayers;
-    const accent  = side === "home" ? TEAL : RED;
-    const name    = side === "home" ? homeName : awayName;
-
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...accent);
-    doc.text(name.toUpperCase() + " — BOX SCORE", 14, y + 4);
-    y += 7;
-
-    if (players.length === 0) {
-      doc.setFontSize(8);
-      doc.setTextColor(140, 144, 170);
-      doc.setFont("helvetica", "normal");
-      doc.text("No players on roster.", 14, y + 4);
-      y += 10;
-      return;
+  const insights: string[] = [];
+  const margin = trackedScore - opponentScore;
+  if (gameMoment) {
+    const momentCtx = margin >= 8
+      ? `+${margin} lead — protect pace and attack weak spots.`
+      : margin <= -8
+      ? `Down ${Math.abs(margin)} — push tempo and force turnovers.`
+      : `One possession game — next 3-4 possessions will decide momentum.`;
+    insights.push(`MOMENTUM: ${gameMoment}. ${momentCtx}`);
+  } else {
+    if (margin >= 8) {
+      insights.push(`MOMENTUM: ${trackedTeamName} is controlling at +${margin}. Keep pace and avoid empty possessions.`);
+    } else if (margin <= -8) {
+      insights.push(`MOMENTUM: ${trackedTeamName} is down ${Math.abs(margin)}. Prioritize high-percentage shots and stop fouling.`);
+    } else {
+      insights.push(`MOMENTUM: Close game so far. The next 3-4 possessions can swing this.`);
     }
-
-    const headers = [["#", "Player", "Pos", "PTS", "FGM-A", "3PM-A", "REB", "AST", "STL", "BLK", "TO", "PF"]];
-    const rows = players.map(p => {
-      const t = pTotals[p.id];
-      const reb = t ? t.oreb + t.dreb : 0;
-      return [
-        p.number, p.name, p.position || "-",
-        t ? String(t.points) : "0",
-        t ? `${t.fgm}-${t.fga}` : "0-0",
-        t ? `${t.threePm}-${t.threePa}` : "0-0",
-        String(reb),
-        t ? String(t.ast) : "0",
-        t ? String(t.stl) : "0",
-        t ? String(t.blk) : "0",
-        t ? String(t.to) : "0",
-        t ? String(t.fouls) : "0",
-      ];
-    });
-
-    // Totals row
-    const sum = (fn: (t: RunningTotals) => number) =>
-      players.reduce((n, p) => n + (pTotals[p.id] ? fn(pTotals[p.id]) : 0), 0);
-    rows.push([
-      "", "TEAM", "",
-      String(sum(t => t.points)),
-      `${sum(t => t.fgm)}-${sum(t => t.fga)}`,
-      `${sum(t => t.threePm)}-${sum(t => t.threePa)}`,
-      String(sum(t => t.oreb + t.dreb)),
-      String(sum(t => t.ast)),
-      String(sum(t => t.stl)),
-      String(sum(t => t.blk)),
-      String(sum(t => t.to)),
-      String(sum(t => t.fouls)),
-    ]);
-
-    (doc as any).autoTable({
-      startY: y,
-      head: headers,
-      body: rows,
-      margin: { left: 14, right: 14 },
-      styles: {
-        fontSize: 7.5, cellPadding: 2,
-        textColor: LIGHT, fillColor: [28, 31, 56] as [number, number, number],
-        lineColor: [50, 54, 90] as [number, number, number], lineWidth: 0.2,
-      },
-      headStyles: { fillColor: MID, textColor: accent, fontStyle: "bold", fontSize: 7.5 },
-      columnStyles: {
-        0: { cellWidth: 8,  halign: "center" },
-        1: { cellWidth: 36 },
-        2: { cellWidth: 10, halign: "center" },
-        3: { cellWidth: 10, halign: "center", fontStyle: "bold" },
-        4: { cellWidth: 16, halign: "center" },
-        5: { cellWidth: 16, halign: "center" },
-        6: { cellWidth: 10, halign: "center" },
-        7: { cellWidth: 10, halign: "center" },
-        8: { cellWidth: 10, halign: "center" },
-        9: { cellWidth: 10, halign: "center" },
-        10: { cellWidth: 10, halign: "center" },
-        11: { cellWidth: 10, halign: "center" },
-      },
-      didParseCell(data: any) {
-        if (data.row.index === rows.length - 1) {
-          data.cell.styles.fillColor = MID;
-          data.cell.styles.fontStyle = "bold";
-        }
-        if (data.column.index === 3 && data.section === "body" && data.row.index < rows.length - 1) {
-          const pts = Number(data.cell.raw);
-          if (pts >= 20)      data.cell.styles.textColor = [255, 220, 80];
-          else if (pts >= 10) data.cell.styles.textColor = accent;
-        }
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 6;
   }
 
-  boxScoreTable(homeTeam, "home");
-  if (y > 220) { doc.addPage(); y = 14; }
-  boxScoreTable(awayTeam, "away");
-
-  // Play-by-play log
-  if (y > 230) { doc.addPage(); y = 14; }
-
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(160, 164, 190);
-  doc.text("PLAY-BY-PLAY LOG", 14, y + 4);
-  y += 7;
-
-  const sortedEvents = [...allEvents].sort((a, b) => a.sequence - b.sequence);
-  const pbpRows = sortedEvents.map(e => {
-    const d = describeEvent(e, homeName, awayName, allPlayers, pTotals, homeTeam?.id ?? "home", awayTeam?.id ?? "away");
-    const mins = Math.floor(e.clockSecondsRemaining / 60);
-    const secs = String(e.clockSecondsRemaining % 60).padStart(2, "0");
-    const clock = `Q${e.period}  ${mins}:${secs}`;
-    const team  = e.teamId === "home" || e.teamId === homeTeam?.id ? homeAbbr : e.teamId === "away" || e.teamId === awayTeam?.id ? awayAbbr : "";
-    return [clock, team, d.main, d.detail ?? ""];
-  });
-
-  (doc as any).autoTable({
-    startY: y,
-    head: [["Clock", "Team", "Event", "Detail"]],
-    body: pbpRows,
-    margin: { left: 14, right: 14 },
-    styles: {
-      fontSize: 7, cellPadding: 1.8,
-      textColor: LIGHT, fillColor: [28, 31, 56] as [number, number, number],
-      lineColor: [50, 54, 90] as [number, number, number], lineWidth: 0.2,
-    },
-    headStyles: { fillColor: MID, textColor: LIGHT, fontStyle: "bold" },
-    columnStyles: {
-      0: { cellWidth: 22, halign: "center" },
-      1: { cellWidth: 14, halign: "center" },
-      2: { cellWidth: 28 },
-    },
-    alternateRowStyles: { fillColor: [24, 27, 50] as [number, number, number] },
-  });
-
-  // Footer on every page
-  const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7);
-    doc.setTextColor(100, 104, 130);
-    doc.text(
-      `Basketball Platform  •  Generated ${new Date().toLocaleString()}`,
-      14, doc.internal.pageSize.getHeight() - 6,
-    );
-    doc.text(`Page ${i} / ${pages}`, W - 14, doc.internal.pageSize.getHeight() - 6, { align: "right" });
+  const fgDiff = (trackedStats.fga > 0 ? (trackedStats.fg / trackedStats.fga) * 100 : 0)
+    - (opponentStats.fga > 0 ? (opponentStats.fg / opponentStats.fga) * 100 : 0);
+  if (fgDiff >= 8) {
+    insights.push(`SHOOTING: ${trackedTeamName} is winning shot efficiency (${formatPct(trackedStats.fg, trackedStats.fga)} FG). Keep attacking those same looks.`);
+  } else if (fgDiff <= -8) {
+    insights.push(`SHOOTING: ${opponentTeamName} has the edge (${formatPct(opponentStats.fg, opponentStats.fga)} vs ${formatPct(trackedStats.fg, trackedStats.fga)}). Create easier looks at the rim.`);
+  } else {
+    insights.push(`SHOOTING: Shooting is even — focus on shot quality and limiting contested 2s.`);
   }
 
-  const safeId   = gameId.replace(/[^a-zA-Z0-9\-_]/g, "_");
-  const safeDate = gameDate.replace(/[^a-zA-Z0-9\-]/g, "-");
-  doc.save(`game_report_${safeDate}_${safeId}.pdf`);
+  const reboundDiff = trackedStats.reb - opponentStats.reb;
+  if (reboundDiff >= 4) {
+    insights.push(`REBOUNDING: +${reboundDiff} rebounding edge for ${trackedTeamName}. Second-chance pressure is working — keep crashing hard.`);
+  } else if (reboundDiff <= -4) {
+    insights.push(`REBOUNDING: ${trackedTeamName} is losing the glass by ${Math.abs(reboundDiff)}. Box-outs are a priority this possession.`);
+  } else {
+    insights.push(`REBOUNDING: Boards are close. Better box-out discipline can tip the advantage.`);
+  }
+
+  const turnoverDiff = trackedStats.to - opponentStats.to;
+  if (turnoverDiff >= 3) {
+    insights.push(`BALL SECURITY: ${trackedStats.to} turnovers are hurting possessions. Slow down entry actions and protect the ball.`);
+  } else if (turnoverDiff <= -3) {
+    insights.push(`BALL SECURITY: Ball security advantage (${trackedStats.to} TOs). Keep forcing pressure — it's creating easy buckets.`);
+  } else {
+    insights.push(`BALL SECURITY: Turnovers are neutral. One careless stretch can shift momentum.`);
+  }
+
+  if (topScorer && topScorer.points >= 8) {
+    insights.push(`HOT HAND: ${topScorer.name} leads with ${topScorer.points} points. Keep getting him the ball in his spots.`);
+  }
+
+  if (foulAlerts.length > 0) {
+    const sortedByFouls = [...foulAlerts]
+      .sort((a, b) => (playerTotals[b.id]?.fouls ?? 0) - (playerTotals[a.id]?.fouls ?? 0));
+    const atRisk = sortedByFouls[0];
+    const foulCount = playerTotals[atRisk.id]?.fouls ?? 0;
+    const urgency = foulCount >= 4 ? "sit him immediately" : "consider a short rest to protect him";
+    insights.push(`FOUL WATCH: ${atRisk.name} has ${foulCount} fouls — ${urgency}.`);
+  }
+
+  return insights.slice(0, 5);
 }
 
 // ---- Dashboard stats helpers (Stats dashboard integration) ----
@@ -665,12 +806,45 @@ function computeTeamStats(events: GameEvent[], teamId: string) {
 
 // ---- Modal types ----
 type Modal =
-  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean }
-  | { kind: "freeThrow"; teamId: TeamSide; made: boolean }
-  | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide }
+  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean; editContext?: EventEditContext }
+  | { kind: "freeThrow"; teamId: TeamSide; made: boolean; editContext?: EventEditContext }
+  | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide; editContext?: EventEditContext }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
-  | { kind: "sub1"; teamId: TeamSide }
-  | { kind: "sub2"; teamId: TeamSide; playerOutId: string };
+  | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
+  | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; editContext?: EventEditContext }
+  | { kind: "sub2"; teamId: TeamSide; playerOutId: string; editContext?: EventEditContext }
+  | { kind: "assistEdit"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string; editContext: EventEditContext }
+  | { kind: "timeoutEdit"; teamId: TeamSide; timeoutType: "full" | "short"; editContext: EventEditContext }
+  | { kind: "possessionEdit"; teamId: TeamSide; editContext: EventEditContext }
+  | { kind: "periodTransitionEdit"; newPeriod: string; editContext: EventEditContext };
+
+interface EventEditContext {
+  eventId: string;
+  originalEvent: GameEvent;
+  pending: boolean;
+}
+
+interface FeedEventSelection {
+  event: GameEvent;
+  pending: boolean;
+}
+
+type NoticeTone = "info" | "success" | "warning" | "error";
+
+interface InlineNotice {
+  id: number;
+  tone: NoticeTone;
+  message: string;
+}
+
+interface ConfirmDialogState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  tone: "default" | "danger";
+  resolve: (value: boolean) => void;
+}
 
 export function App() {
   // ---- App data (teams, game setup) ----
@@ -680,6 +854,46 @@ export function App() {
     setAppData(next);
     saveAppData(next);
   }
+
+  useEffect(() => {
+    let active = true;
+
+    async function syncTeamsFromRealtime() {
+      const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
+      const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
+      const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+      const converted = remoteTeams.map(convertRosterTeamToAppTeam);
+
+      if (!active || converted.length === 0) {
+        return;
+      }
+
+      if (JSON.stringify(converted) === JSON.stringify(appData.teams)) {
+        return;
+      }
+
+      const hasSelectedTeam = converted.some((team) => team.id === appData.gameSetup.myTeamId);
+      const nextMyTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (converted[0]?.id ?? "");
+
+      persistData({
+        ...appData,
+        teams: converted,
+        gameSetup: { ...appData.gameSetup, myTeamId: nextMyTeamId },
+      });
+    }
+
+    void syncTeamsFromRealtime();
+    const intervalId = setInterval(() => {
+      void syncTeamsFromRealtime();
+    }, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [
+    appData,
+  ]);
 
   // ---- Navigation state ----
   const [view, setView] = useState<"game" | "settings">("game");
@@ -696,10 +910,25 @@ export function App() {
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
   const [clockInput, setClockInput] = useState("8:00");
+  const [clockRunning, setClockRunning] = useState(false);
   const [modal, setModal] = useState<Modal | null>(null);
   const [overtimeCount, setOvertimeCount] = useState(0);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [showGameSummary, setShowGameSummary] = useState(false);
+  const [possessionOverrideTeamId, setPossessionOverrideTeamId] = useState<string | null | undefined>(undefined);
+  const [summaryTab, setSummaryTab] = useState<"teams" | "players">("teams");
+  const [summaryAiInsights, setSummaryAiInsights] = useState<string[] | null>(null);
+  const [summaryAiLoading, setSummaryAiLoading] = useState(false);
+  const [summaryPlayerAiInsights, setSummaryPlayerAiInsights] = useState<string[] | null>(null);
+  const [summaryPlayerAiLoading, setSummaryPlayerAiLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
+  const [inlineNotice, setInlineNotice] = useState<InlineNotice | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setPossessionOverrideTeamId(undefined);
+  }, [gameId]);
   const [submitMessage, setSubmitMessage] = useState<string>("Ready to save final stats to the dashboard.");
   const [postGameNameInput, setPostGameNameInput] = useState("");
   const [postGameOpponentInput, setPostGameOpponentInput] = useState("");
@@ -715,6 +944,14 @@ export function App() {
     return loadPending(loadAppData().gameSetup.gameId).length > 0 ? "live" : "pre-game";
   });
 
+  // ---- Pre-game setup state ----
+  const [preGameDeviceId, setPreGameDeviceId] = useState(normalizeDeviceId(appData.gameSetup.deviceId));
+  const [showLineupSetup, setShowLineupSetup] = useState(false);
+  const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
+
+  // ---- In-game roster state ----
+  const [showRosterPanel, setShowRosterPanel] = useState(false);
+
   // Ref for auto-save interval — always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
@@ -727,6 +964,61 @@ export function App() {
     setGamePhase(phase);
     localStorage.setItem("operator-console:phase", phase);
   }
+
+  function dismissInlineNotice() {
+    setInlineNotice(null);
+    if (noticeTimerRef.current != null) {
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+  }
+
+  function showInlineNotice(message: string, tone: NoticeTone = "error", timeoutMs = 7000) {
+    if (noticeTimerRef.current != null) {
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+    setInlineNotice({ id: Date.now(), tone, message });
+    if (timeoutMs > 0) {
+      noticeTimerRef.current = window.setTimeout(() => {
+        setInlineNotice(null);
+        noticeTimerRef.current = null;
+      }, timeoutMs);
+    }
+  }
+
+  async function requestConfirm(options: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    tone?: "default" | "danger";
+  }): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      setConfirmDialog({
+        title: options.title,
+        message: options.message,
+        confirmLabel: options.confirmLabel ?? "Confirm",
+        cancelLabel: options.cancelLabel ?? "Cancel",
+        tone: options.tone ?? "default",
+        resolve,
+      });
+    });
+  }
+
+  function resolveConfirm(result: boolean) {
+    if (!confirmDialog) return;
+    confirmDialog.resolve(result);
+    setConfirmDialog(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current != null) {
+        window.clearTimeout(noticeTimerRef.current);
+      }
+    };
+  }, []);
 
   // ---- Derived: home/away teams ----
   // myTeamId is the team we are tracking; side determines which slot they fill.
@@ -741,6 +1033,18 @@ export function App() {
   const vcTeamId = vcSideSetup === "home" ? homeTeamId : awayTeamId;
   const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : opponentName || "Home";
   const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : opponentName || "Away";
+  const homeTeamColor = normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR);
+  const awayTeamColor = normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR);
+  const opponentTrackStats = normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats);
+  const opponentTrackSet = new Set<OpponentTrackStat>(opponentTrackStats);
+  const trackClock = appData.gameSetup.trackClock ?? true;
+  const trackPossession = appData.gameSetup.trackPossession ?? true;
+  const trackTimeouts = appData.gameSetup.trackTimeouts ?? true;
+  const opponentSide: TeamSide = vcSideSetup === "home" ? "away" : "home";
+
+  function isOpponentStatEnabled(key: OpponentTrackStat): boolean {
+    return opponentTrackSet.has(key);
+  }
   const liveHomeSideLabel = `${homeTeamName} (home)`;
   const liveAwaySideLabel = `${awayTeamName} (away)`;
   const homePlayers = homeTeam?.players ?? [];
@@ -774,7 +1078,7 @@ export function App() {
       return;
     }
 
-    const deviceId = appData.gameSetup.deviceId?.trim() || "device-1";
+    const deviceId = normalizeDeviceId(appData.gameSetup.deviceId);
     const payload = { deviceId, gameId };
     const socket = io(appData.gameSetup.apiUrl, {
       auth: appData.gameSetup.apiKey ? { apiKey: appData.gameSetup.apiKey } : {}
@@ -858,6 +1162,54 @@ export function App() {
 
   useEffect(() => { if (online) void flushQueue(); }, [online]);
 
+  useEffect(() => {
+    if (gamePhase !== "live" || !gameId) {
+      return;
+    }
+
+    const payload = buildAiContextFromSetup(appData.gameSetup);
+    void fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/ai-context`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Fail open: insights continue with last known context if API is temporarily unreachable.
+    });
+  }, [
+    appData.gameSetup.apiKey,
+    appData.gameSetup.apiUrl,
+    appData.gameSetup.clockEnabled,
+    appData.gameSetup.opponentTrackStats,
+    appData.gameSetup.trackClock,
+    gameId,
+    gamePhase,
+  ]);
+
+  useEffect(() => {
+    if (gamePhase !== "live" || !clockRunning || appData.gameSetup.clockEnabled === false || trackClock === false) return;
+    const currentSeconds = clockToSec(clockInput);
+    const step = currentSeconds <= 60 ? 0.1 : 1;
+    const delayMs = step === 0.1 ? 100 : 1000;
+    const id = setTimeout(() => {
+      setClockInput((current) => {
+        const sec = clockToSec(current);
+        if (sec <= step) {
+          setClockRunning(false);
+          return formatClockFromSeconds(0);
+        }
+        const next = Math.max(0, Math.round((sec - step) * 10) / 10);
+        return formatClockFromSeconds(next);
+      });
+    }, delayMs);
+    return () => clearTimeout(id);
+  }, [clockRunning, gamePhase, appData.gameSetup.clockEnabled, clockInput, trackClock]);
+
+  useEffect(() => {
+    if ((appData.gameSetup.clockEnabled === false || trackClock === false) && clockRunning) {
+      setClockRunning(false);
+    }
+  }, [appData.gameSetup.clockEnabled, clockRunning, trackClock]);
+
   async function postEvent(event: GameEvent) {
     const next = event.sequence + 1;
     setSequence(next);
@@ -877,6 +1229,15 @@ export function App() {
       : !lastPending ? lastSubmitted
       : lastPending.sequence > lastSubmitted.sequence ? lastPending : lastSubmitted;
     if (!last) return;
+
+    const ok = await requestConfirm({
+      title: "Undo last event?",
+      message: "This removes the most recent event from the game log.",
+      confirmLabel: "Undo Event",
+      tone: "danger",
+    });
+    if (!ok) return;
+
     // Remove from pending queue first
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     // If it is already submitted to the API, delete it there
@@ -906,6 +1267,13 @@ export function App() {
       latestVcSide === "away"
         ? latest.gameSetup.myTeamId || "team-away"
         : latestOpponentTeamId;
+    const latestStartingLineup = Array.isArray(latest.gameSetup.startingLineup)
+      ? [...new Set(latest.gameSetup.startingLineup.map((playerId) => String(playerId).trim()).filter(Boolean))].slice(0, 5)
+      : [];
+    const trackedTeamId = latestVcSide === "home" ? latestHomeTeamId : latestAwayTeamId;
+    const startingLineupByTeam = latestStartingLineup.length > 0
+      ? { [trackedTeamId]: latestStartingLineup }
+      : undefined;
 
     try {
       const res = await fetch(`${latest.gameSetup.apiUrl}/games`, {
@@ -917,16 +1285,24 @@ export function App() {
           awayTeamId: latestAwayTeamId,
           opponentName: latestOpponent,
           opponentTeamId: latestOpponentTeamId,
+          startingLineupByTeam,
+          aiContext: buildAiContextFromSetup(latest.gameSetup),
         }),
       });
 
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        alert(`Could not register game on the live server (${res.status}): ${body || "unknown error"}.\n\nCheck Settings → API URL and try again.`);
+        showInlineNotice(
+          `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
+          "error"
+        );
         return;
       }
     } catch {
-      alert(`Could not reach the live server at ${latest.gameSetup.apiUrl}.\n\nMake sure the realtime API is running, then go to Settings → Game Setup and tap Start Game again.`);
+      showInlineNotice(
+        `Could not reach the live server at ${latest.gameSetup.apiUrl}. Make sure the realtime API is running, then go to Settings > Game Setup and tap Start Game again.`,
+        "error"
+      );
       return;
     }
 
@@ -961,11 +1337,18 @@ export function App() {
     return true;
   }
 
-  /** End game from the live view — submits stats then shows the post-game screen. */
+  /** End game from the live view — opens post-game review screen without auto-submitting. */
   async function endGame() {
-    if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
-      await submitToDashboard();
-    }
+    const ok = await requestConfirm({
+      title: "End game now?",
+      message: "This moves to post-game review. You can still re-save stats from the post-game screen.",
+      confirmLabel: "End Game",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    setSubmitStatus("idle");
+    setSubmitMessage("Review game details, then tap Re-save Stats to publish to the dashboard.");
     persistPhase("post-game");
   }
 
@@ -998,7 +1381,7 @@ export function App() {
     if (!opponent) {
       const message = "Enter the opponent name in Game Setup before submitting.";
       setSubmitMessage(message);
-      alert("Enter the opponent name in Game Setup (⚙ Settings → Game Setup) before submitting.");
+      showInlineNotice("Enter the opponent name in Game Setup (Settings > Game Setup) before submitting.", "warning");
       return false;
     }
 
@@ -1006,7 +1389,7 @@ export function App() {
     if (!vcTeam) {
       const message = "Tracked team is not configured. Check Game Setup in Settings.";
       setSubmitMessage(message);
-      alert("Tracked team is not configured. Check Game Setup in Settings.");
+      showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
       return false;
     }
 
@@ -1081,8 +1464,9 @@ export function App() {
         const errorMessage = result.error || result.message || `Request failed with status ${res.status}.`;
         console.error("Dashboard ingest error:", errorMessage);
         setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
-        alert(
-          `Could not save final stats to the Stats dashboard.\n\n${errorMessage}\n\nCheck Settings -> Game Setup -> Stats Dashboard URL and make sure the dashboard is running.`
+        showInlineNotice(
+          `Could not save final stats to the Stats dashboard. ${errorMessage} Check Settings > Game Setup > Stats Dashboard URL and make sure the dashboard is running.`,
+          "error"
         );
         setSubmitStatus("error");
         return false;
@@ -1090,8 +1474,9 @@ export function App() {
     } catch (err) {
       console.error("Could not reach Stats dashboard:", err);
       setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
-      alert(
-        `Could not reach the Stats dashboard at ${dashboardUrl}.\n\nStart the Stats Dashboard service or update Settings -> Game Setup -> Stats Dashboard URL, then retry.`
+      showInlineNotice(
+        `Could not reach the Stats dashboard at ${dashboardUrl}. Start the Stats Dashboard service or update Settings > Game Setup > Stats Dashboard URL, then retry.`,
+        "error"
       );
       setSubmitStatus("error");
       return false;
@@ -1107,10 +1492,181 @@ export function App() {
   const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
   const scores = useMemo(() => computeScores(allEventObjs, homeTeamId, awayTeamId), [allEventObjs, homeTeamId, awayTeamId]);
   const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
+  const homeTeamStats = useMemo(() => computeTeamStats(allEventObjs, homeTeamId), [allEventObjs, homeTeamId]);
+  const awayTeamStats = useMemo(() => computeTeamStats(allEventObjs, awayTeamId), [allEventObjs, awayTeamId]);
+  const periodTeamFouls = useMemo(() => {
+    const totals = { home: 0, away: 0 };
+    const inOT = isOvertimePeriod(period);
+    for (const event of allEventObjs) {
+      if (event.type !== "foul") continue;
+      // NFHS OT rule: Q4 fouls carry into OT and all OT-period fouls accumulate.
+      const counts = inOT
+        ? event.period === "Q4" || isOvertimePeriod(event.period)
+        : event.period === period;
+      if (!counts) continue;
+      if (event.teamId === homeTeamId) totals.home += 1;
+      if (event.teamId === awayTeamId) totals.away += 1;
+    }
+    return totals;
+  }, [allEventObjs, period, homeTeamId, awayTeamId]);
+  const homeInBonus = periodTeamFouls.away >= 5;
+  const awayInBonus = periodTeamFouls.home >= 5;
+  const timeoutUsage = useMemo(() => {
+    const regulation = {
+      home: { full: 0, short: 0 },
+      away: { full: 0, short: 0 },
+    };
+    const overtime = {
+      home: { full: 0 },
+      away: { full: 0 },
+    };
+    for (const event of allEventObjs) {
+      if (event.type !== "timeout") continue;
+      const side = event.teamId === homeTeamId ? "home" : event.teamId === awayTeamId ? "away" : null;
+      if (!side) continue;
+      if (isOvertimePeriod(event.period)) {
+        if (event.timeoutType === "full") overtime[side].full += 1;
+      } else {
+        regulation[side][event.timeoutType] += 1;
+      }
+    }
+    return { regulation, overtime };
+  }, [allEventObjs, homeTeamId, awayTeamId]);
+  const inOvertimeNow = isOvertimePeriod(period);
+  const timeoutRemaining = useMemo(() => {
+    if (inOvertimeNow) {
+      return {
+        home: {
+          full: Math.max(0, 1 - timeoutUsage.overtime.home.full),
+          short: 0,
+        },
+        away: {
+          full: Math.max(0, 1 - timeoutUsage.overtime.away.full),
+          short: 0,
+        },
+      };
+    }
+    return {
+      home: {
+        full: Math.max(0, 3 - timeoutUsage.regulation.home.full),
+        short: Math.max(0, 2 - timeoutUsage.regulation.home.short),
+      },
+      away: {
+        full: Math.max(0, 3 - timeoutUsage.regulation.away.full),
+        short: Math.max(0, 2 - timeoutUsage.regulation.away.short),
+      },
+    };
+  }, [inOvertimeNow, timeoutUsage]);
+  const totalTimeoutsLeft = {
+    home: timeoutRemaining.home.full + timeoutRemaining.home.short,
+    away: timeoutRemaining.away.full + timeoutRemaining.away.short,
+  };
+  const latestEvent = allEvents[0]?.event;
+  const currentGameState = useMemo(() => {
+    if (gamePhase === "post-game") {
+      return { label: "End of Game", tone: "done" as const };
+    }
+    if (gamePhase === "pre-game") {
+      return { label: "Pre-Game", tone: "idle" as const };
+    }
+
+    const clockDisabled = appData.gameSetup.clockEnabled === false || trackClock === false;
+    if (clockDisabled) {
+      return { label: "Clock Disabled", tone: "idle" as const };
+    }
+
+    const clockAtZero = clockToSec(clockInput) <= 0;
+    if (clockAtZero) {
+      if (period === "Q2") return { label: "Halftime", tone: "break" as const };
+      if (period === "Q4") return { label: "End of Q4", tone: "break" as const };
+      return { label: `End of ${period}`, tone: "break" as const };
+    }
+
+    if (!clockRunning && trackTimeouts && latestEvent?.type === "timeout") {
+      const teamName = latestEvent.teamId === homeTeamId
+        ? homeTeamName
+        : latestEvent.teamId === awayTeamId
+          ? awayTeamName
+          : "Team";
+      const timeoutLen = latestEvent.timeoutType === "full" ? "60" : "30";
+      return { label: `${teamName} Timeout (${timeoutLen}s)`, tone: "alert" as const };
+    }
+
+    if (clockRunning) {
+      return { label: "Live", tone: "live" as const };
+    }
+
+    return { label: "Clock Stopped", tone: "idle" as const };
+  }, [
+    allEvents,
+    appData.gameSetup.clockEnabled,
+    awayTeamId,
+    awayTeamName,
+    clockInput,
+    clockRunning,
+    gamePhase,
+    homeTeamId,
+    homeTeamName,
+    latestEvent,
+    period,
+    trackClock,
+    trackTimeouts,
+  ]);
+  const eventPossessionTeamId = useMemo(() => {
+    const possessionEvent = allEventObjs.find((event) => event.type === "possession_start");
+    return possessionEvent?.possessedByTeamId ?? null;
+  }, [allEventObjs]);
+  const possessionTeamId = possessionOverrideTeamId !== undefined
+    ? possessionOverrideTeamId
+    : eventPossessionTeamId;
+  const possessionLabel = possessionTeamId === homeTeamId
+    ? homeTeamName
+    : possessionTeamId === awayTeamId
+      ? awayTeamName
+      : "Not set";
   const foulAlerts = useMemo(() => {
     const vcPl = appData.gameSetup.vcSide === "home" ? homePlayers : awayPlayers;
     return vcPl.filter(p => (pTotals[p.id]?.fouls ?? 0) >= 4);
   }, [appData.gameSetup.vcSide, homePlayers, awayPlayers, pTotals]);
+  const trackedPlayers = useMemo(
+    () => (vcSideSetup === "home" ? homePlayers : awayPlayers),
+    [vcSideSetup, homePlayers, awayPlayers],
+  );
+  const trackedTopScorer = useMemo(() => {
+    let current: { name: string; points: number } | undefined;
+    for (const player of trackedPlayers) {
+      const points = pTotals[player.id]?.points ?? 0;
+      if (!current || points > current.points) {
+        current = { name: player.name, points };
+      }
+    }
+    return current;
+  }, [trackedPlayers, pTotals]);
+  const fallbackSummaryInsights = useMemo(() => {
+    const trackedSide: TeamSide = vcSideSetup;
+    const trackedStats = trackedSide === "home" ? homeTeamStats : awayTeamStats;
+    const opponentStats = trackedSide === "home" ? awayTeamStats : homeTeamStats;
+    const gameMoment = appData.gameSetup.clockEnabled === false ? undefined : `${period} ${clockInput}`;
+    const totalScore = scores.home + scores.away;
+    const preGame = gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5);
+    return createAiInsights({
+      trackedTeamName: trackedSide === "home" ? homeTeamName : awayTeamName,
+      opponentTeamName: trackedSide === "home" ? awayTeamName : homeTeamName,
+      trackedScore: scores[trackedSide],
+      opponentScore: scores[trackedSide === "home" ? "away" : "home"],
+      trackedStats,
+      opponentStats,
+      topScorer: trackedTopScorer,
+      foulAlerts,
+      playerTotals: pTotals,
+      gameMoment,
+      isPreGame: preGame,
+    });
+  }, [vcSideSetup, homeTeamStats, awayTeamStats, homeTeamName, awayTeamName, scores, trackedTopScorer, foulAlerts, pTotals, appData.gameSetup.clockEnabled, period, clockInput, gamePhase, allEventObjs]);
+
+  const activeSummaryInsights = summaryAiInsights && summaryAiInsights.length > 0
+    ? summaryAiInsights
+    : fallbackSummaryInsights;
   const maxOtInEvents = useMemo(() => {
     return allEventObjs.reduce((maxOt, event) => {
       if (!isOvertimePeriod(event.period)) return maxOt;
@@ -1118,6 +1674,53 @@ export function App() {
       return Number.isFinite(otNumber) ? Math.max(maxOt, otNumber) : maxOt;
     }, 0);
   }, [allEventObjs]);
+
+  function getPeriodOrder(label: string): number {
+    const qMatch = /^Q([1-4])$/.exec(label);
+    if (qMatch) return Number.parseInt(qMatch[1], 10);
+    const otMatch = /^OT(\d+)$/.exec(label);
+    if (otMatch) return 100 + Number.parseInt(otMatch[1], 10);
+    return 0;
+  }
+
+  const furthestReachedPeriodOrder = useMemo(() => {
+    let maxOrder = getPeriodOrder(period);
+    for (const event of allEventObjs) {
+      maxOrder = Math.max(maxOrder, getPeriodOrder(event.period));
+      if (event.type === "period_transition") {
+        maxOrder = Math.max(maxOrder, getPeriodOrder(event.newPeriod));
+      }
+    }
+    return maxOrder;
+  }, [allEventObjs, period]);
+
+  async function changePeriod(nextPeriod: string) {
+    if (nextPeriod === period) return;
+
+    const nextOrder = getPeriodOrder(nextPeriod);
+    if (nextOrder < furthestReachedPeriodOrder) {
+      const ok = await requestConfirm({
+        title: `Move back to ${nextPeriod}?`,
+        message: "You already advanced to a later period. Going backward can make the game flow confusing and should only be used for corrections.",
+        confirmLabel: `Move to ${nextPeriod}`,
+      });
+      if (!ok) {
+        showInlineNotice("Period change canceled to keep game flow clear.", "warning", 2800);
+        return;
+      }
+    }
+
+    const endSeq = sequence;
+    void postEvent({
+      ...base(endSeq),
+      teamId: homeTeamId,
+      type: "period_transition",
+      newPeriod: nextPeriod,
+    });
+    setClockRunning(false);
+    setPeriod(nextPeriod);
+    setClockInput(getPeriodDefaultClock(nextPeriod));
+  }
 
   useEffect(() => {
     const currentOt = isOvertimePeriod(period) ? Number.parseInt(period.slice(2), 10) : 0;
@@ -1131,7 +1734,7 @@ export function App() {
     const submittedToRemove = submittedEvents.filter((event) => event.period === periodLabel);
 
     if (submittedToRemove.length > 0 && !navigator.onLine) {
-      alert("Cannot delete overtime while offline because submitted events must be removed from the API first.");
+      showInlineNotice("Cannot delete overtime while offline because submitted events must be removed from the API first.", "warning");
       return;
     }
 
@@ -1155,7 +1758,7 @@ export function App() {
     if (failedDeletes.length > 0) {
       const failed = new Set(failedDeletes);
       setSubmittedEvents((current) => current.filter((event) => event.period !== periodLabel || failed.has(event.id)));
-      alert(`Could not delete ${failedDeletes.length} submitted OT events from the server. Remaining OT events were kept.`);
+      showInlineNotice(`Could not delete ${failedDeletes.length} submitted OT events from the server. Remaining OT events were kept.`, "error");
       return;
     }
 
@@ -1179,16 +1782,130 @@ export function App() {
     const next = overtimeCount + 1;
     const label = `OT${next}`;
     setOvertimeCount(next);
-    if (period !== label) {
-      const endSeq = sequence;
-      void postEvent({
-        ...base(endSeq),
-        teamId: homeTeamId,
-        type: "period_transition",
-        newPeriod: label,
+    void changePeriod(label);
+  }
+
+  async function fetchOpenAiSummaryInsights() {
+    const trackedSide: TeamSide = vcSideSetup;
+    const trackedTeamName = trackedSide === "home" ? homeTeamName : awayTeamName;
+    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
+
+    // Pre-game guard: 0-0 score in Q1 with minimal events
+    const totalScore = scores.home + scores.away;
+    if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
+      setSummaryAiInsights(["Good luck out there! 🏀 First action on the way — check back once the game picks up."]);
+      return;
+    }
+
+    setSummaryAiLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/games/${gameId}/insights`, {
+        method: "GET",
+        headers: { ...apiKeyHeader(appData.gameSetup) },
       });
-      setPeriod(label);
-      setClockInput(getPeriodDefaultClock(label));
+
+      if (!res.ok) {
+        setSummaryAiInsights(null);
+        return;
+      }
+
+      const insights = await res.json() as SharedLiveInsight[];
+      if (!Array.isArray(insights) || insights.length === 0) {
+        setSummaryAiInsights(null);
+        return;
+      }
+
+      const lines = insights
+        .filter((insight) => insight.type === "ai_coaching" || insight.confidence !== "low")
+        .slice(0, 7)
+        .map((insight) => {
+          const label = toInsightLabel(insight.type);
+          const base = insight.message?.trim() || insight.explanation?.trim() || "No insight text available.";
+          const why = insight.explanation?.trim() || "";
+          const compact = why && !base.includes(why) ? `${base} — ${why}` : base;
+          return `${label}: ${compact}`;
+        });
+
+      setSummaryAiInsights(lines.length > 0 ? lines : [`GAME PLAN: Keep composure and execute next-possession fundamentals for ${trackedTeamName}.`]);
+    } catch {
+      setSummaryAiInsights(null);
+    } finally {
+      setSummaryAiLoading(false);
+    }
+  }
+
+  async function fetchPlayerAiInsights() {
+    if (trackedPlayers.length === 0) return;
+    const trackedSide: TeamSide = vcSideSetup;
+    const trackedTeamName = trackedSide === "home" ? homeTeamName : awayTeamName;
+    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
+    const trackedTeamId = trackedSide === "home" ? homeTeamId : awayTeamId;
+
+    // Pre-game guard
+    const totalScore = scores.home + scores.away;
+    if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
+      setSummaryPlayerAiInsights(["HOT HAND: No stats yet — player insights will appear once game action begins.", "FOUL WATCH: All players starting foul-free.", "ROTATION: Starting lineups not yet established.", "GAME PLAN: Focus on your game plan — insights coming after first possessions."]);
+      return;
+    }
+
+    setSummaryPlayerAiLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/games/${gameId}/insights`, {
+        method: "GET",
+        headers: { ...apiKeyHeader(appData.gameSetup) },
+      });
+      if (!res.ok) { setSummaryPlayerAiInsights(null); return; }
+
+      const insights = await res.json() as SharedLiveInsight[];
+      if (!Array.isArray(insights) || insights.length === 0) {
+        setSummaryPlayerAiInsights(null);
+        return;
+      }
+
+      const playerLines = insights
+        .filter((insight) => {
+          if (!insight.relatedTeamId || insight.relatedTeamId !== trackedTeamId) {
+            return false;
+          }
+          return insight.type === "hot_hand"
+            || insight.type === "foul_trouble"
+            || insight.type === "foul_warning"
+            || insight.type === "sub_suggestion"
+            || (insight.type === "ai_coaching" && Boolean(insight.relatedPlayerId));
+        })
+        .slice(0, 7)
+        .map((insight) => {
+          const label = toInsightLabel(insight.type);
+          const playerName = playerNameFromId(insight.relatedPlayerId, trackedPlayers);
+          const core = insight.message?.trim() || insight.explanation?.trim() || "No player guidance available.";
+          const withPlayer = insight.relatedPlayerId ? `${playerName}: ${core}` : core;
+          return `${label}: ${withPlayer}`;
+        });
+
+      if (playerLines.length > 0) {
+        setSummaryPlayerAiInsights(playerLines);
+        return;
+      }
+
+      // Fallback from live tracked player stats if shared insights have no player-specific lines yet.
+      const sortedPlayers = [...trackedPlayers]
+        .sort((a, b) => (pTotals[b.id]?.points ?? 0) - (pTotals[a.id]?.points ?? 0));
+      const top = sortedPlayers[0];
+      const topPts = top ? (pTotals[top.id]?.points ?? 0) : 0;
+      const foulRisk = sortedPlayers.find((p) => (pTotals[p.id]?.fouls ?? 0) >= 3);
+
+      const fallbackLines = [
+        top && topPts > 0 ? `HOT HAND: ${top.name} is leading with ${topPts} points — keep him involved in primary actions.` : "HOT HAND: No clear hot hand yet — evaluate next 2-3 possessions.",
+        foulRisk ? `FOUL WATCH: ${foulRisk.name} has ${(pTotals[foulRisk.id]?.fouls ?? 0)} fouls — manage his defensive matchups.` : "FOUL WATCH: No immediate foul trouble among tracked players.",
+        "ROTATION: Use the next dead ball to refresh one high-turnover or high-foul risk slot.",
+        `GAME PLAN: Prioritize efficient touches for ${trackedTeamName} and protect ball security in the next possession.`,
+      ];
+
+      setSummaryPlayerAiInsights(fallbackLines);
+    } catch {
+      setSummaryPlayerAiInsights(null);
+    } finally {
+      setSummaryPlayerAiLoading(false);
     }
   }
 
@@ -1265,9 +1982,28 @@ export function App() {
     persistPhase("pre-game");
   }
 
-  function discardFromPostGame() {
-    const ok = window.confirm("Discard this finished game? This clears tracked events and returns to pre-game setup.");
+  async function discardFromPostGame() {
+    const ok = await requestConfirm({
+      title: "Discard this finished game?",
+      message: "This clears tracked events and returns to pre-game setup.",
+      confirmLabel: "Discard Game",
+      tone: "danger",
+    });
     if (!ok) return;
+
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const savedStatsGameId = appData.gameSetup.statsGameId;
+    if (savedStatsGameId != null) {
+      try {
+        await fetch(`${dashboardUrl}/api/game/${savedStatsGameId}`, {
+          method: "DELETE",
+          headers: apiKeyHeader(appData.gameSetup),
+        });
+      } catch {
+        // Keep discarding locally even if dashboard cleanup fails.
+      }
+    }
+
     const edits = applyPostGameEdits();
     const freshId = generateGameId(edits.opponent, new Date().toISOString().slice(0, 10));
     persistData({
@@ -1303,11 +2039,225 @@ export function App() {
     };
   }
 
+  function buildEditModalForEvent(target: FeedEventSelection): Modal | null {
+    const editContext: EventEditContext = {
+      eventId: target.event.id,
+      originalEvent: target.event,
+      pending: target.pending,
+    };
+
+    switch (target.event.type) {
+      case "shot_attempt": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return { kind: "shot", teamId: teamSide, points: target.event.points, made: target.event.made, editContext };
+      }
+      case "free_throw_attempt": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return { kind: "freeThrow", teamId: teamSide, made: target.event.made, editContext };
+      }
+      case "rebound": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return { kind: "stat", stat: target.event.offensive ? "off_reb" : "def_reb", teamId: teamSide, editContext };
+      }
+      case "turnover":
+      case "foul":
+      case "steal":
+      case "block": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        const stat = target.event.type === "turnover"
+          ? "turnover"
+          : target.event.type === "foul"
+            ? "foul"
+            : target.event.type;
+        return { kind: "stat", stat, teamId: teamSide, editContext };
+      }
+      case "assist": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return {
+          kind: "assistEdit",
+          teamId: teamSide,
+          assistPlayerId: target.event.playerId,
+          scorerPlayerId: target.event.scorerPlayerId,
+          editContext,
+        };
+      }
+      case "substitution": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return { kind: "sub1", teamId: teamSide, editContext };
+      }
+      case "timeout": {
+        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return { kind: "timeoutEdit", teamId: teamSide, timeoutType: target.event.timeoutType, editContext };
+      }
+      case "possession_start": {
+        const teamSide = getEventTeamSide(target.event.possessedByTeamId, homeTeamId, awayTeamId);
+        if (!teamSide) return null;
+        return { kind: "possessionEdit", teamId: teamSide, editContext };
+      }
+      case "period_transition":
+        return { kind: "periodTransitionEdit", newPeriod: target.event.newPeriod, editContext };
+      default:
+        return null;
+    }
+  }
+
+  async function saveEditedEvent(nextEvent: GameEvent, editContext: EventEditContext): Promise<boolean> {
+    const normalizedEvent = normalizeEventTeamId(nextEvent);
+
+    if (editContext.pending) {
+      setPendingEvents((current) => upsertSortedEvent(current, normalizedEvent));
+      setModal(null);
+      showInlineNotice("Event updated.", "success", 2200);
+      return true;
+    }
+
+    if (!navigator.onLine) {
+      showInlineNotice("Reconnect to edit submitted events.", "error");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${editContext.eventId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+        body: JSON.stringify(normalizedEvent),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        showInlineNotice(`Could not update event${errorText ? `: ${errorText}` : "."}`, "error");
+        return false;
+      }
+
+      const payload = await response.json().catch(() => null) as { event?: GameEvent } | null;
+      const savedEvent = normalizeEventTeamId(payload?.event ?? normalizedEvent);
+      setSubmittedEvents((current) => upsertSortedEvent(current, savedEvent));
+      setPendingEvents((current) => removeEventById(current, savedEvent.id));
+      setModal(null);
+      showInlineNotice("Event updated.", "success", 2200);
+      return true;
+    } catch {
+      showInlineNotice("Could not reach the live server to update this event.", "error");
+      return false;
+    }
+  }
+
+  async function deleteEventRecord(target: FeedEventSelection): Promise<boolean> {
+    if (target.pending) {
+      setPendingEvents((current) => removeEventById(current, target.event.id));
+      setModal(null);
+      showInlineNotice("Event deleted.", "success", 2200);
+      return true;
+    }
+
+    if (!navigator.onLine) {
+      showInlineNotice("Reconnect to delete submitted events.", "error");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${target.event.id}`, {
+        method: "DELETE",
+        headers: apiKeyHeader(appData.gameSetup),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        showInlineNotice(`Could not delete event${errorText ? `: ${errorText}` : "."}`, "error");
+        return false;
+      }
+
+      setSubmittedEvents((current) => removeEventById(current, target.event.id));
+      setPendingEvents((current) => removeEventById(current, target.event.id));
+      setModal(null);
+      showInlineNotice("Event deleted.", "success", 2200);
+      return true;
+    } catch {
+      showInlineNotice("Could not reach the live server to delete this event.", "error");
+      return false;
+    }
+  }
+
+  function openFeedEventEditor(target: FeedEventSelection) {
+    const nextModal = buildEditModalForEvent(target);
+    if (!nextModal) {
+      showInlineNotice("That event cannot be edited from the feed yet.", "warning", 3200);
+      return;
+    }
+
+    setModal(nextModal);
+  }
+
+  function getModalEditContext(activeModal: Modal | null): EventEditContext | null {
+    if (!activeModal) return null;
+    switch (activeModal.kind) {
+      case "shot":
+      case "freeThrow":
+      case "stat":
+      case "sub1":
+      case "sub2":
+        return activeModal.editContext ?? null;
+      case "assistEdit":
+      case "timeoutEdit":
+      case "possessionEdit":
+      case "periodTransitionEdit":
+        return activeModal.editContext;
+      default:
+        return null;
+    }
+  }
+
+  function renderEditDeleteAction(editContext: EventEditContext | null) {
+    if (!editContext) return null;
+    return (
+      <div className="modal-edit-actions">
+        <button
+          className="modal-delete-btn"
+          onClick={async () => {
+            const ok = await requestConfirm({
+              title: "Delete event?",
+              message: "This removes the selected event from the game log.",
+              confirmLabel: "Delete Event",
+              tone: "danger",
+            });
+            if (!ok) return;
+            void deleteEventRecord({ event: editContext.originalEvent, pending: editContext.pending });
+          }}
+        >
+          Delete Event
+        </button>
+      </div>
+    );
+  }
+
   // ---- Modal helpers ----
   function closeModal() { setModal(null); }
 
   function confirmShot(playerId: string) {
     if (!modal || modal.kind !== "shot") return;
+    if (modal.teamId === opponentSide && !isOpponentStatEnabled("points")) {
+      closeModal();
+      return;
+    }
+    if (modal.editContext) {
+      void saveEditedEvent({
+        ...modal.editContext.originalEvent,
+        teamId: resolveTeamId(modal.teamId),
+        type: "shot_attempt",
+        playerId,
+        made: modal.made,
+        points: modal.points,
+        zone: modal.points === 3 ? "above_break_three" : "paint",
+      } as GameEvent, modal.editContext);
+      return;
+    }
     void postEvent({
       ...base(sequence),
       teamId: resolveTeamId(modal.teamId),
@@ -1322,6 +2272,22 @@ export function App() {
 
   function confirmFreeThrow(playerId: string) {
     if (!modal || modal.kind !== "freeThrow") return;
+    if (modal.teamId === opponentSide && !isOpponentStatEnabled("free_throws")) {
+      closeModal();
+      return;
+    }
+    if (modal.editContext) {
+      void saveEditedEvent({
+        ...modal.editContext.originalEvent,
+        teamId: resolveTeamId(modal.teamId),
+        type: "free_throw_attempt",
+        playerId,
+        made: modal.made,
+        attemptNumber: 1,
+        totalAttempts: 1,
+      } as GameEvent, modal.editContext);
+      return;
+    }
     void postEvent({
       ...base(sequence),
       teamId: resolveTeamId(modal.teamId),
@@ -1336,40 +2302,117 @@ export function App() {
 
   function confirmStat(playerId: string) {
     if (!modal || modal.kind !== "stat") return;
+    if (modal.teamId === opponentSide && !isOpponentStatEnabled(modal.stat as OpponentTrackStat)) {
+      closeModal();
+      return;
+    }
     const b = base(sequence);
     const { stat } = modal;
     const teamId = resolveTeamId(modal.teamId);
+    const otherSide: TeamSide = modal.teamId === "home" ? "away" : "home";
+    const otherTeamId = resolveTeamId(otherSide);
     let event: GameEvent | null = null;
     if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false };
     if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  };
     if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: "personal" };
     if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: "bad_pass" };
-    if (stat === "steal")    event = { ...b, teamId, type: "steal",    playerId };
+    if (stat === "steal") {
+      if (modal.editContext) {
+        void saveEditedEvent({
+          ...modal.editContext.originalEvent,
+          teamId,
+          type: "steal",
+          playerId,
+        } as GameEvent, modal.editContext);
+        return;
+      }
+      const stealEvent: GameEvent = { ...b, teamId, type: "steal", playerId };
+      void postEvent(stealEvent);
+
+      const isOpponentTurnover = otherSide === opponentSide;
+      const shouldTrackOpponentTurnover = !isOpponentTurnover || isOpponentStatEnabled("turnover");
+      if (shouldTrackOpponentTurnover) {
+        const turnoverEvent: GameEvent = {
+          ...base(sequence + 1),
+          teamId: otherTeamId,
+          type: "turnover",
+          playerId: `${otherSide}-team`,
+          turnoverType: "bad_pass",
+        };
+        void postEvent(turnoverEvent);
+      }
+
+      closeModal();
+      return;
+    }
     if (stat === "block")    event = { ...b, teamId, type: "block",    playerId };
     if (stat === "assist")   { setModal({ kind: "assist2", teamId: modal.teamId, assistPlayerId: playerId }); return; }
+    if (event && modal.editContext) {
+      void saveEditedEvent({
+        ...modal.editContext.originalEvent,
+        ...event,
+        id: modal.editContext.originalEvent.id,
+        gameId: modal.editContext.originalEvent.gameId,
+        sequence: modal.editContext.originalEvent.sequence,
+        timestampIso: modal.editContext.originalEvent.timestampIso,
+        operatorId: modal.editContext.originalEvent.operatorId,
+        period: modal.editContext.originalEvent.period,
+        clockSecondsRemaining: modal.editContext.originalEvent.clockSecondsRemaining,
+      } as GameEvent, modal.editContext);
+      return;
+    }
     if (event) void postEvent(event as GameEvent);
     closeModal();
   }
 
   function confirmAssistScorer(scorerPlayerId: string) {
     if (!modal || modal.kind !== "assist2") return;
+    setModal({ kind: "assist3", teamId: modal.teamId, assistPlayerId: modal.assistPlayerId, scorerPlayerId });
+  }
+
+  async function confirmAssistPoints(points: 2 | 3) {
+    if (!modal || modal.kind !== "assist3") return;
+    const seq = sequence;
+    const teamId = resolveTeamId(modal.teamId);
+
+    await postEvent({
+      ...base(seq),
+      teamId,
+      type: "shot_attempt",
+      playerId: modal.scorerPlayerId,
+      made: true,
+      points,
+      zone: points === 3 ? "above_break_three" : "paint",
+      assistedByPlayerId: modal.assistPlayerId,
+    } as GameEvent);
+
     void postEvent({
-      ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
+      ...base(seq + 1),
+      teamId,
       type: "assist",
       playerId: modal.assistPlayerId,
-      scorerPlayerId,
+      scorerPlayerId: modal.scorerPlayerId,
     });
     closeModal();
   }
 
   function confirmSubOut(playerOutId: string) {
     if (!modal || modal.kind !== "sub1") return;
-    setModal({ kind: "sub2", teamId: modal.teamId, playerOutId });
+    setModal({ kind: "sub2", teamId: modal.teamId, playerOutId, editContext: modal.editContext });
   }
 
   function confirmSubIn(playerInId: string) {
     if (!modal || modal.kind !== "sub2") return;
+    if (modal.editContext) {
+      void saveEditedEvent({
+        ...modal.editContext.originalEvent,
+        teamId: resolveTeamId(modal.teamId),
+        type: "substitution",
+        playerOutId: modal.playerOutId,
+        playerInId,
+      } as GameEvent, modal.editContext);
+      return;
+    }
     void postEvent({
       ...base(sequence),
       teamId: resolveTeamId(modal.teamId),
@@ -1380,6 +2423,50 @@ export function App() {
     closeModal();
   }
 
+  function setPossession(side: TeamSide) {
+    const teamId = resolveTeamId(side);
+    if (possessionTeamId === teamId) {
+      const teamName = side === "home" ? homeTeamName : awayTeamName;
+      showInlineNotice(`Possession is already set to ${teamName}.`, "warning", 2500);
+      return;
+    }
+    setPossessionOverrideTeamId(teamId);
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "possession_start",
+      possessedByTeamId: teamId,
+    });
+  }
+
+  function takeTimeout(side: TeamSide, timeoutType: "full" | "short") {
+    const teamId = resolveTeamId(side);
+    const bucket = side === "home" ? timeoutRemaining.home : timeoutRemaining.away;
+    if (timeoutType === "short" && inOvertimeNow) return;
+    if (bucket[timeoutType] <= 0) return;
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "timeout",
+      timeoutType,
+    });
+  }
+
+  function handleClockInput(rawValue: string) {
+    if (appData.gameSetup.clockEnabled === false) return;
+    setClockInput(formatClockFromDigits(rawValue));
+  }
+
+  function adjustClock(deltaSeconds: number) {
+    if (appData.gameSetup.clockEnabled === false) return;
+    setClockInput((current) => formatClockFromSeconds(clockToSec(current) + deltaSeconds));
+  }
+
+  function resetClockForPeriod() {
+    setClockRunning(false);
+    setClockInput(getPeriodDefaultClock(period));
+  }
+
   // ---- Modal render ----
   function renderModal() {
     if (!modal) return null;
@@ -1387,20 +2474,28 @@ export function App() {
     const tLabel = (side: TeamSide) => side === "home" ? homeTeamName : awayTeamName;
 
     if (modal.kind === "shot" || modal.kind === "freeThrow") {
-      const players = teamPlayers(modal.teamId);
+      const allTeamPlayers = teamPlayers(modal.teamId);
+      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
+      const players = lineup.onCourt;
+      const allowTeamOnlyForOpponent = modal.teamId === opponentSide && allTeamPlayers.length === 0;
+      const selectedTeamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
+      const modalTitle = modal.editContext
+        ? `Edit ${modal.kind === "shot" ? `${modal.points}pt` : "FT"} — ${tLabel(modal.teamId)}`
+        : `${modal.kind === "shot" ? `${modal.points}pt` : "FT"} — ${tLabel(modal.teamId)}`;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.kind === "shot" ? `${modal.points}pt` : "FT"} — {tLabel(modal.teamId)}</span>
+              <span className="modal-title">{modalTitle}</span>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
+            {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="made-miss-row">
               <button className={`toggle-btn ${modal.made ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, made: true })}>Made</button>
               <button className={`toggle-btn ${!modal.made ? "t-red" : ""}`} onClick={() => setModal({ ...modal, made: false })}>Miss</button>
             </div>
             <div className="player-list">
-              {players.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
+              {players.length === 0 && !allowTeamOnlyForOpponent && <p className="no-players">No players on court yet</p>}
               {players.map(p => (
                 <button key={p.id} className="player-row" onClick={() => (modal.kind === "shot" ? confirmShot(p.id) : confirmFreeThrow(p.id))}>
                   <span className="pnum">#{p.number}</span>
@@ -1414,7 +2509,15 @@ export function App() {
                   {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
                 </button>
               ))}
-              <button className="player-row team-row" onClick={() => (modal.kind === "shot" ? confirmShot(`${modal.teamId}-team`) : confirmFreeThrow(`${modal.teamId}-team`))}>Team (no player)</button>
+              {allowTeamOnlyForOpponent && (
+                <button
+                  className="player-row team-row opponent-team-only-row"
+                  style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
+                  onClick={() => (modal.kind === "shot" ? confirmShot(`${modal.teamId}-team`) : confirmFreeThrow(`${modal.teamId}-team`))}
+                >
+                  {tLabel(modal.teamId)}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1427,26 +2530,44 @@ export function App() {
         steal: "Steal", assist: "Assist — pick passer", block: "Block", foul: "Foul",
       };
       const trackedSide = vcSideSetup;
-      const opponentSide: TeamSide = vcSideSetup === "home" ? "away" : "home";
-      const trackedPlayers = teamPlayers(trackedSide);
+      const allowOpponentForStat = isOpponentStatEnabled(modal.stat as OpponentTrackStat);
+      const trackedAllPlayers = teamPlayers(trackedSide);
+      const trackedLineup = computeCurrentLineup(allEventObjs, resolveTeamId(trackedSide), appData.gameSetup.startingLineup ?? [], trackedAllPlayers);
+      const trackedPlayers = trackedLineup.onCourt;
       const isTrackedSelection = modal.teamId === trackedSide;
+      const trackedTeamColor = trackedSide === "home" ? homeTeamColor : awayTeamColor;
+      const opponentTeamColor = opponentSide === "home" ? homeTeamColor : awayTeamColor;
+      const selectedTeamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <span className="modal-title">{statLabels[modal.stat]}</span>
+                <span className="modal-title">{modal.editContext ? `Edit ${statLabels[modal.stat]}` : statLabels[modal.stat]}</span>
                 <div className="modal-team-toggle">
-                  <button className={isTrackedSelection ? "t-teal" : ""} onClick={() => setModal({ ...modal, teamId: trackedSide })}>{vcSideSetup === "home" ? homeTeamName : awayTeamName}</button>
-                  <button className={!isTrackedSelection ? "t-red" : ""} onClick={() => setModal({ ...modal, teamId: opponentSide })}>{vcSideSetup === "home" ? awayTeamName : homeTeamName} team</button>
+                  <button
+                    className={isTrackedSelection ? "team-color-active" : ""}
+                    style={isTrackedSelection ? { background: `${trackedTeamColor}26`, borderColor: trackedTeamColor, color: trackedTeamColor } : undefined}
+                    onClick={() => setModal({ ...modal, teamId: trackedSide })}
+                  >{vcSideSetup === "home" ? homeTeamName : awayTeamName}</button>
+                  <button
+                    className={!isTrackedSelection ? "team-color-active" : ""}
+                    style={!isTrackedSelection ? { background: `${opponentTeamColor}26`, borderColor: opponentTeamColor, color: opponentTeamColor } : undefined}
+                    onClick={() => {
+                      if (allowOpponentForStat) setModal({ ...modal, teamId: opponentSide });
+                    }}
+                    disabled={!allowOpponentForStat}
+                    title={allowOpponentForStat ? undefined : "Opponent tracking for this stat is disabled in Settings"}
+                  >{vcSideSetup === "home" ? awayTeamName : homeTeamName}</button>
                 </div>
               </div>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
+            {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
               {isTrackedSelection ? (
                 <>
-                  {trackedPlayers.length === 0 && <p className="no-players">No players — set up roster in Settings ☰</p>}
+                  {trackedPlayers.length === 0 && <p className="no-players">No players on court yet</p>}
                   {trackedPlayers.map(p => (
                     <button key={p.id} className="player-row" onClick={() => confirmStat(p.id)}>
                       <span className="pnum">#{p.number}</span>
@@ -1464,8 +2585,74 @@ export function App() {
               ) : (
                 <p className="no-players">Opponent tracked as team only.</p>
               )}
-              <button className="player-row team-row" onClick={() => confirmStat(`${modal.teamId}-team`)}>
-                {isTrackedSelection ? "Team (no player)" : "Opponent team"}
+              {!isTrackedSelection && (
+                <button
+                  className="player-row team-row opponent-team-only-row"
+                  style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
+                  onClick={() => confirmStat(`${modal.teamId}-team`)}
+                >
+                  {tLabel(modal.teamId)}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "assistEdit") {
+      const allTeamPlayers = teamPlayers(modal.teamId);
+      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
+      const players = lineup.onCourt;
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Assist — {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
+            </div>
+            {renderEditDeleteAction(modal.editContext)}
+            <div className="modal-subtitle">Select the passer, then the scorer.</div>
+            <div className="player-list">
+              {players.length === 0 && <p className="no-players">No players on court yet</p>}
+              {players.map((player) => (
+                <button
+                  key={`assist-passer-${player.id}`}
+                  className={`player-row${modal.assistPlayerId === player.id ? " player-row-selected" : ""}`}
+                  onClick={() => setModal({ ...modal, assistPlayerId: player.id })}
+                >
+                  <span className="pnum">#{player.number}</span>
+                  <span className="pname">Passer: {player.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="player-list">
+              {players.map((player) => (
+                <button
+                  key={`assist-scorer-${player.id}`}
+                  className={`player-row${modal.scorerPlayerId === player.id ? " player-row-selected" : ""}`}
+                  onClick={() => setModal({ ...modal, scorerPlayerId: player.id })}
+                >
+                  <span className="pnum">#{player.number}</span>
+                  <span className="pname">Scorer: {player.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="confirm-btn confirm-btn-primary"
+                onClick={() => {
+                  void saveEditedEvent({
+                    ...modal.editContext.originalEvent,
+                    teamId: resolveTeamId(modal.teamId),
+                    type: "assist",
+                    playerId: modal.assistPlayerId,
+                    scorerPlayerId: modal.scorerPlayerId,
+                  } as GameEvent, modal.editContext);
+                }}
+              >
+                Save Assist
               </button>
             </div>
           </div>
@@ -1474,7 +2661,9 @@ export function App() {
     }
 
     if (modal.kind === "assist2") {
-      const players = teamPlayers(modal.teamId);
+      const allTeamPlayers = teamPlayers(modal.teamId);
+      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
+      const players = lineup.onCourt;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -1483,6 +2672,7 @@ export function App() {
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div className="player-list">
+              {players.length === 0 && <p className="no-players">No players on court yet</p>}
               {players.map(p => (
                 <button key={p.id} className="player-row" onClick={() => confirmAssistScorer(p.id)}>
                   <span className="pnum">#{p.number}</span>
@@ -1496,22 +2686,81 @@ export function App() {
       );
     }
 
-    if (modal.kind === "sub1") {
+    if (modal.kind === "assist3") {
       const players = teamPlayers(modal.teamId);
+      const scorer = players.find((p) => p.id === modal.scorerPlayerId);
+      const passer = players.find((p) => p.id === modal.assistPlayerId);
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Sub Out — {tLabel(modal.teamId)}</span>
+              <span className="modal-title">Assist — pick points</span>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
+            <div className="modal-subtitle">
+              {passer ? `Passer: #${passer.number} ${passer.name}` : "Passer selected"}
+            </div>
+            <div className="modal-subtitle">
+              {scorer ? `Scorer: #${scorer.number} ${scorer.name}` : "Scorer selected"}
+            </div>
+            <div className="event-pills" style={{ marginTop: 12 }}>
+              <button className="circle teal" onClick={() => { void confirmAssistPoints(2); }}>2pt</button>
+              <button className="circle teal" onClick={() => { void confirmAssistPoints(3); }}>3pt</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "sub1") {
+      const players = teamPlayers(modal.teamId);
+      const currentLineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], players);
+      
+      // If playerOutId is provided, skip directly to selecting who to sub in
+      if (modal.playerOutId) {
+          const subInPlayers = currentLineup.bench;
+        return (
+          <div className="modal-overlay" onClick={closeModal}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} → {players.find(p => p.id === modal.playerOutId)?.name} — {tLabel(modal.teamId)}</span>
+                <button className="modal-close" onClick={closeModal}>✕</button>
+              </div>
+              {renderEditDeleteAction(modal.editContext ?? null)}
+              <div className="player-list">
+                {subInPlayers.map(p => (
+                  <button key={p.id} className="player-row" onClick={() => confirmSubIn(p.id)}>
+                    <span className="pnum">#{p.number}</span>
+                    <span className="pname">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Otherwise show who's on court to choose who to sub out
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">{modal.editContext ? "Edit Sub Out" : "Sub Out"} — {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
+            </div>
+            {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
-              {players.map(p => (
-                <button key={p.id} className="player-row" onClick={() => confirmSubOut(p.id)}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                </button>
-              ))}
+              {currentLineup.onCourt.length > 0 ? (
+                currentLineup.onCourt.map(p => (
+                  <button key={p.id} className="player-row" onClick={() => confirmSubOut(p.id)}>
+                    <span className="pnum">#{p.number}</span>
+                    <span className="pname">{p.name}</span>
+                    {pTotals[p.id] && <span className="ppts">{pTotals[p.id].points}pts</span>}
+                  </button>
+                ))
+              ) : (
+                <p className="no-players">No players on court yet</p>
+              )}
             </div>
           </div>
         </div>
@@ -1519,14 +2768,17 @@ export function App() {
     }
 
     if (modal.kind === "sub2") {
-      const players = teamPlayers(modal.teamId).filter(p => p.id !== modal.playerOutId);
+      const allSub2Players = teamPlayers(modal.teamId);
+      const sub2Lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allSub2Players);
+      const players = sub2Lineup.bench;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Sub In — {tLabel(modal.teamId)}</span>
+              <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} — {tLabel(modal.teamId)}</span>
               <button className="modal-close" onClick={closeModal}>✕</button>
             </div>
+            {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
               {players.map(p => (
                 <button key={p.id} className="player-row" onClick={() => confirmSubIn(p.id)}>
@@ -1540,7 +2792,168 @@ export function App() {
       );
     }
 
+    if (modal.kind === "timeoutEdit") {
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Timeout</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
+            </div>
+            {renderEditDeleteAction(modal.editContext)}
+            <div className="confirm-message">Update the team and timeout length for this stoppage.</div>
+            <div className="modal-team-toggle" style={{ padding: "0 1.2rem" }}>
+              <button className={modal.teamId === "home" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "home" })}>{homeTeamName}</button>
+              <button className={modal.teamId === "away" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "away" })}>{awayTeamName}</button>
+            </div>
+            <div className="made-miss-row" style={{ padding: "0.9rem 1.2rem 0" }}>
+              <button className={`toggle-btn ${modal.timeoutType === "full" ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, timeoutType: "full" })}>Full</button>
+              <button className={`toggle-btn ${modal.timeoutType === "short" ? "t-red" : ""}`} onClick={() => setModal({ ...modal, timeoutType: "short" })}>Short</button>
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="confirm-btn confirm-btn-primary"
+                onClick={() => {
+                  void saveEditedEvent({
+                    ...modal.editContext.originalEvent,
+                    teamId: resolveTeamId(modal.teamId),
+                    type: "timeout",
+                    timeoutType: modal.timeoutType,
+                  } as GameEvent, modal.editContext);
+                }}
+              >
+                Save Timeout
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "possessionEdit") {
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Possession</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
+            </div>
+            {renderEditDeleteAction(modal.editContext)}
+            <div className="confirm-message">Choose which team should own this possession event.</div>
+            <div className="modal-team-toggle" style={{ padding: "0 1.2rem" }}>
+              <button className={modal.teamId === "home" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "home" })}>{homeTeamName}</button>
+              <button className={modal.teamId === "away" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "away" })}>{awayTeamName}</button>
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="confirm-btn confirm-btn-primary"
+                onClick={() => {
+                  const teamId = resolveTeamId(modal.teamId);
+                  void saveEditedEvent({
+                    ...modal.editContext.originalEvent,
+                    teamId,
+                    type: "possession_start",
+                    possessedByTeamId: teamId,
+                  } as GameEvent, modal.editContext);
+                }}
+              >
+                Save Possession
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "periodTransitionEdit") {
+      const availablePeriods = [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        ...Array.from({ length: overtimeCount }, (_, index) => `OT${index + 1}`),
+      ];
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Period Start</span>
+              <button className="modal-close" onClick={closeModal}>✕</button>
+            </div>
+            {renderEditDeleteAction(modal.editContext)}
+            <div className="confirm-message">Pick the period that should start at this point in the feed.</div>
+            <div className="period-row" style={{ borderTop: "none", paddingTop: 0 }}>
+              {availablePeriods.map((label) => (
+                <button
+                  key={label}
+                  className={`period-btn${modal.newPeriod === label ? " period-on" : ""}`}
+                  onClick={() => setModal({ ...modal, newPeriod: label })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="confirm-btn confirm-btn-primary"
+                onClick={() => {
+                  void saveEditedEvent({
+                    ...modal.editContext.originalEvent,
+                    type: "period_transition",
+                    newPeriod: modal.newPeriod,
+                    period: modal.newPeriod,
+                  } as GameEvent, modal.editContext);
+                }}
+              >
+                Save Period
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return null;
+  }
+
+  function renderInlineNotice() {
+    if (!inlineNotice) return null;
+    return (
+      <div className={`inline-notice inline-notice-${inlineNotice.tone}`} role="alert" aria-live="assertive">
+        <span>{inlineNotice.message}</span>
+        <button className="inline-notice-close" onClick={dismissInlineNotice} aria-label="Dismiss notice">
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  function renderConfirmDialog() {
+    if (!confirmDialog) return null;
+    return (
+      <div className="modal-overlay" onClick={() => resolveConfirm(false)}>
+        <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <span className="modal-title">{confirmDialog.title}</span>
+          </div>
+          <div className="confirm-message">{confirmDialog.message}</div>
+          <div className="confirm-actions">
+            <button className="confirm-btn confirm-btn-cancel" onClick={() => resolveConfirm(false)}>
+              {confirmDialog.cancelLabel}
+            </button>
+            <button
+              className={`confirm-btn ${confirmDialog.tone === "danger" ? "confirm-btn-danger" : "confirm-btn-primary"}`}
+              onClick={() => resolveConfirm(true)}
+            >
+              {confirmDialog.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // ================================================================
@@ -1572,12 +2985,68 @@ export function App() {
   if (gamePhase === "pre-game") {
     const canStart = !!appData.gameSetup.myTeamId && !!appData.gameSetup.opponent?.trim();
     const myTeamDisplay = myTeam?.name ?? null;
+
+    const handleStarterToggle = (playerId: string) => {
+      const next = new Set(selectedStarters);
+      if (next.has(playerId)) {
+        next.delete(playerId);
+      } else {
+          if (next.size >= 5) return;
+          next.add(playerId);
+      }
+      setSelectedStarters(next);
+    };
+
+    const handleSaveLineup = () => {
+      const normalizedDeviceId = normalizeDeviceId(preGameDeviceId);
+      setPreGameDeviceId(normalizedDeviceId);
+      persistData({
+        ...appData,
+        gameSetup: {
+          ...appData.gameSetup,
+          deviceId: normalizedDeviceId,
+          startingLineup: Array.from(selectedStarters),
+        },
+      });
+      localStorage.setItem(DEVICE_ID_KEY, normalizedDeviceId);
+      setShowLineupSetup(false);
+    };
+
+    const persistPreGameDeviceId = () => {
+      const normalizedDeviceId = normalizeDeviceId(preGameDeviceId);
+      if (normalizedDeviceId === appData.gameSetup.deviceId && normalizedDeviceId === preGameDeviceId) {
+        return;
+      }
+      setPreGameDeviceId(normalizedDeviceId);
+      persistData({
+        ...appData,
+        gameSetup: {
+          ...appData.gameSetup,
+          deviceId: normalizedDeviceId,
+        },
+      });
+      localStorage.setItem(DEVICE_ID_KEY, normalizedDeviceId);
+    };
+
     return (
       <div className="pregame-screen">
+        {renderInlineNotice()}
+        {renderConfirmDialog()}
         <div className="pregame-card">
           <div className="pregame-header">
             <span className="pregame-eyebrow">Operator Console</span>
             <h1 className="pregame-title">Ready to Track</h1>
+          </div>
+
+          <div className="pregame-device-id">
+            <label className="pregame-device-label">Device ID:</label>
+            <input
+              className="pregame-device-input"
+              value={preGameDeviceId}
+              onChange={e => setPreGameDeviceId(e.target.value)}
+              onBlur={persistPreGameDeviceId}
+              placeholder="device1"
+            />
           </div>
 
           <div className="pregame-matchup">
@@ -1620,6 +3089,56 @@ export function App() {
                 </button>
               </div>
             </div>
+            <div className="pregame-meta-row">
+              <span className="pregame-meta-label">Colors</span>
+              <div className="team-color-rows">
+                <div className="team-color-row">
+                  <span className="team-color-label">Home</span>
+                  <div className="team-color-swatches">
+                    {TEAM_COLOR_OPTIONS.map((color) => (
+                      <button
+                        key={`pregame-home-${color}`}
+                        type="button"
+                        className={`team-color-swatch${homeTeamColor === color ? " selected" : ""}`}
+                        style={{ background: color }}
+                        onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, homeTeamColor: color } })}
+                        title={`Home color ${color}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="team-color-row">
+                  <span className="team-color-label">Away</span>
+                  <div className="team-color-swatches">
+                    {TEAM_COLOR_OPTIONS.map((color) => (
+                      <button
+                        key={`pregame-away-${color}`}
+                        type="button"
+                        className={`team-color-swatch${awayTeamColor === color ? " selected" : ""}`}
+                        style={{ background: color }}
+                        onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, awayTeamColor: color } })}
+                        title={`Away color ${color}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="pregame-meta-row">
+              <span className="pregame-meta-label">Clock</span>
+              <div className="pregame-side-toggle">
+                <button
+                  className={`tt-btn${(appData.gameSetup.clockVisible ?? true) ? " tt-teal" : ""}`}
+                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
+                  {(appData.gameSetup.clockVisible ?? true) ? "Shown" : "Hidden"}
+                </button>
+                <button
+                  className={`tt-btn${(appData.gameSetup.clockEnabled ?? true) ? " tt-teal" : ""}`}
+                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
+                  {(appData.gameSetup.clockEnabled ?? true) ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+            </div>
           </div>
 
           {!appData.gameSetup.myTeamId && (
@@ -1629,21 +3148,69 @@ export function App() {
             <p className="pregame-error">⚠ Enter the opponent name above to continue.</p>
           )}
 
+          {myTeam && (
+            <button
+              className="pregame-lineup-btn"
+              onClick={() => {
+                setShowLineupSetup((current) => {
+                  const next = !current;
+                  if (next) {
+                    // Always start from an empty lineup to avoid stale selections from prior games/teams.
+                    setSelectedStarters(new Set());
+                  }
+                  return next;
+                });
+              }}>
+              {showLineupSetup ? "Done Setting Lineup" : "Set Starting Lineup"}
+            </button>
+          )}
+
+          {showLineupSetup && myTeam && (
+            <div className="pregame-lineup-setup">
+              <h3 className="lineup-setup-title">Select Starting Lineup</h3>
+              <div className="lineup-player-grid">
+                {myTeam.players.map(p => (
+                  <button
+                    key={p.id}
+                    className={`lineup-player-btn${selectedStarters.has(p.id) ? " lineup-player-selected" : ""}`}
+                      onClick={() => handleStarterToggle(p.id)}
+                      disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
+                    <span className="lineup-player-num">#{p.number}</span>
+                    <span className="lineup-player-name">{p.name}</span>
+                    {selectedStarters.has(p.id) && <span className="lineup-player-badge">☆</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="lineup-setup-actions">
+                <button className="lineup-clear-btn" onClick={() => setSelectedStarters(new Set())}>
+                  Clear All
+                </button>
+                <button className="lineup-save-btn" onClick={handleSaveLineup}>
+                  Save Lineup ({selectedStarters.size}/5)
+                </button>
+              </div>
+            </div>
+          )}
+
           <button
             className="pregame-start-btn"
             disabled={!canStart}
             onClick={async () => {
+              persistPreGameDeviceId();
               const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
               await startGame(newId);
             }}>
             ▶ Start Game
           </button>
 
-          <button
-            className="pregame-settings-link"
-            onClick={() => { setSettingsView("menu"); setView("settings"); }}>
-            ⚙ Settings &amp; Roster
-          </button>
+          <div className="pregame-settings-callout">
+            <button
+              className="pregame-settings-link"
+              onClick={() => { setSettingsView("game-setup"); setView("settings"); }}>
+              ⚙ Open Game Settings
+            </button>
+            <p className="pregame-settings-hint">Team/Opponent required. API and Dashboard URLs are critical for live sync and final save.</p>
+          </div>
         </div>
       </div>
     );
@@ -1661,6 +3228,8 @@ export function App() {
     });
     return (
       <div className="postgame-screen">
+        {renderInlineNotice()}
+        {renderConfirmDialog()}
         <div className="postgame-card">
           <div className="postgame-header">
             <span className="postgame-eyebrow">Game Over</span>
@@ -1737,7 +3306,7 @@ export function App() {
             href={coachUrl}
             target="_blank"
             rel="noreferrer">
-            📺 Open Coach Dashboard
+            📺 Open Dashboard
           </a>
 
           <button
@@ -1757,8 +3326,13 @@ export function App() {
 
           <button
             className="postgame-reset-btn"
-            onClick={() => {
-              const ok = window.confirm("Reset this game and start over with a fresh game id?");
+            onClick={async () => {
+              const ok = await requestConfirm({
+                title: "Reset this game and start over?",
+                message: "This keeps your settings but clears all tracked events and creates a fresh game id.",
+                confirmLabel: "Reset Game",
+                tone: "danger",
+              });
               if (!ok) return;
               resetFromPostGame();
             }}>
@@ -1792,8 +3366,258 @@ export function App() {
   });
 
   return (
-    <div className="game-layout">
+    <div
+      className="game-layout"
+      style={{
+        ["--team-home-color" as string]: homeTeamColor,
+        ["--team-away-color" as string]: awayTeamColor,
+      }}
+    >
+      {renderInlineNotice()}
+      {renderConfirmDialog()}
       {renderModal()}
+      {showGameSummary && (
+        <div className="modal-overlay" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>
+          <div className="modal summary-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header summary-header">
+              <div className="summary-header-main">
+                <span className="modal-title">Game Summary</span>
+                {/* Scoreboard strip: editable quarter + clock + live scores */}
+                <div className="summary-top-strip">
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">Quarter</span>
+                    <select
+                      className="summary-top-value"
+                      value={period}
+                      onChange={e => {
+                        const nextPeriod = e.target.value;
+                        void changePeriod(nextPeriod);
+                      }}
+                      style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+                    >
+                      {periodLabels.map(lbl => (
+                        <option key={lbl} value={lbl} style={{ background: "#302f68" }}>{lbl}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">Clock</span>
+                    <input
+                      className={`summary-top-clock-input summary-top-clock`}
+                      value={clockInput}
+                      onChange={e => handleClockInput(e.target.value)}
+                      onFocus={e => e.currentTarget.select()}
+                      inputMode="numeric"
+                      placeholder="8:00"
+                      disabled={appData.gameSetup.clockEnabled === false}
+                    />
+                  </div>
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">{homeTeamName}</span>
+                    <span className="summary-top-value">{scores.home}</span>
+                  </div>
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">{awayTeamName}</span>
+                    <span className="summary-top-value">{scores.away}</span>
+                  </div>
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">Fouls</span>
+                    <div className="summary-top-dual">
+                      <span className={`summary-top-dual-row${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>
+                        Home: {periodTeamFouls.home}
+                      </span>
+                      <span className={`summary-top-dual-row${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>
+                        Away: {periodTeamFouls.away}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">TO Left</span>
+                    <div className="summary-top-dual">
+                      <span className="summary-top-dual-row">Home: {totalTimeoutsLeft.home}</span>
+                      <span className="summary-top-dual-row">Away: {totalTimeoutsLeft.away}</span>
+                    </div>
+                  </div>
+                  <div className="summary-top-item">
+                    <span className="summary-top-label">State</span>
+                    <span className={`summary-top-state summary-top-state-${currentGameState.tone}`}>{currentGameState.label}</span>
+                  </div>
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>✕</button>
+            </div>
+
+            {/* Tab bar */}
+            <div className="summary-tab-bar">
+              <button
+                className={`summary-tab-btn${summaryTab === "teams" ? " active" : ""}`}
+                onClick={() => setSummaryTab("teams")}
+              >Teams</button>
+              <button
+                className={`summary-tab-btn${summaryTab === "players" ? " active" : ""}`}
+                onClick={() => {
+                  setSummaryTab("players");
+                  if (!summaryPlayerAiInsights && !summaryPlayerAiLoading) {
+                    void fetchPlayerAiInsights();
+                  }
+                }}
+              >Players{foulAlerts.length > 0 ? ` ⚠ ${foulAlerts.length}` : ""}</button>
+            </div>
+
+            <div className="summary-body">
+              {/* ── TEAMS TAB ── */}
+              {summaryTab === "teams" && (<>
+                <div className="summary-stats-grid">
+                  <div className="summary-stat-card">
+                    <h3>{homeTeamName}</h3>
+                    <div className="summary-stat-row"><span>FG</span><strong>{homeTeamStats.fg}-{homeTeamStats.fga} ({formatPct(homeTeamStats.fg, homeTeamStats.fga)})</strong></div>
+                    <div className="summary-stat-row"><span>3PT</span><strong>{homeTeamStats.fg3}-{homeTeamStats.fg3a}</strong></div>
+                    <div className="summary-stat-row"><span>FT</span><strong>{homeTeamStats.ft}-{homeTeamStats.fta}</strong></div>
+                    <div className="summary-stat-row"><span>REB</span><strong>{homeTeamStats.reb}</strong></div>
+                    <div className="summary-stat-row"><span>AST / TO</span><strong>{homeTeamStats.asst} / {homeTeamStats.to}</strong></div>
+                    <div className="summary-stat-row"><span>STL / BLK</span><strong>{homeTeamStats.stl} / {homeTeamStats.blk}</strong></div>
+                  </div>
+
+                  <div className="summary-stat-card">
+                    <h3>{awayTeamName}</h3>
+                    <div className="summary-stat-row"><span>FG</span><strong>{awayTeamStats.fg}-{awayTeamStats.fga} ({formatPct(awayTeamStats.fg, awayTeamStats.fga)})</strong></div>
+                    <div className="summary-stat-row"><span>3PT</span><strong>{awayTeamStats.fg3}-{awayTeamStats.fg3a}</strong></div>
+                    <div className="summary-stat-row"><span>FT</span><strong>{awayTeamStats.ft}-{awayTeamStats.fta}</strong></div>
+                    <div className="summary-stat-row"><span>REB</span><strong>{awayTeamStats.reb}</strong></div>
+                    <div className="summary-stat-row"><span>AST / TO</span><strong>{awayTeamStats.asst} / {awayTeamStats.to}</strong></div>
+                    <div className="summary-stat-row"><span>STL / BLK</span><strong>{awayTeamStats.stl} / {awayTeamStats.blk}</strong></div>
+                  </div>
+                </div>
+
+                <div className="summary-highlights">
+                  <h3>AI Insights</h3>
+                  {summaryAiLoading && <p className="summary-ai-status">Generating insights…</p>}
+                  <div className="summary-ai-sections">
+                    {!summaryAiLoading && activeSummaryInsights.length === 0 && (
+                      <p className="summary-ai-status">No insights yet. Capture a few more possessions.</p>
+                    )}
+                    {activeSummaryInsights.map((insight, index) => {
+                      const { label, text } = parseInsightSection(insight);
+                      const color = INSIGHT_LABEL_COLORS[label] ?? 'rgba(232,234,240,0.55)';
+                      return (
+                        <div key={index} className="insight-section">
+                          {label && <span className="insight-label" style={{ color, background: `${color}1a` }}>{label}</span>}
+                          <p className="insight-text">{text}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!summaryAiLoading && (
+                    <button
+                      className="summary-ai-refresh-btn"
+                      onClick={() => { setSummaryAiInsights(null); void fetchOpenAiSummaryInsights(); }}
+                    >↻ Refresh</button>
+                  )}
+                </div>
+              </>)}
+
+              {/* ── PLAYERS TAB ── */}
+              {summaryTab === "players" && (<>
+                {trackedPlayers.length === 0 ? (
+                  <p className="summary-no-players">No tracked players — add a roster to see individual stats.</p>
+                ) : (
+                  <div className="summary-player-list">
+                    {/* header row */}
+                    <div className="summary-player-header">
+                      <span className="sph-name">Player</span>
+                      <span className="sph-stat">PTS</span>
+                      <span className="sph-stat">FG</span>
+                      <span className="sph-stat">3P</span>
+                      <span className="sph-stat">FT</span>
+                      <span className="sph-stat">REB</span>
+                      <span className="sph-stat">AST</span>
+                      <span className="sph-stat">STL</span>
+                      <span className="sph-stat">BLK</span>
+                      <span className="sph-stat">TO</span>
+                      <span className="sph-stat">FL</span>
+                    </div>
+                    {[...trackedPlayers]
+                      .sort((a, b) => (pTotals[b.id]?.points ?? 0) - (pTotals[a.id]?.points ?? 0))
+                      .map(p => {
+                        const t = pTotals[p.id];
+                        const pts = t?.points ?? 0;
+                        const fgm = t?.fgm ?? 0;
+                        const fga = t?.fga ?? 0;
+                        const tpm = t?.threePm ?? 0;
+                        const tpa = t?.threePa ?? 0;
+                        const ftm = t?.ftm ?? 0;
+                        const fta = t?.fta ?? 0;
+                        const reb = (t?.oreb ?? 0) + (t?.dreb ?? 0);
+                        const ast = t?.ast ?? 0;
+                        const stl = t?.stl ?? 0;
+                        const blk = t?.blk ?? 0;
+                        const turnovers = t?.to ?? 0;
+                        const fouls = t?.fouls ?? 0;
+                        const foulColor = fouls >= 5 ? "#ff3b30" : fouls === 4 ? "#ff9500" : fouls === 3 ? "#ffcc00" : fouls > 0 ? "rgba(232,234,240,0.75)" : "rgba(232,234,240,0.35)";
+                        const isTopScorer = trackedTopScorer && p.name === trackedTopScorer.name && pts > 0;
+                        const hasFoulAlert = fouls >= 4;
+                        return (
+                          <div
+                            key={p.id}
+                            className={`summary-player-row${hasFoulAlert ? " foul-alert-row" : ""}${isTopScorer ? " top-scorer-row" : ""}`}
+                          >
+                            <span className="spr-name">
+                              {p.number != null ? <span className="spr-num">#{p.number}</span> : null}
+                              {p.name}
+                              {isTopScorer && <span className="spr-badge spr-badge-pts">🏆</span>}
+                              {fouls >= 5 && <span className="spr-badge spr-badge-out">OUT</span>}
+                            </span>
+                            <span className="spr-stat spr-pts">{pts}</span>
+                            <span className="spr-stat">{fgm}-{fga}</span>
+                            <span className="spr-stat">{tpm}-{tpa}</span>
+                            <span className="spr-stat">{ftm}-{fta}</span>
+                            <span className="spr-stat">{reb}</span>
+                            <span className="spr-stat">{ast}</span>
+                            <span className="spr-stat">{stl}</span>
+                            <span className="spr-stat">{blk}</span>
+                            <span className={`spr-stat${turnovers >= 3 ? " spr-to-warn" : ""}`}>{turnovers}</span>
+                            <span className="spr-stat spr-fouls" style={{ color: foulColor }}>{fouls}</span>
+                          </div>
+                        );
+                      })
+                    }
+                  </div>
+                )}
+
+                {/* Player-focused AI suggestions */}
+                <div className="summary-highlights">
+                  <h3>Player Suggestions</h3>
+                  {summaryPlayerAiLoading && <p className="summary-ai-status">Generating player insights…</p>}
+                  {!summaryPlayerAiLoading && trackedPlayers.length === 0 && (
+                    <p className="summary-ai-status">Add a roster to get player-specific suggestions.</p>
+                  )}
+                  <div className="summary-ai-sections">
+                    {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (summaryPlayerAiInsights ?? []).length === 0 && (
+                      <p className="summary-ai-status">No suggestions yet — capture more possessions or check your connection.</p>
+                    )}
+                    {(summaryPlayerAiInsights ?? []).map((insight, index) => {
+                      const { label, text } = parseInsightSection(insight);
+                      const color = INSIGHT_LABEL_COLORS[label] ?? 'rgba(232,234,240,0.55)';
+                      return (
+                        <div key={index} className="insight-section">
+                          {label && <span className="insight-label" style={{ color, background: `${color}1a` }}>{label}</span>}
+                          <p className="insight-text">{text}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (
+                    <button
+                      className="summary-ai-refresh-btn"
+                      onClick={() => { setSummaryPlayerAiInsights(null); void fetchPlayerAiInsights(); }}
+                    >↻ Refresh</button>
+                  )}
+                </div>
+              </>)}
+            </div>
+          </div>
+        </div>
+      )}
       {!online && (
         <div className="offline-badge">
           OFFLINE{pendingEvents.length > 0 ? ` · ${pendingEvents.length} unsaved` : ""}
@@ -1808,12 +3632,53 @@ export function App() {
       {/* LEFT: Scoring */}
       <div className="panel left-panel">
         <div className="shot-grid">
+          {trackTimeouts && (
+            <>
+              <div className="shot-timeout-title">Timeouts {inOvertimeNow ? "(OT)" : "(Regulation)"}</div>
+              <div className="shot-timeout-cell shot-timeout-cell-home">
+                <div className="shot-timeout-counts">30s: {timeoutRemaining.home.short} · 60s: {timeoutRemaining.home.full}</div>
+                <div className="timeout-btn-row">
+                  <button
+                    className="timeout-btn timeout-btn-short"
+                    disabled={inOvertimeNow || timeoutRemaining.home.short <= 0}
+                    onClick={() => takeTimeout("home", "short")}
+                  >30s</button>
+                  <button
+                    className="timeout-btn timeout-btn-full"
+                    disabled={timeoutRemaining.home.full <= 0}
+                    onClick={() => takeTimeout("home", "full")}
+                  >60s</button>
+                </div>
+              </div>
+              <div className="shot-timeout-cell shot-timeout-cell-away">
+                <div className="shot-timeout-counts">30s: {timeoutRemaining.away.short} · 60s: {timeoutRemaining.away.full}</div>
+                <div className="timeout-btn-row">
+                  <button
+                    className="timeout-btn timeout-btn-short"
+                    disabled={inOvertimeNow || timeoutRemaining.away.short <= 0}
+                    onClick={() => takeTimeout("away", "short")}
+                  >30s</button>
+                  <button
+                    className="timeout-btn timeout-btn-full"
+                    disabled={timeoutRemaining.away.full <= 0}
+                    onClick={() => takeTimeout("away", "full")}
+                  >60s</button>
+                </div>
+              </div>
+            </>
+          )}
+          <div className="shot-grid-team-label shot-grid-team-label-home" title={`Buttons for ${homeTeamName}`}>
+            {homeTeamName}
+          </div>
+          <div className="shot-grid-team-label shot-grid-team-label-away" title={`Buttons for ${awayTeamName}`}>
+            {awayTeamName}
+          </div>
           <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 2, made: true })}>2pt</button>
-          <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 2, made: true })}>2pt</button>
+          {isOpponentStatEnabled("points") && <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 2, made: true })}>2pt</button>}
           <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 3, made: true })}>3pt</button>
-          <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 3, made: true })}>3pt</button>
+          {isOpponentStatEnabled("points") && <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 3, made: true })}>3pt</button>}
           <button className="circle teal" onClick={() => setModal({ kind: "freeThrow", teamId: "home", made: true })}>ft</button>
-          <button className="circle red"  onClick={() => setModal({ kind: "freeThrow", teamId: "away", made: true })}>ft</button>
+          {isOpponentStatEnabled("free_throws") && <button className="circle red"  onClick={() => setModal({ kind: "freeThrow", teamId: "away", made: true })}>ft</button>}
         </div>
       </div>
 
@@ -1825,14 +3690,32 @@ export function App() {
               Device ID: {appData.gameSetup.deviceId}
             </div>
           )}
-          <div className="score-row">
-            <span className="team-lbl teal-txt">{homeTeamName}</span>
-            <span className="score teal-txt">{scores.home}</span>
+          <div className={`game-state-banner game-state-${currentGameState.tone}`}>
+            {currentGameState.label}
           </div>
           <div className="score-row">
-            <span className="team-lbl">{awayTeamName}</span>
-            <span className="score">{scores.away}</span>
+            <span className="team-lbl team-home-txt">{homeTeamName}</span>
+            <span className="score team-home-txt">{scores.home}</span>
           </div>
+          <div className="score-meta-row">
+            <span className={`score-meta${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>
+              Fouls: {periodTeamFouls.home}
+            </span>
+            {homeInBonus && <span className="score-chip bonus-chip">BONUS</span>}
+            {possessionTeamId === homeTeamId && <span className="score-chip possession-chip possession-chip-home">POSS</span>}
+          </div>
+          <div className="score-row">
+            <span className="team-lbl team-away-txt">{awayTeamName}</span>
+            <span className="score team-away-txt">{scores.away}</span>
+          </div>
+          <div className="score-meta-row">
+            <span className={`score-meta${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>
+              Fouls: {periodTeamFouls.away}
+            </span>
+            {awayInBonus && <span className="score-chip bonus-chip">BONUS</span>}
+            {possessionTeamId === awayTeamId && <span className="score-chip possession-chip possession-chip-away">POSS</span>}
+          </div>
+          {trackPossession && <div className="possession-indicator">Possession: {possessionLabel}</div>}
         </div>
 
         {foulAlerts.length > 0 && (
@@ -1845,67 +3728,58 @@ export function App() {
           </div>
         )}
 
+        <div className="event-feed-header">
+          <span className="event-feed-title">Game Log</span>
+          <span className="event-feed-hint">Tap an event to edit or delete it</span>
+        </div>
+
         <div className="event-feed">
           {allEvents.length === 0 && <p className="empty-feed">No events yet</p>}
           {allEvents.map(({ event, pending }) => {
             const d = describeEvent(event, homeTeamName, awayTeamName, allPlayers, pTotals, homeTeamId, awayTeamId);
+            const eventStamp = `${event.period} ${formatClockFromSeconds(event.clockSecondsRemaining)}`;
+            const sectionLabel = getEventSectionLabel(event);
+            const teamBucket = getEventTeamBucket(event, homeTeamId, awayTeamId);
+            const teamColor = teamBucket === "home" ? homeTeamColor : teamBucket === "away" ? awayTeamColor : undefined;
             return (
-              <div key={event.id} className={`feed-item${pending ? " feed-pending" : ""}`}>
-                <span className={`feed-main ac-${d.accent}`}>{d.main}</span>
+              <button
+                key={event.id}
+                type="button"
+                className={`feed-item feed-item-${teamBucket}${pending ? " feed-pending" : ""}`}
+                style={teamColor ? ({ ["--feed-team-color" as string]: teamColor }) : undefined}
+                onClick={() => openFeedEventEditor({ event, pending })}
+              >
+                <span className="feed-stamp">{eventStamp}</span>
+                <span className="feed-main-row">
+                  <span className="feed-section-tag">{sectionLabel}</span>
+                  <span className={`feed-main ac-${d.accent}`}>{d.main}</span>
+                  <span className="feed-item-action">Edit</span>
+                </span>
                 {d.detail && <span className="feed-detail">{d.detail}</span>}
-              </div>
+              </button>
             );
           })}
         </div>
-
-        <div className="period-row" style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", padding: "0.55rem 1rem" }}>
+        <div className="period-row">
           {periodLabels.map((lbl) => {
             const isOt = isOvertimePeriod(lbl);
             return (
-              <div key={lbl} className="period-chip" style={{ display: "flex", gap: "0.2rem", flex: 1, minWidth: "72px" }}>
+              <div key={lbl} className="period-chip">
                 <button
                   className={`period-btn${period === lbl ? " period-on" : ""}`}
-                  style={{
-                    flex: 1,
-                    minHeight: "44px",
-                    borderRadius: "8px",
-                    border: period === lbl ? "1px solid #2dd4bf" : "1px solid rgba(255,255,255,0.15)",
-                    background: period === lbl ? "rgba(45,212,191,0.16)" : "rgba(255,255,255,0.06)",
-                    color: period === lbl ? "#2dd4bf" : "rgba(232,234,240,0.78)",
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                  onClick={() => {
-                    if (lbl === period) return;
-                    // Fire period_transition for the new period
-                    const endSeq = sequence;
-                    void postEvent({
-                      ...base(endSeq),
-                      teamId: homeTeamId,
-                      type: "period_transition",
-                      newPeriod: lbl,
-                    });
-                    setPeriod(lbl);
-                    setClockInput(getPeriodDefaultClock(lbl));
-                  }}
+                  onClick={() => { void changePeriod(lbl); }}
                 >{lbl}</button>
                 {isOt && (
                   <button
                     className="period-delete-btn"
-                    style={{
-                      minWidth: "30px",
-                      minHeight: "44px",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(248,113,113,0.5)",
-                      background: "rgba(248,113,113,0.14)",
-                      color: "#f87171",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
                     title={`Delete ${lbl}`}
-                    onClick={() => {
-                      const ok = window.confirm(`Delete ${lbl}? This removes all events in that overtime period.`);
+                    onClick={async () => {
+                      const ok = await requestConfirm({
+                        title: `Delete ${lbl}?`,
+                        message: "This removes all events in that overtime period.",
+                        confirmLabel: `Delete ${lbl}`,
+                        tone: "danger",
+                      });
                       if (!ok) return;
                       void deleteOvertimePeriod(lbl);
                     }}
@@ -1918,44 +3792,144 @@ export function App() {
           })}
           <button
             className="period-add-btn"
-            style={{
-              minWidth: "74px",
-              minHeight: "44px",
-              borderRadius: "8px",
-              border: "1px solid rgba(45,212,191,0.55)",
-              background: "rgba(45,212,191,0.14)",
-              color: "#2dd4bf",
-              fontSize: "0.82rem",
-              fontWeight: 800,
-              letterSpacing: "0.04em",
-              padding: "0.35rem 0.6rem",
-              cursor: "pointer",
-            }}
             onClick={addOvertimePeriod}
           >
             + OT
           </button>
         </div>
-        <div className="clock-row">
-          <input className="clock-inp" value={clockInput} onChange={e => setClockInput(e.target.value)} placeholder="8:00" />
-        </div>
-        <div className="date-row">
-          <input className="date-inp" type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} title="Game date" />
-        </div>
+        {trackClock && <div className="clock-row">
+          <div className="clock-tools-row clock-tools-row-compact">
+            <button
+              className={`clock-tool-btn clock-btn-visibility${(appData.gameSetup.clockVisible ?? true) ? " active" : ""}`}
+              onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
+              {(appData.gameSetup.clockVisible ?? true) ? "Hide Panel" : "Show Panel"}
+            </button>
+            <button
+              className={`clock-tool-btn clock-btn-enabled${(appData.gameSetup.clockEnabled ?? true) ? " active" : ""}`}
+              onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
+              {(appData.gameSetup.clockEnabled ?? true) ? "Lock Controls" : "Unlock Controls"}
+            </button>
+          </div>
+          {(appData.gameSetup.clockVisible ?? true) && (
+            <>
+              <input
+                className="clock-inp"
+                value={clockInput}
+                onChange={e => handleClockInput(e.target.value)}
+                onFocus={e => e.currentTarget.select()}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="8:00"
+                disabled={appData.gameSetup.clockEnabled === false}
+              />
+              <div className="clock-tools-row clock-tools-row-main">
+                <button className={`clock-tool-btn ${clockRunning ? "clock-btn-stop" : "clock-btn-start"}`} onClick={() => setClockRunning((v) => !v)} disabled={appData.gameSetup.clockEnabled === false}>
+                  {clockRunning ? "Stop" : "Start"}
+                </button>
+                <button className="clock-tool-btn clock-btn-reset" onClick={resetClockForPeriod} disabled={appData.gameSetup.clockEnabled === false}>Reset</button>
+                <button className="clock-tool-btn clock-btn-minus" onClick={() => adjustClock(-5)} disabled={appData.gameSetup.clockEnabled === false}>-5s</button>
+                <button className="clock-tool-btn clock-btn-plus" onClick={() => adjustClock(60)} disabled={appData.gameSetup.clockEnabled === false}>+1:00</button>
+              </div>
+            </>
+          )}
+          {trackPossession && <div className="possession-row">
+            <button
+              className={`possession-btn possession-btn-home ${possessionTeamId === homeTeamId ? "active" : ""}`}
+              onClick={() => setPossession("home")}
+              title={`Set possession: ${homeTeamName}`}>
+              ◂ {homeTeamName}
+            </button>
+            <button
+              className={`possession-btn possession-btn-away ${possessionTeamId === awayTeamId ? "active" : ""}`}
+              onClick={() => setPossession("away")}
+              title={`Set possession: ${awayTeamName}`}>
+              {awayTeamName} ▸
+            </button>
+          </div>}
+        </div>}
       </div>
 
       {/* RIGHT: Stats */}
       <div className="panel right-panel">
-        <div className="stat-grid">
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: vcSideSetup })}>def<br/><span className="sub-lbl">reb</span></button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: vcSideSetup })}>off<br/><span className="sub-lbl">reb</span></button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: vcSideSetup })}>stl</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
-          <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
-          <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "foul",   teamId: vcSideSetup })}>foul</button>
+        <div style={{ marginBottom: "0.5rem", display: "flex", gap: "0.3rem", justifyContent: "center" }}>
+          <button
+            className={showRosterPanel ? "toggle-btn active" : "toggle-btn"}
+            onClick={() => setShowRosterPanel(!showRosterPanel)}
+            title="Toggle roster view">
+            Roster
+          </button>
         </div>
+        {!showRosterPanel ? (
+          <div className="stat-grid">
+            <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: vcSideSetup })}><span className="rebound-main">DEF</span><br/><span className="sub-lbl">reb</span></button>
+            <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: vcSideSetup })}><span className="rebound-main">OFF</span><br/><span className="sub-lbl">reb</span></button>
+            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
+            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: vcSideSetup })}>stl</button>
+            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
+            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
+            <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
+            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "foul",   teamId: vcSideSetup })}>foul</button>
+          </div>
+        ) : (
+          <div className="roster-panel">
+            {(() => {
+              const teamPlayers = vcSideSetup === "home" ? homePlayers : awayPlayers;
+              const lineup = computeCurrentLineup(allEventObjs, vcTeamId, appData.gameSetup.startingLineup ?? [], teamPlayers);
+              return (
+                <>
+                  <div className="roster-section">
+                    <h4 className="roster-section-title">On Court</h4>
+                    <div className="roster-list">
+                      {lineup.onCourt.map(p => (
+                        <div key={p.id} className="roster-player on-court">
+                          <span className="roster-player-num">#{p.number}</span>
+                          <span className="roster-player-info">
+                            <span className="roster-player-name">{p.name}</span>
+                            {pTotals[p.id] && (
+                              <span className="roster-player-stats">{pTotals[p.id].points}pts</span>
+                            )}
+                          </span>
+                          <button
+                            className="roster-sub-btn"
+                            onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id })}
+                            title="Sub out">
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="roster-section">
+                    <h4 className="roster-section-title">Bench</h4>
+                    <div className="roster-list">
+                      {lineup.bench.map(p => (
+                        <div key={p.id} className="roster-player bench">
+                          <span className="roster-player-num">#{p.number}</span>
+                          <span className="roster-player-info">
+                            <span className="roster-player-name">{p.name}</span>
+                            {pTotals[p.id] && (
+                              <span className="roster-player-stats">{pTotals[p.id].points}pts</span>
+                            )}
+                          </span>
+                          <button
+                            className="roster-sub-btn"
+                            onClick={() => {
+                              if (lineup.onCourt.length > 0) {
+                                setModal({ kind: "sub1", teamId: vcSideSetup });
+                              }
+                            }}
+                            title="Sub in">
+                            +
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
@@ -1963,12 +3937,18 @@ export function App() {
         <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">↩ Undo</button>
         <button
           className="live-nav-btn"
-          title="Export PDF"
-          onClick={() => void exportGamePDF(gameId, gameDate, homeTeam, awayTeam, allEventObjs)}>
-          ⬇ PDF
+          title="Game summary"
+          onClick={() => {
+            setShowGameSummary(true);
+            setSummaryTab("teams");
+            setSummaryAiInsights(null);
+            setSummaryPlayerAiInsights(null);
+            void fetchOpenAiSummaryInsights();
+          }}>
+          Summary
         </button>
-        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Coach Dashboard · ${gameId}`}>
-          Coach
+        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard · ${gameId}`}>
+          Dashboard
         </a>
         <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
           🛑 End Game
@@ -1997,13 +3977,23 @@ const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];
 function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav, onEditTeam, onBack, onStartGame }: SettingsScreenProps) {
   // ---- Game setup local state ----
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
-  const [gsDeviceId, setGsDeviceId] = useState(appData.gameSetup.deviceId || getDefaultDeviceId());
+  const [gsDeviceId, setGsDeviceId] = useState(normalizeDeviceId(appData.gameSetup.deviceId || getDefaultDeviceId()));
   const [gsMyTeamId, setGsMyTeamId] = useState(appData.gameSetup.myTeamId);
   const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
   const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
+  const [gsClockVisible, setGsClockVisible] = useState(appData.gameSetup.clockVisible ?? true);
+  const [gsClockEnabled, setGsClockEnabled] = useState(appData.gameSetup.clockEnabled ?? true);
+  const [gsTrackClock, setGsTrackClock] = useState(appData.gameSetup.trackClock ?? true);
+  const [gsTrackPossession, setGsTrackPossession] = useState(appData.gameSetup.trackPossession ?? true);
+  const [gsTrackTimeouts, setGsTrackTimeouts] = useState(appData.gameSetup.trackTimeouts ?? true);
+  const [gsOpponentTrackStats, setGsOpponentTrackStats] = useState<OpponentTrackStat[]>(
+    normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats)
+  );
+  const [gsHomeTeamColor, setGsHomeTeamColor] = useState(normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR));
+  const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR));
   const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
   const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
   const gsOpponentName = gsOpponent.trim() || "Opponent";
@@ -2017,11 +4007,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   // ---- New team form ----
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamAbbr, setNewTeamAbbr] = useState("");
+  const [newTeamColor, setNewTeamColor] = useState(DEFAULT_HOME_TEAM_COLOR);
 
   // ---- Editing team local state ----
   const editingTeam = appData.teams.find(t => t.id === editingTeamId) ?? null;
   const [etName, setEtName] = useState(editingTeam?.name ?? "");
   const [etAbbr, setEtAbbr] = useState(editingTeam?.abbreviation ?? "");
+  const [etColor, setEtColor] = useState(normalizeTeamColor(editingTeam?.teamColor, DEFAULT_HOME_TEAM_COLOR));
   const [pNum, setPNum] = useState("");
   const [pName, setPName] = useState("");
   const [pPos, setPPos] = useState("");
@@ -2039,107 +4031,174 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   useEffect(() => {
     setEtName(editingTeam?.name ?? "");
     setEtAbbr(editingTeam?.abbreviation ?? "");
+    setEtColor(normalizeTeamColor(editingTeam?.teamColor, DEFAULT_HOME_TEAM_COLOR));
     setEditPlayerId(null);
   }, [editingTeamId]);
 
-  function syncRosterDeletionToBackend(teams: Team[]) {
-    // Sync roster changes (including deletions) to the stats dashboard
+  function applyTrackedTeamColor(
+    gameSetup: GameSetup,
+    teams: Team[],
+    myTeamId: string
+  ): GameSetup {
+    const selectedTeam = teams.find((team) => team.id === myTeamId);
+    if (!selectedTeam?.teamColor) {
+      return { ...gameSetup, myTeamId };
+    }
+
+    const normalizedColor = normalizeTeamColor(selectedTeam.teamColor, DEFAULT_HOME_TEAM_COLOR);
+    return gameSetup.vcSide === "home"
+      ? { ...gameSetup, myTeamId, homeTeamColor: normalizedColor }
+      : { ...gameSetup, myTeamId, awayTeamColor: normalizedColor };
+  }
+
+  async function syncRosterToStatsDashboard(teams: Team[]) {
     const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
-    const myTeamId = appData.gameSetup.myTeamId;
-    const myTeam = teams.find(t => t.id === myTeamId);
-    
-    if (!myTeam) return; // Only sync if we have a tracked team
-    
-    const rosterPayload = myTeam.players.map(p => ({
-      number: parseInt(p.number, 10) || 0,
-      name: p.name,
-      position: p.position || undefined,
-      height: p.height || undefined,
-      grade: p.grade || undefined,
-    }));
-    
-    fetch(`${dashboardUrl}/api/roster-sync`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-      body: JSON.stringify({ 
-        teams: [{ 
-          id: myTeam.id, 
-          name: myTeam.name, 
-          abbreviation: myTeam.abbreviation, 
-          players: rosterPayload 
-        }], 
-        preferredTeamId: myTeamId 
-      }),
-    }).catch(() => {
-      // Silently fail if dashboard is unavailable
-    });
+    const preferredTeamId = appData.gameSetup.myTeamId;
+    try {
+      await fetch(`${dashboardUrl}/api/roster-sync`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+        body: JSON.stringify({ teams, preferredTeamId }),
+      });
+    } catch {
+      // Keep realtime sync as source-of-truth; stats sync is best effort.
+    }
   }
 
   async function syncRosterFromBackend() {
-    // Pull roster deletions from stats dashboard to detect when other apps deleted players
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
-    const myTeamId = appData.gameSetup.myTeamId;
-    if (!myTeamId) return;
-    
-    try {
-      const response = await fetch(`${dashboardUrl}/api/players`, {
-        headers: apiKeyHeader(appData.gameSetup),
+    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
+    const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
+
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
+    if (teams.length === 0) return;
+
+    if (JSON.stringify(teams) !== JSON.stringify(appData.teams)) {
+      const hasSelectedTeam = teams.some((team) => team.id === appData.gameSetup.myTeamId);
+      const myTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (teams[0]?.id ?? "");
+      onPersist({
+        ...appData,
+        teams,
+        gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, myTeamId),
       });
-      if (!response.ok) return;
-      
-      const players = (await response.json()) as Array<{ name: string; number?: number; position?: string; height?: string; grade?: string }>;
-      
-      // Get the tracked team and sync its players with backend roster  
-      const updatedTeams = appData.teams.map(team => {
-        if (team.id !== myTeamId) return team;
-        
-        // Keep only players that exist in backend roster
-        const backendPlayerNames = new Set(players.map(p => p.name));
-        const filteredPlayers = team.players.filter(p => backendPlayerNames.has(p.name));
-        
-        return { ...team, players: filteredPlayers };
-      });
-      
-      if (JSON.stringify(updatedTeams) !== JSON.stringify(appData.teams)) {
-        onPersist({ ...appData, teams: updatedTeams });
-      }
-    } catch {
-      // Silently fail if dashboard is unavailable
     }
   }
 
   // ---- Team CRUD ----
-  function createTeam() {
+  async function createTeam() {
     if (!newTeamName.trim()) return;
-    const team: Team = { id: uid(), name: newTeamName.trim(), abbreviation: newTeamAbbr.trim() || newTeamName.slice(0, 3).toUpperCase(), players: [] };
-    onPersist({ ...appData, teams: [...appData.teams, team] });
-    setNewTeamName("");
-    setNewTeamAbbr("");
-  }
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const apiKey = gsApiKey.trim() || undefined;
+    const abbreviation = newTeamAbbr.trim() || newTeamName.slice(0, 3).toUpperCase();
+    const created = await createTeamViaRealtime(
+      apiUrl,
+      newTeamName.trim(),
+      abbreviation,
+      normalizeTeamColor(newTeamColor, DEFAULT_HOME_TEAM_COLOR),
+      apiKey,
+    );
+    if (!created) {
+      return;
+    }
 
-  function deleteTeam(id: string) {
-    onPersist({ ...appData, teams: appData.teams.filter(t => t.id !== id) });
-  }
-
-  function saveTeamInfo() {
-    if (!editingTeam || !etName.trim()) return;
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     onPersist({
       ...appData,
-      teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, name: etName.trim(), abbreviation: etAbbr.trim() || etName.slice(0, 3).toUpperCase() } : t),
+      teams,
+      gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, appData.gameSetup.myTeamId),
     });
+    await syncRosterToStatsDashboard(teams);
+
+    setNewTeamName("");
+    setNewTeamAbbr("");
+    setNewTeamColor(DEFAULT_HOME_TEAM_COLOR);
+  }
+
+  async function deleteTeam(id: string) {
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const apiKey = gsApiKey.trim() || undefined;
+    const removed = await deleteTeamViaRealtime(apiUrl, id, apiKey);
+    if (!removed) {
+      return;
+    }
+
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
+    const hasSelectedTeam = teams.some((team) => team.id === appData.gameSetup.myTeamId);
+    const myTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (teams[0]?.id ?? "");
+    onPersist({
+      ...appData,
+      teams,
+      gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, myTeamId),
+    });
+    await syncRosterToStatsDashboard(teams);
+  }
+
+  async function saveTeamInfo() {
+    if (!editingTeam || !etName.trim()) return;
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const apiKey = gsApiKey.trim() || undefined;
+    const updated = await updateTeamViaRealtime(
+      apiUrl,
+      editingTeam.id,
+      etName.trim(),
+      etAbbr.trim() || etName.slice(0, 3).toUpperCase(),
+      normalizeTeamColor(etColor, DEFAULT_HOME_TEAM_COLOR),
+      apiKey,
+    );
+    if (!updated) {
+      return;
+    }
+
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
+    onPersist({
+      ...appData,
+      teams,
+      gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, appData.gameSetup.myTeamId),
+    });
+    await syncRosterToStatsDashboard(teams);
   }
 
   // ---- Player CRUD ----
-  function addPlayer() {
+  async function addPlayer() {
     if (!editingTeam || !pNum.trim() || !pName.trim()) return;
-    const player: Player = { id: uid(), number: pNum.trim(), name: pName.trim(), position: pPos, height: pHt.trim() || undefined, grade: pGrade.trim() || undefined };
-    onPersist({ ...appData, teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, players: [...t.players, player] } : t) });
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const apiKey = gsApiKey.trim() || undefined;
+    const created = await addPlayerViaRealtime(apiUrl, editingTeam.id, {
+      id: uid(),
+      number: pNum.trim(),
+      name: pName.trim(),
+      position: pPos,
+      height: pHt.trim() || undefined,
+      grade: pGrade.trim() || undefined,
+    }, apiKey);
+    if (!created) {
+      return;
+    }
+
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
+    onPersist({ ...appData, teams });
+    await syncRosterToStatsDashboard(teams);
+
     setPNum(""); setPName(""); setPPos(""); setPHt(""); setPGrade("");
   }
 
-  function removePlayer(playerId: string) {
+  async function removePlayer(playerId: string) {
     if (!editingTeam) return;
-    onPersist({ ...appData, teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, players: t.players.filter(p => p.id !== playerId) } : t) });
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const apiKey = gsApiKey.trim() || undefined;
+    const removed = await deletePlayerViaRealtime(apiUrl, editingTeam.id, playerId, apiKey);
+    if (!removed) {
+      return;
+    }
+
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
+    onPersist({ ...appData, teams });
+    await syncRosterToStatsDashboard(teams);
   }
 
   function startEditPlayer(p: Player) {
@@ -2151,25 +4210,63 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     setEpGrade(p.grade ?? "");
   }
 
-  function saveEditPlayer() {
+  async function saveEditPlayer() {
     if (!editingTeam || !editPlayerId || !epNum.trim() || !epName.trim()) return;
-    onPersist({ ...appData, teams: appData.teams.map(t => t.id === editingTeam.id ? { ...t, players: t.players.map(p => p.id === editPlayerId ? { ...p, number: epNum.trim(), name: epName.trim(), position: epPos, height: epHt.trim() || undefined, grade: epGrade.trim() || undefined } : p) } : t) });
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const apiKey = gsApiKey.trim() || undefined;
+    const updated = await updatePlayerViaRealtime(apiUrl, editingTeam.id, editPlayerId, {
+      number: epNum.trim(),
+      name: epName.trim(),
+      position: epPos,
+      height: epHt.trim() || undefined,
+      grade: epGrade.trim() || undefined,
+    }, apiKey);
+    if (!updated) {
+      return;
+    }
+
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
+    onPersist({ ...appData, teams });
+    await syncRosterToStatsDashboard(teams);
+
     setEditPlayerId(null);
   }
 
   // ---- Game setup ----
+  function toggleOpponentTrackStat(stat: OpponentTrackStat) {
+    setGsOpponentTrackStats((current) => {
+      if (current.includes(stat)) {
+        const next = current.filter((s) => s !== stat);
+        return next.length > 0 ? next : current;
+      }
+      return [...current, stat];
+    });
+  }
+
   function saveGameSetup() {
+    const normalizedDeviceId = normalizeDeviceId(gsDeviceId || appData.gameSetup.deviceId || "device1");
+    setGsDeviceId(normalizedDeviceId);
+    localStorage.setItem(DEVICE_ID_KEY, normalizedDeviceId);
     onPersist({
       ...appData,
       gameSetup: {
         gameId: gsGameId.trim() || "game-1",
-        deviceId: gsDeviceId.trim() || appData.gameSetup.deviceId || "device-1",
+        deviceId: normalizedDeviceId,
         myTeamId: gsMyTeamId,
         apiUrl: gsApiUrl.trim() || DEFAULT_API,
         apiKey: gsApiKey.trim() || undefined,
         opponent: gsOpponent.trim(),
         vcSide: gsVcSide,
         dashboardUrl: gsDashboardUrl.trim() || "http://localhost:5000",
+        clockVisible: gsClockVisible,
+        clockEnabled: gsClockEnabled,
+        trackClock: gsTrackClock,
+        trackPossession: gsTrackPossession,
+        trackTimeouts: gsTrackTimeouts,
+        opponentTrackStats: normalizeOpponentTrackStats(gsOpponentTrackStats),
+        homeTeamColor: normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR),
+        awayTeamColor: normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
         statsGameId: appData.gameSetup.statsGameId,
       },
     });
@@ -2201,6 +4298,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <div className="add-player-row">
             <input className="abbr-inp" placeholder="ABV" value={newTeamAbbr} onChange={e => setNewTeamAbbr(e.target.value)} maxLength={4} />
             <input placeholder="Team name" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} onKeyDown={e => e.key === "Enter" && createTeam()} />
+            <input className="team-color-input" type="color" aria-label="New team color" value={newTeamColor} onChange={e => setNewTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
             <button className="add-btn" onClick={createTeam}>Add</button>
           </div>
         </section>
@@ -2212,7 +4310,8 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           {appData.teams.map(team => (
             <div key={team.id} className="team-list-row">
               <div className="team-list-info">
-                <span className="team-abbr-badge">{team.abbreviation}</span>
+                <span className="team-abbr-badge" style={{ borderColor: team.teamColor ?? "rgba(79,140,255,0.3)", color: team.teamColor ?? "#4f8cff" }}>{team.abbreviation}</span>
+                <span className="team-list-color" style={{ background: normalizeTeamColor(team.teamColor, DEFAULT_HOME_TEAM_COLOR) }} aria-hidden="true" />
                 <span className="team-list-name">{team.name}</span>
                 <span className="team-list-count">{team.players.length} players</span>
               </div>
@@ -2245,6 +4344,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <div className="add-player-row">
             <input className="abbr-inp" placeholder="ABV" value={etAbbr} onChange={e => setEtAbbr(e.target.value)} maxLength={4} />
             <input placeholder="Team name" value={etName} onChange={e => setEtName(e.target.value)} />
+            <input className="team-color-input" type="color" aria-label="Team color" value={etColor} onChange={e => setEtColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
             <button className="add-btn" onClick={saveTeamInfo}>Save</button>
           </div>
         </section>
@@ -2329,7 +4429,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         <section className="settings-section">
           <h3>Device ID</h3>
           <p className="dim-text" style={{ marginBottom: 8 }}>Coach dashboard follows this device and only shows live when it is online.</p>
-          <input value={gsDeviceId} onChange={e => setGsDeviceId(e.target.value)} placeholder="device-1" />
+          <input value={gsDeviceId} onChange={e => setGsDeviceId(e.target.value)} placeholder="device1" />
         </section>
 
         <section className="settings-section">
@@ -2339,8 +4439,18 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             {appData.teams.map(t => (
               <button key={t.id}
                 className={`team-pick-btn${gsMyTeamId === t.id ? " pick-active-teal" : ""}`}
-                onClick={() => setGsMyTeamId(t.id)}>
-                <span className="tp-abbr">{t.abbreviation}</span>
+                onClick={() => {
+                  setGsMyTeamId(t.id);
+                  if (t.teamColor) {
+                    const normalizedColor = normalizeTeamColor(t.teamColor, DEFAULT_HOME_TEAM_COLOR);
+                    if (gsVcSide === "home") {
+                      setGsHomeTeamColor(normalizedColor);
+                    } else {
+                      setGsAwayTeamColor(normalizedColor);
+                    }
+                  }
+                }}>
+                <span className="tp-abbr" style={{ borderColor: t.teamColor ?? "rgba(79,140,255,0.3)", color: t.teamColor ?? "#4f8cff" }}>{t.abbreviation}</span>
                 <span className="tp-name">{t.name}</span>
                 <span className="tp-count">{t.players.length}p</span>
               </button>
@@ -2363,6 +4473,86 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <div className="team-toggle">
             <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
             <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Team Colors</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Pick one color for each side to make scorekeeping faster.</p>
+          <div className="team-color-rows">
+            <div className="team-color-row">
+              <span className="team-color-label">Home</span>
+              <div className="team-color-swatches">
+                {TEAM_COLOR_OPTIONS.map((color) => (
+                  <button
+                    key={`home-${color}`}
+                    type="button"
+                    className={`team-color-swatch${gsHomeTeamColor === color ? " selected" : ""}`}
+                    style={{ background: color }}
+                    onClick={() => setGsHomeTeamColor(color)}
+                    title={`Home color ${color}`}
+                  />
+                ))}
+              </div>
+              <input className="team-color-input" type="color" aria-label="Custom home color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
+            </div>
+            <div className="team-color-row">
+              <span className="team-color-label">Away</span>
+              <div className="team-color-swatches">
+                {TEAM_COLOR_OPTIONS.map((color) => (
+                  <button
+                    key={`away-${color}`}
+                    type="button"
+                    className={`team-color-swatch${gsAwayTeamColor === color ? " selected" : ""}`}
+                    style={{ background: color }}
+                    onClick={() => setGsAwayTeamColor(color)}
+                    title={`Away color ${color}`}
+                  />
+                ))}
+              </div>
+              <input className="team-color-input" type="color" aria-label="Custom away color" value={gsAwayTeamColor} onChange={e => setGsAwayTeamColor(normalizeTeamColor(e.target.value, DEFAULT_AWAY_TEAM_COLOR))} />
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Opponent Stats To Track</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Choose which opponent stats can be recorded.</p>
+          <div className="team-toggle">
+            <button className={`tt-btn${gsOpponentTrackStats.includes("points") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("points")}>Points</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("free_throws") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("free_throws")}>Free Throws</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("def_reb") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("def_reb")}>Def Reb</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("off_reb") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("off_reb")}>Off Reb</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("turnover") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("turnover")}>Turnover</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("steal") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("steal")}>Steal</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("assist") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("assist")}>Assist</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("block") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("block")}>Block</button>
+            <button className={`tt-btn${gsOpponentTrackStats.includes("foul") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("foul")}>Foul</button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Tracking Toggles</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Choose what the operator tracks during the game.</p>
+          <div className="team-toggle">
+            <button className={`tt-btn${gsTrackTimeouts ? " tt-teal" : ""}`} onClick={() => setGsTrackTimeouts(!gsTrackTimeouts)}>
+              Timeouts {gsTrackTimeouts ? "On" : "Off"}
+            </button>
+            <button className={`tt-btn${gsTrackPossession ? " tt-teal" : ""}`} onClick={() => setGsTrackPossession(!gsTrackPossession)}>
+              Possession {gsTrackPossession ? "On" : "Off"}
+            </button>
+            <button className={`tt-btn${gsTrackClock ? " tt-teal" : ""}`} onClick={() => setGsTrackClock(!gsTrackClock)}>
+              Game Clock {gsTrackClock ? "Tracked" : "Off"}
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Clock Panel</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>These only affect the operator screen controls when game clock tracking is on.</p>
+          <div className="team-toggle">
+            <button className={`tt-btn${gsClockVisible ? " tt-teal" : ""}`} onClick={() => setGsClockVisible(!gsClockVisible)}>{gsClockVisible ? "Panel Visible" : "Panel Hidden"}</button>
+            <button className={`tt-btn${gsClockEnabled ? " tt-teal" : ""}`} onClick={() => setGsClockEnabled(!gsClockEnabled)}>{gsClockEnabled ? "Controls Unlocked" : "Controls Locked"}</button>
           </div>
         </section>
 
@@ -2424,9 +4614,17 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             if (gsApiKey.trim()) params.set("apiKey", gsApiKey.trim());
             params.set("dashboardUrl", gsDashboardUrl.trim() || "http://localhost:5000");
             params.set("gameId", gsGameId.trim() || "game-1");
-            params.set("deviceId", gsDeviceId.trim() || "device-1");
+            params.set("deviceId", normalizeDeviceId(gsDeviceId));
             params.set("opponent", gsOpponent.trim());
             params.set("vcSide", gsVcSide);
+            params.set("clockVisible", gsClockVisible ? "1" : "0");
+            params.set("clockEnabled", gsClockEnabled ? "1" : "0");
+            params.set("trackClock", gsTrackClock ? "1" : "0");
+            params.set("trackPossession", gsTrackPossession ? "1" : "0");
+            params.set("trackTimeouts", gsTrackTimeouts ? "1" : "0");
+            params.set("opponentTrackStats", normalizeOpponentTrackStats(gsOpponentTrackStats).join(","));
+            params.set("homeColor", normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR));
+            params.set("awayColor", normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR));
             return (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
                 <QRCodeSVG value={configUrl.toString()} size={200} level="M" />
