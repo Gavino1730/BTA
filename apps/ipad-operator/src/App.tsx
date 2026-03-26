@@ -294,8 +294,27 @@ function uid() { return `id-${Date.now()}-${Math.random().toString(36).slice(2, 
 
 // ---- Utilities ----
 function clockToSec(clock: string): number {
-  const [m, s] = clock.split(":").map(Number);
-  return (m || 0) * 60 + (s || 0);
+  const colonIdx = clock.indexOf(":");
+  if (colonIdx === -1) return Number(clock) || 0;
+  const m = Number(clock.slice(0, colonIdx)) || 0;
+  const s = Number(clock.slice(colonIdx + 1)) || 0;
+  return m * 60 + s;
+}
+
+// Parse raw numpad string (digits + optional single dot for tenths) → formatted clock string
+function formatClockFromPadInput(raw: string): string {
+  if (!raw) return "0:00";
+  const dotIdx = raw.indexOf(".");
+  if (dotIdx !== -1) {
+    // decimal mode: everything before dot = whole seconds, after = tenths
+    const secStr = raw.slice(0, dotIdx) || "0";
+    const tenthStr = raw.slice(dotIdx + 1).slice(0, 1) || "0";
+    const sec = Math.min(59, parseInt(secStr, 10) || 0);
+    const tenth = parseInt(tenthStr, 10) || 0;
+    return `0:${String(sec).padStart(2, "0")}.${tenth}`;
+  }
+  // no dot: treat as MMSS-style digits
+  return formatClockFromDigits(raw);
 }
 
 function formatClockFromSeconds(totalSeconds: number): string {
@@ -911,12 +930,18 @@ export function App() {
   const [period, setPeriod] = useState("Q1" as string);
   const [clockInput, setClockInput] = useState("8:00");
   const [clockRunning, setClockRunning] = useState(false);
+  const [clockPadOpen, setClockPadOpen] = useState(false);
+  const [clockPadDigits, setClockPadDigits] = useState("");
+  const [summaryClockPadOpen, setSummaryClockPadOpen] = useState(false);
+  const [summaryClockPadDigits, setSummaryClockPadDigits] = useState("");
+  const [gameMoment, setGameMoment] = useState<string>("");
   const [modal, setModal] = useState<Modal | null>(null);
   const [overtimeCount, setOvertimeCount] = useState(0);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [showGameSummary, setShowGameSummary] = useState(false);
   const [possessionOverrideTeamId, setPossessionOverrideTeamId] = useState<string | null | undefined>(undefined);
   const [summaryTab, setSummaryTab] = useState<"teams" | "players">("teams");
+  const [summaryPeriodFilter, setSummaryPeriodFilter] = useState<string[]>([]);
   const [summaryAiInsights, setSummaryAiInsights] = useState<string[] | null>(null);
   const [summaryAiLoading, setSummaryAiLoading] = useState(false);
   const [summaryPlayerAiInsights, setSummaryPlayerAiInsights] = useState<string[] | null>(null);
@@ -1033,6 +1058,12 @@ export function App() {
   const vcTeamId = vcSideSetup === "home" ? homeTeamId : awayTeamId;
   const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : opponentName || "Home";
   const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : opponentName || "Away";
+  const homeTeamAbbr = vcSideSetup === "home"
+    ? (myTeam?.abbreviation ?? homeTeamName.slice(0, 3).toUpperCase())
+    : (opponentName ? opponentName.slice(0, 3).toUpperCase() : "OPP");
+  const awayTeamAbbr = vcSideSetup === "away"
+    ? (myTeam?.abbreviation ?? awayTeamName.slice(0, 3).toUpperCase())
+    : (opponentName ? opponentName.slice(0, 3).toUpperCase() : "OPP");
   const homeTeamColor = normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR);
   const awayTeamColor = normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR);
   const opponentTrackStats = normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats);
@@ -1045,6 +1076,42 @@ export function App() {
   function isOpponentStatEnabled(key: OpponentTrackStat): boolean {
     return opponentTrackSet.has(key);
   }
+
+  // ---- Game moment options for context (pre-game, quarters, halftime, timeout, end of game) ----
+  function getGameMomentOptions(): Array<{ value: string; label: string }> {
+    const opts: Array<{ value: string; label: string }> = [
+      { value: "start-of-game", label: "Start of Game" },
+    ];
+    
+    // Add quarter starts/ends based on period
+    const totalQuarters = Math.max(4, (period?.replace("OT", "") ? 4 : 0));
+    for (let i = 1; i <= totalQuarters; i++) {
+      opts.push({ value: `start-of-q${i}`, label: `Start of Q${i}` });
+    }
+    
+    // Halftime (between Q2 and Q3)
+    opts.push({ value: "halftime", label: "Halftime" });
+    
+    // End of quarters
+    for (let i = 1; i <= totalQuarters; i++) {
+      opts.push({ value: `end-of-q${i}`, label: `End of Q${i}` });
+    }
+    
+    // Overtime
+    const ot = parseInt(period?.replace("OT", "") || "0", 10);
+    if (ot > 0) {
+      for (let i = 1; i <= ot; i++) {
+        opts.push({ value: `ot${i}`, label: `OT${i}` });
+      }
+    }
+    
+    // Game situations
+    opts.push({ value: "timeout", label: "Timeout" });
+    opts.push({ value: "end-of-game", label: "End of Game" });
+    
+    return opts;
+  }
+
   const liveHomeSideLabel = `${homeTeamName} (home)`;
   const liveAwaySideLabel = `${awayTeamName} (away)`;
   const homePlayers = homeTeam?.players ?? [];
@@ -1167,7 +1234,10 @@ export function App() {
       return;
     }
 
-    const payload = buildAiContextFromSetup(appData.gameSetup);
+    const payload = {
+      ...buildAiContextFromSetup(appData.gameSetup),
+      gameMoment: gameMoment || undefined,
+    };
     void fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/ai-context`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
@@ -1183,6 +1253,7 @@ export function App() {
     appData.gameSetup.trackClock,
     gameId,
     gamePhase,
+    gameMoment,
   ]);
 
   useEffect(() => {
@@ -1492,6 +1563,12 @@ export function App() {
   const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
   const scores = useMemo(() => computeScores(allEventObjs, homeTeamId, awayTeamId), [allEventObjs, homeTeamId, awayTeamId]);
   const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
+  const summaryBoxScoreTotals = useMemo(() => {
+    if (summaryPeriodFilter.length === 0) return pTotals;
+    const filterSet = new Set(summaryPeriodFilter);
+    const filtered = allEventObjs.filter(e => filterSet.has(e.period));
+    return computePlayerTotals(filtered);
+  }, [summaryPeriodFilter, allEventObjs, pTotals]);
   const homeTeamStats = useMemo(() => computeTeamStats(allEventObjs, homeTeamId), [allEventObjs, homeTeamId]);
   const awayTeamStats = useMemo(() => computeTeamStats(allEventObjs, awayTeamId), [allEventObjs, awayTeamId]);
   const periodTeamFouls = useMemo(() => {
@@ -2336,7 +2413,7 @@ export function App() {
           ...base(sequence + 1),
           teamId: otherTeamId,
           type: "turnover",
-          playerId: `${otherSide}-team`,
+          playerId: otherTeamId,
           turnoverType: "bad_pass",
         };
         void postEvent(turnoverEvent);
@@ -2513,7 +2590,7 @@ export function App() {
                 <button
                   className="player-row team-row opponent-team-only-row"
                   style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
-                  onClick={() => (modal.kind === "shot" ? confirmShot(`${modal.teamId}-team`) : confirmFreeThrow(`${modal.teamId}-team`))}
+                  onClick={() => (modal.kind === "shot" ? confirmShot(resolveTeamId(modal.teamId)) : confirmFreeThrow(resolveTeamId(modal.teamId)))}
                 >
                   {tLabel(modal.teamId)}
                 </button>
@@ -2663,7 +2740,7 @@ export function App() {
     if (modal.kind === "assist2") {
       const allTeamPlayers = teamPlayers(modal.teamId);
       const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
-      const players = lineup.onCourt;
+      const players = lineup.onCourt.filter(p => p.id !== modal.assistPlayerId);
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -2703,9 +2780,9 @@ export function App() {
             <div className="modal-subtitle">
               {scorer ? `Scorer: #${scorer.number} ${scorer.name}` : "Scorer selected"}
             </div>
-            <div className="event-pills" style={{ marginTop: 12 }}>
-              <button className="circle teal" onClick={() => { void confirmAssistPoints(2); }}>2pt</button>
-              <button className="circle teal" onClick={() => { void confirmAssistPoints(3); }}>3pt</button>
+            <div className="event-pills" style={{ marginTop: 12, display: "flex", gap: "1.5rem", justifyContent: "center" }}>
+              <button className="circle teal" style={{ width: 120, height: 120, fontSize: "1.6rem" }} onClick={() => { void confirmAssistPoints(2); }}>2pt</button>
+              <button className="circle teal" style={{ width: 120, height: 120, fontSize: "1.6rem" }} onClick={() => { void confirmAssistPoints(3); }}>3pt</button>
             </div>
           </div>
         </div>
@@ -2983,7 +3060,9 @@ export function App() {
 
   // ---- PRE-GAME SCREEN ----
   if (gamePhase === "pre-game") {
-    const canStart = !!appData.gameSetup.myTeamId && !!appData.gameSetup.opponent?.trim();
+    const savedLineup = appData.gameSetup.startingLineup ?? [];
+    const lineupIsSet = savedLineup.length > 0;
+    const canStart = !!appData.gameSetup.myTeamId && !!appData.gameSetup.opponent?.trim() && lineupIsSet;
     const myTeamDisplay = myTeam?.name ?? null;
 
     const handleStarterToggle = (playerId: string) => {
@@ -3092,49 +3171,61 @@ export function App() {
             <div className="pregame-meta-row">
               <span className="pregame-meta-label">Colors</span>
               <div className="team-color-rows">
-                <div className="team-color-row">
-                  <span className="team-color-label">Home</span>
-                  <div className="team-color-swatches">
-                    {TEAM_COLOR_OPTIONS.map((color) => (
-                      <button
-                        key={`pregame-home-${color}`}
-                        type="button"
-                        className={`team-color-swatch${homeTeamColor === color ? " selected" : ""}`}
-                        style={{ background: color }}
-                        onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, homeTeamColor: color } })}
-                        title={`Home color ${color}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="team-color-row">
-                  <span className="team-color-label">Away</span>
-                  <div className="team-color-swatches">
-                    {TEAM_COLOR_OPTIONS.map((color) => (
-                      <button
-                        key={`pregame-away-${color}`}
-                        type="button"
-                        className={`team-color-swatch${awayTeamColor === color ? " selected" : ""}`}
-                        style={{ background: color }}
-                        onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, awayTeamColor: color } })}
-                        title={`Away color ${color}`}
-                      />
-                    ))}
-                  </div>
-                </div>
+                {(() => {
+                  const myColorKey = vcSideSetup === "home" ? "homeTeamColor" : "awayTeamColor";
+                  const oppColorKey = vcSideSetup === "home" ? "awayTeamColor" : "homeTeamColor";
+                  const myEffectiveColor = myTeam?.teamColor
+                    ? normalizeTeamColor(myTeam.teamColor, DEFAULT_HOME_TEAM_COLOR)
+                    : (vcSideSetup === "home" ? homeTeamColor : awayTeamColor);
+                  const oppEffectiveColor = vcSideSetup === "home" ? awayTeamColor : homeTeamColor;
+                  const myLabel = myTeam?.name ?? "My Team";
+                  const oppLabel = opponentName || "Opponent";
+                  return (<>
+                    {!myTeam?.teamColor && (
+                      <div className="team-color-row">
+                        <span className="team-color-label">{myLabel}</span>
+                        <div className="team-color-swatches">
+                          {TEAM_COLOR_OPTIONS.map((color) => (
+                            <button
+                              key={`pregame-my-${color}`}
+                              type="button"
+                              className={`team-color-swatch${myEffectiveColor === color ? " selected" : ""}`}
+                              style={{ background: color }}
+                              onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, [myColorKey]: color } })}
+                              title={`My team color ${color}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="team-color-row">
+                      <span className="team-color-label">{oppLabel}</span>
+                      <div className="team-color-swatches">
+                        {TEAM_COLOR_OPTIONS.map((color) => (
+                          <button
+                            key={`pregame-opp-${color}`}
+                            type="button"
+                            className={`team-color-swatch${oppEffectiveColor === color ? " selected" : ""}`}
+                            style={{ background: color }}
+                            onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, [oppColorKey]: color } })}
+                            title={`Opponent color ${color}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </>);
+                })()}
               </div>
             </div>
             <div className="pregame-meta-row">
               <span className="pregame-meta-label">Clock</span>
               <div className="pregame-side-toggle">
                 <button
-                  className={`tt-btn${(appData.gameSetup.clockVisible ?? true) ? " tt-teal" : ""}`}
-                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
-                  {(appData.gameSetup.clockVisible ?? true) ? "Shown" : "Hidden"}
-                </button>
-                <button
                   className={`tt-btn${(appData.gameSetup.clockEnabled ?? true) ? " tt-teal" : ""}`}
-                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
+                  onClick={() => {
+                    const next = !(appData.gameSetup.clockEnabled ?? true);
+                    persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: next, clockVisible: next } });
+                  }}>
                   {(appData.gameSetup.clockEnabled ?? true) ? "Enabled" : "Disabled"}
                 </button>
               </div>
@@ -3147,21 +3238,28 @@ export function App() {
           {!appData.gameSetup.opponent?.trim() && appData.gameSetup.myTeamId && (
             <p className="pregame-error">⚠ Enter the opponent name above to continue.</p>
           )}
+          {appData.gameSetup.myTeamId && appData.gameSetup.opponent?.trim() && !lineupIsSet && (
+            <p className="pregame-error">⚠ Set the starting lineup below before starting the game.</p>
+          )}
 
           {myTeam && (
             <button
-              className="pregame-lineup-btn"
+              className={`pregame-lineup-btn${lineupIsSet && !showLineupSetup ? " lineup-is-set" : ""}${!lineupIsSet && !showLineupSetup ? " lineup-required" : ""}`}
               onClick={() => {
                 setShowLineupSetup((current) => {
                   const next = !current;
                   if (next) {
-                    // Always start from an empty lineup to avoid stale selections from prior games/teams.
-                    setSelectedStarters(new Set());
+                    // Preload from saved lineup so edits show current state
+                    setSelectedStarters(new Set(savedLineup));
                   }
                   return next;
                 });
               }}>
-              {showLineupSetup ? "Done Setting Lineup" : "Set Starting Lineup"}
+              {showLineupSetup
+                ? "✕ Cancel"
+                : lineupIsSet
+                  ? `✓ Starting Lineup Set (${savedLineup.length}/5) — Edit`
+                  : "⚠ Set Starting Lineup (Required)"}
             </button>
           )}
 
@@ -3181,12 +3279,12 @@ export function App() {
                   </button>
                 ))}
               </div>
-              <div className="lineup-setup-actions">
+              <div className="lineup-setup-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                <button className="lineup-save-btn" onClick={handleSaveLineup}>
+                  Set Lineup ({selectedStarters.size}/5)
+                </button>
                 <button className="lineup-clear-btn" onClick={() => setSelectedStarters(new Set())}>
                   Clear All
-                </button>
-                <button className="lineup-save-btn" onClick={handleSaveLineup}>
-                  Save Lineup ({selectedStarters.size}/5)
                 </button>
               </div>
             </div>
@@ -3385,14 +3483,11 @@ export function App() {
                 {/* Scoreboard strip: editable quarter + clock + live scores */}
                 <div className="summary-top-strip">
                   <div className="summary-top-item">
-                    <span className="summary-top-label">Quarter</span>
+                    <span className="summary-top-label">Qtr</span>
                     <select
                       className="summary-top-value"
                       value={period}
-                      onChange={e => {
-                        const nextPeriod = e.target.value;
-                        void changePeriod(nextPeriod);
-                      }}
+                      onChange={e => { void changePeriod(e.target.value); }}
                       style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
                     >
                       {periodLabels.map(lbl => (
@@ -3402,45 +3497,87 @@ export function App() {
                   </div>
                   <div className="summary-top-item">
                     <span className="summary-top-label">Clock</span>
-                    <input
-                      className={`summary-top-clock-input summary-top-clock`}
-                      value={clockInput}
-                      onChange={e => handleClockInput(e.target.value)}
-                      onFocus={e => e.currentTarget.select()}
-                      inputMode="numeric"
-                      placeholder="8:00"
-                      disabled={appData.gameSetup.clockEnabled === false}
-                    />
+                    <button
+                      className="summary-top-clock-input summary-top-clock clock-inp-display"
+                      onClick={() => { setSummaryClockPadDigits(""); setSummaryClockPadOpen(v => !v); }}>
+                      {summaryClockPadOpen ? formatClockFromPadInput(summaryClockPadDigits) : clockInput}
+                    </button>
+                    {summaryClockPadOpen && (
+                      <div className="clock-numpad-overlay" onClick={() => setSummaryClockPadOpen(false)}>
+                        <div className="clock-numpad" onClick={e => e.stopPropagation()}>
+                          <div className="clock-numpad-preview">{formatClockFromPadInput(summaryClockPadDigits)}</div>
+                          <div className="clock-numpad-grid">
+                            {([1,2,3,4,5,6,7,8,9,".",0,"⌫"] as (number|string)[]).map((k, i) => (
+                              <button
+                                key={i}
+                                className="clock-numpad-key"
+                                onClick={() => {
+                                  if (k === "⌫") {
+                                    setSummaryClockPadDigits(d => d.slice(0, -1));
+                                  } else if (k === ".") {
+                                    setSummaryClockPadDigits(d => d.includes(".") ? d : d + ".");
+                                  } else {
+                                    setSummaryClockPadDigits(d => {
+                                      const dotIdx = d.indexOf(".");
+                                      if (dotIdx !== -1) { return d.length > dotIdx + 1 ? d : d + String(k); }
+                                      return (d + String(k)).slice(0, 4);
+                                    });
+                                  }
+                                }}>
+                                {k}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="clock-numpad-actions">
+                            <button className="clock-numpad-cancel" onClick={() => setSummaryClockPadOpen(false)}>Cancel</button>
+                            <button className="clock-numpad-set" onClick={() => {
+                              setClockInput(formatClockFromPadInput(summaryClockPadDigits));
+                              setSummaryClockPadOpen(false);
+                            }}>Set</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="summary-top-item">
-                    <span className="summary-top-label">{homeTeamName}</span>
-                    <span className="summary-top-value">{scores.home}</span>
+                    <span className="summary-top-label">Moment</span>
+                    <select
+                      className="summary-top-value"
+                      value={gameMoment}
+                      onChange={e => setGameMoment(e.target.value)}
+                      style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+                    >
+                      <option value="" style={{ background: "#302f68" }}>—</option>
+                      {getGameMomentOptions().map(opt => (
+                        <option key={opt.value} value={opt.value} style={{ background: "#302f68" }}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="summary-top-item">
-                    <span className="summary-top-label">{awayTeamName}</span>
-                    <span className="summary-top-value">{scores.away}</span>
+                    <span className="summary-top-label">Score</span>
+                    <div className="summary-top-dual">
+                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? homeTeamAbbr : awayTeamAbbr} {vcSideSetup === "home" ? scores.home : scores.away}</span>
+                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? awayTeamAbbr : homeTeamAbbr} {vcSideSetup === "home" ? scores.away : scores.home}</span>
+                    </div>
                   </div>
                   <div className="summary-top-item">
                     <span className="summary-top-label">Fouls</span>
                     <div className="summary-top-dual">
-                      <span className={`summary-top-dual-row${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>
-                        Home: {periodTeamFouls.home}
-                      </span>
-                      <span className={`summary-top-dual-row${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>
-                        Away: {periodTeamFouls.away}
-                      </span>
+                      {vcSideSetup === "home" ? (<>
+                        <span className={`summary-top-dual-row${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>{homeTeamAbbr} {periodTeamFouls.home}</span>
+                        <span className={`summary-top-dual-row${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>{awayTeamAbbr} {periodTeamFouls.away}</span>
+                      </>) : (<>
+                        <span className={`summary-top-dual-row${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>{awayTeamAbbr} {periodTeamFouls.away}</span>
+                        <span className={`summary-top-dual-row${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>{homeTeamAbbr} {periodTeamFouls.home}</span>
+                      </>)}
                     </div>
                   </div>
                   <div className="summary-top-item">
                     <span className="summary-top-label">TO Left</span>
                     <div className="summary-top-dual">
-                      <span className="summary-top-dual-row">Home: {totalTimeoutsLeft.home}</span>
-                      <span className="summary-top-dual-row">Away: {totalTimeoutsLeft.away}</span>
+                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? homeTeamAbbr : awayTeamAbbr} {vcSideSetup === "home" ? totalTimeoutsLeft.home : totalTimeoutsLeft.away}</span>
+                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? awayTeamAbbr : homeTeamAbbr} {vcSideSetup === "home" ? totalTimeoutsLeft.away : totalTimeoutsLeft.home}</span>
                     </div>
-                  </div>
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">State</span>
-                    <span className={`summary-top-state summary-top-state-${currentGameState.tone}`}>{currentGameState.label}</span>
                   </div>
                 </div>
               </div>
@@ -3468,25 +3605,24 @@ export function App() {
               {/* ── TEAMS TAB ── */}
               {summaryTab === "teams" && (<>
                 <div className="summary-stats-grid">
-                  <div className="summary-stat-card">
-                    <h3>{homeTeamName}</h3>
-                    <div className="summary-stat-row"><span>FG</span><strong>{homeTeamStats.fg}-{homeTeamStats.fga} ({formatPct(homeTeamStats.fg, homeTeamStats.fga)})</strong></div>
-                    <div className="summary-stat-row"><span>3PT</span><strong>{homeTeamStats.fg3}-{homeTeamStats.fg3a}</strong></div>
-                    <div className="summary-stat-row"><span>FT</span><strong>{homeTeamStats.ft}-{homeTeamStats.fta}</strong></div>
-                    <div className="summary-stat-row"><span>REB</span><strong>{homeTeamStats.reb}</strong></div>
-                    <div className="summary-stat-row"><span>AST / TO</span><strong>{homeTeamStats.asst} / {homeTeamStats.to}</strong></div>
-                    <div className="summary-stat-row"><span>STL / BLK</span><strong>{homeTeamStats.stl} / {homeTeamStats.blk}</strong></div>
-                  </div>
-
-                  <div className="summary-stat-card">
-                    <h3>{awayTeamName}</h3>
-                    <div className="summary-stat-row"><span>FG</span><strong>{awayTeamStats.fg}-{awayTeamStats.fga} ({formatPct(awayTeamStats.fg, awayTeamStats.fga)})</strong></div>
-                    <div className="summary-stat-row"><span>3PT</span><strong>{awayTeamStats.fg3}-{awayTeamStats.fg3a}</strong></div>
-                    <div className="summary-stat-row"><span>FT</span><strong>{awayTeamStats.ft}-{awayTeamStats.fta}</strong></div>
-                    <div className="summary-stat-row"><span>REB</span><strong>{awayTeamStats.reb}</strong></div>
-                    <div className="summary-stat-row"><span>AST / TO</span><strong>{awayTeamStats.asst} / {awayTeamStats.to}</strong></div>
-                    <div className="summary-stat-row"><span>STL / BLK</span><strong>{awayTeamStats.stl} / {awayTeamStats.blk}</strong></div>
-                  </div>
+                  {(() => {
+                    const myStats = vcSideSetup === "home" ? homeTeamStats : awayTeamStats;
+                    const myName = vcSideSetup === "home" ? homeTeamName : awayTeamName;
+                    const oppStats = vcSideSetup === "home" ? awayTeamStats : homeTeamStats;
+                    const oppName = vcSideSetup === "home" ? awayTeamName : homeTeamName;
+                    const renderCard = (name: string, stats: typeof homeTeamStats) => (
+                      <div className="summary-stat-card">
+                        <h3>{name}</h3>
+                        <div className="summary-stat-row"><span>FG</span><strong>{stats.fg}-{stats.fga} ({formatPct(stats.fg, stats.fga)})</strong></div>
+                        <div className="summary-stat-row"><span>3PT</span><strong>{stats.fg3}-{stats.fg3a}</strong></div>
+                        <div className="summary-stat-row"><span>FT</span><strong>{stats.ft}-{stats.fta}</strong></div>
+                        <div className="summary-stat-row"><span>REB</span><strong>{stats.reb}</strong></div>
+                        <div className="summary-stat-row"><span>AST / TO</span><strong>{stats.asst} / {stats.to}</strong></div>
+                        <div className="summary-stat-row"><span>STL / BLK</span><strong>{stats.stl} / {stats.blk}</strong></div>
+                      </div>
+                    );
+                    return <>{renderCard(myName, myStats)}{renderCard(oppName, oppStats)}</>;
+                  })()}
                 </div>
 
                 <div className="summary-highlights">
@@ -3518,6 +3654,26 @@ export function App() {
 
               {/* ── PLAYERS TAB ── */}
               {summaryTab === "players" && (<>
+                {/* Period filter pills */}
+                <div className="summary-period-filter">
+                  <button
+                    className={`summary-period-pill${summaryPeriodFilter.length === 0 ? " active" : ""}`}
+                    onClick={() => setSummaryPeriodFilter([])}
+                  >Full</button>
+                  {(["Q1", "Q2", "Q3", "Q4", ...Array.from({ length: overtimeCount }, (_, i) => `OT${i + 1}`)]).map(p => (
+                    <button
+                      key={p}
+                      className={`summary-period-pill${summaryPeriodFilter.includes(p) ? " active" : ""}`}
+                      onClick={() => setSummaryPeriodFilter(prev => {
+                        if (prev.includes(p)) {
+                          const next = prev.filter(x => x !== p);
+                          return next;
+                        }
+                        return [...prev, p];
+                      })}
+                    >{p}</button>
+                  ))}
+                </div>
                 {trackedPlayers.length === 0 ? (
                   <p className="summary-no-players">No tracked players — add a roster to see individual stats.</p>
                 ) : (
@@ -3537,9 +3693,9 @@ export function App() {
                       <span className="sph-stat">FL</span>
                     </div>
                     {[...trackedPlayers]
-                      .sort((a, b) => (pTotals[b.id]?.points ?? 0) - (pTotals[a.id]?.points ?? 0))
+                      .sort((a, b) => (summaryBoxScoreTotals[b.id]?.points ?? 0) - (summaryBoxScoreTotals[a.id]?.points ?? 0))
                       .map(p => {
-                        const t = pTotals[p.id];
+                        const t = summaryBoxScoreTotals[p.id];
                         const pts = t?.points ?? 0;
                         const fgm = t?.fgm ?? 0;
                         const fga = t?.fga ?? 0;
@@ -3632,90 +3788,94 @@ export function App() {
       {/* LEFT: Scoring */}
       <div className="panel left-panel">
         <div className="shot-grid">
-          {trackTimeouts && (
-            <>
-              <div className="shot-timeout-title">Timeouts {inOvertimeNow ? "(OT)" : "(Regulation)"}</div>
-              <div className="shot-timeout-cell shot-timeout-cell-home">
-                <div className="shot-timeout-counts">30s: {timeoutRemaining.home.short} · 60s: {timeoutRemaining.home.full}</div>
-                <div className="timeout-btn-row">
-                  <button
-                    className="timeout-btn timeout-btn-short"
-                    disabled={inOvertimeNow || timeoutRemaining.home.short <= 0}
-                    onClick={() => takeTimeout("home", "short")}
-                  >30s</button>
-                  <button
-                    className="timeout-btn timeout-btn-full"
-                    disabled={timeoutRemaining.home.full <= 0}
-                    onClick={() => takeTimeout("home", "full")}
-                  >60s</button>
-                </div>
-              </div>
-              <div className="shot-timeout-cell shot-timeout-cell-away">
-                <div className="shot-timeout-counts">30s: {timeoutRemaining.away.short} · 60s: {timeoutRemaining.away.full}</div>
-                <div className="timeout-btn-row">
-                  <button
-                    className="timeout-btn timeout-btn-short"
-                    disabled={inOvertimeNow || timeoutRemaining.away.short <= 0}
-                    onClick={() => takeTimeout("away", "short")}
-                  >30s</button>
-                  <button
-                    className="timeout-btn timeout-btn-full"
-                    disabled={timeoutRemaining.away.full <= 0}
-                    onClick={() => takeTimeout("away", "full")}
-                  >60s</button>
-                </div>
-              </div>
-            </>
-          )}
-          <div className="shot-grid-team-label shot-grid-team-label-home" title={`Buttons for ${homeTeamName}`}>
-            {homeTeamName}
-          </div>
-          <div className="shot-grid-team-label shot-grid-team-label-away" title={`Buttons for ${awayTeamName}`}>
-            {awayTeamName}
-          </div>
-          <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 2, made: true })}>2pt</button>
-          {isOpponentStatEnabled("points") && <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 2, made: true })}>2pt</button>}
-          <button className="circle teal" onClick={() => setModal({ kind: "shot", teamId: "home", points: 3, made: true })}>3pt</button>
-          {isOpponentStatEnabled("points") && <button className="circle red"  onClick={() => setModal({ kind: "shot", teamId: "away", points: 3, made: true })}>3pt</button>}
-          <button className="circle teal" onClick={() => setModal({ kind: "freeThrow", teamId: "home", made: true })}>ft</button>
-          {isOpponentStatEnabled("free_throws") && <button className="circle red"  onClick={() => setModal({ kind: "freeThrow", teamId: "away", made: true })}>ft</button>}
+          {(() => {
+            // Always render user's team on the left, opponent on the right
+            const myColor   = vcSideSetup === "home" ? "teal" : "red";
+            const oppColor  = vcSideSetup === "home" ? "red"  : "teal";
+            const myName    = vcSideSetup === "home" ? homeTeamName : awayTeamName;
+            const oppName   = vcSideSetup === "home" ? awayTeamName : homeTeamName;
+            const myTO      = timeoutRemaining[vcSideSetup];
+            const oppTO     = timeoutRemaining[opponentSide];
+            return (<>
+              {trackTimeouts && (
+                <>
+                  <div className="shot-timeout-title">Timeouts {inOvertimeNow ? "(OT)" : "(Regulation)"}</div>
+                  <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
+                    <div className="shot-timeout-counts">30s: {myTO.short} · 60s: {myTO.full}</div>
+                    <div className="timeout-btn-row">
+                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>30s</button>
+                      <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>60s</button>
+                    </div>
+                  </div>
+                  <div className={`shot-timeout-cell shot-timeout-cell-${opponentSide}`}>
+                    <div className="shot-timeout-counts">30s: {oppTO.short} · 60s: {oppTO.full}</div>
+                    <div className="timeout-btn-row">
+                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>30s</button>
+                      <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>60s</button>
+                    </div>
+                  </div>
+                </>
+              )}
+              <div className={`shot-grid-team-label shot-grid-team-label-${vcSideSetup}`} title={`Buttons for ${myName}`}>{myName}</div>
+              <div className={`shot-grid-team-label shot-grid-team-label-${opponentSide}`} title={`Buttons for ${oppName}`}>{oppName}</div>
+              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "shot", teamId: vcSideSetup,   points: 2, made: true })}>2pt</button>
+              {isOpponentStatEnabled("points")       && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "shot", teamId: opponentSide,   points: 2, made: true })}>2pt</button>}
+              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "shot", teamId: vcSideSetup,   points: 3, made: true })}>3pt</button>
+              {isOpponentStatEnabled("points")       && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "shot", teamId: opponentSide,   points: 3, made: true })}>3pt</button>}
+              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup,   made: true })}>ft</button>
+              {isOpponentStatEnabled("free_throws")  && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide,   made: true })}>ft</button>}
+            </>);
+          })()}
         </div>
       </div>
 
       {/* CENTER: Feed */}
       <div className="panel center-panel">
         <div className="scoreboard">
-          {appData.gameSetup.deviceId && (
-            <div className="score-device-id" title="Operator device identifier">
-              Device ID: {appData.gameSetup.deviceId}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.4rem" }}>
+            {appData.gameSetup.deviceId && (
+              <div className="score-device-id" style={{ margin: 0 }} title="Operator device identifier">
+                Device ID: {appData.gameSetup.deviceId}
+              </div>
+            )}
+            <div className={`game-state-banner game-state-${currentGameState.tone}`} style={{ margin: 0 }}>
+              {currentGameState.label}
             </div>
-          )}
-          <div className={`game-state-banner game-state-${currentGameState.tone}`}>
-            {currentGameState.label}
           </div>
-          <div className="score-row">
-            <span className="team-lbl team-home-txt">{homeTeamName}</span>
-            <span className="score team-home-txt">{scores.home}</span>
-          </div>
-          <div className="score-meta-row">
-            <span className={`score-meta${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>
-              Fouls: {periodTeamFouls.home}
-            </span>
-            {homeInBonus && <span className="score-chip bonus-chip">BONUS</span>}
-            {possessionTeamId === homeTeamId && <span className="score-chip possession-chip possession-chip-home">POSS</span>}
-          </div>
-          <div className="score-row">
-            <span className="team-lbl team-away-txt">{awayTeamName}</span>
-            <span className="score team-away-txt">{scores.away}</span>
-          </div>
-          <div className="score-meta-row">
-            <span className={`score-meta${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>
-              Fouls: {periodTeamFouls.away}
-            </span>
-            {awayInBonus && <span className="score-chip bonus-chip">BONUS</span>}
-            {possessionTeamId === awayTeamId && <span className="score-chip possession-chip possession-chip-away">POSS</span>}
-          </div>
-          {trackPossession && <div className="possession-indicator">Possession: {possessionLabel}</div>}
+          {(() => {
+            const myScoreRow = (
+              <>
+                <div className="score-row">
+                  <span className={`team-lbl team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? homeTeamName : awayTeamName}</span>
+                  <span className={`score team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? scores.home : scores.away}</span>
+                </div>
+                <div className="score-meta-row">
+                  <span className={`score-meta${(vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away) >= 5 ? " foul-count-danger" : (vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away) === 4 ? " foul-count-warn" : ""}`}>
+                    Fouls: {vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away}
+                  </span>
+                  {(vcSideSetup === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
+                  {possessionTeamId === (vcSideSetup === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${vcSideSetup}`}>POSS</span>}
+                </div>
+              </>
+            );
+            const oppSide = vcSideSetup === "home" ? "away" : "home";
+            const oppScoreRow = (
+              <>
+                <div className="score-row">
+                  <span className={`team-lbl team-${oppSide}-txt`}>{oppSide === "home" ? homeTeamName : awayTeamName}</span>
+                  <span className={`score team-${oppSide}-txt`}>{oppSide === "home" ? scores.home : scores.away}</span>
+                </div>
+                <div className="score-meta-row">
+                  <span className={`score-meta${(oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away) >= 5 ? " foul-count-danger" : (oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away) === 4 ? " foul-count-warn" : ""}`}>
+                    Fouls: {oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away}
+                  </span>
+                  {(oppSide === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
+                  {possessionTeamId === (oppSide === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${oppSide}`}>POSS</span>}
+                </div>
+              </>
+            );
+            return <>{myScoreRow}{oppScoreRow}</>;
+          })()}
         </div>
 
         {foulAlerts.length > 0 && (
@@ -3802,26 +3962,72 @@ export function App() {
             <button
               className={`clock-tool-btn clock-btn-visibility${(appData.gameSetup.clockVisible ?? true) ? " active" : ""}`}
               onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
-              {(appData.gameSetup.clockVisible ?? true) ? "Hide Panel" : "Show Panel"}
+              {(appData.gameSetup.clockVisible ?? true) ? "Hide Clock" : "Show Clock"}
             </button>
             <button
               className={`clock-tool-btn clock-btn-enabled${(appData.gameSetup.clockEnabled ?? true) ? " active" : ""}`}
               onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
-              {(appData.gameSetup.clockEnabled ?? true) ? "Lock Controls" : "Unlock Controls"}
+              {(appData.gameSetup.clockEnabled ?? true) ? "Disable Clock" : "Enable Clock"}
             </button>
           </div>
           {(appData.gameSetup.clockVisible ?? true) && (
             <>
-              <input
-                className="clock-inp"
-                value={clockInput}
-                onChange={e => handleClockInput(e.target.value)}
-                onFocus={e => e.currentTarget.select()}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="8:00"
+              <button
+                className={`clock-inp clock-inp-display${appData.gameSetup.clockEnabled === false ? " clock-inp-disabled" : ""}`}
                 disabled={appData.gameSetup.clockEnabled === false}
-              />
+                onClick={() => {
+                  if (appData.gameSetup.clockEnabled === false) return;
+                  setClockPadDigits("");
+                  setClockPadOpen(v => !v);
+                }}>
+                {clockPadOpen ? formatClockFromPadInput(clockPadDigits) : clockInput}
+              </button>
+              {clockPadOpen && (
+                <div className="clock-numpad-overlay" onClick={() => setClockPadOpen(false)}>
+                  <div className="clock-numpad" onClick={e => e.stopPropagation()}>
+                    <div className="clock-numpad-preview">{formatClockFromPadInput(clockPadDigits)}</div>
+                    <div className="clock-numpad-grid">
+                      {([1,2,3,4,5,6,7,8,9,".",0,"⌫"] as (number|string)[]).map((k, i) => (
+                        <button
+                          key={i}
+                          className="clock-numpad-key"
+                          onClick={() => {
+                            if (k === "⌫") {
+                              setClockPadDigits(d => d.slice(0, -1));
+                            } else if (k === ".") {
+                              // only allow one dot, only when no minutes typed (sub-minute)
+                              setClockPadDigits(d => {
+                                if (d.includes(".")) return d;
+                                return d + ".";
+                              });
+                            } else {
+                              setClockPadDigits(d => {
+                                const dotIdx = d.indexOf(".");
+                                if (dotIdx !== -1) {
+                                  // after dot: only 1 tenths digit allowed
+                                  if (d.length > dotIdx + 1) return d;
+                                  return d + String(k);
+                                }
+                                // before dot: max 4 digits (MMSS)
+                                return (d + String(k)).slice(0, 4);
+                              });
+                            }
+                          }}>
+                          {k}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="clock-numpad-actions">
+                      <button className="clock-numpad-cancel" onClick={() => setClockPadOpen(false)}>Cancel</button>
+                      <button className="clock-numpad-set" onClick={() => {
+                        const formatted = formatClockFromPadInput(clockPadDigits);
+                        setClockInput(formatted);
+                        setClockPadOpen(false);
+                      }}>Set</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="clock-tools-row clock-tools-row-main">
                 <button className={`clock-tool-btn ${clockRunning ? "clock-btn-stop" : "clock-btn-start"}`} onClick={() => setClockRunning((v) => !v)} disabled={appData.gameSetup.clockEnabled === false}>
                   {clockRunning ? "Stop" : "Start"}
@@ -4268,6 +4474,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         homeTeamColor: normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR),
         awayTeamColor: normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
         statsGameId: appData.gameSetup.statsGameId,
+        startingLineup: appData.gameSetup.startingLineup,
       },
     });
   }
@@ -4481,7 +4688,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <p className="dim-text" style={{ marginBottom: 8 }}>Pick one color for each side to make scorekeeping faster.</p>
           <div className="team-color-rows">
             <div className="team-color-row">
-              <span className="team-color-label">Home</span>
+              <span className="team-color-label">{gsHomeSideLabel}</span>
               <div className="team-color-swatches">
                 {TEAM_COLOR_OPTIONS.map((color) => (
                   <button
@@ -4497,7 +4704,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
               <input className="team-color-input" type="color" aria-label="Custom home color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
             </div>
             <div className="team-color-row">
-              <span className="team-color-label">Away</span>
+              <span className="team-color-label">{gsAwaySideLabel}</span>
               <div className="team-color-swatches">
                 {TEAM_COLOR_OPTIONS.map((color) => (
                   <button

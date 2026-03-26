@@ -158,6 +158,44 @@ function mergePlayerStats(
   return target;
 }
 
+function mergeByTeamKeys<T>(
+  previous: Record<string, T> | undefined,
+  incoming: Record<string, T> | undefined
+): Record<string, T> {
+  return {
+    ...(previous ?? {}),
+    ...(incoming ?? {}),
+  };
+}
+
+function mergeLineupsByTeam(
+  previous: Record<string, string[]> | undefined,
+  incoming: Record<string, string[]> | undefined
+): Record<string, string[]> {
+  const merged: Record<string, string[]> = mergeByTeamKeys(previous, incoming);
+  for (const teamId of Object.keys(merged)) {
+    merged[teamId] = [...new Set(merged[teamId] ?? [])].filter(Boolean);
+  }
+  return merged;
+}
+
+function mergeGameState(previous: GameState | null, incoming: GameState): GameState {
+  if (!previous || previous.gameId !== incoming.gameId) {
+    return incoming;
+  }
+
+  return {
+    ...previous,
+    ...incoming,
+    scoreByTeam: mergeByTeamKeys(previous.scoreByTeam, incoming.scoreByTeam),
+    bonusByTeam: mergeByTeamKeys(previous.bonusByTeam, incoming.bonusByTeam),
+    possessionsByTeam: mergeByTeamKeys(previous.possessionsByTeam, incoming.possessionsByTeam),
+    activeLineupsByTeam: mergeLineupsByTeam(previous.activeLineupsByTeam, incoming.activeLineupsByTeam),
+    teamStats: mergeByTeamKeys(previous.teamStats, incoming.teamStats),
+    playerStatsByTeam: mergeByTeamKeys(previous.playerStatsByTeam, incoming.playerStatsByTeam),
+  };
+}
+
 function emptyBoxScoreTotals(): BoxScoreTeamTotals {
   return {
     points: 0,
@@ -742,7 +780,7 @@ export function App() {
     socket.on("game:state", (nextState: GameState) => {
       stopPoll();
       setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
-      setState(nextState);
+      setState((current) => mergeGameState(current, nextState));
       setDashboardStatus("Live state synced");
     });
 
@@ -985,25 +1023,40 @@ export function App() {
   }
 
   const canonicalSideIds = useMemo(() => {
-    const homeId = setupNames.vcSide === "home"
-      ? (setupNames.myTeamId || state?.homeTeamId || "home")
-      : (state?.opponentTeamId || state?.homeTeamId || "home");
-    const awayId = setupNames.vcSide === "away"
-      ? (setupNames.myTeamId || state?.awayTeamId || "away")
-      : (state?.opponentTeamId || state?.awayTeamId || "away");
+    // The game state's homeTeamId / awayTeamId are the authoritative structural
+    // identifiers. URL params (myTeamId, vcSide) are display hints only.
+    // Using opponentTeamId in aliases caused both raw team IDs to collapse to
+    // the same canonical ID when VC plays away, doubling scores and merging
+    // player cards into a single slot.
+    const stateHomeId = state?.homeTeamId;
+    const stateAwayId = state?.awayTeamId;
+
+    const homeId = stateHomeId || (setupNames.vcSide === "home" ? (setupNames.myTeamId || "home") : "home");
+    const awayId = stateAwayId || (setupNames.vcSide === "away" ? (setupNames.myTeamId || "away") : "away");
+
+    // Only alias myTeamId to the side matching vcSide when state confirms
+    // that myTeamId is NOT already assigned to the opposite side. This prevents
+    // a stale/wrong vcSide in the URL from creating alias collisions.
+    const myId = setupNames.myTeamId || "";
+    const myTeamOnHome = myId && myId !== stateAwayId
+      ? (setupNames.vcSide === "home" ? myId : undefined)
+      : undefined;
+    const myTeamOnAway = myId && myId !== stateHomeId
+      ? (setupNames.vcSide === "away" ? myId : undefined)
+      : undefined;
 
     const homeAliases = new Set<string>([
       "home",
       "team-home",
-      state?.homeTeamId,
-      setupNames.vcSide === "home" ? setupNames.myTeamId : state?.opponentTeamId,
+      stateHomeId,
+      myTeamOnHome,
     ].filter((value): value is string => Boolean(value)));
 
     const awayAliases = new Set<string>([
       "away",
       "team-away",
-      state?.awayTeamId,
-      setupNames.vcSide === "away" ? setupNames.myTeamId : state?.opponentTeamId,
+      stateAwayId,
+      myTeamOnAway,
     ].filter((value): value is string => Boolean(value)));
 
     return {
@@ -1017,7 +1070,6 @@ export function App() {
     setupNames.vcSide,
     state?.awayTeamId,
     state?.homeTeamId,
-    state?.opponentTeamId,
   ]);
 
   function canonicalTeamId(teamId: string): string {
@@ -1084,11 +1136,22 @@ export function App() {
   }, [rawTeamIds, setupNames.myTeamId, setupNames.vcSide, state]);
 
   const teams = useMemo(() => {
-    const preferred = [canonicalSideIds.homeId, canonicalSideIds.awayId]
-      .filter((teamId): teamId is string => Boolean(teamId));
+    const homeSlot = canonicalSideIds.homeId;
+    // Guard: when both canonical IDs collapse to the same value (e.g. bad game
+    // setup where homeTeamId === awayTeamId), fall back to the raw state IDs so
+    // both team cards are always rendered.
+    const awaySlot =
+      canonicalSideIds.awayId !== canonicalSideIds.homeId
+        ? canonicalSideIds.awayId
+        : (state?.awayTeamId && state.awayTeamId !== state?.homeTeamId
+            ? state.awayTeamId
+            : "away");
 
+    // Always put our team (vc side) at index 0 so it renders on the left.
+    const preferred = (setupNames.vcSide === "away" ? [awaySlot, homeSlot] : [homeSlot, awaySlot])
+      .filter((teamId): teamId is string => Boolean(teamId));
     return [...new Set([...preferred, ...Object.keys(aggregatedTeams)])];
-  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId]);
+  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.vcSide, state?.awayTeamId, state?.homeTeamId]);
 
   const rosterLabels = useMemo(() => {
     const teamNameById: Record<string, string> = {};
@@ -1124,6 +1187,14 @@ export function App() {
     return byTeamId;
   }, [rosterTeams]);
 
+  const teamColorById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const team of rosterTeams) {
+      if (team.teamColor) map[team.id] = team.teamColor;
+    }
+    return map;
+  }, [rosterTeams]);
+
   function toTitleCase(value: string): string {
     return value
       .replace(/[_-]+/g, " ")
@@ -1137,47 +1208,41 @@ export function App() {
 
   function displayTeamName(teamId: string): string {
     const canonicalId = canonicalTeamId(teamId);
-    const normalized = teamId.toLowerCase();
-    const canonicalNormalized = canonicalId.toLowerCase();
-    const isHomeAlias = canonicalSideIds.homeAliases.has(teamId)
-      || canonicalSideIds.homeAliases.has(canonicalId)
-      || normalized === "home"
-      || normalized === "team-home"
-      || canonicalNormalized === "home"
-      || canonicalNormalized === "team-home";
-    const isAwayAlias = canonicalSideIds.awayAliases.has(teamId)
-      || canonicalSideIds.awayAliases.has(canonicalId)
-      || normalized === "away"
-      || normalized === "team-away"
-      || canonicalNormalized === "away"
-      || canonicalNormalized === "team-away";
-    const myTeamConfigured = Boolean(setupNames.myTeamName);
     const opponentName = setupNames.opponentName || state?.opponentName || "";
-    const isOpponentAlias = setupNames.vcSide === "home" ? isAwayAlias : isHomeAlias;
 
-    if (myTeamConfigured && setupNames.myTeamId && (teamId === setupNames.myTeamId || canonicalId === setupNames.myTeamId)) {
-      return setupNames.myTeamName;
+    // When myTeamId is available in the URL it is the definitive check —
+    // do NOT mix in teams[0] which depends on vcSide and can mislabel both
+    // slots as "our team" when vcSide is wrong.  Fall back to vcSide-based
+    // heuristics only when myTeamId was not provided.
+    // Three-way check when myTeamId is set:
+    //   1. Direct ID match
+    //   2. Canonical ID equals myTeamId (edge case)
+    //   3. myTeamId resolves to the same canonical slot (covers old games where
+    //      events were sent with a different ID, e.g. "team-usa" vs "team-vc")
+    const ourRawSideId = setupNames.vcSide === "away" ? state?.awayTeamId : state?.homeTeamId;
+    const isOurTeam = setupNames.myTeamId !== ""
+      ? (teamId === setupNames.myTeamId ||
+         canonicalId === setupNames.myTeamId ||
+         canonicalTeamId(setupNames.myTeamId) === canonicalId)
+      : ((teams.length > 0 && teamId === teams[0]) ||
+         (Boolean(ourRawSideId) && teamId === ourRawSideId));
+
+    if (isOurTeam) {
+      // Only return myTeamName if it doesn't duplicate the opponent name—if both would
+      // show the same label, prefer a roster label or a title-cased fallback so the two
+      // sections are visually distinct.
+      const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
+      if (setupNames.myTeamName && setupNames.myTeamName !== opponentName) return setupNames.myTeamName;
+      if (rosterLabel) return rosterLabel;
+      if (setupNames.myTeamName) return setupNames.myTeamName;
+      const fallback = canonicalId.replace(/^team[-_]/i, "");
+      return toTitleCase(fallback);
     }
 
-    if (myTeamConfigured) {
-      if (setupNames.vcSide === "home" && isHomeAlias) return setupNames.myTeamName;
-      if (setupNames.vcSide === "away" && isAwayAlias) return setupNames.myTeamName;
-    }
-
-    if (opponentName) {
-      if (state?.opponentTeamId && (teamId === state.opponentTeamId || canonicalId === state.opponentTeamId)) {
-        return opponentName;
-      }
-      if (isOpponentAlias) return opponentName;
-      if (setupNames.myTeamId && canonicalId !== setupNames.myTeamId && teams.length === 2) {
-        return opponentName;
-      }
-    }
+    if (opponentName) return opponentName;
 
     const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
-    if (rosterLabel) {
-      return rosterLabel;
-    }
+    if (rosterLabel) return rosterLabel;
 
     const fallback = canonicalId.replace(/^team[-_]/i, "");
     return toTitleCase(fallback);
@@ -1211,12 +1276,26 @@ export function App() {
 
   function getScoreboardLineup(teamId: string): { playerIds: string[]; isEstimated: boolean } {
     const canonicalId = canonicalTeamId(teamId);
-    const liveLineup = [...new Set(aggregatedTeams[teamId]?.activeLineup ?? [])].filter(Boolean);
+    // Fall back to canonical-keyed bucket when teamId is a side-alias like "away".
+    const teamBucket = aggregatedTeams[teamId] ?? aggregatedTeams[canonicalId];
+    // Exclude any player ID that is itself a team identifier (e.g. "team-oes" leaking
+    // into the active lineup from starting-lineup initialization).
+    const knownTeamIds = new Set([
+      "home", "away", "home-team", "away-team", "team-home", "team-away",
+      ...rawTeamIds,
+      ...Object.keys(aggregatedTeams),
+      // Also exclude "<teamId>-team" pseudo-IDs emitted by the operator when
+      // tracking opponent shots without a specific player selected.
+      ...rawTeamIds.map((id) => `${id}-team`),
+      ...Object.keys(aggregatedTeams).map((id) => `${id}-team`),
+    ].map((id) => id.toLowerCase()));
+    const isRealPlayer = (pid: string) => Boolean(pid) && !knownTeamIds.has(pid.toLowerCase());
+    const liveLineup = [...new Set(teamBucket?.activeLineup ?? [])].filter(isRealPlayer);
     if (liveLineup.length >= 5) {
       return { playerIds: liveLineup.slice(0, 5), isEstimated: false };
     }
 
-    const statEntries = Object.entries(aggregatedTeams[teamId]?.playerStats ?? {});
+    const statEntries = Object.entries(teamBucket?.playerStats ?? {});
     const activeByStats = statEntries
       .filter(([, statLine]) => {
         const touches =
@@ -1260,7 +1339,7 @@ export function App() {
       .map(([playerId]) => playerId);
 
     const rosterOrder = (playersByTeamId[canonicalId] ?? playersByTeamId[teamId] ?? []).map((player) => player.id);
-    const combined = [...new Set([...liveLineup, ...activeByStats, ...rosterOrder])].filter(Boolean).slice(0, 5);
+    const combined = [...new Set([...liveLineup, ...activeByStats, ...rosterOrder])].filter(isRealPlayer).slice(0, 5);
 
     return {
       playerIds: combined,
@@ -1380,7 +1459,9 @@ export function App() {
   const leadersByTeam = useMemo(() => {
     return Object.fromEntries(
       teams.map((teamId) => {
-        const players = Object.values(aggregatedTeams[teamId]?.playerStats ?? {});
+        const canonId = canonicalTeamId(teamId);
+        const td = aggregatedTeams[teamId] ?? aggregatedTeams[canonId];
+        const players = Object.values(td?.playerStats ?? {});
         const scoringLeader = players
           .filter((player) => player.points > 0)
           .slice()
@@ -1406,8 +1487,16 @@ export function App() {
       return canonicalTeamId(setupNames.myTeamId);
     }
 
+    // When myTeamId isn't in the URL, prefer the team whose starting lineup is
+    // seeded in the game state — avoids defaulting to the opponent's (home) slot.
+    const lineupEntry = Object.entries(state?.activeLineupsByTeam ?? {})
+      .find(([, lineup]) => lineup.length > 0);
+    if (lineupEntry) {
+      return canonicalTeamId(lineupEntry[0]);
+    }
+
     return setupNames.vcSide === "away" ? canonicalSideIds.awayId : canonicalSideIds.homeId;
-  }, [canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.myTeamId, setupNames.vcSide]);
+  }, [canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.myTeamId, setupNames.vcSide, state?.activeLineupsByTeam]);
 
   const rotationContext = useMemo(() => {
     if (!coachedTeamId) {
@@ -1440,13 +1529,23 @@ export function App() {
       .map((player) => player.playerId);
 
     const rosterOrder = rosterTeam?.players.map((player) => player.id) ?? [];
-    const onCourt = [...new Set([...liveOnCourt, ...activeByStats, ...rosterOrder])].slice(0, 5);
+
+    // Build team-level alias set so we never show a team ID as a player chip.
+    const teamAliasSet = new Set<string>([
+      ...Array.from(canonicalSideIds.homeAliases).map((s) => s.toLowerCase()),
+      ...Array.from(canonicalSideIds.awayAliases).map((s) => s.toLowerCase()),
+    ]);
+    const isValidPlayerId = (id: string) => id && !teamAliasSet.has(id.toLowerCase());
+
+    const onCourt = [...new Set([...liveOnCourt, ...activeByStats, ...rosterOrder])]
+      .filter(isValidPlayerId)
+      .slice(0, 5);
     const isEstimatedLineup = liveOnCourt.length < 5 && onCourt.length > liveOnCourt.length;
 
     const knownPlayerIds = new Set<string>([
       ...onCourt,
-      ...Object.keys(playerStats),
-      ...rosterOrder,
+      ...Object.keys(playerStats).filter(isValidPlayerId),
+      ...rosterOrder.filter(isValidPlayerId),
     ]);
 
     const bench = [...knownPlayerIds].filter((playerId) => !onCourt.includes(playerId));
@@ -1921,24 +2020,34 @@ export function App() {
         <div className="scoreboard">
           {teams.map((teamId, index) => {
             const scoreboardLineup = getScoreboardLineup(teamId);
+            const teamColor = teamColorById[canonicalTeamId(teamId)];
+            // Fall back to canonical-keyed bucket when teamId is a side-alias.
+            const td = aggregatedTeams[teamId] ?? aggregatedTeams[canonicalTeamId(teamId)];
             return (
               <article
                 key={teamId}
                 className={`score-item ${index === 0 ? "score-item-home" : "score-item-away"}`}
+                style={teamColor ? {
+                  background: `linear-gradient(180deg, ${teamColor}40, ${teamColor}18)`,
+                  borderColor: `${teamColor}99`,
+                } : undefined}
               >
                 <header className="score-item-header">
-                  <h3>{displayTeamName(teamId)}</h3>
-                  <p className="score">{aggregatedTeams[teamId]?.score ?? 0}</p>
+                  <div className="score-item-title">
+                    <h3>{displayTeamName(teamId)}</h3>
+                    {index === 0 && <span className="your-team-badge">YOUR TEAM</span>}
+                  </div>
+                  <p className="score">{td?.score ?? 0}</p>
                 </header>
 
                 <div className="score-meta-grid">
-                  <p className="metric-row"><span>FGM / FGA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.fgMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.fgAttempts ?? 0}</strong></p>
-                  <p className="metric-row"><span>FTM / FTA</span><strong>{aggregatedTeams[teamId]?.teamStats.shooting.ftMade ?? 0}/{aggregatedTeams[teamId]?.teamStats.shooting.ftAttempts ?? 0}</strong></p>
-                  <p className="metric-row"><span>Possessions</span><strong>{aggregatedTeams[teamId]?.possessions ?? 0}</strong></p>
-                  <p className="metric-row"><span>Turnovers</span><strong>{aggregatedTeams[teamId]?.teamStats.turnovers ?? 0}</strong></p>
-                  <p className="metric-row"><span>Team fouls</span><strong>{aggregatedTeams[teamId]?.teamStats.fouls ?? 0}</strong></p>
-                  <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(aggregatedTeams[teamId]?.bonus ?? false)}</strong></p>
-                  <p className="metric-row"><span>Subs</span><strong>{aggregatedTeams[teamId]?.teamStats.substitutions ?? 0}</strong></p>
+                  <p className="metric-row"><span>FGM / FGA</span><strong>{td?.teamStats.shooting.fgMade ?? 0}/{td?.teamStats.shooting.fgAttempts ?? 0}</strong></p>
+                  <p className="metric-row"><span>FTM / FTA</span><strong>{td?.teamStats.shooting.ftMade ?? 0}/{td?.teamStats.shooting.ftAttempts ?? 0}</strong></p>
+                  <p className="metric-row"><span>Possessions</span><strong>{td?.possessions ?? 0}</strong></p>
+                  <p className="metric-row"><span>Turnovers</span><strong>{td?.teamStats.turnovers ?? 0}</strong></p>
+                  <p className="metric-row"><span>Team fouls</span><strong>{td?.teamStats.fouls ?? 0}</strong></p>
+                  <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(td?.bonus ?? false)}</strong></p>
+                  <p className="metric-row"><span>Subs</span><strong>{td?.teamStats.substitutions ?? 0}</strong></p>
                   <p className="metric-row metric-wrap">
                     <span>Active lineup</span>
                     <strong>
@@ -1992,13 +2101,23 @@ export function App() {
 
         {teams.map((teamId) => {
           const teamTotals = boxScoreByTeam[teamId]?.totals ?? emptyBoxScoreTotals();
+          const teamIdLower = teamId.toLowerCase();
           const playerLines = Object.values(boxScoreByTeam[teamId]?.players ?? {})
+            .filter((line) => {
+              // Skip team-level placeholder IDs that appear when no specific player is selected.
+              const nId = line.playerId.toLowerCase();
+              return nId !== "home" && nId !== "away"
+                && nId !== "home-team" && nId !== "away-team"
+                && nId !== "team-home" && nId !== "team-away"
+                && nId !== teamIdLower;
+            })
             .map((line) => {
-              const player = playersByTeamId[teamId]?.find((candidate) => candidate.id === line.playerId);
+              // Search all roster teams by player ID to handle canonical team ID mismatches.
+              const rosterPlayer = rosterTeams.flatMap((t) => t.players).find((p) => p.id === line.playerId);
               return {
                 ...line,
-                name: player?.name ?? `#${line.playerId}`,
-                number: player?.number ?? "",
+                name: rosterPlayer?.name ?? displayPlayerName(teamId, line.playerId),
+                number: rosterPlayer?.number ?? "",
               };
             })
             .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));

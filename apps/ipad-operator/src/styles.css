@@ -294,45 +294,45 @@ html, body {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(232,234,240,0.22);
-  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(79,140,255,0.4);
+  background: rgba(20, 22, 43, 0.86);
   color: rgba(232,234,240,0.92);
-  font-size: 0.69rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 0.2rem 0.58rem;
+  padding: 0.22rem 0.6rem;
   margin: 0 0 0.46rem;
 }
 
 .game-state-live {
   border-color: rgba(16,185,129,0.5);
   color: #6ee7b7;
-  background: rgba(16,185,129,0.14);
+  background: rgba(20, 22, 43, 0.86);
 }
 
 .game-state-break {
   border-color: rgba(242,194,75,0.52);
   color: #f2c24b;
-  background: rgba(242,194,75,0.14);
+  background: rgba(20, 22, 43, 0.86);
 }
 
 .game-state-alert {
   border-color: rgba(248,113,113,0.56);
   color: #fca5a5;
-  background: rgba(248,113,113,0.14);
+  background: rgba(20, 22, 43, 0.86);
 }
 
 .game-state-idle {
-  border-color: rgba(148,163,184,0.42);
-  color: rgba(203,213,225,0.92);
-  background: rgba(100,116,139,0.16);
+  border-color: rgba(79,140,255,0.4);
+  color: rgba(232,234,240,0.92);
+  background: rgba(20, 22, 43, 0.86);
 }
 
 .game-state-done {
   border-color: rgba(168,85,247,0.52);
   color: #e9d5ff;
-  background: rgba(168,85,247,0.16);
+  background: rgba(20, 22, 43, 0.86);
 }
 
 .device-id-corner {
@@ -764,11 +764,88 @@ html, body {
   padding: 0.45rem;
   min-height: 44px;
 }
+.clock-inp-display {
+  width: 100%;
+  cursor: pointer;
+  display: block;
+}
+.clock-inp-display:hover { border-color: #4f8cff; }
+.clock-inp-disabled { opacity: 0.55; cursor: not-allowed; }
 .clock-inp:focus { outline: none; border-color: #4f8cff; }
 .clock-inp:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* Clock numpad overlay */
+.clock-numpad-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.clock-numpad {
+  background: rgba(16,18,36,0.99);
+  border: 1.5px solid rgba(79,140,255,0.4);
+  border-radius: 18px;
+  padding: 1rem 1rem 0.9rem;
+  width: 240px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+.clock-numpad-preview {
+  font-size: 1.8rem;
+  font-weight: 800;
+  text-align: center;
+  color: #4f8cff;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.6rem;
+}
+.clock-numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.clock-numpad-key {
+  min-height: 52px;
+  border-radius: 10px;
+  border: 1px solid rgba(79,140,255,0.3);
+  background: rgba(255,255,255,0.06);
+  color: #e8eaf0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.clock-numpad-key:active { background: rgba(79,140,255,0.22); }
+.clock-numpad-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+.clock-numpad-cancel {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.06);
+  color: rgba(232,234,240,0.7);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.clock-numpad-set {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(79,140,255,0.6);
+  background: rgba(79,140,255,0.18);
+  color: #a5c8ff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.clock-numpad-set:active { background: rgba(79,140,255,0.35); }
 .clock-tools-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1171,7 +1248,8 @@ html, body {
   max-height: min(88vh, 940px);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .summary-modal {
@@ -1200,26 +1278,26 @@ html, body {
 
 .summary-top-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.45rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.38rem;
 }
 
 .summary-top-item {
   display: flex;
   flex-direction: column;
-  gap: 0.18rem;
-  border: 1px solid rgba(79,140,255,0.3);
-  border-radius: 10px;
-  background: rgba(17,20,52,0.72);
-  padding: 0.45rem 0.58rem;
+  gap: 0.14rem;
+  border: 1px solid rgba(79,140,255,0.22);
+  border-radius: 8px;
+  background: rgba(17,20,52,0.6);
+  padding: 0.35rem 0.5rem;
   min-width: 0;
 }
 
 .summary-top-label {
-  color: rgba(232,234,240,0.62);
-  font-size: 0.66rem;
+  color: rgba(232,234,240,0.5);
+  font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
@@ -1236,14 +1314,14 @@ html, body {
 .summary-top-dual {
   display: flex;
   flex-direction: column;
-  gap: 0.14rem;
+  gap: 0.1rem;
 }
 
 .summary-top-dual-row {
-  color: rgba(248,250,255,0.95);
-  font-size: 0.77rem;
+  color: rgba(248,250,255,0.92);
+  font-size: 0.8rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .summary-top-state {
@@ -1313,8 +1391,12 @@ html, body {
   letter-spacing: 0.02em;
   padding: 0.2rem 0.38rem;
   min-height: 1.65rem;
+  text-align: left;
+  cursor: pointer;
+  display: block;
 }
 
+.summary-top-clock-input:hover,
 .summary-top-clock-input:focus {
   outline: none;
   border-color: rgba(79,140,255,0.78);
@@ -1328,7 +1410,6 @@ html, body {
 
 .summary-body {
   padding: 0.95rem 1.1rem 1.15rem;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
@@ -1527,6 +1608,33 @@ html, body {
 }
 
 /* ── Players tab ── */
+.summary-period-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.1rem 0 0.4rem;
+}
+.summary-period-pill {
+  padding: 0.22rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid rgba(79,140,255,0.3);
+  background: transparent;
+  color: rgba(232,234,240,0.6);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.summary-period-pill:hover {
+  background: rgba(79,140,255,0.1);
+  color: rgba(232,234,240,0.9);
+}
+.summary-period-pill.active {
+  background: rgba(79,140,255,0.22);
+  border-color: rgba(79,140,255,0.72);
+  color: #bfdbfe;
+}
 .summary-no-players {
   color: rgba(232,234,240,0.55);
   font-size: 0.84rem;
@@ -2995,6 +3103,29 @@ html, body {
 .pregame-lineup-btn:hover {
   background: rgba(79,140,255,0.18);
   border-color: #4f8cff;
+}
+
+.pregame-lineup-btn.lineup-is-set {
+  background: rgba(16,185,129,0.1);
+  border-color: rgba(16,185,129,0.5);
+  color: #6ee7b7;
+}
+
+.pregame-lineup-btn.lineup-is-set:hover {
+  background: rgba(16,185,129,0.18);
+  border-color: #10b981;
+}
+
+.pregame-lineup-btn.lineup-required {
+  background: rgba(242,194,75,0.08);
+  border-color: rgba(242,194,75,0.55);
+  color: #f2c24b;
+  animation: lineup-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes lineup-pulse {
+  0%, 100% { border-color: rgba(242,194,75,0.55); }
+  50% { border-color: rgba(242,194,75,0.95); }
 }
 
 .pregame-lineup-setup {

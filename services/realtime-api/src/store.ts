@@ -95,6 +95,7 @@ interface GameSession {
   awayTeamId: string;
   opponentName?: string;
   opponentTeamId?: string;
+  startingLineupByTeam?: Record<string, string[]>;
   aiSettings: CoachAiSettings;
   aiContext: GameAiContext;
   historicalContextSummary: string;
@@ -116,6 +117,7 @@ interface PersistedGameSession {
   awayTeamId: string;
   opponentName?: string;
   opponentTeamId?: string;
+  startingLineupByTeam?: Record<string, string[]>;
   aiSettings?: CoachAiSettings;
   aiContext?: GameAiContext;
   historicalContextSummary?: string;
@@ -978,6 +980,7 @@ function persistSessions() {
       awayTeamId: session.awayTeamId,
       opponentName: session.opponentName,
       opponentTeamId: session.opponentTeamId,
+      startingLineupByTeam: session.startingLineupByTeam,
       aiContext: sanitizeGameAiContext(session.aiContext),
       historicalContextSummary: session.historicalContextSummary,
       historicalContextFetchedAtMs: session.historicalContextFetchedAtMs,
@@ -1009,11 +1012,23 @@ function restoreSessions() {
       session.opponentName,
       session.opponentTeamId
     );
+
+    // Re-seed the starting lineup before replaying events so substitutions
+    // are applied on top of the correct initial on-court players.
+    if (session.startingLineupByTeam) {
+      for (const [teamId, lineup] of Object.entries(session.startingLineupByTeam)) {
+        if ((teamId === session.homeTeamId || teamId === session.awayTeamId) && Array.isArray(lineup)) {
+          initialState.activeLineupsByTeam[teamId] = lineup.map(String).filter(Boolean);
+        }
+      }
+    }
+
     const restoredSession: GameSession = {
       homeTeamId: session.homeTeamId,
       awayTeamId: session.awayTeamId,
       opponentName: session.opponentName,
       opponentTeamId: session.opponentTeamId,
+      startingLineupByTeam: session.startingLineupByTeam,
       aiSettings: sanitizeCoachAiSettings(session.aiSettings),
       aiContext: sanitizeGameAiContext(session.aiContext),
       historicalContextSummary: typeof session.historicalContextSummary === "string" ? session.historicalContextSummary : "",
@@ -1074,6 +1089,7 @@ export function createGame(input: CreateGameInput): GameState {
     awayTeamId: input.awayTeamId,
     opponentName: input.opponentName,
     opponentTeamId: input.opponentTeamId,
+    startingLineupByTeam: input.startingLineupByTeam,
     aiSettings: defaultCoachAiSettings(),
     aiContext: sanitizeGameAiContext(input.aiContext),
     historicalContextSummary: "",
