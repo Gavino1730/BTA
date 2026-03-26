@@ -134,7 +134,7 @@ function getDefaultDeviceId(): string {
 }
 
 type TeamSide = "home" | "away";
-type SettingsView = "menu" | "teams" | "team-edit" | "game-setup";
+type SettingsView = "menu" | "teams" | "team-edit" | "game-setup" | "ai-settings";
 
 export interface Player {
   id: string;
@@ -930,6 +930,7 @@ export function App() {
   const [period, setPeriod] = useState("Q1" as string);
   const [clockInput, setClockInput] = useState("8:00");
   const [clockRunning, setClockRunning] = useState(false);
+  const [dismissedTimeoutId, setDismissedTimeoutId] = useState<string | null>(null);
   const [clockPadOpen, setClockPadOpen] = useState(false);
   const [clockPadDigits, setClockPadDigits] = useState("");
   const [summaryClockPadOpen, setSummaryClockPadOpen] = useState(false);
@@ -971,6 +972,12 @@ export function App() {
 
   // ---- Pre-game setup state ----
   const [preGameDeviceId, setPreGameDeviceId] = useState(normalizeDeviceId(appData.gameSetup.deviceId));
+
+  // Keep pre-game device ID input in sync when it is changed via Settings > Game Setup
+  useEffect(() => {
+    setPreGameDeviceId(normalizeDeviceId(appData.gameSetup.deviceId));
+  }, [appData.gameSetup.deviceId]);
+
   const [showLineupSetup, setShowLineupSetup] = useState(false);
   const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
 
@@ -1146,7 +1153,16 @@ export function App() {
     }
 
     const deviceId = normalizeDeviceId(appData.gameSetup.deviceId);
-    const payload = { deviceId, gameId };
+    const startingLineup = Array.isArray(appData.gameSetup.startingLineup)
+      ? [...new Set(appData.gameSetup.startingLineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5)
+      : [];
+    const trackedTeamId = appData.gameSetup.vcSide === "away"
+      ? (appData.gameSetup.myTeamId || "team-away")
+      : (appData.gameSetup.myTeamId || "team-home");
+    const startingLineupByTeam = startingLineup.length > 0
+      ? { [trackedTeamId]: startingLineup }
+      : undefined;
+    const payload = { deviceId, gameId, startingLineupByTeam };
     const socket = io(appData.gameSetup.apiUrl, {
       auth: appData.gameSetup.apiKey ? { apiKey: appData.gameSetup.apiKey } : {}
     });
@@ -1395,14 +1411,15 @@ export function App() {
 
   /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
   async function endAndResetGame() {
-    if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim()) {
-      const saved = await submitToDashboard();
+    // Read fresh localStorage data so we always get the opponent name just saved by saveGameSetup()
+    // (React state updates are async, so appData.gameSetup.opponent may still be the old value here)
+    const latest = loadAppData();
+    if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
+      const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
       if (!saved) {
         return false;
       }
     }
-    // Use fresh localStorage data so we get the opponent name just saved by saveGameSetup()
-    const latest = loadAppData();
     const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
     await startGame(newId);
     return true;
@@ -1639,6 +1656,14 @@ export function App() {
     away: timeoutRemaining.away.full + timeoutRemaining.away.short,
   };
   const latestEvent = allEvents[0]?.event;
+
+  // When the clock starts while a timeout is the latest event, mark that timeout as dismissed
+  // so that pausing the clock again shows "Clock Stopped" rather than reverting to the timeout indicator.
+  useEffect(() => {
+    if (clockRunning && latestEvent?.type === "timeout") {
+      setDismissedTimeoutId(latestEvent.id);
+    }
+  }, [clockRunning, latestEvent]);
   const currentGameState = useMemo(() => {
     if (gamePhase === "post-game") {
       return { label: "End of Game", tone: "done" as const };
@@ -1659,7 +1684,7 @@ export function App() {
       return { label: `End of ${period}`, tone: "break" as const };
     }
 
-    if (!clockRunning && trackTimeouts && latestEvent?.type === "timeout") {
+    if (!clockRunning && trackTimeouts && latestEvent?.type === "timeout" && latestEvent.id !== dismissedTimeoutId) {
       const teamName = latestEvent.teamId === homeTeamId
         ? homeTeamName
         : latestEvent.teamId === awayTeamId
@@ -1681,6 +1706,7 @@ export function App() {
     awayTeamName,
     clockInput,
     clockRunning,
+    dismissedTimeoutId,
     gamePhase,
     homeTeamId,
     homeTeamName,
@@ -1774,7 +1800,13 @@ export function App() {
   async function changePeriod(nextPeriod: string) {
     if (nextPeriod === period) return;
 
+    const currentOrder = getPeriodOrder(period);
     const nextOrder = getPeriodOrder(nextPeriod);
+    if (nextOrder > currentOrder + 1) {
+      showInlineNotice(`You must complete ${period} before jumping to ${nextPeriod}. Periods must advance one at a time.`, "warning", 3200);
+      return;
+    }
+
     if (nextOrder < furthestReachedPeriodOrder) {
       const ok = await requestConfirm({
         title: `Move back to ${nextPeriod}?`,
@@ -3491,7 +3523,7 @@ export function App() {
                       style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
                     >
                       {periodLabels.map(lbl => (
-                        <option key={lbl} value={lbl} style={{ background: "#302f68" }}>{lbl}</option>
+                        <option key={lbl} value={lbl} disabled={getPeriodOrder(lbl) > getPeriodOrder(period) + 1} style={{ background: "#302f68" }}>{lbl}</option>
                       ))}
                     </select>
                   </div>
@@ -3923,10 +3955,12 @@ export function App() {
         <div className="period-row">
           {periodLabels.map((lbl) => {
             const isOt = isOvertimePeriod(lbl);
+            const isSkip = getPeriodOrder(lbl) > getPeriodOrder(period) + 1;
             return (
               <div key={lbl} className="period-chip">
                 <button
-                  className={`period-btn${period === lbl ? " period-on" : ""}`}
+                  className={`period-btn${period === lbl ? " period-on" : ""}${isSkip ? " period-btn-skip" : ""}`}
+                  disabled={isSkip}
                   onClick={() => { void changePeriod(lbl); }}
                 >{lbl}</button>
                 {isOt && (
@@ -4033,8 +4067,8 @@ export function App() {
                   {clockRunning ? "Stop" : "Start"}
                 </button>
                 <button className="clock-tool-btn clock-btn-reset" onClick={resetClockForPeriod} disabled={appData.gameSetup.clockEnabled === false}>Reset</button>
-                <button className="clock-tool-btn clock-btn-minus" onClick={() => adjustClock(-5)} disabled={appData.gameSetup.clockEnabled === false}>-5s</button>
-                <button className="clock-tool-btn clock-btn-plus" onClick={() => adjustClock(60)} disabled={appData.gameSetup.clockEnabled === false}>+1:00</button>
+                <button className="clock-tool-btn clock-btn-minus" onClick={() => adjustClock(-1)} disabled={appData.gameSetup.clockEnabled === false}>-1s</button>
+                <button className="clock-tool-btn clock-btn-plus" onClick={() => adjustClock(1)} disabled={appData.gameSetup.clockEnabled === false}>+1s</button>
               </div>
             </>
           )}
@@ -4180,6 +4214,44 @@ interface SettingsScreenProps {
 
 const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];
 
+// ---- AI Coach Settings (shared with coach dashboard) ----
+type CoachInsightFocus =
+  | "timeouts"
+  | "substitutions"
+  | "foul_management"
+  | "momentum"
+  | "shot_selection"
+  | "ball_security"
+  | "hot_hand"
+  | "defense";
+
+interface CoachAiSettings {
+  playingStyle: string;
+  teamContext: string;
+  customPrompt: string;
+  focusInsights: CoachInsightFocus[];
+}
+
+const AI_FOCUS_OPTIONS: Array<{ id: CoachInsightFocus; label: string }> = [
+  { id: "timeouts", label: "Timeout management" },
+  { id: "substitutions", label: "Substitutions" },
+  { id: "foul_management", label: "Foul management" },
+  { id: "momentum", label: "Momentum swings" },
+  { id: "shot_selection", label: "Shot selection" },
+  { id: "ball_security", label: "Ball security" },
+  { id: "hot_hand", label: "Hot hand usage" },
+  { id: "defense", label: "Defensive calls" },
+];
+
+function defaultCoachAiSettings(): CoachAiSettings {
+  return {
+    playingStyle: "",
+    teamContext: "",
+    customPrompt: "",
+    focusInsights: AI_FOCUS_OPTIONS.map(o => o.id),
+  };
+}
+
 function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav, onEditTeam, onBack, onStartGame }: SettingsScreenProps) {
   // ---- Game setup local state ----
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
@@ -4201,6 +4273,61 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsHomeTeamColor, setGsHomeTeamColor] = useState(normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR));
   const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR));
   const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
+
+  // ---- AI Coach Settings ----
+  const [aiDraft, setAiDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
+  const [aiStatus, setAiStatus] = useState("Connect to a live game to load AI settings.");
+
+  useEffect(() => {
+    if (settingsView !== "ai-settings") return;
+    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
+    const gameId = appData.gameSetup.gameId?.trim();
+    if (!gameId) { setAiStatus("No game ID set — save Game Setup first."); return; }
+    void (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/games/${gameId}/ai-settings`, {
+          headers: apiKeyHeader(appData.gameSetup),
+        });
+        if (!response.ok) {
+          setAiStatus("Using defaults. Save to apply custom AI settings for this game.");
+          return;
+        }
+        const payload = (await response.json()) as CoachAiSettings | null;
+        setAiDraft(payload ?? defaultCoachAiSettings());
+        setAiStatus("AI settings loaded for this game.");
+      } catch {
+        setAiStatus("Could not reach the realtime API. Defaults shown.");
+      }
+    })();
+  }, [settingsView]);
+
+  async function saveAiSettings() {
+    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
+    const gameId = gsGameId.trim();
+    if (!gameId) { setAiStatus("No game ID set — save Game Setup first."); return; }
+    setAiStatus("Saving…");
+    try {
+      const response = await fetch(`${apiUrl}/games/${gameId}/ai-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+        body: JSON.stringify(aiDraft),
+      });
+      if (!response.ok) { setAiStatus(`Save failed (${response.status}).`); return; }
+      setAiStatus("AI settings saved and applied to live coaching insights.");
+    } catch {
+      setAiStatus("Save failed: could not reach realtime API.");
+    }
+  }
+
+  function toggleAiFocus(id: CoachInsightFocus) {
+    setAiDraft(cur => {
+      if (cur.focusInsights.includes(id)) {
+        const next = cur.focusInsights.filter(f => f !== id);
+        return { ...cur, focusInsights: next.length > 0 ? next : cur.focusInsights };
+      }
+      return { ...cur, focusInsights: [...cur.focusInsights, id] };
+    });
+  }
   const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
   const gsOpponentName = gsOpponent.trim() || "Opponent";
   const gsHomeSideLabel = gsVcSide === "home"
@@ -4643,25 +4770,34 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <h3>Your Team</h3>
           {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
           <div className="team-picker">
-            {appData.teams.map(t => (
-              <button key={t.id}
-                className={`team-pick-btn${gsMyTeamId === t.id ? " pick-active-teal" : ""}`}
-                onClick={() => {
-                  setGsMyTeamId(t.id);
-                  if (t.teamColor) {
-                    const normalizedColor = normalizeTeamColor(t.teamColor, DEFAULT_HOME_TEAM_COLOR);
-                    if (gsVcSide === "home") {
-                      setGsHomeTeamColor(normalizedColor);
-                    } else {
-                      setGsAwayTeamColor(normalizedColor);
+            {appData.teams.map(t => {
+              const isSelected = gsMyTeamId === t.id;
+              const displayColor = t.teamColor ?? DEFAULT_HOME_TEAM_COLOR;
+              const normalizedColor = normalizeTeamColor(displayColor, DEFAULT_HOME_TEAM_COLOR);
+              return (
+                <button key={t.id}
+                  className="team-pick-btn"
+                  style={isSelected ? {
+                    background: `color-mix(in srgb, ${normalizedColor} 12%, rgba(255,255,255,0.04))`,
+                    borderColor: normalizedColor,
+                  } : undefined}
+                  onClick={() => {
+                    setGsMyTeamId(t.id);
+                    if (t.teamColor) {
+                      const normalizedColor = normalizeTeamColor(t.teamColor, DEFAULT_HOME_TEAM_COLOR);
+                      if (gsVcSide === "home") {
+                        setGsHomeTeamColor(normalizedColor);
+                      } else {
+                        setGsAwayTeamColor(normalizedColor);
+                      }
                     }
-                  }
-                }}>
-                <span className="tp-abbr" style={{ borderColor: t.teamColor ?? "rgba(79,140,255,0.3)", color: t.teamColor ?? "#4f8cff" }}>{t.abbreviation}</span>
-                <span className="tp-name">{t.name}</span>
-                <span className="tp-count">{t.players.length}p</span>
-              </button>
-            ))}
+                  }}>
+                  <span className="tp-abbr" style={{ borderColor: normalizedColor ?? "rgba(79,140,255,0.3)", color: normalizedColor ?? "#4f8cff" }}>{t.abbreviation}</span>
+                  <span className="tp-name">{t.name}</span>
+                  <span className="tp-count">{t.players.length}p</span>
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -4684,40 +4820,30 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
-          <h3>Team Colors</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Pick one color for each side to make scorekeeping faster.</p>
+          <h3>Opponent Color</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Pick the opponent's jersey color to make scorekeeping faster.</p>
           <div className="team-color-rows">
             <div className="team-color-row">
-              <span className="team-color-label">{gsHomeSideLabel}</span>
+              <span className="team-color-label">{gsVcSide === "home" ? gsAwaySideLabel : gsHomeSideLabel}</span>
               <div className="team-color-swatches">
-                {TEAM_COLOR_OPTIONS.map((color) => (
-                  <button
-                    key={`home-${color}`}
-                    type="button"
-                    className={`team-color-swatch${gsHomeTeamColor === color ? " selected" : ""}`}
-                    style={{ background: color }}
-                    onClick={() => setGsHomeTeamColor(color)}
-                    title={`Home color ${color}`}
-                  />
-                ))}
+                {TEAM_COLOR_OPTIONS.map((color) => {
+                  const currentColor = gsVcSide === "home" ? gsAwayTeamColor : gsHomeTeamColor;
+                  return (
+                    <button
+                      key={`opp-${color}`}
+                      type="button"
+                      className={`team-color-swatch${currentColor === color ? " selected" : ""}`}
+                      style={{ background: color }}
+                      onClick={() => gsVcSide === "home" ? setGsAwayTeamColor(color) : setGsHomeTeamColor(color)}
+                      title={`Opponent color ${color}`}
+                    />
+                  );
+                })}
               </div>
-              <input className="team-color-input" type="color" aria-label="Custom home color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
-            </div>
-            <div className="team-color-row">
-              <span className="team-color-label">{gsAwaySideLabel}</span>
-              <div className="team-color-swatches">
-                {TEAM_COLOR_OPTIONS.map((color) => (
-                  <button
-                    key={`away-${color}`}
-                    type="button"
-                    className={`team-color-swatch${gsAwayTeamColor === color ? " selected" : ""}`}
-                    style={{ background: color }}
-                    onClick={() => setGsAwayTeamColor(color)}
-                    title={`Away color ${color}`}
-                  />
-                ))}
-              </div>
-              <input className="team-color-input" type="color" aria-label="Custom away color" value={gsAwayTeamColor} onChange={e => setGsAwayTeamColor(normalizeTeamColor(e.target.value, DEFAULT_AWAY_TEAM_COLOR))} />
+              {gsVcSide === "home"
+                ? <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsAwayTeamColor} onChange={e => setGsAwayTeamColor(normalizeTeamColor(e.target.value, DEFAULT_AWAY_TEAM_COLOR))} />
+                : <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
+              }
             </div>
           </div>
         </section>
@@ -4847,6 +4973,84 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   }
 
   // ================================================================
+  //  RENDER: AI Coach Settings
+  // ================================================================
+  if (settingsView === "ai-settings") {
+    return (
+      <div className="settings-page">
+        <header className="settings-header">
+          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
+          <h2>AI Coach Settings</h2>
+          <button className="save-btn" onClick={() => void saveAiSettings()}>Save</button>
+        </header>
+
+        <section className="settings-section">
+          <p className="dim-text">{aiStatus}</p>
+        </section>
+
+        <section className="settings-section">
+          <h3>Team Playing Style</h3>
+          <p className="dim-text" style={{ marginBottom: 6 }}>How your team plays — pace, philosophy, offensive tendencies.</p>
+          <textarea
+            className="settings-textarea"
+            value={aiDraft.playingStyle}
+            onChange={e => setAiDraft(cur => ({ ...cur, playingStyle: e.target.value }))}
+            placeholder="Example: We play fast in transition, pressure passing lanes, and prioritize paint touches."
+            rows={3}
+          />
+        </section>
+
+        <section className="settings-section">
+          <h3>Team Notes &amp; Context</h3>
+          <p className="dim-text" style={{ marginBottom: 6 }}>Player limits, matchup concerns, foul trouble thresholds, depth chart notes.</p>
+          <textarea
+            className="settings-textarea"
+            value={aiDraft.teamContext}
+            onChange={e => setAiDraft(cur => ({ ...cur, teamContext: e.target.value }))}
+            placeholder="Anything a coach wants AI to remember: player limits, matchup concerns, depth, who can handle pressure, etc."
+            rows={3}
+          />
+        </section>
+
+        <section className="settings-section">
+          <h3>Custom Prompt Instruction</h3>
+          <p className="dim-text" style={{ marginBottom: 6 }}>Override or extend how AI formats its output or sets priorities.</p>
+          <textarea
+            className="settings-textarea"
+            value={aiDraft.customPrompt}
+            onChange={e => setAiDraft(cur => ({ ...cur, customPrompt: e.target.value }))}
+            placeholder="Custom instruction for AI output style or priorities."
+            rows={3}
+          />
+        </section>
+
+        <section className="settings-section">
+          <h3>Focus Insight Types</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Choose which coaching areas get priority in live AI suggestions.</p>
+          <div className="settings-chip-grid">
+            {AI_FOCUS_OPTIONS.map(opt => {
+              const active = aiDraft.focusInsights.includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  className={`settings-chip ${active ? "settings-chip-active" : "settings-chip-inactive"}`}
+                  onClick={() => toggleAiFocus(opt.id)}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <button className="start-btn" onClick={() => void saveAiSettings()}>Save AI Settings</button>
+        </section>
+      </div>
+    );
+  }
+
+  // ================================================================
   //  RENDER: Settings menu (default)
   // ================================================================
   const myTeamForMenu = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
@@ -4887,20 +5091,16 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </div>
       </section>
 
-      {appData.teams.length > 0 && (
-        <section className="settings-section">
-          <h3>Quick Roster Access</h3>
-          {appData.teams.map(team => (
-            <div key={team.id} className="menu-card" onClick={() => { onEditTeam(team.id); onNav("team-edit"); }}>
-              <div className="menu-card-info">
-                <span className="menu-card-title">{team.abbreviation} — {team.name}</span>
-                <span className="menu-card-sub">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
-              </div>
-              <span className="menu-chev">›</span>
-            </div>
-          ))}
-        </section>
-      )}
+      <section className="settings-section">
+        <h3>AI &amp; Insights</h3>
+        <div className="menu-card" onClick={() => onNav("ai-settings")}>
+          <div className="menu-card-info">
+            <span className="menu-card-title">AI Coach Settings</span>
+            <span className="menu-card-sub">Playing style, team context, insight focus areas</span>
+          </div>
+          <span className="menu-chev">›</span>
+        </div>
+      </section>
     </div>
   );
 }

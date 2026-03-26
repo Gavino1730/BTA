@@ -101,6 +101,8 @@ export interface GameState {
   teamFoulsByPeriod: Record<string, Record<string, number>>;
   /** Whether each team is currently in bonus (opposing team has 5+ period fouls) */
   bonusByTeam: Record<string, boolean>;
+  /** Total timeouts used per team across the game */
+  timeoutsByTeam: Record<string, number>;
   events: GameEvent[];
   lastSequence: number;
 }
@@ -207,6 +209,10 @@ export function createInitialGameState(
       [homeTeamId]: false,
       [awayTeamId]: false
     },
+    timeoutsByTeam: {
+      [homeTeamId]: 0,
+      [awayTeamId]: 0
+    },
     events: [],
     lastSequence: 0
   };
@@ -271,6 +277,7 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
       Object.entries(current.teamFoulsByPeriod).map(([teamId, periods]) => [teamId, { ...periods }])
     ),
     bonusByTeam: { ...current.bonusByTeam },
+    timeoutsByTeam: { ...current.timeoutsByTeam },
     events: [...current.events, event],
     lastSequence: event.sequence
   };
@@ -384,6 +391,10 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
         state.homeTeamId,
         state.awayTeamId
       );
+      break;
+    }
+    case "timeout": {
+      state.timeoutsByTeam[event.teamId] = (state.timeoutsByTeam[event.teamId] ?? 0) + 1;
       break;
     }
     default: {

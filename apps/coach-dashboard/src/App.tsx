@@ -54,6 +54,8 @@ interface GameState {
   activeLineupsByTeam: Record<string, string[]>;
   teamStats: Record<string, TeamStats>;
   playerStatsByTeam: Record<string, Record<string, PlayerStats>>;
+  timeoutsByTeam: Record<string, number>;
+  teamFoulsByPeriod: Record<string, Record<string, number>>;
   events: GameEvent[];
 }
 
@@ -308,7 +310,7 @@ interface AiSignalCard {
   tone: "high" | "medium" | "default";
 }
 
-type BoxScoreFilter = "game" | "first-half" | "second-half" | Period;
+type BoxScoreFilter = string[];
 
 const AI_FOCUS_OPTIONS: Array<{ id: CoachInsightFocus; label: string }> = [
   { id: "timeouts", label: "Timeout management" },
@@ -482,7 +484,7 @@ export function App() {
   const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsStatus, setAiSettingsStatus] = useState("No saved settings for this game yet.");
-  const [boxScoreFilter, setBoxScoreFilter] = useState<BoxScoreFilter>("game");
+  const [boxScoreFilter, setBoxScoreFilter] = useState<BoxScoreFilter>([]);
   const [promptPreview, setPromptPreview] = useState<AiPromptPreview | null>(null);
   const [promptPreviewStatus, setPromptPreviewStatus] = useState("Prompt preview not loaded.");
   const [aiChatMessages, setAiChatMessages] = useState<AiChatMessage[]>([]);
@@ -807,6 +809,24 @@ export function App() {
       return;
     }
 
+    // Clear ALL game-specific state immediately so the dashboard shows a clean
+    // slate while new game data loads — no stale scores, events, AI chat,
+    // film clips, or device-connection carry-over from the previous game.
+    setState(null);
+    setInsights([]);
+    setVideos([]);
+    setAnchors([]);
+    setVideoSrcUrl("");
+    setEventClipMap({});
+    setAiChatMessages([]);
+    setAiChatInput("");
+    setAiChatSuggestions([]);
+    setBoxScoreFilter([]);
+    setPromptPreview(null);
+    setAiRefreshError("");
+    setDeviceConnected(false);
+    setDashboardStatus("Loading new game…");
+
     async function hydrate() {
       const stateRes = await fetch(`${apiBase}/games/${gameId}/state`, { headers: apiKeyHeader() });
       if (stateRes.ok) {
@@ -1103,6 +1123,8 @@ export function App() {
       activeLineup: string[];
       teamStats: TeamStats;
       playerStats: Record<string, PlayerStats>;
+      timeoutsUsed: number;
+      periodFouls: number;
     }> = {};
 
     function ensureTeam(teamId: string) {
@@ -1113,6 +1135,8 @@ export function App() {
         activeLineup: [],
         teamStats: emptyTeamStats(),
         playerStats: {},
+        timeoutsUsed: 0,
+        periodFouls: 0,
       };
 
       return aggregated[teamId];
@@ -1130,6 +1154,11 @@ export function App() {
       ])];
       mergeTeamStats(target.teamStats, state?.teamStats?.[rawTeamId]);
       mergePlayerStats(target.playerStats, state?.playerStatsByTeam?.[rawTeamId]);
+      target.timeoutsUsed += state?.timeoutsByTeam?.[rawTeamId] ?? 0;
+      // Sum fouls for the current period from teamFoulsByPeriod
+      const periodFoulMap = state?.teamFoulsByPeriod?.[rawTeamId] ?? {};
+      const currentPeriod = state?.currentPeriod ?? "Q1";
+      target.periodFouls += periodFoulMap[currentPeriod] ?? 0;
     }
 
     return aggregated;
@@ -1208,7 +1237,9 @@ export function App() {
 
   function displayTeamName(teamId: string): string {
     const canonicalId = canonicalTeamId(teamId);
-    const opponentName = setupNames.opponentName || state?.opponentName || "";
+    // Prefer the live game-state opponent name over the URL param — the URL may carry
+    // a stale value from a previous game that was bookmarked or scanned weeks ago.
+    const opponentName = state?.opponentName || setupNames.opponentName || "";
 
     // When myTeamId is available in the URL it is the definitive check —
     // do NOT mix in teams[0] which depends on vcSide and can mislabel both
@@ -1638,31 +1669,11 @@ export function App() {
     return periods.sort((left, right) => periodRank(left) - periodRank(right));
   }, [state?.events]);
 
-  const boxScoreFilterOptions = useMemo(
-    () => [
-      { value: "game" as BoxScoreFilter, label: "Full Game" },
-      { value: "first-half" as BoxScoreFilter, label: "1st Half" },
-      { value: "second-half" as BoxScoreFilter, label: "2nd Half" },
-      ...boxScorePeriods.map((period) => ({ value: period as BoxScoreFilter, label: period })),
-    ],
-    [boxScorePeriods]
-  );
-
   const filteredBoxScoreEvents = useMemo(() => {
     const events = state?.events ?? [];
-    if (boxScoreFilter === "game") {
-      return events;
-    }
-
-    if (boxScoreFilter === "first-half") {
-      return events.filter((event) => event.period === "Q1" || event.period === "Q2");
-    }
-
-    if (boxScoreFilter === "second-half") {
-      return events.filter((event) => event.period === "Q3" || event.period === "Q4" || /^OT\d+$/.test(event.period));
-    }
-
-    return events.filter((event) => event.period === boxScoreFilter);
+    if (boxScoreFilter.length === 0) return events;
+    const filterSet = new Set(boxScoreFilter);
+    return events.filter((event) => filterSet.has(event.period));
   }, [boxScoreFilter, state?.events]);
 
   const boxScoreByTeam = useMemo(() => {
@@ -1988,31 +1999,12 @@ export function App() {
           </ul>
           <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
             {deviceConnected ? "Device live" : serverConnected ? "Waiting" : "Offline"}
+            {deviceId ? <span className="connection-pill-device"> · {deviceId}</span> : null}
           </div>
         </div>
       </nav>
 
     <div className="page">
-      <header className="header card hero-card">
-        <div>
-          <p className="eyebrow">Bench Intelligence</p>
-          <h1>Coach Dashboard</h1>
-          <p>{dashboardStatus}</p>
-        </div>
-        <div className="header-controls">
-          <label>
-            Device ID
-            <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} />
-          </label>
-          <div className="connection-pill">
-            {state ? `Current period ${state.currentPeriod}` : "Waiting for period state"}
-          </div>
-          <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`}>
-            {deviceConnected ? "Device connected" : (serverConnected ? "Waiting for device" : "Server offline")}
-          </div>
-        </div>
-      </header>
-
       {activePage === "live" && <>
       <section className="card">
         <h2>Scoreboard</h2>
@@ -2021,8 +2013,21 @@ export function App() {
           {teams.map((teamId, index) => {
             const scoreboardLineup = getScoreboardLineup(teamId);
             const teamColor = teamColorById[canonicalTeamId(teamId)];
-            // Fall back to canonical-keyed bucket when teamId is a side-alias.
             const td = aggregatedTeams[teamId] ?? aggregatedTeams[canonicalTeamId(teamId)];
+            const fgMade = td?.teamStats.shooting.fgMade ?? 0;
+            const fgAtt = td?.teamStats.shooting.fgAttempts ?? 0;
+            const ftMade = td?.teamStats.shooting.ftMade ?? 0;
+            const ftAtt = td?.teamStats.shooting.ftAttempts ?? 0;
+            const fgPct = fgAtt > 0 ? Math.round((fgMade / fgAtt) * 100) : null;
+            const ftPct = ftAtt > 0 ? Math.round((ftMade / ftAtt) * 100) : null;
+            const totalFouls = td?.teamStats.fouls ?? 0;
+            const periodFouls = td?.periodFouls ?? 0;
+            const timeoutsUsed = td?.timeoutsUsed ?? 0;
+            const TOTAL_TIMEOUTS = 5;
+            const timeoutsLeft = Math.max(0, TOTAL_TIMEOUTS - timeoutsUsed);
+            const inBonus = td?.bonus ?? false;
+            const rebounds = (td?.teamStats.reboundsOff ?? 0) + (td?.teamStats.reboundsDef ?? 0);
+            const foulUrgency = periodFouls >= 5 ? "foul-danger" : periodFouls >= 4 ? "foul-warn" : periodFouls >= 3 ? "foul-caution" : "";
             return (
               <article
                 key={teamId}
@@ -2032,49 +2037,121 @@ export function App() {
                   borderColor: `${teamColor}99`,
                 } : undefined}
               >
+                {/* ── Header ── */}
                 <header className="score-item-header">
                   <div className="score-item-title">
                     <h3>{displayTeamName(teamId)}</h3>
                     {index === 0 && <span className="your-team-badge">YOUR TEAM</span>}
                   </div>
-                  <p className="score">{td?.score ?? 0}</p>
+                  <div className="score-block">
+                    <p className="score">{td?.score ?? 0}</p>
+                    <span className="score-period-label">{state?.currentPeriod ?? "—"}</span>
+                  </div>
                 </header>
 
-                <div className="score-meta-grid">
-                  <p className="metric-row"><span>FGM / FGA</span><strong>{td?.teamStats.shooting.fgMade ?? 0}/{td?.teamStats.shooting.fgAttempts ?? 0}</strong></p>
-                  <p className="metric-row"><span>FTM / FTA</span><strong>{td?.teamStats.shooting.ftMade ?? 0}/{td?.teamStats.shooting.ftAttempts ?? 0}</strong></p>
-                  <p className="metric-row"><span>Possessions</span><strong>{td?.possessions ?? 0}</strong></p>
-                  <p className="metric-row"><span>Turnovers</span><strong>{td?.teamStats.turnovers ?? 0}</strong></p>
-                  <p className="metric-row"><span>Team fouls</span><strong>{td?.teamStats.fouls ?? 0}</strong></p>
-                  <p className="metric-row"><span>Bonus</span><strong>{formatBonusIndicator(td?.bonus ?? false)}</strong></p>
-                  <p className="metric-row"><span>Subs</span><strong>{td?.teamStats.substitutions ?? 0}</strong></p>
-                  <p className="metric-row metric-wrap">
-                    <span>Active lineup</span>
-                    <strong>
-                      {scoreboardLineup.playerIds.length > 0
-                        ? `${scoreboardLineup.playerIds.map((playerId) => displayPlayerName(teamId, playerId)).join(", ")}${scoreboardLineup.isEstimated ? " (estimated)" : ""}`
-                        : "not set"}
-                    </strong>
-                  </p>
-                  <p className="metric-row metric-wrap">
-                    <span>Top scorer</span>
-                    <strong>
-                      {leadersByTeam[teamId]?.scoringLeader
-                        ? `${displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)} (${leadersByTeam[teamId].scoringLeader?.points})`
-                        : "none"}
-                    </strong>
-                  </p>
-                  <p className="metric-row metric-wrap">
-                    <span>Foul trouble</span>
-                    <strong>
-                      {leadersByTeam[teamId]?.foulLeader
-                        ? formatFoulTroubleLabel(
+                {/* ── Fouls + Bonus + Timeouts row ── */}
+                <div className="sb-urgency-row">
+                  <div className={`sb-foul-block ${foulUrgency}`}>
+                    <span className="sb-urgency-label">FOULS</span>
+                    <div className="sb-foul-pips">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <span
+                          key={i}
+                          className={`sb-foul-pip ${i < periodFouls ? "sb-foul-pip-on" : ""} ${periodFouls >= 5 && i < periodFouls ? "sb-foul-pip-danger" : periodFouls >= 4 && i < periodFouls ? "sb-foul-pip-warn" : ""}`}
+                        />
+                      ))}
+                      <span className="sb-foul-count">{periodFouls}/5</span>
+                    </div>
+                    <span className="sb-foul-game-total">{totalFouls} game</span>
+                  </div>
+
+                  <div className={`sb-bonus-block ${inBonus ? "sb-bonus-on" : ""}`}>
+                    <span className="sb-urgency-label">BONUS</span>
+                    <span className="sb-bonus-value">{inBonus ? "IN BONUS" : "OFF"}</span>
+                  </div>
+
+                  <div className="sb-timeout-block">
+                    <span className="sb-urgency-label">TIMEOUTS</span>
+                    <div className="sb-timeout-pips">
+                      {Array.from({ length: TOTAL_TIMEOUTS }).map((_, i) => (
+                        <span
+                          key={i}
+                          className={`sb-timeout-pip ${i < timeoutsLeft ? "sb-timeout-pip-on" : "sb-timeout-pip-used"}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="sb-timeout-count">{timeoutsLeft} left</span>
+                  </div>
+                </div>
+
+                {/* ── Quick-stat grid ── */}
+                <div className="sb-stat-grid">
+                  <div className="sb-stat-cell">
+                    <span className="sb-stat-label">FG</span>
+                    <span className="sb-stat-value">{fgMade}/{fgAtt}</span>
+                    {fgPct !== null && <span className="sb-stat-pct">{fgPct}%</span>}
+                  </div>
+                  <div className="sb-stat-cell">
+                    <span className="sb-stat-label">FT</span>
+                    <span className="sb-stat-value">{ftMade}/{ftAtt}</span>
+                    {ftPct !== null && <span className="sb-stat-pct">{ftPct}%</span>}
+                  </div>
+                  <div className="sb-stat-cell">
+                    <span className="sb-stat-label">REB</span>
+                    <span className="sb-stat-value">{rebounds}</span>
+                    <span className="sb-stat-pct">{td?.teamStats.reboundsOff ?? 0}O / {td?.teamStats.reboundsDef ?? 0}D</span>
+                  </div>
+                  <div className="sb-stat-cell">
+                    <span className="sb-stat-label">TO</span>
+                    <span className="sb-stat-value">{td?.teamStats.turnovers ?? 0}</span>
+                  </div>
+                  <div className="sb-stat-cell">
+                    <span className="sb-stat-label">POSS</span>
+                    <span className="sb-stat-value">{td?.possessions ?? 0}</span>
+                  </div>
+                  <div className="sb-stat-cell">
+                    <span className="sb-stat-label">SUBS</span>
+                    <span className="sb-stat-value">{td?.teamStats.substitutions ?? 0}</span>
+                  </div>
+                </div>
+
+                {/* ── Lineup ── */}
+                <div className="sb-lineup-row">
+                  <span className="sb-section-label">ON COURT</span>
+                  <div className="sb-lineup-chips">
+                    {scoreboardLineup.playerIds.length > 0
+                      ? scoreboardLineup.playerIds.map((playerId) => (
+                          <span key={playerId} className="sb-player-chip">
+                            {displayPlayerName(teamId, playerId)}
+                          </span>
+                        ))
+                      : <span className="sb-lineup-empty">not set</span>}
+                    {scoreboardLineup.isEstimated && <span className="sb-estimated-tag">est.</span>}
+                  </div>
+                </div>
+
+                {/* ── Leaders ── */}
+                <div className="sb-leaders-row">
+                  {leadersByTeam[teamId]?.scoringLeader ? (
+                    <div className="sb-leader-item sb-leader-scorer">
+                      <span className="sb-leader-icon">★</span>
+                      <span>
+                        {displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)}
+                        <strong> {leadersByTeam[teamId].scoringLeader?.points} pts</strong>
+                      </span>
+                    </div>
+                  ) : null}
+                  {leadersByTeam[teamId]?.foulLeader ? (
+                    <div className={`sb-leader-item sb-leader-fouls ${leadersByTeam[teamId].foulLeader.fouls >= 4 ? "sb-leader-fouls-danger" : ""}`}>
+                      <span className="sb-leader-icon">⚠</span>
+                      <span>
+                        {formatFoulTroubleLabel(
                           displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
                           leadersByTeam[teamId].foulLeader.fouls
-                        )
-                        : "none"}
-                    </strong>
-                  </p>
+                        )}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </article>
             );
@@ -2086,15 +2163,20 @@ export function App() {
         <div className="box-score-header">
           <h2>Box Score</h2>
           <div className="box-score-filter-group" aria-label="Box score filter">
-            {boxScoreFilterOptions.map((option) => (
+            <button
+              type="button"
+              className={`box-score-filter-chip${boxScoreFilter.length === 0 ? " box-score-filter-chip-active" : ""}`}
+              onClick={() => setBoxScoreFilter([])}
+            >Full Game</button>
+            {boxScorePeriods.map((period) => (
               <button
-                key={option.value}
+                key={period}
                 type="button"
-                className={`box-score-filter-chip${boxScoreFilter === option.value ? " box-score-filter-chip-active" : ""}`}
-                onClick={() => setBoxScoreFilter(option.value)}
-              >
-                {option.label}
-              </button>
+                className={`box-score-filter-chip${boxScoreFilter.includes(period) ? " box-score-filter-chip-active" : ""}`}
+                onClick={() => setBoxScoreFilter(prev =>
+                  prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
+                )}
+              >{period}</button>
             ))}
           </div>
         </div>
@@ -2122,6 +2204,20 @@ export function App() {
             })
             .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));
 
+          // Determine if this is the opponent team (not our team)
+          const canonicalId = canonicalTeamId(teamId);
+          const ourRawSideId = setupNames.vcSide === "away" ? state?.awayTeamId : state?.homeTeamId;
+          const isOurTeam = setupNames.myTeamId !== ""
+            ? (teamId === setupNames.myTeamId ||
+               canonicalId === setupNames.myTeamId ||
+               canonicalTeamId(setupNames.myTeamId) === canonicalId)
+            : ((teams.length > 0 && teamId === teams[0]) ||
+               (Boolean(ourRawSideId) && teamId === ourRawSideId));
+          const isOpponent = !isOurTeam;
+
+          // Show team totals unless it's opponent with tracked players
+          const showTeamTotals = !isOpponent || (isOpponent && playerLines.length === 0);
+
           return (
             <section key={`box-${teamId}`} className="box-score-team-section">
               <h3>{displayTeamName(teamId)}</h3>
@@ -2145,7 +2241,7 @@ export function App() {
                     {playerLines.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="box-score-empty">
-                          No tracked stats for this filter yet.
+                          No players added.
                         </td>
                       </tr>
                     ) : (
@@ -2169,20 +2265,22 @@ export function App() {
                       })
                     )}
                   </tbody>
-                  <tfoot>
-                    <tr>
-                      <td>Team Totals</td>
-                      <td>{teamTotals.points}</td>
-                      <td>{teamTotals.fgMade}-{teamTotals.fgAttempts}</td>
-                      <td>{teamTotals.ftMade}-{teamTotals.ftAttempts}</td>
-                      <td>{teamTotals.reboundsDef + teamTotals.reboundsOff}</td>
-                      <td>{teamTotals.assists}</td>
-                      <td>{teamTotals.steals}</td>
-                      <td>{teamTotals.blocks}</td>
-                      <td>{teamTotals.turnovers}</td>
-                      <td>{teamTotals.fouls}</td>
-                    </tr>
-                  </tfoot>
+                  {showTeamTotals ? (
+                    <tfoot>
+                      <tr>
+                        <td>Team Totals</td>
+                        <td>{teamTotals.points}</td>
+                        <td>{teamTotals.fgMade}-{teamTotals.fgAttempts}</td>
+                        <td>{teamTotals.ftMade}-{teamTotals.ftAttempts}</td>
+                        <td>{teamTotals.reboundsDef + teamTotals.reboundsOff}</td>
+                        <td>{teamTotals.assists}</td>
+                        <td>{teamTotals.steals}</td>
+                        <td>{teamTotals.blocks}</td>
+                        <td>{teamTotals.turnovers}</td>
+                        <td>{teamTotals.fouls}</td>
+                      </tr>
+                    </tfoot>
+                  ) : null}
                 </table>
               </div>
             </section>
@@ -2195,9 +2293,7 @@ export function App() {
         {!hasGameStarted ? (
           <p className="insight-context-note">Game has not started yet. Insights will appear once play begins.</p>
         ) : null}
-        {hasGameStarted && isOpeningInsightWindow ? (
-          <p className="insight-context-note">Opening sample: early possessions can create noisy reads.</p>
-        ) : null}
+
         {hasGameStarted && insights.length === 0 ? (
           <p className="insight-context-note">No live calls yet. Capture a few more possessions.</p>
         ) : null}
@@ -2233,12 +2329,12 @@ export function App() {
           </>
         ) : null}
 
-        {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
+        {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
           <>
             <h3 className="insight-subhead">Urgent Coaching Calls</h3>
             <div className="insight-list">
               {rulesInsights
-                .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type))
+                .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type))
                 .map((insight) => (
                   <article
                     key={insight.id}
@@ -2258,12 +2354,13 @@ export function App() {
           </>
         ) : null}
 
-        {rulesInsights.filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
+        {rulesInsights.filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
           <>
             <h3 className="insight-subhead">System Alerts</h3>
             <div className="insight-list">
               {rulesInsights
-                .filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "team_foul_warning", "ot_awareness"].includes(i.type))
+                .filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type))
+                .slice(0, 5)
                 .map((insight) => (
                   <article
                     key={insight.id}
@@ -2329,7 +2426,13 @@ export function App() {
               {rotationContext.bench.length === 0 ? (
                 <p className="text-muted">No bench list available from roster/state.</p>
               ) : (
-                <p className="text-muted">{rotationContext.bench.map((playerId) => displayPlayerName(rotationContext.teamId, playerId)).join(", ")}</p>
+                <div className="rotation-chip-row">
+                  {rotationContext.bench.map((playerId) => (
+                    <span key={`${rotationContext.teamId}-bench-${playerId}`} className="rotation-chip">
+                      {displayPlayerName(rotationContext.teamId, playerId)}
+                    </span>
+                  ))}
+                </div>
               )}
             </article>
           ) : null}
@@ -2808,6 +2911,18 @@ export function App() {
         </div>
 
         <p className="settings-status text-muted">{aiSettingsStatus}</p>
+
+        <div className="settings-device-row">
+          <label className="settings-device-label">
+            Device ID
+            <input
+              className="settings-device-input"
+              value={deviceId}
+              onChange={(event) => setDeviceId(event.target.value)}
+              placeholder="e.g. device-1"
+            />
+          </label>
+        </div>
 
         <div className="form-grid">
           <label style={{ gridColumn: "1 / -1" }}>

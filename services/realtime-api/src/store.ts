@@ -246,7 +246,7 @@ function buildStatsHeaders(): Record<string, string> {
 function combineInsights(session: GameSession): LiveInsight[] {
   return [...session.aiInsights, ...session.ruleInsights]
     .sort((left, right) => Date.parse(right.createdAtIso) - Date.parse(left.createdAtIso))
-    .slice(0, 50);
+    .slice(0, 20);
 }
 
 function describeEvent(event: GameEvent): string {
@@ -1118,6 +1118,49 @@ export function deleteGame(gameId: string): boolean {
   return removed;
 }
 
+/**
+ * Patch the active lineup for one or more teams without resetting game state or
+ * replaying events.  Only fills in empty slots — if a team already has 5 players
+ * on court the incoming lineup is ignored for that team.  Returns the updated
+ * state, or null if the game doesn't exist.
+ */
+export function patchGameLineup(
+  gameId: string,
+  startingLineupByTeam: Record<string, string[]>
+): GameState | null {
+  const session = sessions.get(gameId);
+  if (!session) return null;
+
+  let changed = false;
+  for (const [teamId, lineup] of Object.entries(startingLineupByTeam)) {
+    if (teamId !== session.homeTeamId && teamId !== session.awayTeamId) continue;
+    if ((session.state.activeLineupsByTeam[teamId]?.length ?? 0) >= 5) continue;
+
+    const seeded = [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5);
+    if (seeded.length === 0) continue;
+
+    session.state = {
+      ...session.state,
+      activeLineupsByTeam: {
+        ...session.state.activeLineupsByTeam,
+        [teamId]: seeded,
+      },
+    };
+    // Persist the starting lineup so it survives server restarts.
+    session.startingLineupByTeam = {
+      ...(session.startingLineupByTeam ?? {}),
+      [teamId]: seeded,
+    };
+    changed = true;
+  }
+
+  if (changed) {
+    persistSessions();
+  }
+
+  return session.state;
+}
+
 export function getGameState(gameId: string): GameState | null {
   return sessions.get(gameId)?.state ?? null;
 }
@@ -1275,7 +1318,12 @@ function recomputeSession(session: GameSession): void {
     }
   }
 
-  session.ruleInsights = insights.slice(0, 50);
+  // Strip stale pre-game insights once the game has meaningfully started
+  const totalScore = Object.values(session.state.scoreByTeam ?? {}).reduce((s, v) => s + v, 0);
+  const stillPreGame = session.state.currentPeriod === "Q1" && totalScore === 0 && session.state.events.length < 5;
+  const finalInsights = stillPreGame ? insights : insights.filter((i) => i.type !== "pre_game");
+
+  session.ruleInsights = finalInsights.slice(0, 15);
 }
 
 export async function refreshGameAiInsights(

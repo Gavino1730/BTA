@@ -19,6 +19,7 @@ import {
   getRosterTeams,
   getGameState,
   ingestEvent,
+  patchGameLineup,
   refreshGameAiInsights,
   saveRosterTeams,
   updateGameAiContext,
@@ -367,6 +368,26 @@ app.get("/games/:gameId/state", requireApiKey, (req, res) => {
   res.json(state);
 });
 
+// Sync (or re-sync) the starting lineup without resetting the game.
+// Only fills teams whose active lineup is currently empty, so in-game
+// substitutions are never overwritten.
+app.patch("/games/:gameId/lineup", requireApiKey, (req, res) => {
+  const { startingLineupByTeam } = req.body ?? {};
+  if (!startingLineupByTeam || typeof startingLineupByTeam !== "object") {
+    res.status(400).json({ error: "startingLineupByTeam is required" });
+    return;
+  }
+
+  const state = patchGameLineup(req.params.gameId, startingLineupByTeam as Record<string, string[]>);
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+
+  io.to(req.params.gameId).emit("game:state", state);
+  res.json(state);
+});
+
 app.get("/games/:gameId/insights", requireApiKey, async (req, res) => {
   const state = getGameState(req.params.gameId);
   if (!state) {
@@ -582,6 +603,16 @@ io.on("connection", (socket) => {
     socket.join(gameId);
     socket.join(`device:${deviceId}`);
     emitPresence(deviceId);
+
+    // Re-sync the starting lineup if the operator included one and the server
+    // has an empty active lineup (e.g. after an API restart).
+    const rawLineupByTeam = payload.startingLineupByTeam;
+    if (rawLineupByTeam && typeof rawLineupByTeam === "object" && !Array.isArray(rawLineupByTeam)) {
+      const updated = patchGameLineup(gameId, rawLineupByTeam as Record<string, string[]>);
+      if (updated) {
+        io.to(gameId).emit("game:state", updated);
+      }
+    }
   }
 
   socket.on("operator:register", (payload: unknown) => {

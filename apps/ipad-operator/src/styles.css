@@ -665,8 +665,8 @@ html, body {
   margin-left: 0.04rem;
 }
 
-.ac-teal  { color: #4f8cff; }
-.ac-red   { color: #f87171; }
+.ac-teal  { color: var(--team-home-color); }
+.ac-red   { color: var(--team-away-color); }
 .ac-white { color: #e8eaf0; }
 
 /* Period selector */
@@ -717,6 +717,12 @@ html, body {
   color: #ffedd5;
   box-shadow: 0 0 0 1px rgba(249,115,22,0.45), 0 0 12px rgba(249,115,22,0.22);
 }
+.period-btn:disabled,
+.period-btn.period-btn-skip {
+  opacity: 0.25;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 .period-delete-btn {
   min-width: 30px;
@@ -751,7 +757,7 @@ html, body {
 }
 
 /* Clock */
-.clock-row { padding: 0.32rem 0.75rem 0.22rem; }
+.clock-row { padding: 0.75rem 0.75rem 0.22rem; margin-top: 0.5rem; }
 .clock-inp {
   width: 100%;
   background: rgba(255,255,255,0.05);
@@ -1072,8 +1078,8 @@ html, body {
   min-height: 44px;
   transition: all 0.12s;
 }
-.tt-teal { background: rgba(79,140,255,0.14); border-color: #4f8cff; color: #4f8cff; }
-.tt-red  { background: rgba(248,113,113,0.14); border-color: #f87171; color: #f87171; }
+.tt-teal { background: color-mix(in srgb, var(--team-home-color) 14%, transparent); border-color: var(--team-home-color); color: var(--team-home-color); }
+.tt-red  { background: color-mix(in srgb, var(--team-away-color) 14%, transparent); border-color: var(--team-away-color); color: var(--team-away-color); }
 
 /* ================================================================
    MODAL
@@ -1903,8 +1909,8 @@ html, body {
   min-height: 40px;
   transition: all 0.1s;
 }
-.modal-team-toggle button.t-teal { background: rgba(79,140,255,0.15); border-color: #4f8cff; color: #4f8cff; }
-.modal-team-toggle button.t-red  { background: rgba(248,113,113,0.15); border-color: #f87171; color: #f87171; }
+.modal-team-toggle button.t-teal { background: color-mix(in srgb, var(--team-home-color) 15%, transparent); border-color: var(--team-home-color); color: var(--team-home-color); }
+.modal-team-toggle button.t-red  { background: color-mix(in srgb, var(--team-away-color) 15%, transparent); border-color: var(--team-away-color); color: var(--team-away-color); }
 
 /* Player list */
 .player-list {
@@ -2295,6 +2301,87 @@ html, body {
 .menu-card-sub { font-size: 0.78rem; color: rgba(232,234,240,0.45); }
 .menu-chev { font-size: 1.3rem; color: rgba(232,234,240,0.35); }
 
+/* ---- Settings AI chips and textarea ---- */
+.settings-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.settings-chip {
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid;
+  transition: background 0.12s, border-color 0.12s;
+  min-height: 36px;
+}
+.settings-chip-active {
+  background: rgba(79,140,255,0.18);
+  border-color: #4f8cff;
+  color: #4f8cff;
+}
+.settings-chip-inactive {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.14);
+  color: rgba(232,234,240,0.5);
+}
+.settings-textarea {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  color: #e8eaf0;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.9rem;
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+.settings-textarea:focus { outline: none; border-color: rgba(79,140,255,0.5); }
+
+/* ---- Settings AI chips and textarea ---- */
+.settings-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.settings-chip {
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid;
+  transition: background 0.12s, border-color 0.12s;
+  min-height: 36px;
+}
+.settings-chip-active {
+  background: rgba(79,140,255,0.18);
+  border-color: #4f8cff;
+  color: #4f8cff;
+}
+.settings-chip-inactive {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.14);
+  color: rgba(232,234,240,0.5);
+}
+.settings-textarea {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  color: #e8eaf0;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.9rem;
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.settings-textarea:focus { outline: none; border-color: rgba(79,140,255,0.5); }
+
 /* ---- Teams list ---- */
 .team-list-row {
   display: flex;
@@ -2419,8 +2506,6 @@ html, body {
   transition: all 0.12s;
 }
 .team-pick-btn:hover { background: rgba(255,255,255,0.08); }
-.pick-active-teal { background: rgba(79,140,255,0.12) !important; border-color: #4f8cff !important; }
-.pick-active-red  { background: rgba(248,113,113,0.12) !important; border-color: #f87171 !important; }
 
 .tp-abbr {
   background: rgba(255,255,255,0.1);
