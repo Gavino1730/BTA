@@ -1130,6 +1130,12 @@ export function saveRosterTeams(next: RosterTeam[]): RosterTeam[] {
   return rosterTeams;
 }
 
+export function resetAllData(): void {
+  sessions.clear();
+  rosterTeams = [];
+  persistSessions();
+}
+
 export function createGame(input: CreateGameInput): GameState {
   const state = createInitialGameState(
     input.gameId,

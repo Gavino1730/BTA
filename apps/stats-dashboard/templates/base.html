@@ -30,14 +30,23 @@
                 <li><a href="/ai-insights" class="nav-link" data-page="ai-insights">AI</a></li>
                 <li><a href="/settings" class="nav-link" data-page="settings">Settings</a></li>
             </ul>
+            <button class="tour-help-btn" onclick="tourStart()" title="Help &amp; Tutorial" aria-label="Help and Tutorial">?</button>
         </div>
     </nav>
+    <style>
+      .tour-help-btn{background:transparent;border:1.5px solid #4f8cff;color:#4f8cff;border-radius:50%;width:28px;height:28px;font-size:14px;font-weight:700;cursor:pointer;line-height:1;transition:background .15s,color .15s;flex-shrink:0;margin-left:8px;}
+      .tour-help-btn:hover{background:#4f8cff;color:#fff;}
+    </style>
 
     <div class="container main-content">
         {% block content %}{% endblock %}
     </div>
 
     <script src="{{ url_for('static', filename='main.js') }}?v=3.0"></script>
+    <script src="{{ url_for('static', filename='tour.js') }}?v=1.0"></script>
+    {% if start_tour is defined and start_tour %}
+    <script>document.addEventListener('DOMContentLoaded', function(){ tourStart(); });</script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

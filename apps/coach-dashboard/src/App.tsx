@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TutorialOverlay } from "./TutorialOverlay.js";
 import { getPeriodDurationSeconds, normalizeTeamColor, type GameEvent, type Period } from "@bta/shared-schema";
 import type { PlayerStats, TeamStats } from "@bta/game-state";
 import { io } from "socket.io-client";
@@ -419,7 +420,12 @@ export function App() {
 
   const [deviceId, setDeviceId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("deviceId") ?? "device-1";
+    const fromUrl = params.get("deviceId");
+    if (fromUrl) {
+      localStorage.setItem("coach-bound-device-id", fromUrl);
+      return fromUrl;
+    }
+    return localStorage.getItem("coach-bound-device-id") ?? "device1";
   });
   const [gameId, setGameId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -443,7 +449,8 @@ export function App() {
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
   const [eventClipMap, setEventClipMap] = useState<Record<string, VideoResolution>>({});
-  const [activePage, setActivePage] = useState<"live" | "ai" | "film" | "roster" | "settings">("live");
+  const [activePage, setActivePage] = useState<"live" | "ai" | "film" | "settings">("live");
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('coach:tutorial-complete'));
   const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsStatus, setAiSettingsStatus] = useState("No saved settings for this game yet.");
@@ -2076,6 +2083,7 @@ export function App() {
 
   return (
     <>
+      {showTutorial && <TutorialOverlay onDismiss={() => setShowTutorial(false)} />}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
           <div className="coach-nav-logo">Bench IQ</div>
@@ -2083,11 +2091,15 @@ export function App() {
             <li><button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Live</button></li>
             <li><button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI</button></li>
             <li><button className={activePage === "film" ? "nav-active" : ""} onClick={() => setActivePage("film")}>Film</button></li>
-            <li><button className={activePage === "roster" ? "nav-active" : ""} onClick={() => setActivePage("roster")}>Roster</button></li>
             <li><button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Settings</button></li>
             <li><a href={operatorConsoleUrl} className="coach-nav-ext-link">Score Operator</a></li>
             <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats ↗</a></li>
           </ul>
+          <button
+            onClick={() => setShowTutorial(true)}
+            title="Help &amp; Tutorial"
+            style={{background:'transparent',border:'1.5px solid #4f8cff',color:'#4f8cff',borderRadius:'50%',width:'28px',height:'28px',fontSize:'14px',fontWeight:700,cursor:'pointer',flexShrink:0,marginLeft:'8px',lineHeight:1}}
+          >?</button>
             <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
               <span className="connection-pill-status">
                 {deviceConnected ? "Device live" : serverConnected ? "Waiting" : "Offline"}
@@ -2108,7 +2120,7 @@ export function App() {
       </nav>
 
     <div className="page">
-      {!gameId && activePage !== "roster" && activePage !== "settings" && (
+      {!gameId && activePage !== "settings" && (
         <div className="idle-screen">
           <div className="idle-screen-icon">⏸</div>
           <p className="idle-screen-title">No Active Game</p>
@@ -2933,188 +2945,10 @@ export function App() {
       </section>
       }
 
-      {/* ── Roster Builder ─────────────────────────────────────────────── */}
-      {activePage === "roster" &&
-      <section className="card">
-        <div className="roster-header-row">
-          <div>
-            <h2>Roster Builder</h2>
-            <p className="text-muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
-              Teams created here are shared with the Operator Console and all other apps automatically.
-            </p>
-          </div>
-          <div className="roster-actions">
-            <button className="secondary" onClick={exportRoster}>Export JSON</button>
-            <label className="btn-import secondary">
-              Import JSON
-              <input
-                type="file"
-                accept=".json"
-                style={{ display: "none" }}
-                onChange={(e) => { if (e.target.files?.[0]) importRoster(e.target.files[0]); e.target.value = ""; }}
-              />
-            </label>
-            <button onClick={() => { setShowNewTeamForm(true); setExpandedTeamId(null); }}>+ New Team</button>
-          </div>
-        </div>
-
-        {rosterTeams.length === 0 && !showNewTeamForm && (
-          <p className="text-muted" style={{ marginTop: "0.75rem" }}>
-            No teams yet — click <strong>+ New Team</strong> or <strong>Import JSON</strong> to get started.
-          </p>
-        )}
-
-        {showNewTeamForm && (
-          <div className="roster-new-team-form form-grid">
-            <label>
-              Team Name
-              <input
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                placeholder="e.g. Warriors"
-                onKeyDown={(e) => e.key === "Enter" && addTeam()}
-              />
-            </label>
-            <label>
-              Abbreviation
-              <input
-                value={newTeamAbbr}
-                onChange={(e) => setNewTeamAbbr(e.target.value)}
-                placeholder="e.g. WAR"
-                maxLength={4}
-              />
-            </label>
-            <label>
-              Team Color
-              <input
-                type="color"
-                value={newTeamColor}
-                onChange={(e) => setNewTeamColor(e.target.value)}
-              />
-            </label>
-            <button onClick={addTeam}>Create Team</button>
-            <button className="secondary" onClick={() => { setShowNewTeamForm(false); setNewTeamName(""); setNewTeamAbbr(""); setNewTeamColor("#4f8cff"); }}>
-              Cancel
-            </button>
-          </div>
-        )}
-
-        <div className="roster-team-list">
-          {rosterTeams.map((team) => (
-            <div key={team.id} className="roster-team-card">
-              <div className="roster-team-header">
-                <div className="roster-team-identity">
-                  <strong className="roster-team-name">{team.name}</strong>
-                  <span className="roster-abbr" style={{ borderColor: team.teamColor ?? undefined, color: team.teamColor ?? undefined }}>{team.abbreviation}</span>
-                  {team.teamColor ? <span className="roster-team-color-swatch" style={{ background: team.teamColor }} aria-hidden="true" /> : null}
-                  <span className="text-dim">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="roster-team-btns">
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      setExpandedTeamId(expandedTeamId === team.id ? null : team.id);
-                      setEditingPlayerId(null);
-                      setEditPlayerDraft(null);
-                      setAddingPlayerForTeam(null);
-                    }}
-                  >
-                    {expandedTeamId === team.id ? "▲ Collapse" : "▼ Edit Roster"}
-                  </button>
-                  <button className="secondary danger-btn" onClick={() => removeTeam(team.id)}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-
-              {expandedTeamId === team.id && (
-                <div className="roster-players-area">
-                  <label className="roster-team-note-field">
-                    Team Color
-                    <input
-                      className="roster-inline-input"
-                      type="color"
-                      value={team.teamColor ?? "#4f8cff"}
-                      onChange={(event) => updateTeamColor(team.id, event.target.value)}
-                      style={{ width: "4.5rem", padding: "0.25rem" }}
-                    />
-                  </label>
-                  {team.players.length === 0 && (
-                    <p className="text-dim" style={{ marginBottom: "0.5rem" }}>No players yet.</p>
-                  )}
-                  <table className="roster-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th>Pos</th>
-                        <th>Role</th>
-                        <th>Height</th>
-                        <th>Grade</th>
-                        <th>AI Context</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {team.players.map((player) =>
-                        editingPlayerId === player.id && editPlayerDraft ? (
-                          <tr key={player.id} className="roster-row-edit">
-                            <td><input className="roster-inline-input" value={editPlayerDraft.number} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, number: e.target.value })} style={{ width: "3.5rem" }} /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.name} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, name: e.target.value })} style={{ width: "100%" }} /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })} style={{ width: "5rem" }} placeholder="PG" /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.role ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, role: e.target.value || undefined })} style={{ width: "8rem" }} placeholder="Starter" /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.height ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, height: e.target.value || undefined })} style={{ width: "4.5rem" }} placeholder={"6'2\""} /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.grade ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, grade: e.target.value || undefined })} style={{ width: "3rem" }} placeholder="11" /></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.notes ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, notes: e.target.value || undefined })} style={{ width: "100%" }} placeholder="Minutes cap, ankle soreness, spark off bench" /></td>
-                            <td className="roster-row-actions">
-                              <button style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => saveEditedPlayer(team.id)}>Save</button>
-                              <button className="secondary" style={{ padding: "0.35rem 0.65rem", minHeight: 0, fontSize: "0.8rem" }} onClick={() => { setEditingPlayerId(null); setEditPlayerDraft(null); }}>✕</button>
-                            </td>
-                          </tr>
-                        ) : (
-                          <tr key={player.id} className="roster-row">
-                            <td><strong>#{player.number}</strong></td>
-                            <td>{player.name}</td>
-                            <td><span className="pos-badge">{player.position}</span></td>
-                            <td className="text-dim">{player.role ?? "—"}</td>
-                            <td className="text-dim">{player.height ?? "—"}</td>
-                            <td className="text-dim">{player.grade ? `Gr ${player.grade}` : "—"}</td>
-                            <td className="text-dim roster-notes-cell">{player.notes ?? "—"}</td>
-                            <td className="roster-row-actions">
-                              <button className="secondary" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => { setEditingPlayerId(player.id); setEditPlayerDraft({ ...player }); }}>Edit</button>
-                              <button className="secondary danger-btn" style={{ padding: "0.3rem 0.6rem", minHeight: 0, fontSize: "0.78rem" }} onClick={() => removePlayer(team.id, player.id)}>✕</button>
-                            </td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-
-                  {addingPlayerForTeam === team.id ? (
-                    <div className="roster-add-player-form form-grid" style={{ marginTop: "0.75rem" }}>
-                      <label>Jersey #<input value={newPlayerNum} onChange={(e) => setNewPlayerNum(e.target.value)} placeholder="23" /></label>
-                      <label>Name<input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="Player Name" onKeyDown={(e) => e.key === "Enter" && addPlayer(team.id)} /></label>
-                      <label>Position<input value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)} placeholder="PG" /></label>
-                      <label>Role<input value={newPlayerRole} onChange={(e) => setNewPlayerRole(e.target.value)} placeholder="Starter" /></label>
-                      <label>Height<input value={newPlayerHeight} onChange={(e) => setNewPlayerHeight(e.target.value)} placeholder={"6'2\""} /></label>
-                      <label>Grade<input value={newPlayerGrade} onChange={(e) => setNewPlayerGrade(e.target.value)} placeholder="11" /></label>
-                      <label style={{ gridColumn: "1 / -1" }}>AI Context / Notes<input value={newPlayerNotes} onChange={(e) => setNewPlayerNotes(e.target.value)} placeholder="Injury status, matchup notes, minutes cap, confidence notes" /></label>
-                      <button onClick={() => addPlayer(team.id)}>Add Player</button>
-                      <button className="secondary" onClick={() => setAddingPlayerForTeam(null)}>Cancel</button>
-                    </div>
-                  ) : (
-                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos(""); setNewPlayerRole(""); setNewPlayerHeight(""); setNewPlayerGrade(""); setNewPlayerNotes(""); }}>+ Add Player</button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-      </section>
-      }
+      {/* Roster page removed — roster management moved to Stats Dashboard */}
 
       {activePage === "settings" &&
+      <>
       <section className="card">
         <div className="settings-header-row">
           <div>
@@ -3246,6 +3080,30 @@ export function App() {
           ) : null}
         </div>
       </section>
+
+      <section className="card" style={{border:'1.5px solid #7f1d1d', marginTop:'1rem'}}>
+        <h2 style={{color:'#f87171'}}>⚠️ Clear Local Data</h2>
+        <p className="text-muted" style={{marginBottom:'1rem'}}>
+          Removes all data stored in this browser: roster, AI settings, and cached game state.
+          This only affects this device. Use the Stats Dashboard <strong>Settings → Factory Reset</strong> to wipe server data.
+        </p>
+        <button
+          style={{background:'#7f1d1d',color:'#fca5a5',border:'none',padding:'8px 18px',borderRadius:'8px',cursor:'pointer',fontWeight:600}}
+          onClick={() => {
+            if (!confirm('Clear all local data on this device? This removes roster, settings, and cached game state stored here.')) return;
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (k) keysToRemove.push(k);
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            window.location.reload();
+          }}
+        >
+          Clear Local Data
+        </button>
+      </section>
+      </>
       }
 
     </div>

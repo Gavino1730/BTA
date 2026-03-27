@@ -4,6 +4,18 @@
 <div class="dashboard">
     <h1>Overview</h1>
 
+    {% if not has_games %}
+    <div class="empty-state-banner" style="background:#1a1a2e;border:1px solid rgba(79,140,255,0.25);border-radius:14px;padding:2.5rem 2rem;text-align:center;margin-bottom:2rem;">
+        <div style="font-size:2.5rem;margin-bottom:0.5rem;">🏀</div>
+        <h2 style="color:#fff;margin:0 0 0.5rem;font-size:1.25rem;">No games recorded yet</h2>
+        <p style="color:rgba(255,255,255,0.5);margin:0 0 1.5rem;font-size:0.9rem;line-height:1.6;">Season stats will appear here after you record your first game.<br>Use the <strong style="color:#4f8cff;">Operator app</strong> on your iPad to track a live game, then the stats will sync here automatically.</p>
+        <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
+            <a href="/settings" style="background:#4f8cff;color:#fff;padding:0.6rem 1.4rem;border-radius:8px;font-weight:600;font-size:0.875rem;text-decoration:none;">⚙ Set Up Your Team</a>
+            <a href="/onboarding" style="background:transparent;color:#4f8cff;border:1px solid #4f8cff;padding:0.6rem 1.4rem;border-radius:8px;font-weight:600;font-size:0.875rem;text-decoration:none;">↩ Run Setup Wizard</a>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Record and Highlights -->
     <div class="stats-grid">
         <div class="stat-card record">

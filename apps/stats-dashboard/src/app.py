@@ -3,7 +3,7 @@ Basketball Stats - Flask Application
 Clean, refactored version with organized routes and services.
 """
 
-from flask import Flask, render_template, jsonify, request, make_response
+from flask import Flask, render_template, jsonify, request, make_response, redirect, url_for
 from functools import lru_cache
 import json
 import os
@@ -234,7 +234,12 @@ def add_security_headers(response):
 
 @app.route("/")
 def dashboard():
-    return render_template("dashboard.html")
+    # First-run redirect: send new installs to the setup wizard
+    if not data.roster_data.get("team"):
+        return redirect(url_for("onboarding"))
+    start_tour = request.args.get("tour") == "1"
+    has_games = bool(data.stats_data.get("games"))
+    return render_template("dashboard.html", start_tour=start_tour, has_games=has_games)
 
 
 @app.route("/games")
@@ -262,6 +267,11 @@ def analysis():
     return render_template("analysis.html")
 
 
+@app.route("/onboarding")
+def onboarding():
+    return render_template("onboarding.html")
+
+
 @app.route("/settings")  
 def settings():
     return render_template("settings.html")
@@ -277,6 +287,57 @@ def health_check():
             "openai_configured": get_ai_service().is_configured,
         }
     )
+
+
+@app.route("/api/reset", methods=["POST"])
+def factory_reset():
+    """Wipe all game data, roster, and AI caches back to a blank slate."""
+    EMPTY_ROSTER = {
+        "team": "",
+        "season": "",
+        "teamColor": "",
+        "coachStyle": "",
+        "playingStyle": "",
+        "teamContext": "",
+        "customPrompt": "",
+        "focusInsights": [],
+        "roster": [],
+    }
+    EMPTY_STATS = {"games": [], "season_team_stats": {}, "season_player_stats": {}}
+
+    try:
+        with open(Config.ROSTER_FILE, "w") as f:
+            json.dump(EMPTY_ROSTER, f, indent=2)
+        with open(Config.STATS_FILE, "w") as f:
+            json.dump(EMPTY_STATS, f, indent=2)
+
+        # Clear AI caches
+        for cache_path in (Config.ANALYSIS_CACHE, Config.PLAYER_CACHE, Config.TEAM_CACHE):
+            try:
+                if os.path.exists(cache_path):
+                    os.remove(cache_path)
+            except OSError:
+                pass
+
+        # Reload in-memory data manager
+        data.reload()
+        global advanced_calc
+        advanced_calc = AdvancedStatsCalculator(data.stats_data)
+
+        # Tell realtime API to clear its sessions too
+        try:
+            requests.delete(
+                f"{REALTIME_API_BASE}/admin/reset",
+                headers=_sync_headers(),
+                timeout=3,
+            )
+        except Exception:
+            pass  # non-fatal – realtime-api may not be running
+
+        return jsonify({"ok": True, "message": "All data reset to blank slate."})
+    except Exception as exc:
+        logger.exception("Factory reset failed")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # Global lock for data reload to prevent race conditions

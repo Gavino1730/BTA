@@ -1082,6 +1082,32 @@ html, body {
   backdrop-filter: blur(6px);
 }
 
+.help-fab {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 900;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(232,234,240,0.45);
+  background: rgba(41, 43, 103, 0.82);
+  color: #e8eaf0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.12s, border-color 0.12s;
+}
+.help-fab:hover {
+  background: rgba(79, 140, 255, 0.35);
+  border-color: rgba(79, 140, 255, 0.7);
+}
+
 .live-nav-btn {
   min-height: 44px;
   border-radius: 999px;
@@ -3388,6 +3414,33 @@ html, body {
 
 .pregame-device-input:focus {
   border-color: rgba(79,140,255,0.4);
+}
+
+.pregame-device-value {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #e8eaf0;
+  padding: 0.25rem 0.25rem;
+  letter-spacing: 0.03em;
+}
+
+.pregame-device-copy-btn {
+  padding: 0.3rem 0.75rem;
+  min-height: 32px;
+  background: rgba(79,140,255,0.12);
+  border: 1px solid rgba(79,140,255,0.35);
+  border-radius: 8px;
+  color: #7ff3df;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.pregame-device-copy-btn:hover {
+  background: rgba(79,140,255,0.22);
 }
 
 /* Pre-game lineup setup */

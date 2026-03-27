@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import TutorialOverlay from "./TutorialOverlay.js";
+import IpadTipsPage from "./IpadTipsPage.js";
 import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
@@ -127,7 +129,7 @@ function getDefaultDeviceId(): string {
 }
 
 type TeamSide = "home" | "away";
-type SettingsView = "menu" | "teams" | "team-edit" | "game-setup" | "ai-settings";
+type SettingsView = "menu" | "teams" | "team-edit" | "game-setup" | "ai-settings" | "ipad-tips";
 
 export interface Player {
   id: string;
@@ -833,6 +835,7 @@ export function App() {
   const [summaryClockPadDigits, setSummaryClockPadDigits] = useState("");
   const [gameMoment, setGameMoment] = useState<string>("");
   const [modal, setModal] = useState<Modal | null>(null);
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('ipo:tutorial-complete'));
   const [overtimeCount, setOvertimeCount] = useState(0);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [showGameSummary, setShowGameSummary] = useState(false);
@@ -3014,6 +3017,9 @@ export function App() {
   //  SETTINGS
   // ================================================================
   if (view === "settings") {
+    if (settingsView === "ipad-tips") {
+      return <IpadTipsPage onBack={() => setSettingsView("menu")} />;
+    }
     return <SettingsScreen
       appData={appData}
       settingsView={settingsView}
@@ -3095,19 +3101,40 @@ export function App() {
           </div>
 
           <div className="pregame-device-id">
-            <label className="pregame-device-label">Device ID:</label>
-            <input
-              className="pregame-device-input"
-              value={preGameDeviceId}
-              onChange={e => {
-                setPreGameDeviceId(e.target.value);
-                const normalized = normalizeDeviceId(e.target.value);
-                persistData({ ...appData, gameSetup: { ...appData.gameSetup, deviceId: normalized } });
-                localStorage.setItem(DEVICE_ID_KEY, normalized);
+            <label className="pregame-device-label">Device ID</label>
+            <span className="pregame-device-value">{preGameDeviceId}</span>
+            <button
+              type="button"
+              className="pregame-device-copy-btn"
+              onClick={() => {
+                const url = buildCoachViewUrl(appData.gameSetup.gameId, preGameDeviceId, {
+                  myTeamId: appData.gameSetup.myTeamId,
+                  myTeamName: myTeam?.name,
+                  opponentName: appData.gameSetup.opponent,
+                  vcSide: appData.gameSetup.vcSide,
+                  homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
+                  awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
+                });
+                const copyFallback = () => {
+                  const ta = document.createElement("textarea");
+                  ta.value = url;
+                  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+                  document.body.appendChild(ta);
+                  ta.focus();
+                  ta.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(ta);
+                };
+                if (navigator.clipboard) {
+                  navigator.clipboard.writeText(url).catch(copyFallback);
+                } else {
+                  copyFallback();
+                }
               }}
-              onBlur={persistPreGameDeviceId}
-              placeholder="device1"
-            />
+              title="Copy coach dashboard link to clipboard"
+            >
+              Copy Coach Link
+            </button>
           </div>
 
           <div className="pregame-matchup">
@@ -3163,23 +3190,6 @@ export function App() {
                   const myLabel = myTeam?.name ?? "My Team";
                   const oppLabel = opponentName || "Opponent";
                   return (<>
-                    {!myTeam?.teamColor && (
-                      <div className="team-color-row">
-                        <span className="team-color-label">{myLabel}</span>
-                        <div className="team-color-swatches">
-                          {TEAM_COLOR_OPTIONS.map((color) => (
-                            <button
-                              key={`pregame-my-${color}`}
-                              type="button"
-                              className={`team-color-swatch${myEffectiveColor === color ? " selected" : ""}`}
-                              style={{ background: color }}
-                              onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, [myColorKey]: color } })}
-                              title={`My team color ${color}`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
                     <div className="team-color-row">
                       <span className="team-color-label">{oppLabel}</span>
                       <div className="team-color-swatches">
@@ -3457,6 +3467,8 @@ export function App() {
         ["--team-away-color" as string]: awayTeamColor,
       }}
     >
+      {showTutorial && <TutorialOverlay onDismiss={() => setShowTutorial(false)} />}
+      <button className="help-fab" onClick={() => setShowTutorial(true)} title="Help &amp; Tutorial">?</button>
       {renderInlineNotice()}
       {renderAlertBanner()}
       {renderConfirmDialog()}
@@ -5033,6 +5045,41 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <div className="menu-card-info">
             <span className="menu-card-title">AI Coach Settings</span>
             <span className="menu-card-sub">Playing style, team context, insight focus areas</span>
+          </div>
+          <span className="menu-chev">›</span>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>Device Setup</h3>
+        <div className="menu-card" onClick={() => onNav("ipad-tips")}>
+          <div className="menu-card-info">
+            <span className="menu-card-title">iPad Setup Tips</span>
+            <span className="menu-card-sub">Home screen, auto-lock, DND, rotation lock &amp; more</span>
+          </div>
+          <span className="menu-chev">›</span>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3 style={{color:'#f87171'}}>Danger Zone</h3>
+        <div
+          className="menu-card"
+          style={{border:'1px solid #7f1d1d'}}
+          onClick={() => {
+            if (!confirm('Clear all local data on this device? Game events, roster, and settings saved here will be erased.')) return;
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (k) keysToRemove.push(k);
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            window.location.reload();
+          }}
+        >
+          <div className="menu-card-info">
+            <span className="menu-card-title" style={{color:'#f87171'}}>Clear Local Data</span>
+            <span className="menu-card-sub">Erase all data stored on this device</span>
           </div>
           <span className="menu-chev">›</span>
         </div>

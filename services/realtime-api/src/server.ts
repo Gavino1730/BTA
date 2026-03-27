@@ -28,7 +28,8 @@ import {
   saveRosterTeams,
   updateGameAiContext,
   updateGameAiSettings,
-  updateEvent
+  updateEvent,
+  resetAllData
 } from "./store.js";
 
 const app = express();
@@ -815,6 +816,12 @@ io.on("connection", (socket) => {
     
     emitPresence(operator.deviceId);
   });
+});
+
+// Factory reset — clears all game sessions and roster data
+app.delete("/admin/reset", requireApiKey, (_req, res) => {
+  resetAllData();
+  res.json({ ok: true, message: "All game sessions and roster data cleared." });
 });
 
 const port = Number(process.env.PORT ?? 4000);

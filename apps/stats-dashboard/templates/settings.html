@@ -50,6 +50,7 @@
             </div>
             
             <button id="save-team-settings" class="btn-primary">Save Team Settings</button>
+            <a href="/onboarding" class="btn-secondary" style="display:inline-block;margin-top:8px;text-decoration:none;">↩ Run Setup Wizard</a>
         </div>
     </div>
 
@@ -82,6 +83,21 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Factory Reset Section -->
+<div class="settings-section" style="margin-top:2rem;border:1.5px solid #7f1d1d;border-radius:10px;padding:1.5rem;">
+    <h2 style="color:#f87171;border-bottom:1px solid #7f1d1d;">⚠️ Factory Reset</h2>
+    <p style="color:#fca5a5;margin-bottom:1rem;font-size:0.95rem;">
+        Permanently deletes <strong>all game data, roster, and AI caches</strong> from the Stats Dashboard and Realtime API. This cannot be undone.
+    </p>
+    <p style="color:#9ca3af;font-size:0.85rem;margin-bottom:1.25rem;">
+        To also clear the iPad Operator and Coach Dashboard, use the <em>Clear Local Data</em> button inside each of those apps' Settings pages.
+    </p>
+    <button id="factory-reset-btn" class="btn-secondary" style="background:#7f1d1d;color:#fca5a5;border-color:#7f1d1d;">
+        Reset All Data…
+    </button>
+    <span id="reset-status" style="margin-left:1rem;font-size:0.9rem;color:#9ca3af;"></span>
 </div>
 
 <!-- Player Modal -->
@@ -513,4 +529,31 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='settings.js') }}?v=1.3"></script>
+<script>
+(function () {
+  const btn = document.getElementById('factory-reset-btn');
+  const status = document.getElementById('reset-status');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    if (!confirm('This will permanently delete ALL game data, roster, and AI caches. Continue?')) return;
+    if (!confirm('Are you absolutely sure? This cannot be undone.')) return;
+    btn.disabled = true;
+    status.textContent = 'Resetting…';
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      const body = await res.json();
+      if (body.ok) {
+        status.textContent = '✓ Reset complete. Redirecting to setup…';
+        setTimeout(() => { window.location.href = '/onboarding'; }, 1200);
+      } else {
+        status.textContent = 'Error: ' + (body.error || 'Unknown error');
+        btn.disabled = false;
+      }
+    } catch {
+      status.textContent = 'Could not reach the server.';
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
 {% endblock %}
