@@ -130,7 +130,27 @@ export const gameEventSchema = z.discriminatedUnion("type", [
   possessionEndSchema,
   timeoutSchema,
   periodTransitionSchema
-]);
+]).refine(
+  (event) => {
+    // Validate free throw cross-constraints
+    if (event.type === "free_throw_attempt") {
+      return event.attemptNumber <= event.totalAttempts;
+    }
+    return true;
+  },
+  {
+    message: "attemptNumber must be <= totalAttempts",
+    path: ["attemptNumber"]
+  }
+).refine(
+  (event) => {
+    if (event.type === "period_transition") {
+      return event.newPeriod !== event.period;
+    }
+    return true;
+  },
+  { message: "newPeriod must differ from the current period", path: ["newPeriod"] }
+);
 
 export function parseGameEvent(input: unknown): GameEvent {
   return gameEventSchema.parse(input) as GameEvent;
@@ -138,4 +158,48 @@ export function parseGameEvent(input: unknown): GameEvent {
 
 export function isGameEvent(input: unknown): input is GameEvent {
   return gameEventSchema.safeParse(input).success;
+
+/** Maximum clock seconds allowed per period type (NFHS: 8-min quarters, 4-min OT). */
+}
+
+/** Maximum clock seconds allowed per period type (NFHS: 8-min quarters, 4-min OT). */
+const CLOCK_MAX_BY_PERIOD: Record<string, number> = {
+  Q1: 480, Q2: 480, Q3: 480, Q4: 480,
+};
+const OT_CLOCK_MAX = 240;
+
+function clockMaxForPeriod(period: string): number {
+  return CLOCK_MAX_BY_PERIOD[period] ?? OT_CLOCK_MAX;
+}
+
+/**
+ * Validates that a sequence of events has strictly increasing `sequence` values
+ * and that each event's `clockSecondsRemaining` does not exceed the NFHS maximum
+ * for its period.
+ *
+ * Returns an array of error strings (empty when valid).
+ */
+export function validateEventSequence(events: GameEvent[]): string[] {
+  const errors: string[] = [];
+  for (let i = 1; i < events.length; i++) {
+    const prev = events[i - 1];
+    const curr = events[i];
+    if (curr.sequence <= prev.sequence) {
+      errors.push(
+        `Event at index ${i} (id="${curr.id}") has sequence ${curr.sequence} ` +
+        `which is not greater than previous sequence ${prev.sequence}.`
+      );
+    }
+  }
+  for (let i = 0; i < events.length; i++) {
+    const evt = events[i];
+    const max = clockMaxForPeriod(evt.period);
+    if (evt.clockSecondsRemaining > max) {
+      errors.push(
+        `Event at index ${i} (id="${evt.id}", period="${evt.period}") has ` +
+        `clockSecondsRemaining=${evt.clockSecondsRemaining} which exceeds max ${max}s for that period.`
+      );
+    }
+  }
+  return errors;
 }

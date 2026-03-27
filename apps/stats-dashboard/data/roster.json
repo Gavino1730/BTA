@@ -1,86 +1,21 @@
 {
-  "team": "Valley Catholic",
+  "team": "Profile Team",
   "season": "2026",
-  "teamColor": "#0011ff",
+  "teamColor": "",
   "coachStyle": "",
+  "playingStyle": "",
+  "teamContext": "",
+  "customPrompt": "",
+  "focusInsights": [],
   "roster": [
     {
-      "name": "Cooper Bonnett",
-      "number": 1,
-      "position": "G",
-      "grade": "12"
-    },
-    {
-      "name": "Alex Post",
-      "number": 2,
-      "position": "G",
-      "grade": "11"
-    },
-    {
-      "name": "Gavin Galan",
-      "number": 3,
-      "position": "F",
-      "grade": "12"
-    },
-    {
-      "name": "Kye Fixter",
-      "number": 4,
-      "position": "F",
-      "grade": "11"
-    },
-    {
-      "name": "Marcos Mueller",
-      "number": 5,
-      "position": "G",
-      "grade": "12"
-    },
-    {
-      "name": "Matthew Gunther",
-      "number": 10,
-      "position": "G",
-      "grade": "12"
-    },
-    {
-      "name": "Tyler Eddy",
-      "number": 11,
-      "position": "G",
-      "grade": "10"
-    },
-    {
-      "name": "Elijah Schaal",
-      "number": 15,
-      "position": "G",
-      "grade": "12"
-    },
-    {
-      "name": "Hank Lomber",
-      "number": 20,
-      "position": "F",
-      "grade": "11"
-    },
-    {
-      "name": "Sam Robbins",
-      "number": 22,
-      "position": "F",
-      "grade": "10"
-    },
-    {
-      "name": "Garrett Frank",
+      "name": "Taylor Morgan",
       "number": 23,
-      "position": "G",
-      "grade": "11"
-    },
-    {
-      "name": "Michael Mehta",
-      "number": 24,
-      "position": "G",
-      "grade": "12"
-    },
-    {
-      "name": "Liam Plep",
-      "number": 44,
-      "position": "C",
-      "grade": "12"
+      "position": "F",
+      "height": "6'2\"",
+      "grade": "12",
+      "role": "Wing stopper",
+      "notes": "Updated from player modal"
     }
   ]
 }

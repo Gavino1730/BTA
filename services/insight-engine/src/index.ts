@@ -1,5 +1,6 @@
 import type { GameState } from "@bta/game-state";
-import type { GameEvent } from "@bta/shared-schema";
+import { FOUL_OUT_THRESHOLD } from "@bta/game-state";
+import { isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 
 export type InsightType =
   | "ai_coaching"
@@ -19,6 +20,8 @@ export interface LiveInsight {
   id: string;
   gameId: string;
   type: InsightType;
+  /** Urgency tier: urgent = needs immediate action, important = act soon, info = situational awareness */
+  priority: "urgent" | "important" | "info";
   createdAtIso: string;
   confidence: "high" | "medium";
   message: string;
@@ -97,10 +100,6 @@ function isPreGameState(state: GameState): boolean {
   return state.currentPeriod === "Q1" && totalScore === 0 && state.events.length < 5;
 }
 
-function isOTPeriod(period: string): boolean {
-  return /^OT\d+$/.test(period);
-}
-
 function getClockSeconds(event: GameEvent): number {
   return event.clockSecondsRemaining ?? 0;
 }
@@ -126,6 +125,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
       id: `${latestEvent.id}-pregame`,
       gameId: latestEvent.gameId,
       type: "pre_game",
+      priority: "info",
       createdAtIso: now,
       confidence: "medium",
       message: "Game hasn't fully started yet — good luck out there! 🏀",
@@ -146,11 +146,15 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
       ? playerLabel
       : playerLabel;
 
-    if (foulCount >= 5) {
+    const FOUL_DANGER_THRESHOLD = 4;
+    const FOUL_WARNING_THRESHOLD = 2;
+
+    if (foulCount >= FOUL_OUT_THRESHOLD) {
       insights.push({
         id: `${latestEvent.id}-foul-out`,
         gameId: latestEvent.gameId,
         type: "foul_trouble",
+        priority: "urgent",
         createdAtIso: now,
         confidence: "high",
         message: `🚫 ${foulSubject} has FOULED OUT (${foulCount} fouls)`,
@@ -160,11 +164,12 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         relatedTeamId: latestEvent.teamId,
         relatedPlayerId: latestEvent.playerId
       });
-    } else if (foulCount >= 4) {
+    } else if (foulCount >= FOUL_DANGER_THRESHOLD) {
       insights.push({
         id: `${latestEvent.id}-foul-danger`,
         gameId: latestEvent.gameId,
         type: "foul_trouble",
+        priority: "important",
         createdAtIso: now,
         confidence: "high",
         message: `⚠️ ${foulSubject} has ${foulCount} fouls — foul-out risk (not fouled out)`,
@@ -174,17 +179,18 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         relatedTeamId: latestEvent.teamId,
         relatedPlayerId: latestEvent.playerId
       });
-    } else if (foulCount === 3) {
+    } else if (foulCount >= FOUL_WARNING_THRESHOLD) {
       insights.push({
         id: `${latestEvent.id}-foul-watch`,
         gameId: latestEvent.gameId,
         type: "foul_warning",
+        priority: "info",
         createdAtIso: now,
         confidence: "medium",
-        message: `Foul watch: ${foulSubject} is at 3 fouls`,
+        message: `Foul watch: ${foulSubject} is at ${foulCount} fouls`,
         explanation: isOurPlayer
-          ? `${foulSubject} has 3 fouls. One more and managing playing time becomes critical — evaluate a brief rest.`
-          : `${foulSubject} on the other side has 3 fouls. Attack situations where they must defend the ball.`,
+          ? `${foulSubject} has ${foulCount} fouls. Start planning a possible substitution or reduced minutes to manage foul risk.`
+          : `${foulSubject} on the other side has ${foulCount} fouls. Consider attacking their defensive assignments.`,
         relatedTeamId: latestEvent.teamId,
         relatedPlayerId: latestEvent.playerId
       });
@@ -202,6 +208,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-bonus-${teamId}`,
         gameId: latestEvent.gameId,
         type: "team_foul_warning",
+        priority: "important",
         createdAtIso: now,
         confidence: "high",
         message: isOurBonus
@@ -218,7 +225,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   // ──────────────────────────────────────────────────────────────────
   // 4. OT awareness
   // ──────────────────────────────────────────────────────────────────
-  if (isOTPeriod(period)) {
+  if (isOvertimePeriod(period)) {
     const otNumber = parseInt(period.slice(2), 10);
     const ourScore = ourTeamId ? (state.scoreByTeam[ourTeamId] ?? 0) : null;
     const scores = Object.entries(state.scoreByTeam);
@@ -236,6 +243,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-ot-${period}`,
         gameId: latestEvent.gameId,
         type: "ot_awareness",
+        priority: "info",
         createdAtIso: now,
         confidence: "high",
         message: `Overtime ${otNumber > 1 ? otNumber : ""}— tied game, every possession matters`,
@@ -250,7 +258,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   // ──────────────────────────────────────────────────────────────────
   if (clockEnabled) {
     const clockSec = getClockSeconds(latestEvent);
-    const isQ4OrOT = period === "Q4" || isOTPeriod(period);
+    const isQ4OrOT = period === "Q4" || isOvertimePeriod(period);
 
     if (isQ4OrOT && clockSec <= 120 && clockSec > 0) {
       const scores = Object.entries(state.scoreByTeam);
@@ -304,6 +312,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
           id: `${latestEvent.id}-clutch-${period}-${clockSec}`,
           gameId: latestEvent.gameId,
           type: "timeout_suggestion",
+          priority: "urgent",
           createdAtIso: now,
           confidence: "high",
           message,
@@ -327,6 +336,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
       id: `${latestEvent.id}-turnover-pressure`,
       gameId: latestEvent.gameId,
       type: "turnover_pressure",
+      priority: "important",
       createdAtIso: now,
       confidence: "medium",
       message: `${toTeamLabel} has ${recentOurTurnovers} turnovers in recent possessions`,
@@ -351,6 +361,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-opp-run`,
         gameId: latestEvent.gameId,
         type: "run_detection",
+        priority: "urgent",
         createdAtIso: now,
         confidence: "high",
         message: `⚠️ ${oppLabel} on an ${oppRunPoints}-pt run — consider a timeout`,
@@ -373,6 +384,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-our-run`,
         gameId: latestEvent.gameId,
         type: "run_detection",
+        priority: "info",
         createdAtIso: now,
         confidence: "high",
         message: `${ourLabel} on a ${ourRunPoints}-pt run — keep the pressure on`,
@@ -392,6 +404,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-run`,
         gameId: latestEvent.gameId,
         type: "run_detection",
+        priority: "info",
         createdAtIso: now,
         confidence: "high",
         message: `${eventTeamLabel} is on a ${runPoints}-point run`,
@@ -420,6 +433,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-shot-profile`,
         gameId: latestEvent.gameId,
         type: "shot_profile",
+        priority: "info",
         createdAtIso: now,
         confidence: "medium",
         message: `${ourLabel} is relying heavily on perimeter attempts`,
@@ -431,6 +445,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         id: `${latestEvent.id}-shot-miss-run`,
         gameId: latestEvent.gameId,
         type: "shot_profile",
+        priority: "info",
         createdAtIso: now,
         confidence: "medium",
         message: `${ourLabel} is struggling on mid-range looks`,
@@ -454,6 +469,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
           id: `${latestEvent.id}-sub-${playerId}`,
           gameId: latestEvent.gameId,
           type: "sub_suggestion",
+          priority: isFouledOut ? "urgent" : "important",
           createdAtIso: now,
           confidence: "high",
           message: isFouledOut
@@ -470,26 +486,40 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // 10. Hot hand — note a player scoring heavily (only with clock context)
+  // 10. Hot hand — player making shots efficiently in recent possessions
   // ──────────────────────────────────────────────────────────────────
   if (ourTeamId) {
-    const ourPlayerStats = state.playerStatsByTeam[ourTeamId] ?? {};
-    for (const playerStat of Object.values(ourPlayerStats)) {
-      if (playerStat.points >= 12) {
-        const fgPct = playerStat.fgAttempts > 0
-          ? Math.round((playerStat.fgMade / playerStat.fgAttempts) * 100)
-          : 0;
-        const playerLabel = resolvePlayerLabel(playerStat.playerId, resolveTeamLabel(state, ourTeamId));
+    const HOT_HAND_WINDOW = 15;
+    const recentOurShots = allEvents
+      .filter((e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+        e.type === "shot_attempt" && e.teamId === ourTeamId
+      )
+      .slice(-HOT_HAND_WINDOW);
+
+    // Tally makes and attempts per player in recent window
+    const playerShotWindow = new Map<string, { makes: number; attempts: number }>();
+    for (const shot of recentOurShots) {
+      const entry = playerShotWindow.get(shot.playerId) ?? { makes: 0, attempts: 0 };
+      entry.attempts++;
+      if (shot.made) entry.makes++;
+      playerShotWindow.set(shot.playerId, entry);
+    }
+
+    for (const [playerId, { makes, attempts }] of playerShotWindow.entries()) {
+      if (attempts >= 4 && makes >= 3 && makes / attempts >= 0.6) {
+        const pctStr = Math.round((makes / attempts) * 100);
+        const playerLabel = resolvePlayerLabel(playerId, resolveTeamLabel(state, ourTeamId));
         insights.push({
-          id: `${latestEvent.id}-hot-${playerStat.playerId}`,
+          id: `${latestEvent.id}-hot-${playerId}`,
           gameId: latestEvent.gameId,
           type: "hot_hand",
+          priority: "important",
           createdAtIso: now,
-          confidence: "medium",
-          message: `Hot hand: ${playerLabel} with ${playerStat.points} pts (${fgPct}% FG)`,
-          explanation: `Keep running actions to get ${playerLabel} looks. High-scoring efficient players should see more post-entry or isolation sets.`,
+          confidence: "high",
+          message: `🔥 Hot hand: ${playerLabel} — ${makes}/${attempts} in recent looks (${pctStr}% FG)`,
+          explanation: `${playerLabel} is locked in right now. Feed them more looks — an in-rhythm shooter is a high-value possession.`,
           relatedTeamId: ourTeamId,
-          relatedPlayerId: playerStat.playerId
+          relatedPlayerId: playerId
         });
       }
     }

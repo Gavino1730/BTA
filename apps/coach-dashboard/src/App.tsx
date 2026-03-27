@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getPeriodDurationSeconds, type GameEvent, type Period } from "@bta/shared-schema";
+import { getPeriodDurationSeconds, normalizeTeamColor, type GameEvent, type Period } from "@bta/shared-schema";
+import type { PlayerStats, TeamStats } from "@bta/game-state";
 import { io } from "socket.io-client";
 import {
   formatBonusIndicator,
@@ -8,38 +9,6 @@ import {
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
 } from "./display.js";
-
-interface TeamStats {
-  shooting: {
-    fgAttempts: number;
-    fgMade: number;
-    ftAttempts: number;
-    ftMade: number;
-    points: number;
-  };
-  turnovers: number;
-  fouls: number;
-  reboundsOff: number;
-  reboundsDef: number;
-  substitutions: number;
-}
-
-interface PlayerStats {
-  playerId: string;
-  teamId: string;
-  points: number;
-  fgAttempts: number;
-  fgMade: number;
-  ftAttempts: number;
-  ftMade: number;
-  reboundsOff: number;
-  reboundsDef: number;
-  turnovers: number;
-  fouls: number;
-  assists: number;
-  steals: number;
-  blocks: number;
-}
 
 interface GameState {
   gameId: string;
@@ -218,6 +187,7 @@ function emptyBoxScoreTotals(): BoxScoreTeamTotals {
 interface Insight {
   id: string;
   type: string;
+  priority?: "urgent" | "important" | "info";
   confidence?: "high" | "medium";
   message: string;
   explanation: string;
@@ -348,8 +318,7 @@ function extractHistoricalContextFromPrompt(prompt: string): string {
 // ── Roster Builder ──────────────────────────────────────────────────────────
 // Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
-const POSITIONS = ["PG", "SG", "SF", "PF", "C"] as const;
-const ROLE_OPTIONS = ["Starter", "Bench", "Rotation", "Sixth Man", "Specialist"] as const;
+
 
 export interface RosterPlayer {
   id: string;
@@ -369,16 +338,6 @@ export interface RosterTeam {
   teamColor?: string;
   coachStyle?: string;
   players: RosterPlayer[];
-}
-
-function normalizeTeamColor(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (/^#[0-9a-f]{6}$/.test(normalized)) return normalized;
-  if (/^#[0-9a-f]{3}$/.test(normalized)) {
-    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
-  }
-  return undefined;
 }
 
 function loadRosterTeams(): RosterTeam[] {
@@ -453,6 +412,8 @@ export function App() {
       myTeamName: params.get("myTeamName") ?? "",
       opponentName: params.get("opponentName") ?? "",
       vcSide: params.get("vcSide") === "away" ? "away" as const : "home" as const,
+      homeColor: params.get("homeColor") ?? "",
+      awayColor: params.get("awayColor") ?? "",
     };
   }, []);
 
@@ -466,12 +427,14 @@ export function App() {
   });
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
   const [videos, setVideos] = useState<VideoAsset[]>([]);
   const [anchors, setAnchors] = useState<SyncAnchor[]>([]);
   const [videoSrcUrl, setVideoSrcUrl] = useState("");  // URL for the in-page video player
   const videoRef = useRef<HTMLVideoElement>(null);
+  const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [videoId, setVideoId] = useState("vid-1");
   const [filename, setFilename] = useState("full-game.mp4");
   const [anchorVideoId, setAnchorVideoId] = useState("vid-1");
@@ -519,10 +482,10 @@ export function App() {
   const [addingPlayerForTeam, setAddingPlayerForTeam] = useState<string | null>(null);
   const [newPlayerNum, setNewPlayerNum] = useState("");
   const [newPlayerName, setNewPlayerName] = useState("");
-  const [newPlayerPos, setNewPlayerPos] = useState("PG");
+  const [newPlayerPos, setNewPlayerPos] = useState("");
   const [newPlayerHeight, setNewPlayerHeight] = useState("");
   const [newPlayerGrade, setNewPlayerGrade] = useState("");
-  const [newPlayerRole, setNewPlayerRole] = useState("Bench");
+  const [newPlayerRole, setNewPlayerRole] = useState("");
   const [newPlayerNotes, setNewPlayerNotes] = useState("");
 
   function setRosterTeams(next: RosterTeam[]) {
@@ -656,10 +619,10 @@ export function App() {
     setAddingPlayerForTeam(null);
     setNewPlayerNum("");
     setNewPlayerName("");
-    setNewPlayerPos("PG");
+    setNewPlayerPos("");
     setNewPlayerHeight("");
     setNewPlayerGrade("");
-    setNewPlayerRole("Bench");
+    setNewPlayerRole("");
     setNewPlayerNotes("");
   }
 
@@ -758,6 +721,8 @@ export function App() {
     socket.on("disconnect", () => {
       setServerConnected(false);
       setDeviceConnected(false);
+      setState(null);
+      setGameId("");
     });
 
     socket.emit("join:coach", { deviceId });
@@ -773,6 +738,8 @@ export function App() {
         setGameId((current) => (current === activeGameId ? current : activeGameId));
         socket.emit("join:game", activeGameId);
       } else {
+        setState(null);
+        setGameId("");
         setDashboardStatus(`Waiting for device ${deviceId}`);
       }
     }
@@ -826,35 +793,115 @@ export function App() {
     setAiRefreshError("");
     setDeviceConnected(false);
     setDashboardStatus("Loading new game…");
+    setIsLoading(true);
 
     async function hydrate() {
-      const stateRes = await fetch(`${apiBase}/games/${gameId}/state`, { headers: apiKeyHeader() });
-      if (stateRes.ok) {
-        const payload = (await stateRes.json()) as GameState;
-        setState(payload);
-        setDashboardStatus("Loaded server game state");
+      // Fetch state and insights in parallel for faster load
+      const [stateRes, insightRes] = await Promise.all([
+        fetch(`${apiBase}/games/${gameId}/state`, { headers: apiKeyHeader() }),
+        fetch(`${apiBase}/games/${gameId}/insights`, { headers: apiKeyHeader() })
+      ]);
+
+      // Handle game state
+      try {
+        if (stateRes.ok) {
+          const payload = (await stateRes.json()) as GameState;
+          setState(payload);
+          setDashboardStatus("Loaded server game state");
+          // Cache to localStorage
+          try {
+            localStorage.setItem(`gameState-${gameId}`, JSON.stringify(payload));
+          } catch {
+            // localStorage full or disabled, ignore
+          }
+        } else {
+          // Try to load from cache
+          const cachedState = localStorage.getItem(`gameState-${gameId}`);
+          if (cachedState) {
+            try {
+              const payload = JSON.parse(cachedState) as GameState;
+              setState(payload);
+              setDashboardStatus("Loaded cached game state (offline mode)");
+            } catch {
+              setDashboardStatus("Offline and no cached state available");
+            }
+          }
+        }
+      } catch {
+        // Network error - try cache
+        const cachedState = localStorage.getItem(`gameState-${gameId}`);
+        if (cachedState) {
+          try {
+            const payload = JSON.parse(cachedState) as GameState;
+            setState(payload);
+            setDashboardStatus("Loaded cached game state (offline mode)");
+          } catch {
+            setDashboardStatus("Offline and no cached state available");
+          }
+        }
       }
 
-      const insightRes = await fetch(`${apiBase}/games/${gameId}/insights`, { headers: apiKeyHeader() });
-      if (insightRes.ok) {
-        const payload = (await insightRes.json()) as Insight[];
-        setInsights(payload);
+      // Handle insights
+      try {
+        if (insightRes.ok) {
+          const payload = (await insightRes.json()) as Insight[];
+          setInsights(payload);
+          // Cache to localStorage (persistent, not session-only)
+          try {
+            localStorage.setItem(`gameInsights-${gameId}`, JSON.stringify(payload));
+          } catch {
+            // localStorage full or disabled, ignore
+          }
+        } else {
+          // Try to load from cache
+          const cachedInsights = localStorage.getItem(`gameInsights-${gameId}`);
+          if (cachedInsights) {
+            try {
+              const payload = JSON.parse(cachedInsights) as Insight[];
+              setInsights(payload);
+            } catch {
+              // Invalid cached data
+            }
+          }
+        }
+      } catch {
+        // Network error - try cache
+        const cachedInsights = localStorage.getItem(`gameInsights-${gameId}`);
+        if (cachedInsights) {
+          try {
+            const payload = JSON.parse(cachedInsights) as Insight[];
+            setInsights(payload);
+          } catch {
+            // Invalid cached data
+          }
+        }
       }
 
-      const videoRes = await fetch(`${videoBase}/games/${gameId}/videos`, { headers: apiKeyHeader() });
-      if (videoRes.ok) {
-        const payload = (await videoRes.json()) as VideoAsset[];
-        setVideos(payload);
+      // Fetch videos and anchors in parallel (non-critical)
+      try {
+        const [videoRes, anchorRes] = await Promise.all([
+          fetch(`${videoBase}/games/${gameId}/videos`, { headers: apiKeyHeader() }),
+          fetch(`${videoBase}/games/${gameId}/sync-anchors`, { headers: apiKeyHeader() })
+        ]);
+
+        if (videoRes.ok) {
+          const payload = (await videoRes.json()) as VideoAsset[];
+          setVideos(payload);
+        }
+
+        if (anchorRes.ok) {
+          const payload = (await anchorRes.json()) as SyncAnchor[];
+          setAnchors(payload);
+        }
+      } catch {
+        // Ignore video/anchor errors
       }
 
-      const anchorRes = await fetch(`${videoBase}/games/${gameId}/sync-anchors`, { headers: apiKeyHeader() });
-      if (anchorRes.ok) {
-        const payload = (await anchorRes.json()) as SyncAnchor[];
-        setAnchors(payload);
-      }
+      setIsLoading(false);
     }
 
     hydrate().catch(() => {
+      setIsLoading(false);
       // Ignore network errors in dashboard bootstrap.
     });
   }, [gameId]);
@@ -876,6 +923,20 @@ export function App() {
           headers: apiKeyHeader(),
         });
         if (!response.ok) {
+          // Seed defaults from stats dashboard
+          try {
+            const seed = await fetch(`${statsBase}/api/ai-settings`);
+            if (seed.ok) {
+              const defaults = (await seed.json()) as CoachAiSettings | null;
+              const next = defaults ?? defaultCoachAiSettings();
+              if (!cancelled) {
+                setAiSettings(next);
+                setAiSettingsDraft(next);
+                setAiSettingsStatus("Loaded team defaults from stats dashboard.");
+              }
+              return;
+            }
+          } catch { /* ignore */ }
           if (!cancelled) {
             setAiSettings(defaultCoachAiSettings());
             setAiSettingsDraft(defaultCoachAiSettings());
@@ -928,6 +989,12 @@ export function App() {
       setAiSettingsDraft(saved);
       setAiSettingsStatus("AI settings saved and applied to live coaching insights.");
       setPromptPreviewStatus("Settings saved. Refresh prompt preview to inspect current AI input.");
+      // Sync to stats dashboard so all surfaces share the same context
+      fetch(`${statsBase}/api/ai-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aiSettingsDraft),
+      }).catch(() => { /* fire-and-forget */ });
     } catch {
       setAiSettingsStatus("Save failed: could not reach realtime API.");
     }
@@ -1218,11 +1285,15 @@ export function App() {
 
   const teamColorById = useMemo(() => {
     const map: Record<string, string> = {};
+    // Seed with operator-provided URL colors so they apply even without a roster entry
+    if (setupNames.homeColor) map[canonicalSideIds.homeId] = setupNames.homeColor;
+    if (setupNames.awayColor) map[canonicalSideIds.awayId] = setupNames.awayColor;
+    // rosterTeams colors take priority over operator URL defaults
     for (const team of rosterTeams) {
       if (team.teamColor) map[team.id] = team.teamColor;
     }
     return map;
-  }, [rosterTeams]);
+  }, [rosterTeams, setupNames.homeColor, setupNames.awayColor, canonicalSideIds.homeId, canonicalSideIds.awayId]);
 
   function toTitleCase(value: string): string {
     return value
@@ -1453,6 +1524,18 @@ export function App() {
   }
 
   function getRuleInsightImportanceClass(insight: Insight): string {
+    if (insight.priority === "urgent") {
+      return "insight-item-rule-urgent";
+    }
+
+    if (insight.priority === "important") {
+      return "insight-item-rule-high";
+    }
+
+    if (insight.priority === "info") {
+      return "insight-item-rule-default";
+    }
+
     // High-urgency types always get high styling
     if (
       insight.type === "foul_warning" ||
@@ -1882,6 +1965,14 @@ export function App() {
       return;
     }
 
+    // Debounce: ignore refresh requests within 2 seconds of the last request
+    const now = Date.now();
+    const lastRefresh = (aiRefreshDebounceRef.current as unknown as number) || 0;
+    if (now - lastRefresh < 2000) {
+      return;
+    }
+    aiRefreshDebounceRef.current = (now as unknown as ReturnType<typeof setTimeout>);
+
     setIsRefreshingAiInsights(true);
     setAiRefreshError("");
 
@@ -1997,17 +2088,44 @@ export function App() {
             <li><a href={operatorConsoleUrl} className="coach-nav-ext-link">Score Operator</a></li>
             <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats ↗</a></li>
           </ul>
-          <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
-            {deviceConnected ? "Device live" : serverConnected ? "Waiting" : "Offline"}
-            {deviceId ? <span className="connection-pill-device"> · {deviceId}</span> : null}
-          </div>
+            <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
+              <span className="connection-pill-status">
+                {deviceConnected ? "Device live" : serverConnected ? "Waiting" : "Offline"}
+              </span>
+              <label className="connection-pill-editor" title="Operator device identifier">
+                <span className="connection-pill-label">Device</span>
+                <input
+                  className="connection-pill-input"
+                  value={deviceId}
+                  onChange={(event) => setDeviceId(event.target.value)}
+                  onBlur={(event) => setDeviceId(event.target.value.trim())}
+                  placeholder="device-1"
+                  aria-label="Device ID"
+                />
+              </label>
+            </div>
         </div>
       </nav>
 
     <div className="page">
-      {activePage === "live" && <>
+      {!gameId && activePage !== "roster" && activePage !== "settings" && (
+        <div className="idle-screen">
+          <div className="idle-screen-icon">⏸</div>
+          <p className="idle-screen-title">No Active Game</p>
+          <p className="idle-screen-sub">
+            {serverConnected ? "Waiting for the operator to start a game…" : "Not connected to server"}
+          </p>
+        </div>
+      )}
+      {gameId && activePage === "live" && <>
       <section className="card">
         <h2>Scoreboard</h2>
+        {isLoading && (
+          <div className="loading-indicator">
+            <div className="loading-spinner" />
+            <p className="loading-text">{dashboardStatus}</p>
+          </div>
+        )}
         {teams.length === 0 ? <p>No live game state yet.</p> : null}
         <div className="scoreboard">
           {teams.map((teamId, index) => {
@@ -2159,9 +2277,112 @@ export function App() {
         </div>
       </section>
 
+        {teams.length >= 2 ? (() => {
+          const homeData = aggregatedTeams[canonicalSideIds.homeId];
+          const awayData = aggregatedTeams[canonicalSideIds.awayId];
+          if (!homeData || !awayData) return null;
+          const homeAssists = Object.values(homeData.playerStats).reduce((s, p) => s + (p.assists ?? 0), 0);
+          const awayAssists = Object.values(awayData.playerStats).reduce((s, p) => s + (p.assists ?? 0), 0);
+          type CompRow = { label: string; home: number | string; away: number | string; higherBetter?: boolean; lowerBetter?: boolean };
+          const rows: CompRow[] = [
+            { label: "Score", home: homeData.score, away: awayData.score, higherBetter: true },
+            {
+              label: "FG",
+              home: `${homeData.teamStats.shooting.fgMade}-${homeData.teamStats.shooting.fgAttempts}`,
+              away: `${awayData.teamStats.shooting.fgMade}-${awayData.teamStats.shooting.fgAttempts}`,
+              higherBetter: true,
+            },
+            {
+              label: "FT",
+              home: `${homeData.teamStats.shooting.ftMade}-${homeData.teamStats.shooting.ftAttempts}`,
+              away: `${awayData.teamStats.shooting.ftMade}-${awayData.teamStats.shooting.ftAttempts}`,
+              higherBetter: true,
+            },
+            { label: "REB", home: homeData.teamStats.reboundsOff + homeData.teamStats.reboundsDef, away: awayData.teamStats.reboundsOff + awayData.teamStats.reboundsDef, higherBetter: true },
+            { label: "AST", home: homeAssists, away: awayAssists, higherBetter: true },
+            { label: "TO",  home: homeData.teamStats.turnovers, away: awayData.teamStats.turnovers, lowerBetter: true },
+            { label: "PF",  home: homeData.teamStats.fouls,     away: awayData.teamStats.fouls,     lowerBetter: true },
+          ];
+          return (
+            <section key="team-comparison" className="card team-comparison-card">
+              <h2>Team Comparison</h2>
+              <table className="team-comparison-table">
+                <thead>
+                  <tr>
+                    <th className="tc-stat-col">Stat</th>
+                    <th>{displayTeamName(canonicalSideIds.homeId)}</th>
+                    <th>{displayTeamName(canonicalSideIds.awayId)}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const hNum = typeof row.home === "number" ? row.home : null;
+                    const aNum = typeof row.away === "number" ? row.away : null;
+                    let hClass = "";
+                    let aClass = "";
+                    if (hNum !== null && aNum !== null) {
+                      if (row.higherBetter) {
+                        if (hNum > aNum) hClass = "tc-lead";
+                        else if (aNum > hNum) aClass = "tc-lead";
+                      } else if (row.lowerBetter && hNum !== aNum) {
+                        if (hNum < aNum) hClass = "tc-lead";
+                        else aClass = "tc-lead";
+                      }
+                    }
+                    return (
+                      <tr key={row.label}>
+                        <td className="tc-stat-col">{row.label}</td>
+                        <td className={hClass}>{row.home}</td>
+                        <td className={aClass}>{row.away}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+          );
+        })() : null}
+
       <section className="card box-score-card">
         <div className="box-score-header">
           <h2>Box Score</h2>
+            {boxScorePeriods.length > 1 ? (
+              <div className="replay-scrubber" aria-label="Game timeline scrubber">
+                {boxScorePeriods.map((period, idx) => {
+                  const isLivePeriod = period === state?.currentPeriod;
+                  const activeUpToIdx = boxScoreFilter.length > 0
+                    ? Math.max(...boxScoreFilter.map((f) => boxScorePeriods.indexOf(f)))
+                    : boxScorePeriods.length - 1;
+                  const inRange = idx <= activeUpToIdx;
+                  const isSelected = boxScoreFilter.length > 0 && idx === activeUpToIdx;
+                  return (
+                    <>
+                      {idx > 0 && (
+                        <div
+                          key={`seg-${period}`}
+                          className={`replay-scrubber-segment${inRange ? " scrubber-segment-active" : ""}`}
+                        />
+                      )}
+                      <button
+                        key={period}
+                        type="button"
+                        className={`replay-scrubber-stop${isLivePeriod ? " scrubber-stop-live" : ""}${isSelected ? " scrubber-stop-selected" : inRange ? " scrubber-stop-active" : ""}`}
+                        title={`${boxScoreFilter.length > 0 && idx === activeUpToIdx ? "Showing up to " : "View up to "}${period}`}
+                        onClick={() => {
+                          const upTo = boxScorePeriods.slice(0, idx + 1);
+                          setBoxScoreFilter(upTo.length === boxScorePeriods.length ? [] : upTo);
+                        }}
+                      >
+                        <span className="scrubber-stop-dot" />
+                        <span className="scrubber-stop-label">{period}</span>
+                        {isLivePeriod && <span className="scrubber-live-pip" aria-label="Live" />}
+                      </button>
+                    </>
+                  );
+                })}
+              </div>
+            ) : null}
+
           <div className="box-score-filter-group" aria-label="Box score filter">
             <button
               type="button"
@@ -2249,7 +2470,10 @@ export function App() {
                         const rebounds = line.reboundsDef + line.reboundsOff;
                         const playerLabel = line.number ? `${line.number} ${line.name}` : line.name;
                         return (
-                          <tr key={`${teamId}-${line.playerId}`}>
+                          <tr
+                            key={`${teamId}-${line.playerId}`}
+                            className={line.fouls >= 4 ? "foul-row-danger" : line.fouls >= 3 ? "foul-row-warning" : undefined}
+                          >
                             <td>{playerLabel}</td>
                             <td>{line.points}</td>
                             <td>{line.fgMade}-{line.fgAttempts}</td>
@@ -2259,7 +2483,11 @@ export function App() {
                             <td>{line.steals}</td>
                             <td>{line.blocks}</td>
                             <td>{line.turnovers}</td>
-                            <td>{line.fouls}</td>
+                            <td>
+                              <span className={`foul-badge${line.fouls >= 5 ? " foul-badge-out" : line.fouls >= 4 ? " foul-badge-danger" : line.fouls >= 3 ? " foul-badge-warn" : " foul-badge-safe"}`}>
+                                {line.fouls}{line.fouls >= 5 ? " OUT" : line.fouls >= 4 ? " ⚠" : ""}
+                              </span>
+                            </td>
                           </tr>
                         );
                       })
@@ -2331,8 +2559,13 @@ export function App() {
 
         {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
           <>
-            <h3 className="insight-subhead">Urgent Coaching Calls</h3>
-            <div className="insight-list">
+            <h3 className="insight-subhead insight-subhead-urgent">
+              <span>Urgent Coaching Calls</span>
+              <span className="insight-count-badge insight-count-badge-urgent">
+                {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length}
+              </span>
+            </h3>
+            <div className="insight-list-stack">
               {rulesInsights
                 .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type))
                 .map((insight) => (
@@ -2356,7 +2589,7 @@ export function App() {
 
         {rulesInsights.filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
           <>
-            <h3 className="insight-subhead">System Alerts</h3>
+            <h3 className="insight-subhead insight-subhead-important">System Alerts</h3>
             <div className="insight-list">
               {rulesInsights
                 .filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type))
@@ -2442,7 +2675,7 @@ export function App() {
       </>
       }
 
-      {activePage === "ai" && <>
+      {gameId && activePage === "ai" && <>
       <section className="card ai-page-hero">
         <div>
           <p className="eyebrow">Game Intelligence</p>
@@ -2579,7 +2812,7 @@ export function App() {
       </section>
       </>}
 
-      {activePage === "film" &&
+      {gameId && activePage === "film" &&
       <section className="card film-grid">
         <div>
           <h2>Film Sync</h2>
@@ -2676,7 +2909,7 @@ export function App() {
                   </strong>
                   <p>{formatDashboardEventMeta({
                     teamId: displayTeamName(event.teamId),
-                    period: event.period,
+                    period: event.period as Period,
                     clockSecondsRemaining: event.clockSecondsRemaining,
                   })}</p>
                   {eventClipMap[event.id] ? (
@@ -2688,7 +2921,7 @@ export function App() {
                 <button
                   className="teal"
                   onClick={() =>
-                    void resolveEventClip(event.id, event.period, event.clockSecondsRemaining)
+                    void resolveEventClip(event.id, event.period as Period, event.clockSecondsRemaining)
                   }
                 >
                   Clip
@@ -2775,7 +3008,6 @@ export function App() {
                   <span className="roster-abbr" style={{ borderColor: team.teamColor ?? undefined, color: team.teamColor ?? undefined }}>{team.abbreviation}</span>
                   {team.teamColor ? <span className="roster-team-color-swatch" style={{ background: team.teamColor }} aria-hidden="true" /> : null}
                   <span className="text-dim">{team.players.length} player{team.players.length !== 1 ? "s" : ""}</span>
-                  {team.coachStyle ? <span className="roster-coach-style-pill">Coach Style Saved</span> : null}
                 </div>
                 <div className="roster-team-btns">
                   <button
@@ -2807,19 +3039,6 @@ export function App() {
                       style={{ width: "4.5rem", padding: "0.25rem" }}
                     />
                   </label>
-                  <label className="roster-team-note-field">
-                    Coaching Style For AI
-                    <textarea
-                      className="roster-team-textarea"
-                      defaultValue={team.coachStyle ?? ""}
-                      placeholder="Example: We want to play fast, pressure the ball, and trust our bench in second-quarter runs."
-                      onBlur={(event) => {
-                        if ((team.coachStyle ?? "") !== event.target.value) {
-                          updateTeamCoachStyle(team.id, event.target.value);
-                        }
-                      }}
-                    />
-                  </label>
                   {team.players.length === 0 && (
                     <p className="text-dim" style={{ marginBottom: "0.5rem" }}>No players yet.</p>
                   )}
@@ -2842,8 +3061,8 @@ export function App() {
                           <tr key={player.id} className="roster-row-edit">
                             <td><input className="roster-inline-input" value={editPlayerDraft.number} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, number: e.target.value })} style={{ width: "3.5rem" }} /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.name} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, name: e.target.value })} style={{ width: "100%" }} /></td>
-                            <td><select className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></td>
-                            <td><input className="roster-inline-input" value={editPlayerDraft.role ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, role: e.target.value || undefined })} style={{ width: "8rem" }} placeholder="Bench" list="roster-role-options" /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.position} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, position: e.target.value })} style={{ width: "5rem" }} placeholder="PG" /></td>
+                            <td><input className="roster-inline-input" value={editPlayerDraft.role ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, role: e.target.value || undefined })} style={{ width: "8rem" }} placeholder="Starter" /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.height ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, height: e.target.value || undefined })} style={{ width: "4.5rem" }} placeholder={"6'2\""} /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.grade ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, grade: e.target.value || undefined })} style={{ width: "3rem" }} placeholder="11" /></td>
                             <td><input className="roster-inline-input" value={editPlayerDraft.notes ?? ""} onChange={(e) => setEditPlayerDraft({ ...editPlayerDraft, notes: e.target.value || undefined })} style={{ width: "100%" }} placeholder="Minutes cap, ankle soreness, spark off bench" /></td>
@@ -2875,8 +3094,8 @@ export function App() {
                     <div className="roster-add-player-form form-grid" style={{ marginTop: "0.75rem" }}>
                       <label>Jersey #<input value={newPlayerNum} onChange={(e) => setNewPlayerNum(e.target.value)} placeholder="23" /></label>
                       <label>Name<input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="Player Name" onKeyDown={(e) => e.key === "Enter" && addPlayer(team.id)} /></label>
-                      <label>Position<select value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
-                      <label>Role<input value={newPlayerRole} onChange={(e) => setNewPlayerRole(e.target.value)} placeholder="Bench" list="roster-role-options" /></label>
+                      <label>Position<input value={newPlayerPos} onChange={(e) => setNewPlayerPos(e.target.value)} placeholder="PG" /></label>
+                      <label>Role<input value={newPlayerRole} onChange={(e) => setNewPlayerRole(e.target.value)} placeholder="Starter" /></label>
                       <label>Height<input value={newPlayerHeight} onChange={(e) => setNewPlayerHeight(e.target.value)} placeholder={"6'2\""} /></label>
                       <label>Grade<input value={newPlayerGrade} onChange={(e) => setNewPlayerGrade(e.target.value)} placeholder="11" /></label>
                       <label style={{ gridColumn: "1 / -1" }}>AI Context / Notes<input value={newPlayerNotes} onChange={(e) => setNewPlayerNotes(e.target.value)} placeholder="Injury status, matchup notes, minutes cap, confidence notes" /></label>
@@ -2884,16 +3103,14 @@ export function App() {
                       <button className="secondary" onClick={() => setAddingPlayerForTeam(null)}>Cancel</button>
                     </div>
                   ) : (
-                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos("PG"); setNewPlayerRole("Bench"); setNewPlayerHeight(""); setNewPlayerGrade(""); setNewPlayerNotes(""); }}>+ Add Player</button>
+                    <button className="secondary" style={{ marginTop: "0.75rem", width: "100%" }} onClick={() => { setAddingPlayerForTeam(team.id); setNewPlayerNum(""); setNewPlayerName(""); setNewPlayerPos(""); setNewPlayerRole(""); setNewPlayerHeight(""); setNewPlayerGrade(""); setNewPlayerNotes(""); }}>+ Add Player</button>
                   )}
                 </div>
               )}
             </div>
           ))}
         </div>
-        <datalist id="roster-role-options">
-          {ROLE_OPTIONS.map((role) => <option key={role} value={role} />)}
-        </datalist>
+
       </section>
       }
 
@@ -2925,6 +3142,22 @@ export function App() {
         </div>
 
         <div className="form-grid">
+          {rosterTeams.length > 0 && rosterTeams.map((team) => (
+            <label key={team.id} style={{ gridColumn: "1 / -1" }}>
+              Coaching Style For AI{rosterTeams.length > 1 ? ` — ${team.name}` : ""}
+              <textarea
+                className="settings-textarea"
+                defaultValue={team.coachStyle ?? ""}
+                placeholder="Example: We want to play fast, pressure the ball, and trust our bench in second-quarter runs."
+                onBlur={(event) => {
+                  if ((team.coachStyle ?? "") !== event.target.value) {
+                    updateTeamCoachStyle(team.id, event.target.value);
+                  }
+                }}
+              />
+            </label>
+          ))}
+
           <label style={{ gridColumn: "1 / -1" }}>
             Team Playing Style
             <textarea

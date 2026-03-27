@@ -6,12 +6,16 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Bench IQ">
+    <meta name="theme-color" content="#1a1a2e">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Stats Dashboard</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3.3">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}" />
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3.4">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 </head>
 <body>
@@ -24,7 +28,7 @@
                 <li><a href="/players" class="nav-link" data-page="players">Players</a></li>
                 <li><a href="/trends" class="nav-link" data-page="trends">Trends</a></li>
                 <li><a href="/ai-insights" class="nav-link" data-page="ai-insights">AI</a></li>
-                <li><a href="http://localhost:5173" class="nav-link" data-page="settings">Settings</a></li>
+                <li><a href="/settings" class="nav-link" data-page="settings">Settings</a></li>
             </ul>
         </div>
     </nav>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildPeriodLabels, getPeriodDefaultClock, getPeriodDurationSeconds, isGameEvent, isOvertimePeriod, parseGameEvent } from "../src/index.js";
+import { getPeriodDefaultClock, getPeriodDurationSeconds, isGameEvent, isOvertimePeriod, parseGameEvent, validateEventSequence } from "../src/index.js";
+import type { GameEvent } from "../src/index.js";
 
 describe("gameEventSchema", () => {
   it("parses a valid shot attempt event", () => {
@@ -134,13 +135,66 @@ describe("period helpers", () => {
     expect(getPeriodDefaultClock("OT2")).toBe("4:00");
   });
 
-  it("builds period labels through overtime", () => {
-    expect(buildPeriodLabels(0)).toEqual(["Q1", "Q2", "Q3", "Q4", "OT1"]);
-    expect(buildPeriodLabels(2)).toEqual(["Q1", "Q2", "Q3", "Q4", "OT1", "OT2", "OT3"]);
-  });
-
   it("detects overtime period strings", () => {
     expect(isOvertimePeriod("OT1")).toBe(true);
     expect(isOvertimePeriod("Q4")).toBe(false);
+
+  describe("semantic validation", () => {
   });
 });
+
+describe("semantic validation", () => {
+  const base = {
+      gameId: "g1", timestampIso: "2026-03-18T20:00:00.000Z",
+      teamId: "home", operatorId: "op-1",
+  };
+
+  it("rejects period_transition where newPeriod equals current period", () => {
+      expect(
+        isGameEvent({
+          ...base, id: "pt-same", sequence: 1, period: "Q1",
+          clockSecondsRemaining: 0, type: "period_transition", newPeriod: "Q1"
+        })
+      ).toBe(false);
+    });
+
+  it("accepts period_transition where newPeriod differs", () => {
+      expect(
+        isGameEvent({
+          ...base, id: "pt-ok", sequence: 1, period: "Q1",
+          clockSecondsRemaining: 0, type: "period_transition", newPeriod: "Q2"
+        })
+      ).toBe(true);
+    });
+
+  it("validateEventSequence returns no errors for correctly ordered events", () => {
+      const events: GameEvent[] = [1, 2, 3].map((seq) => parseGameEvent({
+        ...base, id: `e${seq}`, sequence: seq, period: "Q1",
+        clockSecondsRemaining: 480 - seq * 10,
+        type: "shot_attempt", playerId: "p1", made: false, points: 2, zone: "paint"
+      }));
+      expect(validateEventSequence(events)).toEqual([]);
+    });
+
+  it("validateEventSequence detects out-of-order sequence", () => {
+      const events: GameEvent[] = [
+        parseGameEvent({ ...base, id: "e1", sequence: 1, period: "Q1", clockSecondsRemaining: 460, type: "shot_attempt", playerId: "p1", made: false, points: 2, zone: "paint" }),
+        parseGameEvent({ ...base, id: "e3", sequence: 3, period: "Q1", clockSecondsRemaining: 440, type: "shot_attempt", playerId: "p1", made: false, points: 2, zone: "paint" }),
+        parseGameEvent({ ...base, id: "e2", sequence: 2, period: "Q1", clockSecondsRemaining: 450, type: "shot_attempt", playerId: "p1", made: false, points: 2, zone: "paint" }),
+      ];
+      const errors = validateEventSequence(events);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0]).toMatch(/sequence 2.*not greater than.*3|sequence.*2.*not greater/i);
+    });
+
+  it("validateEventSequence detects clock exceeding period maximum", () => {
+      const events: GameEvent[] = [
+        parseGameEvent({ ...base, id: "e1", sequence: 1, period: "Q1", clockSecondsRemaining: 480, type: "shot_attempt", playerId: "p1", made: false, points: 2, zone: "paint" }),
+        parseGameEvent({ ...base, id: "e2", sequence: 2, period: "OT1", clockSecondsRemaining: 241, type: "shot_attempt", playerId: "p1", made: false, points: 2, zone: "paint" }),
+      ];
+      const errors = validateEventSequence(events);
+      expect(errors.length).toBe(1);
+      expect(errors[0]).toMatch(/OT1.*241|241.*max 240/i);
+    });
+  });
+  });

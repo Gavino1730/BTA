@@ -50,10 +50,6 @@ function getRecentUserQueries(limit = 4) {
         .reverse();
 }
 
-function getWelcomeMessageMarkup() {
-    return '';
-}
-
 async function fetchJson(url, options = {}) {
     const response = await fetch(url, options);
     if (!response.ok) {
@@ -414,7 +410,7 @@ function clearChatHistory() {
         
         const container = document.getElementById('chat-messages-container');
         if (container) {
-            container.innerHTML = getWelcomeMessageMarkup();
+            container.innerHTML = '';
         }
 
         updateConversationWidgets();

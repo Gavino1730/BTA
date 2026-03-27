@@ -147,13 +147,7 @@ async function loadPlayers() {
 function renderZeroPlayerState() {
     const container = document.getElementById('players-container');
     if (!container) return;
-
-    container.innerHTML = `
-        <div class="player-card" style="cursor:default; opacity:0.9;">
-            <div class="player-number">#0</div>
-            <div class="player-name">${EMPTY_STATS_LABEL}</div>
-        </div>
-    `;
+    container.innerHTML = '';
 }
 
 async function syncBackendData() {
@@ -234,15 +228,6 @@ function startAutoSync() {
     }, SYNC_INTERVAL_MS);
     
     console.log(`Auto-sync started (interval: ${SYNC_INTERVAL_MS}ms)`);
-}
-
-function stopAutoSync() {
-    // Stop automatic data syncing
-    if (syncIntervalId) {
-        clearInterval(syncIntervalId);
-        syncIntervalId = null;
-        console.log('Auto-sync stopped');
-    }
 }
 
 async function deletePlayer(playerName) {
@@ -889,16 +874,16 @@ async function showPlayerDetail(playerName) {
 
             ${advancedHtml}
 
-            <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 1rem;">Game-by-Game Performance</h3>
-            <div style="overflow-x: auto; margin-bottom: 1.5rem;">
+            <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 0.75rem; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.06em;">Game-by-Game Performance</h3>
+            <div style="overflow-x: auto; margin-bottom: 1.5rem; border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
             <table class="box-score-table" style="min-width: 1200px;">
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Opponent</th>
+                        <th style="min-width:90px">Date</th>
+                        <th style="min-width:90px">Opponent</th>
                         <th>W/L</th>
                         <th>Edit</th>
-                        <th>PTS</th>
+                        <th style="color:var(--primary)">PTS</th>
                         <th>FG</th>
                         <th>FG%</th>
                         <th>3P</th>
@@ -927,29 +912,31 @@ async function showPlayerDetail(playerName) {
                         const fgPct = stats.fg_att > 0 ? (stats.fg_made / stats.fg_att * 100).toFixed(1) : '0.0';
                         const fg3Pct = stats.fg3_att > 0 ? (stats.fg3_made / stats.fg3_att * 100).toFixed(1) : '0.0';
                         const ftPct = stats.ft_att > 0 ? (stats.ft_made / stats.ft_att * 100).toFixed(1) : '0.0';
+                        const pm = stats.plus_minus;
+                        const resultColor = game.result === 'W' ? 'var(--success)' : game.result === 'L' ? 'var(--danger)' : 'var(--text-light)';
                         
                         return `
                             <tr>
-                                <td>${game.date}</td>
-                                <td>${game.location === 'away' ? '@' : 'vs'} ${game.opponent}</td>
-                                <td style="font-weight: 700; color: ${game.result === 'W' ? 'var(--success)' : '#dc3545'};">${game.result}</td>
-                                <td><a href="/games?editGameId=${encodeURIComponent(String(game.gameId))}" class="btn-primary" style="display:inline-block;padding:0.3rem 0.55rem;font-size:0.72rem;text-decoration:none;">Edit</a></td>
-                                <td style="font-weight: 700;">${stats.pts}</td>
+                                <td style="color:var(--text-light);font-size:0.8rem">${game.date}</td>
+                                <td>${game.location === 'away' ? '<span style="color:var(--text-light);font-size:0.8em">@</span> ' : '<span style="color:var(--text-light);font-size:0.8em">vs</span> '}${escapeHtml(game.opponent)}</td>
+                                <td style="font-weight:800;color:${resultColor}">${game.result}</td>
+                                <td><a href="/games?editGameId=${encodeURIComponent(String(game.gameId))}" class="table-edit-link">Edit</a></td>
+                                <td style="font-weight:800;color:var(--primary)">${stats.pts}</td>
                                 <td>${stats.fg_made}-${stats.fg_att}</td>
                                 <td>${fgPct}%</td>
                                 <td>${stats.fg3_made}-${stats.fg3_att}</td>
                                 <td>${fg3Pct}%</td>
                                 <td>${stats.ft_made}-${stats.ft_att}</td>
                                 <td>${ftPct}%</td>
-                                <td style="font-weight: 700;">${reb}</td>
+                                <td style="font-weight:700">${reb}</td>
                                 <td>${stats.oreb}</td>
                                 <td>${stats.dreb}</td>
-                                <td style="font-weight: 700;">${stats.asst}</td>
+                                <td style="font-weight:600">${stats.asst}</td>
                                 <td>${stats.stl}</td>
                                 <td>${stats.blk}</td>
-                                <td style="color: ${stats.to >= 4 ? '#dc3545' : 'inherit'};">${stats.to}</td>
+                                <td style="color:${stats.to >= 4 ? 'var(--danger)' : 'inherit'}">${stats.to}</td>
                                 <td>${stats.fouls}</td>
-                                <td style="font-weight: 700; color: ${stats.plus_minus > 0 ? 'var(--success)' : stats.plus_minus < 0 ? '#dc3545' : 'inherit'};">${stats.plus_minus > 0 ? '+' : ''}${stats.plus_minus}</td>
+                                <td style="font-weight:700;color:${pm > 0 ? 'var(--success)' : pm < 0 ? 'var(--danger)' : 'var(--text-light)'}">${pm > 0 ? '+' : ''}${pm}</td>
                             </tr>
                         `;
                     }).join('')}

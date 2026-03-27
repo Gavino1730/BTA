@@ -22,6 +22,100 @@ describe("game-state", () => {
       zone: "paint"
     };
 
+
+      describe("replay integration", () => {
+        const buildMixedEvents = (gameId: string): GameEvent[] => [
+          {
+            id: "r-shot-1", gameId, sequence: 1,
+            timestampIso: "2026-03-18T20:00:00.000Z", period: "Q1",
+            clockSecondsRemaining: 480, teamId: "home", operatorId: "op-1",
+            type: "shot_attempt", playerId: "h1", made: true, points: 2, zone: "paint"
+          },
+          {
+            id: "r-foul-1", gameId, sequence: 2,
+            timestampIso: "2026-03-18T20:00:10.000Z", period: "Q1",
+            clockSecondsRemaining: 470, teamId: "home", operatorId: "op-1",
+            type: "foul", playerId: "h2", foulType: "personal"
+          },
+          {
+            id: "r-shot-2", gameId, sequence: 3,
+            timestampIso: "2026-03-18T20:01:00.000Z", period: "Q1",
+            clockSecondsRemaining: 420, teamId: "away", operatorId: "op-1",
+            type: "shot_attempt", playerId: "a1", made: true, points: 3, zone: "above_break_three"
+          },
+          {
+            id: "r-ft-1", gameId, sequence: 4,
+            timestampIso: "2026-03-18T20:02:00.000Z", period: "Q1",
+            clockSecondsRemaining: 400, teamId: "home", operatorId: "op-1",
+            type: "free_throw_attempt", playerId: "h1", made: true, attemptNumber: 1, totalAttempts: 2
+          },
+          {
+            id: "r-ft-2", gameId, sequence: 5,
+            timestampIso: "2026-03-18T20:02:05.000Z", period: "Q1",
+            clockSecondsRemaining: 398, teamId: "home", operatorId: "op-1",
+            type: "free_throw_attempt", playerId: "h1", made: false, attemptNumber: 2, totalAttempts: 2
+          }
+        ];
+
+        it("is deterministic: applying same events twice produces identical state", () => {
+          const events = buildMixedEvents("game-det");
+          const stateA = replayEvents(createInitialGameState("game-det", "home", "away"), events);
+          const stateB = replayEvents(createInitialGameState("game-det", "home", "away"), events);
+          expect(stateA.scoreByTeam).toEqual(stateB.scoreByTeam);
+          expect(stateA.teamStats).toEqual(stateB.teamStats);
+          expect(stateA.playerStatsByTeam).toEqual(stateB.playerStatsByTeam);
+          expect(stateA.playerFouls).toEqual(stateB.playerFouls);
+          expect(stateA.lastSequence).toBe(stateB.lastSequence);
+        });
+
+        it("replay from beginning equals incremental applyEvent result", () => {
+          const events = buildMixedEvents("game-inc");
+          let incremental = createInitialGameState("game-inc", "home", "away");
+          for (const evt of events) {
+            incremental = applyEvent(incremental, evt);
+          }
+          const replayed = replayEvents(createInitialGameState("game-inc", "home", "away"), events);
+          expect(replayed.scoreByTeam).toEqual(incremental.scoreByTeam);
+          expect(replayed.teamStats).toEqual(incremental.teamStats);
+          expect(replayed.playerStatsByTeam).toEqual(incremental.playerStatsByTeam);
+          expect(replayed.lastSequence).toBe(incremental.lastSequence);
+        });
+
+        it("player foul-out persists after period transition", () => {
+          const fouls: GameEvent[] = [1, 2, 3, 4].map((seq) => ({
+            id: `fo-q1-${seq}`, gameId: "game-persist", sequence: seq,
+            timestampIso: "2026-03-18T20:00:00.000Z", period: "Q1",
+            clockSecondsRemaining: 480 - seq * 10, teamId: "home", operatorId: "op-1",
+            type: "foul" as const, playerId: "h1", foulType: "personal" as const
+          }));
+
+          const periodTransition: GameEvent = {
+            id: "pt-q2", gameId: "game-persist", sequence: 5,
+            timestampIso: "2026-03-18T20:10:00.000Z", period: "Q2",
+            clockSecondsRemaining: 480, teamId: "home", operatorId: "op-1",
+            type: "period_transition", newPeriod: "Q2"
+          };
+
+          const fifthFoul: GameEvent = {
+            id: "fo-q2-5", gameId: "game-persist", sequence: 6,
+            timestampIso: "2026-03-18T20:10:05.000Z", period: "Q2",
+            clockSecondsRemaining: 475, teamId: "home", operatorId: "op-1",
+            type: "foul", playerId: "h1", foulType: "personal"
+          };
+
+          const final = replayEvents(
+            createInitialGameState("game-persist", "home", "away"),
+            [...fouls, periodTransition, fifthFoul]
+          );
+
+          expect(final.playerFouls.h1).toBe(5);
+          expect(isPlayerFouledOut(final, "h1")).toBe(true);
+          // Fouls from Q1 still recorded
+          expect(final.teamFoulsByPeriod.home.Q1).toBe(4);
+          // Q2 foul also recorded
+          expect(final.teamFoulsByPeriod.home.Q2).toBe(1);
+        });
+      });
     const foul: GameEvent = {
       id: "evt-2",
       gameId: "game-1",
@@ -302,5 +396,97 @@ describe("game-state", () => {
     expect(final.playerStatsByTeam.home.h2.assists).toBe(1);
     expect(final.playerStatsByTeam.away.a3.steals).toBe(1);
     expect(final.playerStatsByTeam.home.h4.blocks).toBe(1);
+  });
+
+  describe("replay integration", () => {
+    const buildMixedEvents = (gameId: string): GameEvent[] => [
+      {
+        id: "r-shot-1", gameId, sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z", period: "Q1",
+        clockSecondsRemaining: 480, teamId: "home", operatorId: "op-1",
+        type: "shot_attempt", playerId: "h1", made: true, points: 2, zone: "paint"
+      },
+      {
+        id: "r-foul-1", gameId, sequence: 2,
+        timestampIso: "2026-03-18T20:00:10.000Z", period: "Q1",
+        clockSecondsRemaining: 470, teamId: "home", operatorId: "op-1",
+        type: "foul", playerId: "h2", foulType: "personal"
+      },
+      {
+        id: "r-shot-2", gameId, sequence: 3,
+        timestampIso: "2026-03-18T20:01:00.000Z", period: "Q1",
+        clockSecondsRemaining: 420, teamId: "away", operatorId: "op-1",
+        type: "shot_attempt", playerId: "a1", made: true, points: 3, zone: "above_break_three"
+      },
+      {
+        id: "r-ft-1", gameId, sequence: 4,
+        timestampIso: "2026-03-18T20:02:00.000Z", period: "Q1",
+        clockSecondsRemaining: 400, teamId: "home", operatorId: "op-1",
+        type: "free_throw_attempt", playerId: "h1", made: true, attemptNumber: 1, totalAttempts: 2
+      },
+      {
+        id: "r-ft-2", gameId, sequence: 5,
+        timestampIso: "2026-03-18T20:02:05.000Z", period: "Q1",
+        clockSecondsRemaining: 398, teamId: "home", operatorId: "op-1",
+        type: "free_throw_attempt", playerId: "h1", made: false, attemptNumber: 2, totalAttempts: 2
+      }
+    ];
+
+    it("is deterministic: applying same events twice produces identical state", () => {
+      const events = buildMixedEvents("game-det");
+      const stateA = replayEvents(createInitialGameState("game-det", "home", "away"), events);
+      const stateB = replayEvents(createInitialGameState("game-det", "home", "away"), events);
+      expect(stateA.scoreByTeam).toEqual(stateB.scoreByTeam);
+      expect(stateA.teamStats).toEqual(stateB.teamStats);
+      expect(stateA.playerStatsByTeam).toEqual(stateB.playerStatsByTeam);
+      expect(stateA.playerFouls).toEqual(stateB.playerFouls);
+      expect(stateA.lastSequence).toBe(stateB.lastSequence);
+    });
+
+    it("replay from beginning equals incremental applyEvent result", () => {
+      const events = buildMixedEvents("game-inc");
+      let incremental = createInitialGameState("game-inc", "home", "away");
+      for (const evt of events) {
+        incremental = applyEvent(incremental, evt);
+      }
+      const replayed = replayEvents(createInitialGameState("game-inc", "home", "away"), events);
+      expect(replayed.scoreByTeam).toEqual(incremental.scoreByTeam);
+      expect(replayed.teamStats).toEqual(incremental.teamStats);
+      expect(replayed.playerStatsByTeam).toEqual(incremental.playerStatsByTeam);
+      expect(replayed.lastSequence).toBe(incremental.lastSequence);
+    });
+
+    it("player foul-out persists after period transition", () => {
+      const fouls: GameEvent[] = [1, 2, 3, 4].map((seq) => ({
+        id: `fo-q1-${seq}`, gameId: "game-persist", sequence: seq,
+        timestampIso: "2026-03-18T20:00:00.000Z", period: "Q1",
+        clockSecondsRemaining: 480 - seq * 10, teamId: "home", operatorId: "op-1",
+        type: "foul" as const, playerId: "h1", foulType: "personal" as const
+      }));
+
+      const periodTransition: GameEvent = {
+        id: "pt-q2", gameId: "game-persist", sequence: 5,
+        timestampIso: "2026-03-18T20:10:00.000Z", period: "Q2",
+        clockSecondsRemaining: 480, teamId: "home", operatorId: "op-1",
+        type: "period_transition", newPeriod: "Q2"
+      };
+
+      const fifthFoul: GameEvent = {
+        id: "fo-q2-5", gameId: "game-persist", sequence: 6,
+        timestampIso: "2026-03-18T20:10:05.000Z", period: "Q2",
+        clockSecondsRemaining: 475, teamId: "home", operatorId: "op-1",
+        type: "foul", playerId: "h1", foulType: "personal"
+      };
+
+      const final = replayEvents(
+        createInitialGameState("game-persist", "home", "away"),
+        [...fouls, periodTransition, fifthFoul]
+      );
+
+      expect(final.playerFouls.h1).toBe(5);
+      expect(isPlayerFouledOut(final, "h1")).toBe(true);
+      expect(final.teamFoulsByPeriod.home.Q1).toBe(4);
+      expect(final.teamFoulsByPeriod.home.Q2).toBe(1);
+    });
   });
 });

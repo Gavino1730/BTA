@@ -140,12 +140,17 @@ class APIError(Exception):
     pass
 
 
-def build_stats_context(data_manager) -> str:
+def build_stats_context(data_manager, roster_metadata: Optional[Dict[str, Any]] = None) -> str:
     """Generate comprehensive stats context for AI analysis.
 
     This function always accesses the current data from data_manager,
     including any newly added games and updated player statistics.
     Call data_manager.reload() first if you need to refresh from files.
+
+    Args:
+        data_manager: DataManager instance with season stats.
+        roster_metadata: Optional dict with keys coachStyle, playingStyle,
+            teamContext, and players list (each with id, name, role, notes).
     """
     games = sorted(data_manager.games, key=lambda x: x["gameId"])
     season_stats = data_manager.season_team_stats
@@ -175,9 +180,20 @@ TEAM SEASON AVERAGES:
 - Field Goal %: {season_stats.get('fg_pct', 0):.1f}%
 - Three Point %: {season_stats.get('fg3_pct', 0):.1f}%
 - Free Throw %: {season_stats.get('ft_pct', 0):.1f}%
-
-GAME-BY-GAME RESULTS ({len(games)} games):
 """
+
+    # Inject coaching context from roster metadata when available
+    if roster_metadata:
+        coach_style = str(roster_metadata.get("coachStyle") or "").strip()
+        playing_style = str(roster_metadata.get("playingStyle") or "").strip()
+        team_context = str(roster_metadata.get("teamContext") or "").strip()
+        combined_style = " | ".join(s for s in [coach_style, playing_style] if s)
+        if combined_style:
+            context += f"\nCOACH STYLE: {combined_style}"
+        if team_context:
+            context += f"\nTEAM CONTEXT: {team_context}"
+
+    context += f"\nGAME-BY-GAME RESULTS ({len(games)} games):\n"
 
     for game in games:
         team_stats = game.get("team_stats", {})
@@ -205,6 +221,19 @@ Game {game.get('gameId')} - {game.get('date')} vs {game.get('opponent')}: {game.
 
     context += "\n\nPLAYER SEASON STATISTICS:\n"
 
+    # Build a player metadata lookup from roster_metadata if present
+    player_meta_by_name: Dict[str, Dict[str, str]] = {}
+    if roster_metadata:
+        for p in roster_metadata.get("players") or []:
+            if not isinstance(p, dict):
+                continue
+            pname = str(p.get("name") or "").strip().lower()
+            if pname:
+                player_meta_by_name[pname] = {
+                    "role": str(p.get("role") or "").strip(),
+                    "notes": str(p.get("notes") or "").strip(),
+                }
+
     for name, stats in sorted(
         data_manager.season_player_stats.items(),
         key=lambda x: x[1].get("ppg", 0),
@@ -213,8 +242,14 @@ Game {game.get('gameId')} - {game.get('date')} vs {game.get('opponent')}: {game.
         if name in EXCLUDED_PLAYERS:
             continue
         tpg = stats.get("to", 0) / max(stats.get("games", 1), 1)
+        meta = player_meta_by_name.get(name.lower(), {})
+        role_note = ""
+        if meta.get("role"):
+            role_note += f", role: {meta['role']}"
+        if meta.get("notes"):
+            role_note += f", notes: {meta['notes']}"
         context += f"""
-{name}: {stats.get('games', 0)}GP, {stats.get('ppg', 0):.1f}PPG, {stats.get('rpg', 0):.1f}RPG, {stats.get('apg', 0):.1f}APG, {tpg:.1f}TPG
+{name}: {stats.get('games', 0)}GP, {stats.get('ppg', 0):.1f}PPG, {stats.get('rpg', 0):.1f}RPG, {stats.get('apg', 0):.1f}APG, {tpg:.1f}TPG{role_note}
   Shooting: {stats.get('fg_pct', 0):.1f}%FG, {stats.get('fg3_pct', 0):.1f}%3P, {stats.get('ft_pct', 0):.1f}%FT"""
 
     return context

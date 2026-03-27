@@ -23,8 +23,124 @@
         </div>
     </div>
 </div>
+
+<style>
+.games-page .game-card {
+    background: linear-gradient(160deg, rgba(24, 42, 84, 0.95) 0%, rgba(16, 32, 67, 0.96) 100%);
+    border-radius: 14px;
+    padding: 1rem;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    gap: 0.95rem;
+    min-height: 210px;
+}
+
+.games-page .game-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.32);
+    border-color: rgba(79, 140, 255, 0.55);
+}
+
+.games-page .game-card-header {
+    align-items: flex-start;
+    gap: 0.65rem;
+}
+
+.games-page .game-card-date {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.games-page .game-card-actions {
+    gap: 0.4rem;
+}
+
+.games-page .game-card .result-badge {
+    min-width: 30px;
+    padding: 0.28rem 0.5rem;
+    border-radius: 8px;
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.games-page .game-edit-btn {
+    background: rgba(79, 140, 255, 0.14) !important;
+    border: 1px solid rgba(79, 140, 255, 0.35) !important;
+    color: var(--primary) !important;
+    border-radius: 7px;
+    padding: 0.2rem 0.45rem;
+    min-width: 34px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.games-page .game-edit-btn:hover {
+    background: rgba(79, 140, 255, 0.24) !important;
+    border-color: var(--primary) !important;
+    color: #cfe0ff !important;
+}
+
+.games-page .game-delete-btn {
+    background: rgba(248, 113, 113, 0.1) !important;
+    border: 1px solid rgba(248, 113, 113, 0.35) !important;
+    color: var(--danger) !important;
+    border-radius: 7px;
+    padding: 0.2rem 0.45rem;
+    min-width: 34px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.games-page .game-delete-btn:hover {
+    background: rgba(248, 113, 113, 0.2) !important;
+    border-color: var(--danger) !important;
+    color: #ffd2d2 !important;
+}
+
+.games-page .game-card-opponent {
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-align: center;
+}
+
+.games-page .game-card-score {
+    justify-content: center;
+    gap: 0.9rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.games-page .game-card-score-vc,
+.games-page .game-card-score-opp {
+    font-size: 2rem;
+    font-weight: 800;
+    min-width: 2ch;
+}
+
+.games-page .game-card-score-divider {
+    color: rgba(255, 255, 255, 0.32);
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.games-page .game-card-diff {
+    font-size: 1.15rem;
+    font-weight: 800;
+    padding: 0.42rem 0.6rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    min-width: 56px;
+    margin: 0 auto;
+}
+</style>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='games.js') }}?v=3.3"></script>
+<script src="{{ url_for('static', filename='games.js') }}?v=3.5"></script>
 {% endblock %}

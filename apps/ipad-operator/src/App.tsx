@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getPeriodDefaultClock, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
-import { QRCodeSVG } from "qrcode.react";
+import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
   addPlayerViaRealtime,
@@ -54,16 +53,6 @@ const TEAM_COLOR_OPTIONS = [
   "#14b8a6",
 ] as const;
 
-function normalizeTeamColor(value: string | undefined, fallback: string): string {
-  if (!value) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (/^#[0-9a-f]{6}$/.test(normalized)) return normalized;
-  if (/^#[0-9a-f]{3}$/.test(normalized)) {
-    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
-  }
-  return fallback;
-}
-
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
 function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
   return setup.apiKey ? { "x-api-key": setup.apiKey } : {};
@@ -98,6 +87,8 @@ function buildCoachViewUrl(
     myTeamName?: string;
     opponentName?: string;
     vcSide?: "home" | "away";
+    homeTeamColor?: string;
+    awayTeamColor?: string;
   }
 ): string {
   const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
@@ -107,6 +98,8 @@ function buildCoachViewUrl(
   if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);
   if (setup.opponentName) params.set("opponentName", setup.opponentName);
   if (setup.vcSide) params.set("vcSide", setup.vcSide);
+  if (setup.homeTeamColor) params.set("homeColor", setup.homeTeamColor);
+  if (setup.awayTeamColor) params.set("awayColor", setup.awayTeamColor);
   return `${base}/?${params.toString()}`;
 }
 
@@ -233,11 +226,31 @@ function withStandardizedTeams(data: AppData): AppData {
 }
 
 // ---- Storage helpers ----
+function isValidApiUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow http and https protocols
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return false;
+    }
+    // Ensure hostname is not empty
+    return parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function loadAppData(): AppData {
   // Check URL params first — a QR-code scan may carry config overrides.
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
-  if (qp.get("apiUrl"))      urlSetup.apiUrl      = qp.get("apiUrl")!;
+  
+  // Validate API URL from QR code — only allow whitelisted or same-origin URLs
+  const qrApiUrl = qp.get("apiUrl");
+  if (qrApiUrl && isValidApiUrl(qrApiUrl)) {
+    urlSetup.apiUrl = qrApiUrl;
+  }
+  
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
   if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
@@ -250,8 +263,8 @@ function loadAppData(): AppData {
   if (qp.get("trackPossession") === "1" || qp.get("trackPossession") === "0") urlSetup.trackPossession = qp.get("trackPossession") === "1";
   if (qp.get("trackTimeouts") === "1" || qp.get("trackTimeouts") === "0") urlSetup.trackTimeouts = qp.get("trackTimeouts") === "1";
   if (qp.get("opponentTrackStats")) urlSetup.opponentTrackStats = normalizeOpponentTrackStats((qp.get("opponentTrackStats") ?? "").split(","));
-  if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined, DEFAULT_HOME_TEAM_COLOR);
-  if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined, DEFAULT_AWAY_TEAM_COLOR);
+  if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
+  if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
 
   try {
     const s = localStorage.getItem(APP_DATA_KEY);
@@ -269,8 +282,8 @@ function loadAppData(): AppData {
       gs.trackPossession = gs.trackPossession ?? true;
       gs.trackTimeouts = gs.trackTimeouts ?? true;
       gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
-      gs.homeTeamColor = normalizeTeamColor(gs.homeTeamColor, DEFAULT_HOME_TEAM_COLOR);
-      gs.awayTeamColor = normalizeTeamColor(gs.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR);
+      gs.homeTeamColor = normalizeTeamColor(gs.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR;
+      gs.awayTeamColor = normalizeTeamColor(gs.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR;
       return withStandardizedTeams({
         ...DEFAULT_DATA,
         ...parsed,
@@ -503,7 +516,11 @@ function describeEvent(
     case "block":
       return { main: "block", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "teal" };
     case "substitution":
-      return { main: "sub", detail: `${tn(event.teamId)}  ${pn(event.playerOutId)} â†’ ${pn(event.playerInId)}`, accent: "white" };
+      return {
+        main: `${pn(event.playerOutId)} -> ${pn(event.playerInId)}`,
+        detail: tn(event.teamId),
+        accent: "white",
+      };
     case "possession_start":
       return { main: "possession", detail: tn(event.possessedByTeamId), accent: "white" };
     case "timeout":
@@ -582,22 +599,6 @@ function formatPct(made: number, attempts: number): string {
   return `${Math.round((made / attempts) * 100)}%`;
 }
 
-const INSIGHT_LABEL_COLORS: Record<string, string> = {
-  MOMENTUM:       '#4f8cff',
-  SHOOTING:       '#a78bfa',
-  REBOUNDING:     '#34d399',
-  'BALL SECURITY':'#34c759',
-  'FOUL WATCH':   '#ff9500',
-  'HOT HAND':     '#f2c24b',
-  ROTATION:       '#22d3ee',
-  'GAME PLAN':    '#4ade80',
-};
-function parseInsightSection(s: string): { label: string; text: string } {
-  const m = s.match(/^([A-Z][A-Z &/]+):\s*(.+)$/);
-  if (m) return { label: m[1], text: m[2] };
-  return { label: '', text: s };
-}
-
 interface SharedLiveInsight {
   id: string;
   type: string;
@@ -608,123 +609,10 @@ interface SharedLiveInsight {
   relatedPlayerId?: string;
 }
 
-function toInsightLabel(type: string): string {
-  const labels: Record<string, string> = {
-    ai_coaching: "COACHING",
-    timeout_suggestion: "TIMEOUT",
-    sub_suggestion: "ROTATION",
-    foul_trouble: "FOUL WATCH",
-    foul_warning: "FOUL WATCH",
-    team_foul_warning: "FOUL WATCH",
-    hot_hand: "HOT HAND",
-    run_detection: "MOMENTUM",
-    turnover_pressure: "BALL SECURITY",
-    shot_profile: "SHOOTING",
-    ot_awareness: "GAME PLAN",
-    pre_game: "GAME PLAN",
-  };
-  return labels[type] ?? "GAME PLAN";
-}
-
 function playerNameFromId(playerId: string | undefined, players: Player[]): string {
   if (!playerId) return "Team";
   const match = players.find((p) => p.id === playerId);
   return match?.name ?? playerId;
-}
-
-function createAiInsights(args: {
-  trackedTeamName: string;
-  opponentTeamName: string;
-  trackedScore: number;
-  opponentScore: number;
-  trackedStats: ReturnType<typeof computeTeamStats>;
-  opponentStats: ReturnType<typeof computeTeamStats>;
-  topScorer?: { name: string; points: number };
-  foulAlerts: Player[];
-  playerTotals: Record<string, RunningTotals>;
-  gameMoment?: string;
-  isPreGame?: boolean;
-}): string[] {
-  const {
-    trackedTeamName,
-    opponentTeamName,
-    trackedScore,
-    opponentScore,
-    trackedStats,
-    opponentStats,
-    topScorer,
-    foulAlerts,
-    playerTotals,
-    gameMoment,
-    isPreGame,
-  } = args;
-
-  // Pre-game: don't invent insights from zero data
-  if (isPreGame) {
-    return [`Good luck out there! 🏀 ${trackedTeamName} vs ${opponentTeamName} is about to tip off. Insights will appear after the first few possessions.`];
-  }
-
-  const insights: string[] = [];
-  const margin = trackedScore - opponentScore;
-  if (gameMoment) {
-    const momentCtx = margin >= 8
-      ? `+${margin} lead — protect pace and attack weak spots.`
-      : margin <= -8
-      ? `Down ${Math.abs(margin)} — push tempo and force turnovers.`
-      : `One possession game — next 3-4 possessions will decide momentum.`;
-    insights.push(`MOMENTUM: ${gameMoment}. ${momentCtx}`);
-  } else {
-    if (margin >= 8) {
-      insights.push(`MOMENTUM: ${trackedTeamName} is controlling at +${margin}. Keep pace and avoid empty possessions.`);
-    } else if (margin <= -8) {
-      insights.push(`MOMENTUM: ${trackedTeamName} is down ${Math.abs(margin)}. Prioritize high-percentage shots and stop fouling.`);
-    } else {
-      insights.push(`MOMENTUM: Close game so far. The next 3-4 possessions can swing this.`);
-    }
-  }
-
-  const fgDiff = (trackedStats.fga > 0 ? (trackedStats.fg / trackedStats.fga) * 100 : 0)
-    - (opponentStats.fga > 0 ? (opponentStats.fg / opponentStats.fga) * 100 : 0);
-  if (fgDiff >= 8) {
-    insights.push(`SHOOTING: ${trackedTeamName} is winning shot efficiency (${formatPct(trackedStats.fg, trackedStats.fga)} FG). Keep attacking those same looks.`);
-  } else if (fgDiff <= -8) {
-    insights.push(`SHOOTING: ${opponentTeamName} has the edge (${formatPct(opponentStats.fg, opponentStats.fga)} vs ${formatPct(trackedStats.fg, trackedStats.fga)}). Create easier looks at the rim.`);
-  } else {
-    insights.push(`SHOOTING: Shooting is even — focus on shot quality and limiting contested 2s.`);
-  }
-
-  const reboundDiff = trackedStats.reb - opponentStats.reb;
-  if (reboundDiff >= 4) {
-    insights.push(`REBOUNDING: +${reboundDiff} rebounding edge for ${trackedTeamName}. Second-chance pressure is working — keep crashing hard.`);
-  } else if (reboundDiff <= -4) {
-    insights.push(`REBOUNDING: ${trackedTeamName} is losing the glass by ${Math.abs(reboundDiff)}. Box-outs are a priority this possession.`);
-  } else {
-    insights.push(`REBOUNDING: Boards are close. Better box-out discipline can tip the advantage.`);
-  }
-
-  const turnoverDiff = trackedStats.to - opponentStats.to;
-  if (turnoverDiff >= 3) {
-    insights.push(`BALL SECURITY: ${trackedStats.to} turnovers are hurting possessions. Slow down entry actions and protect the ball.`);
-  } else if (turnoverDiff <= -3) {
-    insights.push(`BALL SECURITY: Ball security advantage (${trackedStats.to} TOs). Keep forcing pressure — it's creating easy buckets.`);
-  } else {
-    insights.push(`BALL SECURITY: Turnovers are neutral. One careless stretch can shift momentum.`);
-  }
-
-  if (topScorer && topScorer.points >= 8) {
-    insights.push(`HOT HAND: ${topScorer.name} leads with ${topScorer.points} points. Keep getting him the ball in his spots.`);
-  }
-
-  if (foulAlerts.length > 0) {
-    const sortedByFouls = [...foulAlerts]
-      .sort((a, b) => (playerTotals[b.id]?.fouls ?? 0) - (playerTotals[a.id]?.fouls ?? 0));
-    const atRisk = sortedByFouls[0];
-    const foulCount = playerTotals[atRisk.id]?.fouls ?? 0;
-    const urgency = foulCount >= 4 ? "sit him immediately" : "consider a short rest to protect him";
-    insights.push(`FOUL WATCH: ${atRisk.name} has ${foulCount} fouls — ${urgency}.`);
-  }
-
-  return insights.slice(0, 5);
 }
 
 // ---- Dashboard stats helpers (Stats dashboard integration) ----
@@ -856,6 +744,14 @@ interface InlineNotice {
   message: string;
 }
 
+interface OperatorAlert {
+  id: string;
+  type: string;
+  priority: "urgent" | "important" | "info";
+  message: string;
+  explanation: string;
+}
+
 interface ConfirmDialogState {
   title: string;
   message: string;
@@ -950,6 +846,8 @@ export function App() {
   const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [inlineNotice, setInlineNotice] = useState<InlineNotice | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [liveAlerts, setLiveAlerts] = useState<OperatorAlert[]>([]);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
   const noticeTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -1071,8 +969,8 @@ export function App() {
   const awayTeamAbbr = vcSideSetup === "away"
     ? (myTeam?.abbreviation ?? awayTeamName.slice(0, 3).toUpperCase())
     : (opponentName ? opponentName.slice(0, 3).toUpperCase() : "OPP");
-  const homeTeamColor = normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR);
-  const awayTeamColor = normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR);
+  const homeTeamColor = normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR;
+  const awayTeamColor = normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR;
   const opponentTrackStats = normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats);
   const opponentTrackSet = new Set<OpponentTrackStat>(opponentTrackStats);
   const trackClock = appData.gameSetup.trackClock ?? true;
@@ -1172,6 +1070,41 @@ export function App() {
     };
 
     socket.on("connect", register);
+    
+    // Error handlers for socket failures
+    socket.on("connect_error", (error: unknown) => {
+      const msg = error instanceof Error ? error.message : "Connection error";
+      showInlineNotice(`Server connection failed: ${msg}. Retrying...`, "error");
+    });
+    
+    socket.on("disconnect", (reason: string) => {
+      if (reason !== "io client namespace disconnect") {
+        showInlineNotice(`Disconnected from server (${reason}). Check your connection.`, "warning");
+      }
+    });
+    
+    socket.on("error", (error: unknown) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      showInlineNotice(`Server error: ${msg}`, "error");
+    });
+
+    socket.on("game:insights", (payload: unknown) => {
+      if (!Array.isArray(payload)) return;
+      const alerts: OperatorAlert[] = (payload as Array<Record<string, unknown>>)
+        .filter((i) => i.priority === "urgent" || i.priority === "important")
+        .map((i) => ({
+          id: String(i.id ?? ""),
+          type: String(i.type ?? ""),
+          priority: (i.priority === "urgent" ? "urgent" : "important") as "urgent" | "important",
+          message: String(i.message ?? ""),
+          explanation: String(i.explanation ?? ""),
+        }))
+        .filter((i) => i.id && i.message);
+      if (alerts.length > 0) {
+        setLiveAlerts(alerts);
+      }
+    });
+
     register();
 
     const heartbeat = setInterval(() => {
@@ -1183,6 +1116,10 @@ export function App() {
     return () => {
       clearInterval(heartbeat);
       socket.off("connect", register);
+      socket.off("connect_error");
+      socket.off("disconnect");
+      socket.off("error");
+      socket.off("game:insights");
       socket.disconnect();
     };
   }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.deviceId, gameId, gamePhase]);
@@ -1195,14 +1132,19 @@ export function App() {
     async function hydrate() {
       try {
         const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
-        if (!res.ok) { setSubmittedEvents([]); return; }
+        if (!res.ok) {
+          // Don't wipe submitted events on error — keep local state
+          return;
+        }
         const events = ((await res.json()) as GameEvent[]).map(normalizeEventTeamId);
         setSubmittedEvents(events);
         const highest = events.reduce((m, e) => Math.max(m, e.sequence), 0);
         const next = Math.max(localSeq, highest + 1);
         setSequence(next);
         saveSeq(gameId, next);
-      } catch { /* offline */ }
+      } catch {
+        // Hydration failed (offline) — keep local pending queue intact
+      }
     }
     void hydrate();
   }, [gameId]);
@@ -1218,11 +1160,18 @@ export function App() {
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(normalizedEvent),
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        const errorMsg = `Submit failed (${res.status}). Check connection and tap Submit again.`;
+        showInlineNotice(errorMsg, "error", 10000);
+        return false;
+      }
       setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
       setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
+      showInlineNotice("✓ Stat saved", "success", 1500);
       return true;
-    } catch {
+    } catch (err) {
+      const errorMsg = `Network error. Event queued offline — will sync when reconnected.`;
+      showInlineNotice(errorMsg, "warning", 10000);
       setPendingEvents(cur => {
         if (cur.some(p => p.id === normalizedEvent.id)) return cur;
         return [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence);
@@ -1233,14 +1182,19 @@ export function App() {
 
   async function flushQueue() {
     if (!navigator.onLine || pendingEvents.length === 0) return;
+    let successCount = 0;
     for (const evt of pendingEvents) {
       const ok = await submitEvent(evt);
-      if (!ok) break;
+      if (ok) successCount++;
+      // Continue trying remaining events even if one fails
     }
-    try {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
-      if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
-    } catch { /* empty */ }
+    if (successCount > 0) {
+      try {
+        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
+        if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
+      } catch { /* empty */ }
+        showInlineNotice(`✓ ${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
+    }
   }
 
   useEffect(() => { if (online) void flushQueue(); }, [online]);
@@ -1745,31 +1699,7 @@ export function App() {
     }
     return current;
   }, [trackedPlayers, pTotals]);
-  const fallbackSummaryInsights = useMemo(() => {
-    const trackedSide: TeamSide = vcSideSetup;
-    const trackedStats = trackedSide === "home" ? homeTeamStats : awayTeamStats;
-    const opponentStats = trackedSide === "home" ? awayTeamStats : homeTeamStats;
-    const gameMoment = appData.gameSetup.clockEnabled === false ? undefined : `${period} ${clockInput}`;
-    const totalScore = scores.home + scores.away;
-    const preGame = gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5);
-    return createAiInsights({
-      trackedTeamName: trackedSide === "home" ? homeTeamName : awayTeamName,
-      opponentTeamName: trackedSide === "home" ? awayTeamName : homeTeamName,
-      trackedScore: scores[trackedSide],
-      opponentScore: scores[trackedSide === "home" ? "away" : "home"],
-      trackedStats,
-      opponentStats,
-      topScorer: trackedTopScorer,
-      foulAlerts,
-      playerTotals: pTotals,
-      gameMoment,
-      isPreGame: preGame,
-    });
-  }, [vcSideSetup, homeTeamStats, awayTeamStats, homeTeamName, awayTeamName, scores, trackedTopScorer, foulAlerts, pTotals, appData.gameSetup.clockEnabled, period, clockInput, gamePhase, allEventObjs]);
-
-  const activeSummaryInsights = summaryAiInsights && summaryAiInsights.length > 0
-    ? summaryAiInsights
-    : fallbackSummaryInsights;
+  const activeSummaryInsights = summaryAiInsights ?? [];
   const maxOtInEvents = useMemo(() => {
     return allEventObjs.reduce((maxOt, event) => {
       if (!isOvertimePeriod(event.period)) return maxOt;
@@ -1896,13 +1826,12 @@ export function App() {
 
   async function fetchOpenAiSummaryInsights() {
     const trackedSide: TeamSide = vcSideSetup;
-    const trackedTeamName = trackedSide === "home" ? homeTeamName : awayTeamName;
     const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
 
     // Pre-game guard: 0-0 score in Q1 with minimal events
     const totalScore = scores.home + scores.away;
     if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
-      setSummaryAiInsights(["Good luck out there! 🏀 First action on the way — check back once the game picks up."]);
+      setSummaryAiInsights(null);
       return;
     }
 
@@ -1928,14 +1857,13 @@ export function App() {
         .filter((insight) => insight.type === "ai_coaching" || insight.confidence !== "low")
         .slice(0, 7)
         .map((insight) => {
-          const label = toInsightLabel(insight.type);
           const base = insight.message?.trim() || insight.explanation?.trim() || "No insight text available.";
           const why = insight.explanation?.trim() || "";
           const compact = why && !base.includes(why) ? `${base} — ${why}` : base;
-          return `${label}: ${compact}`;
+          return compact;
         });
 
-      setSummaryAiInsights(lines.length > 0 ? lines : [`GAME PLAN: Keep composure and execute next-possession fundamentals for ${trackedTeamName}.`]);
+      setSummaryAiInsights(lines.length > 0 ? lines : null);
     } catch {
       setSummaryAiInsights(null);
     } finally {
@@ -1946,14 +1874,13 @@ export function App() {
   async function fetchPlayerAiInsights() {
     if (trackedPlayers.length === 0) return;
     const trackedSide: TeamSide = vcSideSetup;
-    const trackedTeamName = trackedSide === "home" ? homeTeamName : awayTeamName;
     const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
     const trackedTeamId = trackedSide === "home" ? homeTeamId : awayTeamId;
 
     // Pre-game guard
     const totalScore = scores.home + scores.away;
     if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
-      setSummaryPlayerAiInsights(["HOT HAND: No stats yet — player insights will appear once game action begins.", "FOUL WATCH: All players starting foul-free.", "ROTATION: Starting lineups not yet established.", "GAME PLAN: Focus on your game plan — insights coming after first possessions."]);
+      setSummaryPlayerAiInsights(null);
       return;
     }
 
@@ -1984,11 +1911,10 @@ export function App() {
         })
         .slice(0, 7)
         .map((insight) => {
-          const label = toInsightLabel(insight.type);
           const playerName = playerNameFromId(insight.relatedPlayerId, trackedPlayers);
           const core = insight.message?.trim() || insight.explanation?.trim() || "No player guidance available.";
           const withPlayer = insight.relatedPlayerId ? `${playerName}: ${core}` : core;
-          return `${label}: ${withPlayer}`;
+          return withPlayer;
         });
 
       if (playerLines.length > 0) {
@@ -1996,21 +1922,7 @@ export function App() {
         return;
       }
 
-      // Fallback from live tracked player stats if shared insights have no player-specific lines yet.
-      const sortedPlayers = [...trackedPlayers]
-        .sort((a, b) => (pTotals[b.id]?.points ?? 0) - (pTotals[a.id]?.points ?? 0));
-      const top = sortedPlayers[0];
-      const topPts = top ? (pTotals[top.id]?.points ?? 0) : 0;
-      const foulRisk = sortedPlayers.find((p) => (pTotals[p.id]?.fouls ?? 0) >= 3);
-
-      const fallbackLines = [
-        top && topPts > 0 ? `HOT HAND: ${top.name} is leading with ${topPts} points — keep him involved in primary actions.` : "HOT HAND: No clear hot hand yet — evaluate next 2-3 possessions.",
-        foulRisk ? `FOUL WATCH: ${foulRisk.name} has ${(pTotals[foulRisk.id]?.fouls ?? 0)} fouls — manage his defensive matchups.` : "FOUL WATCH: No immediate foul trouble among tracked players.",
-        "ROTATION: Use the next dead ball to refresh one high-turnover or high-foul risk slot.",
-        `GAME PLAN: Prioritize efficient touches for ${trackedTeamName} and protect ball security in the next possession.`,
-      ];
-
-      setSummaryPlayerAiInsights(fallbackLines);
+      setSummaryPlayerAiInsights(null);
     } catch {
       setSummaryPlayerAiInsights(null);
     } finally {
@@ -2511,13 +2423,15 @@ export function App() {
   }
 
   function confirmSubIn(playerInId: string) {
-    if (!modal || modal.kind !== "sub2") return;
+    if (!modal || (modal.kind !== "sub2" && modal.kind !== "sub1")) return;
+    const playerOutId = modal.kind === "sub2" ? modal.playerOutId : modal.playerOutId;
+    if (!playerOutId) return;
     if (modal.editContext) {
       void saveEditedEvent({
         ...modal.editContext.originalEvent,
         teamId: resolveTeamId(modal.teamId),
         type: "substitution",
-        playerOutId: modal.playerOutId,
+        playerOutId,
         playerInId,
       } as GameEvent, modal.editContext);
       return;
@@ -2526,7 +2440,7 @@ export function App() {
       ...base(sequence),
       teamId: resolveTeamId(modal.teamId),
       type: "substitution",
-      playerOutId: modal.playerOutId,
+      playerOutId,
       playerInId,
     });
     closeModal();
@@ -3040,6 +2954,37 @@ export function App() {
     );
   }
 
+  function renderAlertBanner() {
+    const visible = liveAlerts.filter((a) => !dismissedAlertIds.has(a.id));
+    if (visible.length === 0) return null;
+    const top = visible[0];
+    const isUrgent = top.priority === "urgent";
+    return (
+      <div
+        className={`operator-alert-banner operator-alert-banner-${top.priority}`}
+        role="alert"
+        aria-live="assertive"
+      >
+        <div className="operator-alert-content">
+          <span className={`operator-alert-badge operator-alert-badge-${top.priority}`}>
+            {isUrgent ? "URGENT" : "ALERT"}
+          </span>
+          <span className="operator-alert-message">{top.message}</span>
+          {visible.length > 1 && (
+            <span className="operator-alert-count">+{visible.length - 1} more</span>
+          )}
+        </div>
+        <button
+          className="operator-alert-dismiss"
+          onClick={() => setDismissedAlertIds((prev) => new Set([...prev, top.id]))}
+          aria-label="Dismiss alert"
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
   function renderConfirmDialog() {
     if (!confirmDialog) return null;
     return (
@@ -3154,7 +3099,12 @@ export function App() {
             <input
               className="pregame-device-input"
               value={preGameDeviceId}
-              onChange={e => setPreGameDeviceId(e.target.value)}
+              onChange={e => {
+                setPreGameDeviceId(e.target.value);
+                const normalized = normalizeDeviceId(e.target.value);
+                persistData({ ...appData, gameSetup: { ...appData.gameSetup, deviceId: normalized } });
+                localStorage.setItem(DEVICE_ID_KEY, normalized);
+              }}
               onBlur={persistPreGameDeviceId}
               placeholder="device1"
             />
@@ -3355,6 +3305,8 @@ export function App() {
       myTeamName: myTeam?.name,
       opponentName: appData.gameSetup.opponent,
       vcSide: appData.gameSetup.vcSide,
+      homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
+      awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
     });
     return (
       <div className="postgame-screen">
@@ -3493,6 +3445,8 @@ export function App() {
     myTeamName: myTeam?.name,
     opponentName: appData.gameSetup.opponent,
     vcSide: appData.gameSetup.vcSide,
+    homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
+    awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
   });
 
   return (
@@ -3504,6 +3458,7 @@ export function App() {
       }}
     >
       {renderInlineNotice()}
+      {renderAlertBanner()}
       {renderConfirmDialog()}
       {renderModal()}
       {showGameSummary && (
@@ -3664,16 +3619,11 @@ export function App() {
                     {!summaryAiLoading && activeSummaryInsights.length === 0 && (
                       <p className="summary-ai-status">No insights yet. Capture a few more possessions.</p>
                     )}
-                    {activeSummaryInsights.map((insight, index) => {
-                      const { label, text } = parseInsightSection(insight);
-                      const color = INSIGHT_LABEL_COLORS[label] ?? 'rgba(232,234,240,0.55)';
-                      return (
-                        <div key={index} className="insight-section">
-                          {label && <span className="insight-label" style={{ color, background: `${color}1a` }}>{label}</span>}
-                          <p className="insight-text">{text}</p>
-                        </div>
-                      );
-                    })}
+                    {activeSummaryInsights.map((insight, index) => (
+                      <div key={index} className="insight-section">
+                        <p className="insight-text">{insight}</p>
+                      </div>
+                    ))}
                   </div>
                   {!summaryAiLoading && (
                     <button
@@ -3783,16 +3733,11 @@ export function App() {
                     {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (summaryPlayerAiInsights ?? []).length === 0 && (
                       <p className="summary-ai-status">No suggestions yet — capture more possessions or check your connection.</p>
                     )}
-                    {(summaryPlayerAiInsights ?? []).map((insight, index) => {
-                      const { label, text } = parseInsightSection(insight);
-                      const color = INSIGHT_LABEL_COLORS[label] ?? 'rgba(232,234,240,0.55)';
-                      return (
-                        <div key={index} className="insight-section">
-                          {label && <span className="insight-label" style={{ color, background: `${color}1a` }}>{label}</span>}
-                          <p className="insight-text">{text}</p>
-                        </div>
-                      );
-                    })}
+                    {(summaryPlayerAiInsights ?? []).map((insight, index) => (
+                      <div key={index} className="insight-section">
+                        <p className="insight-text">{insight}</p>
+                      </div>
+                    ))}
                   </div>
                   {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (
                     <button
@@ -3866,8 +3811,11 @@ export function App() {
         <div className="scoreboard">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.4rem" }}>
             {appData.gameSetup.deviceId && (
-              <div className="score-device-id" style={{ margin: 0 }} title="Operator device identifier">
-                Device ID: {appData.gameSetup.deviceId}
+              <div className="score-device-id" style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.4rem" }} title="Operator device identifier">
+                <span>Device ID: {appData.gameSetup.deviceId}</span>
+                <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline — events queued locally"}>
+                  ●
+                </span>
               </div>
             )}
             <div className={`game-state-banner game-state-${currentGameState.tone}`} style={{ margin: 0 }}>
@@ -3933,22 +3881,39 @@ export function App() {
             const sectionLabel = getEventSectionLabel(event);
             const teamBucket = getEventTeamBucket(event, homeTeamId, awayTeamId);
             const teamColor = teamBucket === "home" ? homeTeamColor : teamBucket === "away" ? awayTeamColor : undefined;
+            const isLast = allEvents[allEvents.length - 1]?.event.id === event.id;
             return (
-              <button
+              <div
                 key={event.id}
-                type="button"
-                className={`feed-item feed-item-${teamBucket}${pending ? " feed-pending" : ""}`}
-                style={teamColor ? ({ ["--feed-team-color" as string]: teamColor }) : undefined}
-                onClick={() => openFeedEventEditor({ event, pending })}
+                className="feed-item-wrapper"
               >
-                <span className="feed-stamp">{eventStamp}</span>
-                <span className="feed-main-row">
-                  <span className="feed-section-tag">{sectionLabel}</span>
-                  <span className={`feed-main ac-${d.accent}`}>{d.main}</span>
-                  <span className="feed-item-action">Edit</span>
-                </span>
-                {d.detail && <span className="feed-detail">{d.detail}</span>}
-              </button>
+                <button
+                  type="button"
+                  className={`feed-item feed-item-${teamBucket}${pending ? " feed-pending" : ""}`}
+                  style={teamColor ? ({ ["--feed-team-color" as string]: teamColor }) : undefined}
+                  onClick={() => openFeedEventEditor({ event, pending })}
+                >
+                  <span className="feed-stamp">{eventStamp}</span>
+                  <span className="feed-main-row">
+                    <span className="feed-section-tag">{sectionLabel}</span>
+                    <span className={`feed-main ac-${d.accent}`}>{d.main}</span>
+                    <span className="feed-item-action">Edit</span>
+                  </span>
+                  {d.detail && <span className="feed-detail">{d.detail}</span>}
+                </button>
+                {isLast && (
+                  <button
+                    className="feed-undo-btn"
+                    title="Undo: Quick delete this event"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void deleteEventRecord({ event, pending });
+                    }}
+                  >
+                    ↶
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -4289,6 +4254,17 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           headers: apiKeyHeader(appData.gameSetup),
         });
         if (!response.ok) {
+          // Seed defaults from stats dashboard if realtime API has nothing yet
+          const dashUrl = (appData.gameSetup.dashboardUrl?.trim()) || "http://localhost:5000";
+          try {
+            const seed = await fetch(`${dashUrl}/api/ai-settings`);
+            if (seed.ok) {
+              const defaults = (await seed.json()) as CoachAiSettings | null;
+              setAiDraft(defaults ?? defaultCoachAiSettings());
+              setAiStatus("Loaded team defaults from stats dashboard.");
+              return;
+            }
+          } catch { /* ignore */ }
           setAiStatus("Using defaults. Save to apply custom AI settings for this game.");
           return;
         }
@@ -4689,10 +4665,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           <div className="add-player-row">
             <input className="num-inp" placeholder="#" value={pNum} onChange={e => setPNum(e.target.value)} />
             <input placeholder="Name" value={pName} onChange={e => setPName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPlayer()} style={{ flex: 2 }} />
-            <select className="pos-select" value={pPos} onChange={e => setPPos(e.target.value)}>
-              <option value="">Pos</option>
-              {POSITIONS.filter(Boolean).map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <input className="pos-select" placeholder="Pos" value={pPos} onChange={e => setPPos(e.target.value)} />
             <input className="ht-inp" placeholder='Ht' value={pHt} onChange={e => setPHt(e.target.value)} style={{ width: 52 }} />
             <input className="grade-inp" placeholder='Gr' value={pGrade} onChange={e => setPGrade(e.target.value)} style={{ width: 36 }} />
             <button className="add-btn" onClick={addPlayer}>Add</button>
@@ -4709,10 +4682,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                 <div key={p.id} className="player-edit-row">
                   <input className="num-inp" value={epNum} onChange={e => setEpNum(e.target.value)} />
                   <input value={epName} onChange={e => setEpName(e.target.value)} style={{ flex: 2 }} />
-                  <select className="pos-select" value={epPos} onChange={e => setEpPos(e.target.value)}>
-                    <option value="">Pos</option>
-                    {POSITIONS.filter(Boolean).map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                  </select>
+                  <input className="pos-select" placeholder="Pos" value={epPos} onChange={e => setEpPos(e.target.value)} />
                   <input className="ht-inp" placeholder='Ht' value={epHt} onChange={e => setEpHt(e.target.value)} style={{ width: 52 }} />
                   <input className="grade-inp" placeholder='Gr' value={epGrade} onChange={e => setEpGrade(e.target.value)} style={{ width: 36 }} />
                   <button className="add-btn" onClick={saveEditPlayer}>Save</button>
@@ -4927,47 +4897,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             </ul>
           )}
           <button
-            className="start-btn"
+            className="save-btn"
             disabled={setupErrors.length > 0}
-            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); void onStartGame(); } }}>
-            Start / Reset Game
+            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onNav("menu"); } }}>
+            Save
           </button>
         </section>
 
-        {/* QR code — scan on another device to auto-fill the same config */}
-        <section className="settings-section">
-          <h3>Share Config</h3>
-          <p className="dim-text" style={{ marginBottom: 12 }}>
-            Scan on another device to copy these settings.
-          </p>
-          {(() => {
-            const configUrl = new URL(window.location.href);
-            const params = configUrl.searchParams;
-            params.set("apiUrl", gsApiUrl.trim() || DEFAULT_API);
-            if (gsApiKey.trim()) params.set("apiKey", gsApiKey.trim());
-            params.set("dashboardUrl", gsDashboardUrl.trim() || "http://localhost:5000");
-            params.set("gameId", gsGameId.trim() || "game-1");
-            params.set("deviceId", normalizeDeviceId(gsDeviceId));
-            params.set("opponent", gsOpponent.trim());
-            params.set("vcSide", gsVcSide);
-            params.set("clockVisible", gsClockVisible ? "1" : "0");
-            params.set("clockEnabled", gsClockEnabled ? "1" : "0");
-            params.set("trackClock", gsTrackClock ? "1" : "0");
-            params.set("trackPossession", gsTrackPossession ? "1" : "0");
-            params.set("trackTimeouts", gsTrackTimeouts ? "1" : "0");
-            params.set("opponentTrackStats", normalizeOpponentTrackStats(gsOpponentTrackStats).join(","));
-            params.set("homeColor", normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR));
-            params.set("awayColor", normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR));
-            return (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                <QRCodeSVG value={configUrl.toString()} size={200} level="M" />
-                <small className="dim-text" style={{ wordBreak: "break-all", textAlign: "center" }}>
-                  {configUrl.toString()}
-                </small>
-              </div>
-            );
-          })()}
-        </section>
       </div>
     );
   }

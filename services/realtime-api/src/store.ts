@@ -15,7 +15,7 @@ import {
   generateInsights,
   type LiveInsight
 } from "@bta/insight-engine";
-import { parseGameEvent, type GameEvent } from "@bta/shared-schema";
+import { parseGameEvent, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 
 export interface CreateGameInput {
   gameId: string;
@@ -205,9 +205,15 @@ function sanitizeGameAiContext(input: Partial<GameAiContext> | null | undefined)
 
 function sanitizeCoachAiSettings(input: Partial<CoachAiSettings> | null | undefined): CoachAiSettings {
   const defaults = defaultCoachAiSettings();
-  const playingStyle = typeof input?.playingStyle === "string" ? input.playingStyle.trim().slice(0, 500) : defaults.playingStyle;
-  const teamContext = typeof input?.teamContext === "string" ? input.teamContext.trim().slice(0, 1200) : defaults.teamContext;
-  const customPrompt = typeof input?.customPrompt === "string" ? input.customPrompt.trim().slice(0, 1200) : defaults.customPrompt;
+  const sanitize = (text: string, max: number) => text
+    .replace(/^\ufeff/g, "") // BOM
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "") // Control chars
+    .trim()
+    .slice(0, max);
+  
+  const playingStyle = typeof input?.playingStyle === "string" ? sanitize(input.playingStyle, 500) : defaults.playingStyle;
+  const teamContext = typeof input?.teamContext === "string" ? sanitize(input.teamContext, 1200) : defaults.teamContext;
+  const customPrompt = typeof input?.customPrompt === "string" ? sanitize(input.customPrompt, 1200) : defaults.customPrompt;
   const focusInsights = Array.isArray(input?.focusInsights)
     ? [...new Set(input.focusInsights.filter((item): item is CoachAiSettings["focusInsights"][number] => FOCUS_INSIGHT_OPTIONS.has(item as CoachAiSettings["focusInsights"][number])))]
     : defaults.focusInsights;
@@ -280,10 +286,6 @@ function describeEvent(event: GameEvent): string {
   }
 
   return "unknown event";
-}
-
-function isOTPeriodString(period: string): boolean {
-  return /^OT\d+$/.test(period);
 }
 
 function isPreGameState(state: GameState, orderedEvents: GameEvent[]): boolean {
@@ -392,7 +394,7 @@ function buildAiInsightPrompt(
   const aiContext = sanitizeGameAiContext(session.aiContext);
   const latestEvent = orderedEvents[orderedEvents.length - 1];
   const clockSec = latestEvent?.clockSecondsRemaining ?? 0;
-  const isOT = isOTPeriodString(state.currentPeriod);
+  const isOT = isOvertimePeriod(state.currentPeriod);
 
   // Identify which is "our" team
   const ourTeamId = state.opponentTeamId
@@ -635,100 +637,166 @@ function buildAiChatPrompt(
     ? (state.homeTeamId !== state.opponentTeamId ? state.homeTeamId : state.awayTeamId)
     : session.homeTeamId;
   const opponentTeamId = state.opponentTeamId ?? session.awayTeamId;
+  const aiSettings = sanitizeCoachAiSettings(session.aiSettings);
+  const aiContext = sanitizeGameAiContext(session.aiContext);
+  const rosterTeam = rosterTeams.find((team) => team.id === ourTeamId);
+  const isOT = isOvertimePeriod(state.currentPeriod);
+
+  const clockSec = latestEvent?.clockSecondsRemaining ?? 0;
+  const clockStr = clockSec >= 60
+    ? `${Math.floor(clockSec / 60)}:${String(clockSec % 60).padStart(2, "0")}`
+    : `${clockSec}s`;
+
   const recentEvents = orderedEvents.slice(-10).map((event) => `- ${describeEvent(event)}`).join("\n") || "- none";
   const chatHistory = history.length > 0
     ? history.map((entry) => `${entry.role === "assistant" ? "Assistant" : "Coach"}: ${entry.content}`).join("\n")
     : "Coach: no prior chat in this thread";
 
+  // Coach settings and roster context (same as buildAiInsightPrompt)
+  const combinedStyle = [rosterTeam?.coachStyle?.trim(), aiSettings.playingStyle].filter(Boolean).join(" | ");
+  const styleLine = combinedStyle ? `Team playing style: ${combinedStyle}` : "Team playing style: not provided";
+  const contextLine = aiSettings.teamContext ? `Team context: ${aiSettings.teamContext}` : "Team context: not provided";
+  const customPromptLine = aiSettings.customPrompt ? `Custom coach instruction: ${aiSettings.customPrompt}` : "";
+  const focusLine = aiSettings.focusInsights.length > 0 ? `Coach focus areas: ${aiSettings.focusInsights.join(", ")}` : "";
+  const rosterMetadataLines = buildRosterMetadataLines(state, ourTeamId);
+
+  // Player foul summary
+  const ourPlayers = Object.values(state.playerStatsByTeam[ourTeamId] ?? {});
+  const playerFoulLines = ourPlayers
+    .filter((p) => (state.playerFouls[p.playerId] ?? 0) >= 2)
+    .sort((a, b) => (state.playerFouls[b.playerId] ?? 0) - (state.playerFouls[a.playerId] ?? 0))
+    .map((p) => {
+      const f = state.playerFouls[p.playerId] ?? 0;
+      const foulNote = f >= 4 ? " (FOUL OUT RISK)" : f === 3 ? " (watch)" : "";
+      return `${p.playerId}: ${f} fouls${foulNote}, ${p.points}pts, ${p.fgMade}/${p.fgAttempts}FG`;
+    });
+
+  // Active lineups
+  const ourLineup = (state.activeLineupsByTeam[ourTeamId] ?? []).join(", ");
+  const theirLineup = (state.activeLineupsByTeam[opponentTeamId] ?? []).join(", ");
+
+  // Active rule insights context
+  const activeAlerts = (session.ruleInsights ?? []).slice(0, 6).map((i) => `- [${i.type}] ${i.message}`).join("\n");
+
   return [
     `Game: ${state.gameId}`,
-    `Current period: ${state.currentPeriod}`,
-    latestEvent ? `Latest event clock: ${latestEvent.clockSecondsRemaining ?? 0}` : "Latest event clock: unavailable",
-    `Our team summary: ${summarizeTeamState(state, ourTeamId, true, session.aiContext.opponentStatsLimited)}`,
-    `Opponent summary: ${summarizeTeamState(state, opponentTeamId, false, session.aiContext.opponentStatsLimited)}`,
-    `Current game player stats (our team):\n${buildCurrentPlayerSnapshot(state, ourTeamId)}`,
-    `Historical team and player context from stats dashboard: ${historicalContextSummary || "unavailable"}`,
+    `Period: ${state.currentPeriod}${isOT ? " [OVERTIME]" : ""}  |  Clock: ${clockStr}`,
+    `Clock tracking: ${aiContext.clockEnabled ? "enabled" : "disabled"}`,
+    `Opponent stats: ${aiContext.opponentStatsLimited ? "limited" : "expanded"}`,
+    "",
+    `Our team: ${summarizeTeamState(state, ourTeamId, true, aiContext.opponentStatsLimited)}`,
+    `Opponent: ${summarizeTeamState(state, opponentTeamId, false, aiContext.opponentStatsLimited)}`,
+    "",
+    `Current player stats (our team):\n${buildCurrentPlayerSnapshot(state, ourTeamId)}`,
+    "",
+    playerFoulLines.length > 0 ? `Player foul detail:\n${playerFoulLines.join("\n")}` : "",
+    ourLineup ? `Our lineup: ${ourLineup}` : "",
+    theirLineup ? `Their lineup: ${theirLineup}` : "",
+    "",
+    styleLine,
+    contextLine,
+    customPromptLine,
+    focusLine,
+    rosterMetadataLines.length > 0 ? `Roster context from coaches:\n${rosterMetadataLines.join("\n")}` : "",
+    "",
+    `Historical context: ${historicalContextSummary || "unavailable"}`,
+    "",
+    activeAlerts ? `Active system alerts:\n${activeAlerts}` : "",
+    "",
     `Recent events:\n${recentEvents}`,
+    "",
     `Conversation so far:\n${chatHistory}`,
+    "",
     `Coach question: ${question}`,
+    "",
     "Answer rules:",
     "- Answer as an in-game varsity basketball bench assistant for OUR team.",
-    "- Use the live game state, current player stats, historical player/team context, and recent events provided here.",
-    "- When recommending substitutions, explain the exact trigger and who benefits.",
-    "- Call out foul danger, bonus context, hot hands, and highly efficient players when relevant.",
-    "- If data is incomplete, say that directly instead of guessing.",
-    "- Keep the answer concise but specific, with concrete numbers.",
+    "- Use the live game state, player stats, roster context, coach instructions, and active alerts provided above.",
+    "- Prioritize coach's style, context, focus areas, and custom instructions when they don't conflict with game reality.",
+    "- When recommending substitutions, name exactly who goes in/out and explain the trigger clearly.",
+    "- Reference specific player foul counts, stats, and lineup context when making calls.",
+    "- If opponent stats are limited, avoid assumptions about opponent rebounding, assists, or shot profile.",
+    "- If data is incomplete, say so directly instead of guessing.",
+    "- Keep answers concise and immediately actionable with concrete numbers.",
     "- Output strict JSON: {\"answer\":\"...\",\"suggestions\":[\"...\",\"...\"]}",
-    "- suggestions should be 0 to 3 short follow-up questions the coach may want to ask next.",
-    "- No markdown. No code fences."
-  ].join("\n\n");
+    "- suggestions: 0 to 3 short follow-up questions the coach may want to ask next.",
+    "- No markdown. No code fences.",
+  ].filter(Boolean).join("\n");
 }
 
 async function fetchHistoricalContextSummary(session: GameSession): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
+  async function attempt(): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
-  try {
-    const [seasonRes, gamesRes, playersRes] = await Promise.all([
-      fetch(`${STATS_DASHBOARD_BASE}/api/season-stats`, {
-        headers: buildStatsHeaders(),
-        signal: controller.signal
-      }),
-      fetch(`${STATS_DASHBOARD_BASE}/api/games`, {
-        headers: buildStatsHeaders(),
-        signal: controller.signal
-      }),
-      fetch(`${STATS_DASHBOARD_BASE}/api/players`, {
-        headers: buildStatsHeaders(),
-        signal: controller.signal
-      })
-    ]);
+    try {
+      const [seasonRes, gamesRes, playersRes] = await Promise.all([
+        fetch(`${STATS_DASHBOARD_BASE}/api/season-stats`, {
+          headers: buildStatsHeaders(),
+          signal: controller.signal
+        }),
+        fetch(`${STATS_DASHBOARD_BASE}/api/games`, {
+          headers: buildStatsHeaders(),
+          signal: controller.signal
+        }),
+        fetch(`${STATS_DASHBOARD_BASE}/api/players`, {
+          headers: buildStatsHeaders(),
+          signal: controller.signal
+        })
+      ]);
 
-    const seasonStats = seasonRes.ok
-      ? await seasonRes.json() as Record<string, unknown>
-      : {};
-    const games = gamesRes.ok
-      ? await gamesRes.json() as Array<Record<string, unknown>>
-      : [];
-    const players = playersRes.ok
-      ? await playersRes.json() as Array<Record<string, unknown>>
-      : [];
+      const seasonStats = seasonRes.ok
+        ? await seasonRes.json() as Record<string, unknown>
+        : {};
+      const games = gamesRes.ok
+        ? await gamesRes.json() as Array<Record<string, unknown>>
+        : [];
+      const players = playersRes.ok
+        ? await playersRes.json() as Array<Record<string, unknown>>
+        : [];
 
-    const seasonLine = [
-      `record ${resolveRecordLine(seasonStats)}`,
-      `PPG ${Number(seasonStats.ppg ?? 0).toFixed(1)}`,
-      `Opp PPG ${Number(seasonStats.opp_ppg ?? 0).toFixed(1)}`,
-      `FG% ${Math.round(Number(seasonStats.fg_pct ?? 0) * 100)}%`,
-      `3PT% ${Math.round(Number(seasonStats.fg3_pct ?? 0) * 100)}%`,
-      `TO avg ${Number(seasonStats.to_avg ?? 0).toFixed(1)}`
-    ].join(", ");
+      const seasonLine = [
+        `record ${resolveRecordLine(seasonStats)}`,
+        `PPG ${Number(seasonStats.ppg ?? 0).toFixed(1)}`,
+        `Opp PPG ${Number(seasonStats.opp_ppg ?? 0).toFixed(1)}`,
+        `FG% ${Math.round(Number(seasonStats.fg_pct ?? 0) * 100)}%`,
+        `3PT% ${Math.round(Number(seasonStats.fg3_pct ?? 0) * 100)}%`,
+        `TO avg ${Number(seasonStats.to_avg ?? 0).toFixed(1)}`
+      ].join(", ");
 
-    const recentGames = Array.isArray(games)
-      ? [...games].sort((a, b) => Number(b.gameId ?? 0) - Number(a.gameId ?? 0)).slice(0, 3)
-      : [];
-    const ourTeamId = session.opponentTeamId
-      ? (session.homeTeamId !== session.opponentTeamId ? session.homeTeamId : session.awayTeamId)
-      : session.homeTeamId;
-    const ourTeamLabel = resolveTeamLabelFromRoster(ourTeamId);
+      const recentGames = Array.isArray(games)
+        ? [...games].sort((a, b) => Number(b.gameId ?? 0) - Number(a.gameId ?? 0)).slice(0, 3)
+        : [];
+      const ourTeamId = session.opponentTeamId
+        ? (session.homeTeamId !== session.opponentTeamId ? session.homeTeamId : session.awayTeamId)
+        : session.homeTeamId;
+      const ourTeamLabel = resolveTeamLabelFromRoster(ourTeamId);
 
-    const recentLine = recentGames.length > 0
-      ? recentGames.map((game) => {
-        const vc = Number(game.vc_score ?? 0);
-        const opp = Number(game.opp_score ?? 0);
-        const opponent = String(game.opponent ?? "Unknown");
-        const result = vc > opp ? "W" : vc < opp ? "L" : "T";
-        return `${opponent} ${result} ${vc}-${opp}`;
-      }).join(" | ")
-      : "no recent games";
+      const recentLine = recentGames.length > 0
+        ? recentGames.map((game) => {
+          const vc = Number(game.vc_score ?? 0);
+          const opp = Number(game.opp_score ?? 0);
+          const opponent = String(game.opponent ?? "Unknown");
+          const result = vc > opp ? "W" : vc < opp ? "L" : "T";
+          return `${opponent} ${result} ${vc}-${opp}`;
+        }).join(" | ")
+        : "no recent games";
 
-    const playerLine = summarizeHistoricalPlayers(players, session);
+      const playerLine = summarizeHistoricalPlayers(players, session);
 
-    return `${ourTeamLabel} season: ${seasonLine}. Last games: ${recentLine}.${playerLine ? ` Player history:\n${playerLine}` : ""}`;
-  } catch {
-    return "";
-  } finally {
-    clearTimeout(timeout);
+      return `${ourTeamLabel} season: ${seasonLine}. Last games: ${recentLine}.${playerLine ? ` Player history:\n${playerLine}` : ""}`;
+    } catch {
+      return "";
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  const result = await attempt();
+  if (result) return result;
+  // One retry after a short delay to recover from transient network or cold-start timeouts
+  await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+  return attempt();
 }
 
 function parseAiChatResponse(content: string): { answer: string; suggestions: string[] } {
@@ -865,6 +933,7 @@ function parseAiInsightResponse(content: string, session: GameSession, latestEve
         id: `ai-${latestEvent.id}-${index}`,
         gameId: session.state.gameId,
         type: "ai_coaching",
+        priority: "important",
         createdAtIso,
         confidence,
         message,
@@ -1391,11 +1460,22 @@ export async function refreshGameAiInsights(
 
   session.aiRefreshInFlight = requestAiInsights(session, orderedEvents)
     .then((aiInsights) => {
-      session.aiInsights = aiInsights;
-      session.lastAiRefreshAtMs = Date.now();
-      session.lastAiEventCount = orderedEvents.length;
-      session.lastAiFingerprint = fingerprint;
-      persistSessions();
+      // Only update if we got new insights; preserve existing if API failed/timed out
+      if (aiInsights.length > 0) {
+        session.aiInsights = aiInsights;
+        session.lastAiRefreshAtMs = Date.now();
+        session.lastAiEventCount = orderedEvents.length;
+        session.lastAiFingerprint = fingerprint;
+        persistSessions();
+      } else {
+        // API failed/timed out: keep existing aiInsights, rule-based insights show as fallback
+        session.lastAiEventCount = orderedEvents.length;
+      }
+      return combineInsights(session);
+    })
+    .catch(() => {
+      // Network error: keep existing insights and show rule-based fallback
+      console.warn("[realtime-api] AI insights fetch failed; showing rule-based insights");
       return combineInsights(session);
     })
     .finally(() => {

@@ -276,22 +276,9 @@ async function loadRecentGames() {
         const recentGames = games.slice(-5).reverse();
         
         if (recentGames.length === 0) {
-            if (gamesList) {
-                gamesList.innerHTML = `
-                    <div class="game-card">
-                        <div class="game-info">
-                            <div class="game-date">0</div>
-                            <div class="game-opponent">vs ${EMPTY_STATS_LABEL}</div>
-                        </div>
-                        <div class="game-score">
-                            <span class="score-vc">0</span>
-                            <span class="score-separator">-</span>
-                            <span class="score-opp">0</span>
-                            <span class="result-badge loss">0</span>
-                        </div>
-                    </div>
-                `;
-            }
+                if (gamesList) {
+                    gamesList.innerHTML = '';
+                }
             return;
         }
 

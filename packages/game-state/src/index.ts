@@ -1,4 +1,5 @@
 import type { GameEvent } from "@bta/shared-schema";
+import { isOvertimePeriod } from "@bta/shared-schema";
 
 // NFHS rules constants
 /** Players foul out after 5 personal fouls (tracked game-wide including OT) */
@@ -40,10 +41,6 @@ export interface PlayerStats {
   blocks: number;
 }
 
-function isOTPeriod(period: string): boolean {
-  return /^OT\d+$/.test(period);
-}
-
 /**
  * Compute bonus status per NFHS rules:
  * - Q1–Q4: bonus when opposing team reaches 5 team fouls in that period
@@ -58,11 +55,11 @@ function computeBonusByTeam(
 ): Record<string, boolean> {
   function periodFoulsForTeam(teamId: string): number {
     const byPeriod = teamFoulsByPeriod[teamId] ?? {};
-    if (isOTPeriod(currentPeriod)) {
+    if (isOvertimePeriod(currentPeriod)) {
       // Carry Q4 fouls into all OT periods; accumulate across all OT periods
       const q4Fouls = byPeriod["Q4"] ?? 0;
       const otFouls = Object.entries(byPeriod)
-        .filter(([p]) => isOTPeriod(p))
+        .filter(([p]) => isOvertimePeriod(p))
         .reduce((sum, [, c]) => sum + c, 0);
       return q4Fouls + otFouls;
     }

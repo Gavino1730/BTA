@@ -44,14 +44,6 @@ function showEmptyState(elementId, message = 'No data available', icon = '📭')
     }
 }
 
-// Clear element
-function clearElement(elementId) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.innerHTML = '';
-    }
-}
-
 function scrubLegacyTeamLabels() {
     const replacementLabel = 'Team Box Score';
 
@@ -61,7 +53,7 @@ function scrubLegacyTeamLabels() {
 
     const targets = document.querySelectorAll('h1, h2, h3, h4, .game-detail-opponent, .score-team, title');
     targets.forEach(node => {
-        if (typeof node.textContent === 'string' && /box score/i.test(node.textContent)) {
+        if (typeof node.textContent === 'string' && /box score/i.test(node.textContent) && node.textContent.trim() !== replacementLabel) {
             node.textContent = replacementLabel;
         }
     });

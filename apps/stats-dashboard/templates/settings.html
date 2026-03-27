@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Settings</h1>
+        <p>Team Configuration & Roster Management</p>
+    </div>
+
+    <!-- Team & AI Settings Section -->
+    <div class="settings-section">
+        <h2>Team & AI Configuration</h2>
+        <div class="settings-card">
+            <div class="form-group">
+                <label for="team-name">Team Name</label>
+                <input type="text" id="team-name" placeholder="Enter team name">
+            </div>
+            
+            <div class="form-group">
+                <label for="season">Season</label>
+                <input type="text" id="season" placeholder="e.g. 2026-2027">
+            </div>
+            
+            <div class="form-group">
+                <label for="team-color">Team Color</label>
+                <input type="color" id="team-color">
+            </div>
+            
+            <!-- Consolidated AI Settings -->
+            <div class="ai-settings-group">
+                <h3>AI Coach Settings</h3>
+                
+                <div class="form-group">
+                    <label for="playing-style">TEAM PLAYING STYLE</label>
+                    <p class="field-hint">How your team plays — pace, philosophy, offensive tendencies.</p>
+                    <textarea id="playing-style" placeholder="Example: We play fast in transition, pressure passing lanes, and prioritize paint touches." rows="3"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="team-context">TEAM NOTES &amp; CONTEXT</label>
+                    <p class="field-hint">Player limits, matchup concerns, foul trouble thresholds, depth chart notes.</p>
+                    <textarea id="team-context" placeholder="Anything a coach wants AI to remember: player limits, matchup concerns, depth, who can handle pressure, etc." rows="4"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="custom-prompt">CUSTOM PROMPT INSTRUCTION</label>
+                    <p class="field-hint">Override or extend how AI formats its output or sets priorities.</p>
+                    <textarea id="custom-prompt" placeholder="Custom instruction for AI output style or priorities." rows="3"></textarea>
+                </div>
+            </div>
+            
+            <button id="save-team-settings" class="btn-primary">Save Team Settings</button>
+        </div>
+    </div>
+
+    <!-- Roster Management Section -->
+    <div class="settings-section">
+        <div class="section-header">
+            <h2>Roster Management</h2>
+            <button id="add-player-btn" class="btn-secondary">Add Player</button>
+        </div>
+        
+        <div class="roster-container">
+            <div class="roster-table-wrapper">
+                <table class="roster-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Pos</th>
+                            <th>Role</th>
+                            <th>Height</th>
+                            <th>Grade</th>
+                            <th>AI Context</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="roster-body">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Player Modal -->
+<div id="player-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modal-title">Add Player</h3>
+            <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="player-form">
+                <div class="form-group">
+                    <label for="player-name">Name *</label>
+                    <input type="text" id="player-name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="player-number">Jersey Number *</label>
+                    <input type="number" id="player-number" min="0" max="99" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="player-position">Position</label>
+                    <input type="text" id="player-position" placeholder="e.g. PG, SG, SF, PF, C">
+                </div>
+                
+                <div class="form-group">
+                    <label for="player-grade">Grade</label>
+                    <input type="text" id="player-grade" placeholder="e.g. 9, 10, 11, 12">
+                </div>
+                
+                <div class="form-group">
+                    <label for="player-height">Height</label>
+                    <input type="text" id="player-height" placeholder="e.g. 6'2&quot;">
+                </div>
+                
+                <div class="form-group">
+                    <label for="player-role">Role</label>
+                    <input type="text" id="player-role" placeholder="e.g. Starter, Bench, Specialist">
+                </div>
+
+                <div class="form-group">
+                    <label for="player-ai-context">AI Context</label>
+                    <textarea id="player-ai-context" placeholder="e.g. Minutes cap, ankle soreness, defensive matchup, confidence notes..." rows="3"></textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button id="save-player" class="btn-primary">Save Player</button>
+            <button class="modal-close btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.page-header {
+    margin-bottom: 2rem;
+    text-align: left;
+    border-bottom: 2px solid #333;
+    padding-bottom: 1rem;
+}
+
+.page-header h1 {
+    color: #ffffff !important;
+    font-size: 2.5rem !important;
+    margin-bottom: 0.5rem;
+    font-weight: 700 !important;
+}
+
+.page-header p {
+    color: #cccccc !important;
+    font-size: 1.2rem !important;
+    font-weight: 500 !important;
+}
+
+.settings-section {
+    margin-bottom: 3rem;
+}
+
+.settings-section h2 {
+    color: var(--text);
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    padding: 2rem;
+    border: 1px solid var(--border);
+}
+
+.form-group {
+    margin-bottom: 2rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.8rem;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    font-size: 1.1rem !important;
+    text-shadow: none !important;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    font-size: 1rem;
+    background: var(--dark-bg);
+    color: var(--text);
+    transition: border-color 0.2s;
+}
+
+.form-group select option {
+    background: var(--dark-bg);
+    color: var(--text);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.2);
+}
+
+.form-group input[type="color"] {
+    width: 120px;
+    height: 45px;
+    padding: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.ai-settings-group {
+    border-top: 2px solid var(--border);
+    padding-top: 2.5rem;
+    margin-top: 2.5rem;
+}
+
+.ai-settings-group h3 {
+    color: var(--text);
+    margin-bottom: 1.5rem;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.field-hint {
+    color: var(--text-light);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+    margin-top: -0.4rem;
+}
+
+.checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--light-bg);
+}
+
+.checkbox-item:hover {
+    background-color: rgba(79, 140, 255, 0.1);
+    border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.checkbox-item input[type="checkbox"] {
+    width: auto;
+    margin-right: 0.75rem;
+    transform: scale(1.2);
+}
+
+.checkbox-item span {
+    font-weight: 600 !important;
+    color: var(--text) !important;
+    font-size: 1rem !important;
+}
+
+.btn-primary, .btn-secondary {
+    padding: 1rem 2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: none;
+    letter-spacing: 0.5px;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.btn-primary:hover {
+    background: #3a78f0;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 140, 255, 0.4);
+}
+
+.btn-secondary {
+    background: var(--light-bg);
+    color: var(--text);
+    border: 2px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+/* Roster Table Styles */
+.roster-container {
+    background: var(--card-bg);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    margin-top: 1rem;
+}
+
+.roster-table-wrapper {
+    overflow-x: auto;
+}
+
+.roster-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 800px;
+}
+
+.roster-table thead {
+    background: var(--primary);
+    color: white;
+}
+
+.roster-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+}
+
+.roster-table tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background-color 0.2s;
+}
+
+.roster-table tbody tr:hover {
+    background-color: var(--light-bg);
+}
+
+.roster-table td {
+    padding: 1rem;
+    color: var(--text);
+}
+
+.roster-table td:first-child {
+    font-weight: 700;
+    color: var(--secondary);
+    min-width: 3rem;
+}
+
+.roster-table .player-name {
+    font-weight: 600;
+    font-size: 1.05rem;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.btn-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    border-radius: 3px;
+    border: none;
+    white-space: nowrap;
+}
+
+.btn-edit {
+    background: var(--primary);
+    color: white;
+    border: none;
+}
+
+.btn-delete {
+    background: #dc3545;
+    color: white;
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: var(--card-bg);
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: var(--text);
+}
+
+.modal-header .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-light);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.modal-footer .modal-close {
+    width: auto;
+    height: auto;
+    padding: 1rem 2rem;
+    font-size: 1rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .checkbox-group {
+        grid-template-columns: 1fr;
+    }
+    
+    .section-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .roster-table {
+        font-size: 0.9rem;
+    }
+    
+    .roster-table th,
+    .roster-table td {
+        padding: 0.5rem;
+    }
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='settings.js') }}?v=1.3"></script>
+{% endblock %}

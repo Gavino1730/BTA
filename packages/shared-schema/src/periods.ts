@@ -20,13 +20,3 @@ export function formatClockSeconds(seconds: number): string {
 export function getPeriodDefaultClock(period: string): string {
   return formatClockSeconds(getPeriodDurationSeconds(period));
 }
-
-export function buildPeriodLabels(overtimeCount: number): Period[] {
-  return [
-    "Q1",
-    "Q2",
-    "Q3",
-    "Q4",
-    ...Array.from({ length: Math.max(0, overtimeCount) + 1 }, (_, index) => `OT${index + 1}` as const)
-  ];
-}

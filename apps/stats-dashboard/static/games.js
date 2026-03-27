@@ -485,23 +485,11 @@ async function loadGames() {
 function renderZeroGameState() {
     const container = document.getElementById('games-container');
     if (!container) return;
-
-    container.innerHTML = `
-        <div class="game-card" style="cursor:default; opacity:0.9;">
-            <div class="game-card-header">
-                <div class="game-card-date">0</div>
-                <span class="result-badge loss">0</span>
-            </div>
-            <div class="game-card-opponent">vs ${EMPTY_STATS_LABEL}</div>
-            <div class="game-card-score">
-                <div class="game-card-score-vc">0</div>
-                <div class="game-card-score-divider">-</div>
-                <div class="game-card-score-opp">0</div>
-            </div>
-            <div class="game-card-diff">0</div>
-        </div>
-    `;
+    container.innerHTML = '';
 }
+
+// Backward compatibility for cached templates still calling the previous API.
+window.renderZeroGameState = renderZeroGameState;
 
 async function deleteGame(gameId) {
     if (!Number.isFinite(Number(gameId))) return;
@@ -530,9 +518,10 @@ async function deleteGame(gameId) {
 
 function displayGames(games) {
     const container = document.getElementById('games-container');
+    if (!container) return;
     
     if (games.length === 0) {
-        showEmptyState('games-container', 'No games match your filters', '🔍');
+        container.innerHTML = '';
         return;
     }
     
@@ -545,13 +534,13 @@ function displayGames(games) {
         const gameCard = document.createElement('div');
         gameCard.className = 'game-card';
         gameCard.innerHTML = `
-            <button class="game-edit-btn" type="button" aria-label="Edit game ${game.gameId}" style="position:absolute;top:10px;right:74px;background:transparent;border:1px solid var(--border);color:var(--primary);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;">Edit</button>
-            <button class="game-delete-btn" type="button" aria-label="Delete game ${game.gameId}" style="position:absolute;top:10px;right:10px;background:transparent;border:1px solid var(--border);color:var(--danger);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.75rem;">Delete</button>
             <div class="game-card-header">
                 <div class="game-card-date">${escapeHtml(game.date)}</div>
-                <span class="result-badge ${resultState.className}">
-                    ${resultState.shortLabel}
-                </span>
+                <div class="game-card-actions">
+                    <span class="result-badge ${resultState.className}">${resultState.shortLabel}</span>
+                    <button class="game-edit-btn" type="button" aria-label="Edit game ${game.gameId}">Edit</button>
+                    <button class="game-delete-btn" type="button" aria-label="Delete game ${game.gameId}">Del</button>
+                </div>
             </div>
             <div class="game-card-opponent">${game.location === 'away' ? '@' : 'vs'} ${escapeHtml(game.opponent)}</div>
             <div class="game-card-score">
@@ -657,14 +646,14 @@ async function showGameDetail(game) {
                 <div class="game-detail-date">${escapeHtml(game.date)}</div>
                 <div class="game-detail-opponent">${game.location === 'away' ? '@' : 'vs'} ${escapeHtml(game.opponent)}</div>
             </div>
-            <div class="game-detail-result ${resultState.className}">
-                ${resultState.longLabel}
-            </div>
-            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                <button id="edit-game-btn" type="button" class="btn-primary" style="background:transparent;color:var(--primary);border:1px solid rgba(79,140,255,0.45);">
+            <div class="game-detail-actions">
+                <div class="game-detail-result ${resultState.className}">
+                    ${resultState.longLabel}
+                </div>
+                <button id="edit-game-btn" type="button" class="game-edit-btn">
                     Edit Game
                 </button>
-                <button id="delete-game-btn" type="button" class="btn-primary game-delete-btn">
+                <button id="delete-game-btn" type="button" class="game-delete-btn">
                     Delete Game
                 </button>
             </div>
@@ -746,11 +735,12 @@ async function showGameDetail(game) {
             </div>
         </div>
 
-        <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 1rem;">Team Box Score</h3>
+        <h3 style="margin-top: 2rem; color: var(--primary); margin-bottom: 0.75rem; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.06em;">Team Box Score</h3>
+        <div class="table-wrapper">
         <table class="box-score-table">
             <thead>
                 <tr>
-                    <th>Player</th>
+                    <th style="min-width:110px">Player</th>
                     <th>FG</th>
                     <th>3P</th>
                     <th>FT</th>
@@ -763,47 +753,57 @@ async function showGameDetail(game) {
                     <th>TO</th>
                     <th>PF</th>
                     <th>+/-</th>
-                    <th>PTS</th>
+                    <th style="color:var(--primary)">PTS</th>
                 </tr>
             </thead>
             <tbody>
-                ${game.player_stats.map(p => {
-                    const playerEfg = safeRatio(toNumber(p.fg_made) + 0.5 * toNumber(p.fg3_made), p.fg_att, 100).toFixed(1);
+                ${(game.player_stats || []).map(p => {
                     const totalReb = toNumber(p.oreb) + toNumber(p.dreb);
+                    const displayName = p.first_name || (p.name ? p.name.split(' ')[0] : 'Unknown');
+                    const pm = toNumber(p.plus_minus);
                     return `
                     <tr>
-                        <td><strong>${p.first_name || p.name.split(' ')[0]}</strong> (#${p.number})</td>
+                        <td>${escapeHtml(displayName)} <span style="color:var(--text-light);font-weight:500;font-size:0.75em;">#${p.number}</span></td>
                         <td>${p.fg_made}-${p.fg_att}</td>
                         <td>${p.fg3_made}-${p.fg3_att}</td>
                         <td>${p.ft_made}-${p.ft_att}</td>
-                        <td><strong>${totalReb}</strong></td>
+                        <td style="font-weight:700">${totalReb}</td>
                         <td>${p.oreb}</td>
                         <td>${p.dreb}</td>
-                        <td>${p.asst}</td>
+                        <td style="font-weight:600">${p.asst}</td>
                         <td>${p.stl}</td>
                         <td>${p.blk}</td>
-                        <td style="color: ${p.to >= 4 ? '#dc3545' : 'inherit'};">${p.to}</td>
+                        <td style="color:${p.to >= 4 ? 'var(--danger)' : 'inherit'}">${p.to}</td>
                         <td>${p.fouls}</td>
-                        <td style="font-weight: 700; color: ${toNumber(p.plus_minus) > 0 ? 'var(--success)' : toNumber(p.plus_minus) < 0 ? '#dc3545' : 'inherit'};">${toNumber(p.plus_minus) > 0 ? '+' : ''}${toNumber(p.plus_minus)}</td>
-                        <td><strong>${p.pts}</strong></td>
+                        <td style="font-weight:700;color:${pm > 0 ? 'var(--success)' : pm < 0 ? 'var(--danger)' : 'var(--text-light)'}">${pm > 0 ? '+' : ''}${pm}</td>
+                        <td style="font-weight:800;color:var(--primary)">${p.pts}</td>
                     </tr>
                 `}).join('')}
             </tbody>
         </table>
+        </div>
         <div style="margin-top: 1rem; padding: 1rem; background: var(--light-bg); border-radius: 4px;">
             <div style="font-weight: 700; margin-bottom: 0.5rem;">Team Totals</div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; font-size: 0.9rem;">
-                <div><strong>FG:</strong> ${game.team_stats.fg}-${game.team_stats.fga} (${vcFgPct}%)</div>
+                <div><strong>FG:</strong> ${teamStats.fg}-${teamStats.fga} (${vcFgPct}%)</div>
                 <div><strong>2PT:</strong> ${fg2Made}-${fg2Att} (${fg2Pct}%)</div>
-                <div><strong>3P:</strong> ${game.team_stats.fg3}-${game.team_stats.fg3a} (${vc3pPct}%)</div>
-                <div><strong>FT:</strong> ${game.team_stats.ft}-${game.team_stats.fta} (${vcFtPct}%)</div>
-                <div><strong>REB:</strong> ${game.team_stats.reb} (${game.team_stats.oreb}+${game.team_stats.dreb})</div>
-                <div><strong>AST:</strong> ${game.team_stats.asst}</div>
-                <div><strong>TO:</strong> ${game.team_stats.to}</div>
-                <div><strong>STL:</strong> ${game.team_stats.stl}</div>
-                <div><strong>BLK:</strong> ${game.team_stats.blk}</div>
-                <div><strong>PF:</strong> ${game.team_stats.fouls || 0}</div>
+                <div><strong>3P:</strong> ${teamStats.fg3}-${teamStats.fg3a} (${vc3pPct}%)</div>
+                <div><strong>FT:</strong> ${teamStats.ft}-${teamStats.fta} (${vcFtPct}%)</div>
+                <div><strong>REB:</strong> ${teamStats.reb} (${teamStats.oreb}+${teamStats.dreb})</div>
+                <div><strong>AST:</strong> ${teamStats.asst}</div>
+                <div><strong>TO:</strong> ${teamStats.to}</div>
+                <div><strong>STL:</strong> ${teamStats.stl}</div>
+                <div><strong>BLK:</strong> ${teamStats.blk}</div>
+                <div><strong>PF:</strong> ${teamStats.fouls || 0}</div>
             </div>
+        </div>
+
+        <div id="game-ai-recap" class="game-ai-recap">
+            <div class="game-ai-recap-header">
+                <span class="game-ai-recap-title">&#x2728; AI Game Recap</span>
+                <span id="game-ai-recap-status" class="game-ai-recap-loading">Generating&hellip;</span>
+            </div>
+            <div id="game-ai-recap-body" class="game-ai-recap-body"></div>
         </div>
     `;
     
@@ -821,6 +821,30 @@ async function showGameDetail(game) {
         });
     }
     gameModal.classList.add('show');
+
+    // Load AI game recap async
+    void (async () => {
+        const recapStatus = document.getElementById('game-ai-recap-status');
+        const recapBody = document.getElementById('game-ai-recap-body');
+        const recapSection = document.getElementById('game-ai-recap');
+        try {
+            const res = await fetch(`/api/ai/game-analysis/${game.gameId}`);
+            if (!res.ok) {
+                // AI unavailable (503) or other error — hide section silently
+                if (recapSection) recapSection.style.display = 'none';
+                return;
+            }
+            const payload = await res.json();
+            if (payload.error) {
+                if (recapSection) recapSection.style.display = 'none';
+                return;
+            }
+            if (recapStatus) recapStatus.remove();
+            if (recapBody) recapBody.textContent = payload.analysis || '';
+        } catch (_) {
+            if (recapSection) recapSection.style.display = 'none';
+        }
+    })();
 }
 
 function setupModal() {

@@ -10,7 +10,7 @@ import os
 import logging
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import quote
 from http import HTTPStatus
 from werkzeug.exceptions import HTTPException
@@ -42,6 +42,30 @@ def _sync_headers() -> dict:
     if SYNC_API_KEY:
         headers["x-api-key"] = SYNC_API_KEY
     return headers
+
+
+def _build_roster_metadata_for_ai(data_manager) -> dict:
+    """Extract roster metadata (coachStyle, playingStyle, player roles/notes) for AI context."""
+    roster_data = data_manager.roster_data if hasattr(data_manager, "roster_data") else {}
+    players = []
+    for p in roster_data.get("roster") or []:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "").strip()
+        if not name:
+            continue
+        players.append({
+            "name": name,
+            "role": str(p.get("role") or "").strip(),
+            "notes": str(p.get("notes") or "").strip(),
+        })
+    return {
+        "coachStyle": str(roster_data.get("coachStyle") or "").strip(),
+        "playingStyle": str(roster_data.get("playingStyle") or "").strip(),
+        "teamContext": str(roster_data.get("teamContext") or "").strip(),
+        "customPrompt": str(roster_data.get("customPrompt") or "").strip(),
+        "players": players,
+    }
 
 
 def _slugify_team_name(name: str) -> str:
@@ -238,6 +262,11 @@ def analysis():
     return render_template("analysis.html")
 
 
+@app.route("/settings")  
+def settings():
+    return render_template("settings.html")
+
+
 @app.route("/health")
 def health_check():
     return jsonify(
@@ -252,6 +281,24 @@ def health_check():
 
 # Global lock for data reload to prevent race conditions
 reload_lock = threading.Lock()
+
+# In-memory audit log: maps gameId (str) -> list of change entries
+# Persists for the lifetime of the server process
+_audit_log_store: dict = {}
+
+def _record_audit(game_id: int, field: str, old_value, new_value, player_name: str | None = None, source: str = "api"):
+    key = str(game_id)
+    if key not in _audit_log_store:
+        _audit_log_store[key] = []
+    _audit_log_store[key].append({
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "gameId": game_id,
+        "playerName": player_name,
+        "field": field,
+        "oldValue": str(old_value) if old_value is not None else None,
+        "newValue": str(new_value) if new_value is not None else None,
+        "source": source,
+    })
 
 @app.route("/api/reload-data", methods=["POST"])
 def reload_data():
@@ -539,12 +586,25 @@ def _select_sync_team(teams: list, preferred_team_id: str | None):
 def _build_roster_payload_from_teams(teams: list, preferred_team_id: str | None) -> dict:
     selected = _select_sync_team(teams, preferred_team_id)
     if not selected:
-        return {"team": "", "season": "", "teamColor": "", "coachStyle": "", "roster": []}
+        return {
+            "team": "", 
+            "season": "", 
+            "teamColor": "", 
+            "coachStyle": "",
+            "playingStyle": "",
+            "teamContext": "",
+            "focusInsights": [],
+            "roster": []
+        }
 
     team_name = str(selected.get("name") or "").strip()
     season = str(datetime.now().year)
     team_color = _normalize_team_color(selected.get("teamColor"))
     coach_style = str(selected.get("coachStyle") or "").strip()
+    playing_style = str(selected.get("playingStyle") or "").strip()
+    team_context = str(selected.get("teamContext") or "").strip()
+    custom_prompt = str(selected.get("customPrompt") or "").strip()
+    focus_insights = selected.get("focusInsights") if isinstance(selected.get("focusInsights"), list) else []
 
     players = selected.get("players") if isinstance(selected.get("players"), list) else []
     normalized_players = []
@@ -569,6 +629,10 @@ def _build_roster_payload_from_teams(teams: list, preferred_team_id: str | None)
         "season": season,
         "teamColor": team_color,
         "coachStyle": coach_style,
+        "playingStyle": playing_style,
+        "teamContext": team_context,
+        "customPrompt": custom_prompt,
+        "focusInsights": focus_insights,
         "roster": normalized_players,
     }
 
@@ -979,6 +1043,62 @@ def ingest_game():
             return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route("/api/ai-settings", methods=["GET", "PUT", "OPTIONS"])
+def ai_settings():
+    """Get or update team-level AI coach settings (playingStyle, teamContext, customPrompt, focusInsights)."""
+    if request.method == "OPTIONS":
+        response = make_response("", 204)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Api-Key"
+        response.headers["Access-Control-Allow-Methods"] = "GET, PUT, OPTIONS"
+        return response
+
+    FOCUS_ALLOWLIST = {
+        "timeouts", "substitutions", "foul_management", "momentum",
+        "shot_selection", "ball_security", "hot_hand", "defense",
+    }
+
+    if request.method == "GET":
+        roster_data = data.roster_data if hasattr(data, "roster_data") else {}
+        focus = [f for f in (roster_data.get("focusInsights") or []) if f in FOCUS_ALLOWLIST]
+        return jsonify({
+            "playingStyle": str(roster_data.get("playingStyle") or "").strip(),
+            "teamContext": str(roster_data.get("teamContext") or "").strip(),
+            "customPrompt": str(roster_data.get("customPrompt") or "").strip(),
+            "focusInsights": focus,
+        })
+
+    # PUT
+    payload = request.get_json(force=True, silent=True)
+    if not payload or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid payload"}), 400
+
+    with reload_lock:
+        try:
+            with open(Config.ROSTER_FILE, "r") as f:
+                roster_data = json.load(f)
+        except Exception:
+            roster_data = {}
+
+        if "playingStyle" in payload:
+            roster_data["playingStyle"] = str(payload["playingStyle"] or "").strip()[:500]
+        if "teamContext" in payload:
+            roster_data["teamContext"] = str(payload["teamContext"] or "").strip()[:1200]
+        if "customPrompt" in payload:
+            roster_data["customPrompt"] = str(payload["customPrompt"] or "").strip()[:1200]
+        if "focusInsights" in payload and isinstance(payload["focusInsights"], list):
+            roster_data["focusInsights"] = [f for f in payload["focusInsights"] if f in FOCUS_ALLOWLIST]
+
+        try:
+            with open(Config.ROSTER_FILE, "w") as f:
+                json.dump(roster_data, f, indent=2)
+            data.reload()
+            return jsonify({"message": "AI settings saved"})
+        except OSError as e:
+            logger.error(f"AI settings save error: {e}")
+            return jsonify({"error": "Failed to save AI settings"}), 500
+
+
 @app.route("/api/roster-sync", methods=["PUT", "OPTIONS"])
 def roster_sync():
     """Sync roster from coach dashboard/realtime API into roster.json and reload data."""
@@ -993,14 +1113,29 @@ def roster_sync():
     if not payload or not isinstance(payload, dict):
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
 
-    teams = payload.get("teams")
-    if not isinstance(teams, list):
-        return jsonify({"error": "teams array is required"}), 400
+    # Support direct roster payload or teams array payload
+    if "teams" in payload:
+        teams = payload.get("teams")
+        if not isinstance(teams, list):
+            return jsonify({"error": "teams array is required"}), 400
 
-    preferred_team_id = payload.get("preferredTeamId")
-    preferred_team_id = preferred_team_id if isinstance(preferred_team_id, str) else None
+        preferred_team_id = payload.get("preferredTeamId")
+        preferred_team_id = preferred_team_id if isinstance(preferred_team_id, str) else None
 
-    roster_payload = _build_roster_payload_from_teams(teams, preferred_team_id)
+        roster_payload = _build_roster_payload_from_teams(teams, preferred_team_id)
+    else:
+        # Direct roster payload from settings page
+        roster_payload = {
+            "team": str(payload.get("team", "")).strip(),
+            "season": str(payload.get("season", "")).strip(),
+            "teamColor": _normalize_team_color(payload.get("teamColor")),
+            "coachStyle": str(payload.get("coachStyle", "")).strip(),
+            "playingStyle": str(payload.get("playingStyle", "")).strip(),
+            "teamContext": str(payload.get("teamContext", "")).strip(),
+            "focusInsights": payload.get("focusInsights") if isinstance(payload.get("focusInsights"), list) else [],
+            "customPrompt": str(payload.get("customPrompt", "")).strip(),
+            "roster": payload.get("roster", [])
+        }
 
     with reload_lock:
         try:
@@ -1081,6 +1216,10 @@ def api_get_teams():
             "season": season,
             "teamColor": _normalize_team_color(roster.get("teamColor")),
             "coachStyle": roster.get("coachStyle", ""),
+            "playingStyle": roster.get("playingStyle", ""),
+            "teamContext": roster.get("teamContext", ""),
+            "customPrompt": roster.get("customPrompt", ""),
+            "focusInsights": roster.get("focusInsights", []),
             "players": players
         }]
     })
@@ -1254,6 +1393,76 @@ def api_season_stats():
     return jsonify(data.season_team_stats)
 
 
+@app.route("/api/live-context")
+def api_live_context():
+    """Consolidated live-context endpoint for the realtime-api AI layer.
+
+    Returns season stats, recent 5 games, and enriched player list with
+    role/notes from roster — replaces three separate API calls in
+    fetchHistoricalContextSummary.
+    """
+    roster_data = _get_roster_data()
+    roster_dict = {p.get("name", "").strip(): p for p in roster_data.get("roster", []) if isinstance(p, dict)}
+
+    # Season stats
+    season_stats = data.season_team_stats or {}
+
+    # Recent games (last 5, newest first)
+    recent_games = sorted(data.games, key=lambda x: x.get("gameId", 0), reverse=True)[:5]
+    games_out = [
+        {
+            "gameId": g.get("gameId"),
+            "date": g.get("date"),
+            "opponent": g.get("opponent"),
+            "result": g.get("result"),
+            "vc_score": g.get("vc_score"),
+            "opp_score": g.get("opp_score"),
+        }
+        for g in recent_games
+    ]
+
+    # Players with roster role/notes merged in
+    with reload_lock:
+        _recompute_season_stats(data.stats_data, data.roster)
+    players_out = []
+    for name, stats in sorted(
+        data.season_player_stats.items(),
+        key=lambda x: x[1].get("ppg", 0),
+        reverse=True,
+    ):
+        if name in EXCLUDED_PLAYERS:
+            continue
+        roster_info = roster_dict.get(name, {})
+        players_out.append({
+            "name": name,
+            "number": roster_info.get("number", ""),
+            "ppg": round(float(stats.get("ppg", 0)), 1),
+            "rpg": round(float(stats.get("rpg", 0)), 1),
+            "apg": round(float(stats.get("apg", 0)), 1),
+            "fg_pct": round(float(stats.get("fg_pct", 0)), 1),
+            "fg3_pct": round(float(stats.get("fg3_pct", 0)), 1),
+            "ft_pct": round(float(stats.get("ft_pct", 0)), 1),
+            "fpg": round(float(stats.get("fpg", 0) if "fpg" in stats else stats.get("fouls", 0) / max(stats.get("games", 1), 1)), 2),
+            "games": stats.get("games", 0),
+            "role": roster_info.get("role", ""),
+            "notes": roster_info.get("notes", ""),
+        })
+
+    team_info = {
+        "name": data.stats_data.get("team", ""),
+        "coachStyle": roster_data.get("coachStyle", ""),
+        "playingStyle": roster_data.get("playingStyle", ""),
+        "teamContext": roster_data.get("teamContext", ""),
+    }
+
+    return jsonify({
+        "seasonStats": season_stats,
+        "recentGames": games_out,
+        "players": players_out,
+        "teamInfo": team_info,
+    })
+
+
 @app.route("/api/games")
 def api_games():
     games_list = sorted(data.games, key=lambda x: x["gameId"])
@@ -1275,6 +1484,26 @@ def api_games():
                 player["first_name"] = roster_by_abbrev.get(
                     player_name, player_name.split(" ")[0] if player_name else "Unknown"
                 )
+
+    # Optional pagination and filtering
+    sort_order = request.args.get("sort", "asc")  # 'asc' or 'desc'
+    if sort_order == "desc":
+        games_list = list(reversed(games_list))
+
+    # Filter by opponent name (case-insensitive substring)
+    opponent_filter = request.args.get("opponent", "").strip().lower()
+    if opponent_filter:
+        games_list = [g for g in games_list if opponent_filter in (g.get("opponent") or "").lower()]
+
+    total = len(games_list)
+
+    # Optional pagination
+    limit_str = request.args.get("limit")
+    offset = max(int(request.args.get("offset", 0)), 0)
+    if limit_str is not None:
+        limit = min(max(int(limit_str), 1), 100)
+        games_list = games_list[offset:offset + limit]
+        return jsonify({"games": games_list, "total": total, "offset": offset, "limit": limit})
 
     return jsonify(games_list)
 
@@ -1340,6 +1569,12 @@ def api_game(game_id):
                 _refresh_stats_state()
                 _clear_generated_caches()
 
+                # Record audit log for changed fields
+                _audit_fields = ["vc_score", "opp_score", "result", "date", "opponent"]
+                for fld in _audit_fields:
+                    if existing_game.get(fld) != updated_game.get(fld):
+                        _record_audit(game_id, fld, existing_game.get(fld), updated_game.get(fld))
+
                 return jsonify(
                     {
                         "message": "Game updated successfully",
@@ -1352,6 +1587,14 @@ def api_game(game_id):
                 return jsonify({"error": "Failed to write stats file"}), 500
 
     return _delete_game_from_stats(game_id)
+
+
+@app.route("/api/game/<int:game_id>/audit-log", methods=["GET"])
+def api_game_audit_log(game_id):
+    """Return edit history for a specific game"""
+    log = _audit_log_store.get(str(game_id), [])
+    limit = min(int(request.args.get("limit", 50)), 200)
+    return jsonify({"gameId": game_id, "log": log[-limit:], "total": len(log)})
 
 
 @app.route("/api/game/<int:game_id>/delete", methods=["POST"])
@@ -2066,7 +2309,7 @@ def ai_chat():
         if not ai.is_configured:
             return _ai_unavailable_response()
 
-        context = build_stats_context(data)
+        context = build_stats_context(data, _build_roster_metadata_for_ai(data))
         reply = ai.call_with_history(
             "You are a basketball analytics assistant. Answer using only the provided team data. If the data is insufficient, say so clearly.\n\n"
             f"DATA:\n{context}",
@@ -2102,7 +2345,7 @@ def ai_analyze():
         if not ai.is_configured:
             return _ai_unavailable_response()
 
-        context = build_stats_context(data)
+        context = build_stats_context(data, _build_roster_metadata_for_ai(data))
         analysis = ai.call_api(
             f"{system_prompt}\n\nDATA:\n{context}",
             query,
@@ -2251,7 +2494,7 @@ def ai_team_summary():
             return _ai_unavailable_response()
 
         # Build fresh context with all current data
-        context = build_stats_context(data)
+        context = build_stats_context(data, _build_roster_metadata_for_ai(data))
 
         prompt = """Diagnose this season using only box score data.
 1. Primary Win Condition - what stat pattern predicts wins?

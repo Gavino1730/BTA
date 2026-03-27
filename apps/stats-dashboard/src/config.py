@@ -24,21 +24,6 @@ class Config:
     if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL or "sqlite:///basketball_stats.db"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-
-    if not DATABASE_URL and os.getenv("RAILWAY_ENVIRONMENT"):
-        raise ValueError("DATABASE_URL required in production!")
-
-    if DATABASE_URL and "postgres" in DATABASE_URL:
-        SQLALCHEMY_ENGINE_OPTIONS = {
-            "pool_pre_ping": True,
-            "pool_recycle": 300,
-            "connect_args": {"connect_timeout": 10, "sslmode": "prefer"},
-        }
-    else:
-        SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
-
     # ==========================================================================
     # OpenAI
     # ==========================================================================
@@ -62,8 +47,6 @@ class Config:
     # ==========================================================================
     # Flask
     # ==========================================================================
-    JSON_SORT_KEYS = False
-    SEND_FILE_MAX_AGE_DEFAULT = 31536000
 
     # ==========================================================================
     # File Paths
@@ -78,19 +61,9 @@ class Config:
     TEAM_CACHE = os.path.join(DATA_DIR, "team_summary.json")
 
 
-# ==========================================================================
-# Basketball Constants
-# ==========================================================================
-FREE_THROW_POSSESSION_FACTOR = 0.44
-THREE_POINT_MULTIPLIER = 0.5
-PRIMARY_SCORER_THRESHOLD = 20.0
-SECONDARY_SCORER_THRESHOLD = 10.0
-TURNOVER_THRESHOLD = 13
-FG_PERCENTAGE_THRESHOLD = 44.0
-MIN_GAMES_FOR_VARIANCE = 2
-
-# Players excluded from analysis
-EXCLUDED_PLAYERS = set()
+# Players excluded from analysis (comma-separated names in EXCLUDED_PLAYERS env var)
+_excluded_env = os.getenv("EXCLUDED_PLAYERS", "")
+EXCLUDED_PLAYERS = {name.strip() for name in _excluded_env.split(",") if name.strip()}
 
 # ==========================================================================
 # Token Limits

@@ -3,6 +3,10 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import {
+  normalizeTeamColor,
+  sanitizePromptText,
+} from "@bta/shared-schema";
+import {
   answerGameAiChat,
   type CoachAiChatResponse,
   type AiPromptPreview,
@@ -28,19 +32,70 @@ import {
 } from "./store.js";
 
 const app = express();
-app.use(cors());
+
+// CORS whitelist: allow only known app origins + stats dashboard
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",      // iPad operator dev
+  "http://localhost:5174",      // Coach dashboard dev
+  "http://localhost:5000",      // Stats dashboard dev
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://127.0.0.1:5000",
+];
+const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
+if (PROD_ORIGINS.length > 0) ALLOWED_ORIGINS.push(...PROD_ORIGINS);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // In development, allow localhost variants; in production use whitelist
+    if (process.env.NODE_ENV !== "production") {
+      callback(null, true);
+    } else if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed"));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
+
+// Simple rate limiter: per-IP event submission limit (100 events per minute)
+const rateLimitByIp = new Map<string, { count: number; resetAt: number }>();
+function createRateLimitMiddleware(maxRequests: number, windowMs: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const ip = (req.ip || req.socket.remoteAddress || "unknown").split(":").pop() || "unknown";
+    const now = Date.now();
+    const limit = rateLimitByIp.get(ip) ?? { count: 0, resetAt: now + windowMs };
+
+    if (now > limit.resetAt) {
+      limit.count = 0;
+      limit.resetAt = now + windowMs;
+    }
+
+    if (limit.count >= maxRequests) {
+      res.status(429).json({ error: "Too many requests" });
+      return;
+    }
+
+    limit.count++;
+    rateLimitByIp.set(ip, limit);
+    next();
+  };
+}
+const eventRateLimiter = createRateLimitMiddleware(100, 60000); // 100 events/min per IP
 
 const STATS_DASHBOARD_BASE = (process.env.STATS_DASHBOARD_BASE ?? "http://localhost:5000").replace(/\/+$/, "");
 
-function normalizeTeamColor(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  return /^#(?:[0-9a-f]{6}|[0-9a-f]{3})$/.test(normalized) ? normalized : undefined;
+// Retry queue for failed roster syncs with exponential backoff
+interface RosterSyncQueueItem {
+  teams: unknown[];
+  preferredTeamId: string;
+  retries: number;
+  nextRetryAt: number;
 }
+const rosterSyncQueue: RosterSyncQueueItem[] = [];
+let rosterSyncTimerId: ReturnType<typeof setTimeout> | null = null;
 
 function buildStatsSyncHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -50,24 +105,62 @@ function buildStatsSyncHeaders(): Record<string, string> {
   return headers;
 }
 
+async function processRosterSyncQueue(): Promise<void> {
+  while (rosterSyncQueue.length > 0) {
+    const item = rosterSyncQueue[0];
+    if (Date.now() < item.nextRetryAt) {
+      break; // Not ready to retry yet
+    }
+
+    try {
+      const response = await fetch(`${STATS_DASHBOARD_BASE}/api/roster-sync`, {
+        method: "PUT",
+        headers: buildStatsSyncHeaders(),
+        body: JSON.stringify({ teams: item.teams, preferredTeamId: item.preferredTeamId })
+      });
+
+      if (response.ok) {
+        rosterSyncQueue.shift();
+        console.log("[realtime-api] Roster sync succeeded");
+      } else if (item.retries < 5) {
+        item.retries++;
+        item.nextRetryAt = Date.now() + Math.pow(2, item.retries) * 1000; // Exponential backoff
+        console.warn(`[realtime-api] Roster sync failed (${response.status}), retrying in ${item.nextRetryAt - Date.now()}ms`);
+      } else {
+        console.error("[realtime-api] Roster sync failed after 5 retries, discarding");
+        rosterSyncQueue.shift();
+      }
+    } catch (error) {
+      if (item.retries < 5) {
+        item.retries++;
+        item.nextRetryAt = Date.now() + Math.pow(2, item.retries) * 1000;
+        console.warn(`[realtime-api] Roster sync error, retrying in ${item.nextRetryAt - Date.now()}ms:`, error);
+      } else {
+        console.error("[realtime-api] Roster sync failed after 5 retries", error);
+        rosterSyncQueue.shift();
+      }
+    }
+  }
+
+  // Schedule next attempt if queue not empty
+  if (rosterSyncQueue.length > 0) {
+    const nextItem = rosterSyncQueue[0];
+    const delay = Math.max(0, nextItem.nextRetryAt - Date.now());
+    rosterSyncTimerId = setTimeout(processRosterSyncQueue, delay);
+  } else {
+    rosterSyncTimerId = null;
+  }
+}
+
 function syncRosterTeamsToStatsDashboard(teams: unknown[]): void {
   const preferredTeamId = typeof teams[0] === "object" && teams[0] !== null && "id" in teams[0]
     ? String((teams[0] as { id?: unknown }).id ?? "")
     : "";
 
-  void fetch(`${STATS_DASHBOARD_BASE}/api/roster-sync`, {
-    method: "PUT",
-    headers: buildStatsSyncHeaders(),
-    body: JSON.stringify({ teams, preferredTeamId })
-  })
-    .then((response) => {
-      if (!response.ok) {
-        console.warn("[realtime-api] stats roster-sync returned non-OK", response.status);
-      }
-    })
-    .catch((error: unknown) => {
-      console.warn("[realtime-api] stats roster-sync request failed", error);
-    });
+  rosterSyncQueue.push({ teams, preferredTeamId, retries: 0, nextRetryAt: Date.now() });
+  if (!rosterSyncTimerId) {
+    void processRosterSyncQueue();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -83,9 +176,9 @@ function requireApiKey(req: Request, res: Response, next: NextFunction): void {
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: "*"
-  }
+  cors: process.env.NODE_ENV !== "production" 
+    ? { origin: true, credentials: true }
+    : { origin: ALLOWED_ORIGINS, credentials: true }
 });
 
 interface OperatorPresence {
@@ -97,15 +190,42 @@ interface OperatorPresence {
 }
 
 const operatorPresenceBySocketId = new Map<string, OperatorPresence>();
+const operatorPresenceByDeviceId = new Map<string, OperatorPresence>(); // Index for O(1) lookup
 
-function getOperatorByDeviceId(deviceId: string): OperatorPresence | null {
-  for (const operator of operatorPresenceBySocketId.values()) {
-    if (operator.deviceId === deviceId) {
-      return operator;
-    }
+// Debounce game state broadcasts to max 1 per 200ms per game
+interface PendingBroadcast {
+  state: unknown;
+  insights: unknown;
+  timerId: ReturnType<typeof setTimeout>;
+}
+
+const pendingBroadcasts = new Map<string, PendingBroadcast>();
+const BROADCAST_DEBOUNCE_MS = 200;
+
+function broadcastGameStateWithDebounce(gameId: string, state: unknown, insights: unknown): void {
+  const existing = pendingBroadcasts.get(gameId);
+  if (existing) {
+    // Update pending state/insights and keep existing timer
+    existing.state = state;
+    existing.insights = insights;
+    return;
   }
 
-  return null;
+  // Schedule broadcast for 200ms from now
+  const timerId = setTimeout(() => {
+    const pending = pendingBroadcasts.get(gameId);
+    if (pending) {
+      io.to(gameId).emit("game:state", pending.state);
+      io.to(gameId).emit("game:insights", pending.insights);
+      pendingBroadcasts.delete(gameId);
+    }
+  }, BROADCAST_DEBOUNCE_MS);
+
+  pendingBroadcasts.set(gameId, { state, insights, timerId });
+}
+
+function getOperatorByDeviceId(deviceId: string): OperatorPresence | null {
+  return operatorPresenceByDeviceId.get(deviceId) ?? null;
 }
 
 function emitPresence(deviceId: string): void {
@@ -489,7 +609,7 @@ app.post("/games/:gameId/ai-chat", requireApiKey, async (req, res) => {
     return;
   }
 
-  const question = typeof req.body?.question === "string" ? req.body.question : "";
+  const question = typeof req.body?.question === "string" ? sanitizePromptText(req.body.question, 2000) : "";
   if (!question.trim()) {
     res.status(400).json({ error: "question is required" });
     return;
@@ -511,10 +631,19 @@ app.get("/games/:gameId/events", requireApiKey, (req, res) => {
     return;
   }
 
-  res.json(getGameEvents(req.params.gameId));
+  const allEvents = getGameEvents(req.params.gameId);
+  const limit = req.query.limit !== undefined ? Math.min(Math.max(Number(req.query.limit) || 50, 1), 500) : undefined;
+  const offset = req.query.offset !== undefined ? Math.max(Number(req.query.offset) || 0, 0) : 0;
+
+  if (limit !== undefined) {
+    const paginated = allEvents.slice(offset, offset + limit);
+    res.json({ events: paginated, total: allEvents.length, offset, limit });
+  } else {
+    res.json(allEvents);
+  }
 });
 
-app.post("/games/:gameId/events", requireApiKey, (req, res) => {
+app.post("/games/:gameId/events", requireApiKey, eventRateLimiter, (req, res) => {
   try {
     const payload = {
       ...(req.body ?? {}),
@@ -524,8 +653,7 @@ app.post("/games/:gameId/events", requireApiKey, (req, res) => {
     const { event, state, insights } = ingestEvent(payload);
 
     io.to(event.gameId).emit("game:event", event);
-    io.to(event.gameId).emit("game:state", state);
-    io.to(event.gameId).emit("game:insights", insights);
+    broadcastGameStateWithDebounce(event.gameId, state, insights);
     void refreshAndBroadcastInsights(event.gameId);
 
     res.status(201).json({ event, state, insights });
@@ -539,8 +667,7 @@ app.delete("/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
     const { state, insights } = deleteEvent(req.params.gameId, req.params.eventId);
 
     io.to(req.params.gameId).emit("game:event:deleted", { eventId: req.params.eventId });
-    io.to(req.params.gameId).emit("game:state", state);
-    io.to(req.params.gameId).emit("game:insights", insights);
+    broadcastGameStateWithDebounce(req.params.gameId, state, insights);
     void refreshAndBroadcastInsights(req.params.gameId);
 
     res.json({ state, insights });
@@ -591,14 +718,22 @@ io.on("connection", (socket) => {
 
     const now = new Date().toISOString();
     const existing = operatorPresenceBySocketId.get(socket.id);
+    
+    // Remove old device ID index if changing devices
+    if (existing && existing.deviceId !== deviceId) {
+      operatorPresenceByDeviceId.delete(existing.deviceId);
+    }
 
-    operatorPresenceBySocketId.set(socket.id, {
+    const presence: OperatorPresence = {
       deviceId,
       gameId,
       socketId: socket.id,
       connectedAtIso: existing?.connectedAtIso ?? now,
       lastSeenIso: now
-    });
+    };
+    
+    operatorPresenceBySocketId.set(socket.id, presence);
+    operatorPresenceByDeviceId.set(deviceId, presence);
 
     socket.join(gameId);
     socket.join(`device:${deviceId}`);
@@ -670,13 +805,33 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Clean up both indices
     operatorPresenceBySocketId.delete(socket.id);
+    operatorPresenceByDeviceId.delete(operator.deviceId);
+    
+    // Leave all rooms
+    socket.leave(`device:${operator.deviceId}`);
+    socket.leave(operator.gameId);
+    
     emitPresence(operator.deviceId);
   });
 });
 
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? "0.0.0.0";
+
+// Warn if API key not set in production
+const NODE_ENV = process.env.NODE_ENV ?? "development";
+if (NODE_ENV === "production" && !API_KEY) {
+  console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Event ingest endpoints are open to anyone.");
+}
+
 httpServer.listen(port, host, () => {
   console.log(`Realtime API listening on http://${host}:${port}`);
+  if (API_KEY) {
+    console.log(`[realtime-api] API key authentication: ENABLED`);
+  } else {
+    console.log(`[realtime-api] API key authentication: disabled (set BTA_API_KEY to enable)`);
+  }
+  console.log(`[realtime-api] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
 });
