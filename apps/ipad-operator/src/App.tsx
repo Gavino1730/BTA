@@ -17,7 +17,8 @@ import {
 const defaultHost = window.location.hostname || "localhost";
 const DEFAULT_API = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? `http://${defaultHost}:5173`;
-const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
+const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:4000`;
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
 const DEVICE_ID_KEY = "operator-device-id";
@@ -56,13 +57,16 @@ const TEAM_COLOR_OPTIONS = [
 ] as const;
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
-function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
-  return setup.apiKey ? { "x-api-key": setup.apiKey } : {};
+function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<string, string> {
+  const headers: Record<string, string> = { "x-school-id": setup.schoolId?.trim() || DEFAULT_SCHOOL_ID };
+  if (setup.apiKey) {
+    headers["x-api-key"] = setup.apiKey;
+  }
+  return headers;
 }
 /** Returns RequestInit for a plain GET request, adding the API key header when configured. */
-function apiHeaders(setup: { apiKey?: string }): RequestInit {
-  const h = apiKeyHeader(setup);
-  return Object.keys(h).length ? { headers: h } : {};
+function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
+  return { headers: apiKeyHeader(setup) };
 }
 
 function buildAiContextFromSetup(setup: GameSetup): {
@@ -154,6 +158,7 @@ export interface GameSetup {
   myTeamId: string;      // the team you are tracking
   apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
   apiKey?: string;       // shared secret sent as x-api-key header
+  schoolId?: string;
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
@@ -185,6 +190,7 @@ const DEFAULT_DATA: AppData = {
     deviceId: getDefaultDeviceId(),
     myTeamId: "",
     apiUrl: DEFAULT_API,
+    schoolId: DEFAULT_SCHOOL_ID,
     opponent: "",
     vcSide: "home",
     dashboardUrl: DEFAULT_STATS_DASHBOARD,
@@ -243,17 +249,18 @@ function isValidApiUrl(url: string): boolean {
 }
 
 function loadAppData(): AppData {
-  // Check URL params first — a QR-code scan may carry config overrides.
+  // Check URL params first â€” a QR-code scan may carry config overrides.
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
   
-  // Validate API URL from QR code — only allow whitelisted or same-origin URLs
+  // Validate API URL from QR code â€” only allow whitelisted or same-origin URLs
   const qrApiUrl = qp.get("apiUrl");
   if (qrApiUrl && isValidApiUrl(qrApiUrl)) {
     urlSetup.apiUrl = qrApiUrl;
   }
   
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
+  if (qp.get("schoolId"))    urlSetup.schoolId    = qp.get("schoolId")!;
   if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
   if (qp.get("deviceId"))    urlSetup.deviceId    = normalizeDeviceId(qp.get("deviceId"));
@@ -281,6 +288,7 @@ function loadAppData(): AppData {
       }
       gs.deviceId = normalizeDeviceId(gs.deviceId);
       gs.trackClock = gs.trackClock ?? true;
+      gs.schoolId = gs.schoolId?.trim() || DEFAULT_SCHOOL_ID;
       gs.trackPossession = gs.trackPossession ?? true;
       gs.trackTimeouts = gs.trackTimeouts ?? true;
       gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
@@ -316,7 +324,7 @@ function clockToSec(clock: string): number {
   return m * 60 + s;
 }
 
-// Parse raw numpad string (digits + optional single dot for tenths) → formatted clock string
+// Parse raw numpad string (digits + optional single dot for tenths) â†’ formatted clock string
 function formatClockFromPadInput(raw: string): string {
   if (!raw) return "0:00";
   const dotIdx = raw.indexOf(".");
@@ -778,7 +786,8 @@ export function App() {
     async function syncTeamsFromRealtime() {
       const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
       const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
-      const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+      const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+      const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
       const converted = remoteTeams.map(convertRosterTeamToAppTeam);
 
       if (!active || converted.length === 0) {
@@ -885,7 +894,7 @@ export function App() {
   // ---- In-game roster state ----
   const [showRosterPanel, setShowRosterPanel] = useState(false);
 
-  // Ref for auto-save interval — always holds the latest values without re-registering the interval
+  // Ref for auto-save interval â€” always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
   // Helper to generate team ID from name
@@ -1065,7 +1074,10 @@ export function App() {
       : undefined;
     const payload = { deviceId, gameId, startingLineupByTeam };
     const socket = io(appData.gameSetup.apiUrl, {
-      auth: appData.gameSetup.apiKey ? { apiKey: appData.gameSetup.apiKey } : {}
+      auth: appData.gameSetup.apiKey
+        ? { apiKey: appData.gameSetup.apiKey, schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID }
+        : { schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID },
+      extraHeaders: apiKeyHeader(appData.gameSetup)
     });
 
     const register = () => {
@@ -1134,9 +1146,9 @@ export function App() {
     setSequence(localSeq);
     async function hydrate() {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
+        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (!res.ok) {
-          // Don't wipe submitted events on error — keep local state
+          // Don't wipe submitted events on error â€” keep local state
           return;
         }
         const events = ((await res.json()) as GameEvent[]).map(normalizeEventTeamId);
@@ -1146,7 +1158,7 @@ export function App() {
         setSequence(next);
         saveSeq(gameId, next);
       } catch {
-        // Hydration failed (offline) — keep local pending queue intact
+        // Hydration failed (offline) â€” keep local pending queue intact
       }
     }
     void hydrate();
@@ -1158,7 +1170,7 @@ export function App() {
   async function submitEvent(event: GameEvent): Promise<boolean> {
     const normalizedEvent = normalizeEventTeamId(event);
     try {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, {
+      const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(normalizedEvent),
@@ -1170,10 +1182,10 @@ export function App() {
       }
       setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
       setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
-      showInlineNotice("✓ Stat saved", "success", 1500);
+      showInlineNotice("âœ“ Stat saved", "success", 1500);
       return true;
     } catch (err) {
-      const errorMsg = `Network error. Event queued offline — will sync when reconnected.`;
+      const errorMsg = `Network error. Event queued offline â€” will sync when reconnected.`;
       showInlineNotice(errorMsg, "warning", 10000);
       setPendingEvents(cur => {
         if (cur.some(p => p.id === normalizedEvent.id)) return cur;
@@ -1193,10 +1205,10 @@ export function App() {
     }
     if (successCount > 0) {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
+        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
       } catch { /* empty */ }
-        showInlineNotice(`✓ ${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
+        showInlineNotice(`âœ“ ${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
     }
   }
 
@@ -1211,7 +1223,7 @@ export function App() {
       ...buildAiContextFromSetup(appData.gameSetup),
       gameMoment: gameMoment || undefined,
     };
-    void fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/ai-context`, {
+    void fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/ai-context`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
       body: JSON.stringify(payload),
@@ -1286,13 +1298,13 @@ export function App() {
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     // If it is already submitted to the API, delete it there
     if (submittedEvents.some(e => e.id === last.id)) {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
+      const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
       if (res.ok) setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
     }
   }
 
   async function startGame(newGameId?: string) {
-    // Read fresh settings from localStorage — saveGameSetup writes there synchronously
+    // Read fresh settings from localStorage â€” saveGameSetup writes there synchronously
     // before this async function resolves, so we always get the latest values.
     const latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
@@ -1382,7 +1394,7 @@ export function App() {
     return true;
   }
 
-  /** End game from the live view — opens post-game review screen without auto-submitting. */
+  /** End game from the live view â€” opens post-game review screen without auto-submitting. */
   async function endGame() {
     const ok = await requestConfirm({
       title: "End game now?",
@@ -1397,7 +1409,7 @@ export function App() {
     persistPhase("post-game");
   }
 
-  /** Prepare a fresh game after viewing post-game screen — returns to pre-game setup. */
+  /** Prepare a fresh game after viewing post-game screen â€” returns to pre-game setup. */
   function handleNewGame() {
     const latest = loadAppData();
     const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
@@ -1421,7 +1433,7 @@ export function App() {
     const vcSide = appData.gameSetup.vcSide ?? "home";
     const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
     const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:4000";
 
     if (!opponent) {
       const message = "Enter the opponent name in Game Setup before submitting.";
@@ -1458,7 +1470,7 @@ export function App() {
     const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
     const teamStats = computeTeamStats(allEventObjs, vcTeamId);
 
-    // Full roster for the dashboard to upsert — keyed by jersey number so it
+    // Full roster for the dashboard to upsert â€” keyed by jersey number so it
     // correctly updates existing players instead of creating abbreviated duplicates.
     const rosterPayload = vcTeam.players.map(p => ({
       number: parseInt(p.number, 10) || 0,
@@ -1785,7 +1797,7 @@ export function App() {
     const failedDeletes: string[] = [];
     for (const event of submittedToRemove) {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${event.id}`, {
+        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${event.id}`, {
           method: "DELETE",
           headers: apiKeyHeader(appData.gameSetup),
         });
@@ -1840,7 +1852,7 @@ export function App() {
 
     setSummaryAiLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/games/${gameId}/insights`, {
+      const res = await fetch(`${apiUrl}/api/games/${gameId}/insights`, {
         method: "GET",
         headers: { ...apiKeyHeader(appData.gameSetup) },
       });
@@ -1862,7 +1874,7 @@ export function App() {
         .map((insight) => {
           const base = insight.message?.trim() || insight.explanation?.trim() || "No insight text available.";
           const why = insight.explanation?.trim() || "";
-          const compact = why && !base.includes(why) ? `${base} — ${why}` : base;
+          const compact = why && !base.includes(why) ? `${base} â€” ${why}` : base;
           return compact;
         });
 
@@ -1889,7 +1901,7 @@ export function App() {
 
     setSummaryPlayerAiLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/games/${gameId}/insights`, {
+      const res = await fetch(`${apiUrl}/api/games/${gameId}/insights`, {
         method: "GET",
         headers: { ...apiKeyHeader(appData.gameSetup) },
       });
@@ -2015,11 +2027,11 @@ export function App() {
     });
     if (!ok) return;
 
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:4000";
     const savedStatsGameId = appData.gameSetup.statsGameId;
     if (savedStatsGameId != null) {
       try {
-        await fetch(`${dashboardUrl}/api/game/${savedStatsGameId}`, {
+        await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
           method: "DELETE",
           headers: apiKeyHeader(appData.gameSetup),
         });
@@ -2044,7 +2056,7 @@ export function App() {
     persistPhase("pre-game");
   }
 
-  // Auto-save every 3 minutes — interval reads from ref so no deps needed
+  // Auto-save every 3 minutes â€” interval reads from ref so no deps needed
   useEffect(() => {
     const id = setInterval(() => autoSaveCtx.current.run(), 3 * 60 * 1000);
     return () => clearInterval(id);
@@ -2148,7 +2160,7 @@ export function App() {
     }
 
     try {
-      const response = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${editContext.eventId}`, {
+      const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(normalizedEvent),
@@ -2187,7 +2199,7 @@ export function App() {
     }
 
     try {
-      const response = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${target.event.id}`, {
+      const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
         method: "DELETE",
         headers: apiKeyHeader(appData.gameSetup),
       });
@@ -2506,14 +2518,14 @@ export function App() {
       const allowTeamOnlyForOpponent = modal.teamId === opponentSide && allTeamPlayers.length === 0;
       const selectedTeamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
       const modalTitle = modal.editContext
-        ? `Edit ${modal.kind === "shot" ? `${modal.points}pt` : "FT"} — ${tLabel(modal.teamId)}`
-        : `${modal.kind === "shot" ? `${modal.points}pt` : "FT"} — ${tLabel(modal.teamId)}`;
+        ? `Edit ${modal.kind === "shot" ? `${modal.points}pt` : "FT"} â€” ${tLabel(modal.teamId)}`
+        : `${modal.kind === "shot" ? `${modal.points}pt` : "FT"} â€” ${tLabel(modal.teamId)}`;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">{modalTitle}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="made-miss-row">
@@ -2553,7 +2565,7 @@ export function App() {
     if (modal.kind === "stat") {
       const statLabels: Record<string, string> = {
         def_reb: "Def Rebound", off_reb: "Off Rebound", turnover: "Turnover",
-        steal: "Steal", assist: "Assist — pick passer", block: "Block", foul: "Foul",
+        steal: "Steal", assist: "Assist â€” pick passer", block: "Block", foul: "Foul",
       };
       const trackedSide = vcSideSetup;
       const allowOpponentForStat = isOpponentStatEnabled(modal.stat as OpponentTrackStat);
@@ -2587,7 +2599,7 @@ export function App() {
                   >{vcSideSetup === "home" ? awayTeamName : homeTeamName}</button>
                 </div>
               </div>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
@@ -2634,8 +2646,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Edit Assist — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">Edit Assist â€” {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="modal-subtitle">Select the passer, then the scorer.</div>
@@ -2694,8 +2706,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Assist — pick scorer</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">Assist â€” pick scorer</span>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             <div className="player-list">
               {players.length === 0 && <p className="no-players">No players on court yet</p>}
@@ -2720,8 +2732,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Assist — pick points</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">Assist â€” pick points</span>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             <div className="modal-subtitle">
               {passer ? `Passer: #${passer.number} ${passer.name}` : "Passer selected"}
@@ -2749,8 +2761,8 @@ export function App() {
           <div className="modal-overlay" onClick={closeModal}>
             <div className="modal" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} → {players.find(p => p.id === modal.playerOutId)?.name} — {tLabel(modal.teamId)}</span>
-                <button className="modal-close" onClick={closeModal}>✕</button>
+                <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} â†’ {players.find(p => p.id === modal.playerOutId)?.name} â€” {tLabel(modal.teamId)}</span>
+                <button className="modal-close" onClick={closeModal}>âœ•</button>
               </div>
               {renderEditDeleteAction(modal.editContext ?? null)}
               <div className="player-list">
@@ -2771,8 +2783,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.editContext ? "Edit Sub Out" : "Sub Out"} — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">{modal.editContext ? "Edit Sub Out" : "Sub Out"} â€” {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
@@ -2801,8 +2813,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} â€” {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
@@ -2824,7 +2836,7 @@ export function App() {
           <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Edit Timeout</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="confirm-message">Update the team and timeout length for this stoppage.</div>
@@ -2863,7 +2875,7 @@ export function App() {
           <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Edit Possession</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="confirm-message">Choose which team should own this possession event.</div>
@@ -2906,7 +2918,7 @@ export function App() {
           <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Edit Period Start</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>âœ•</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="confirm-message">Pick the period that should start at this point in the feed.</div>
@@ -2982,7 +2994,7 @@ export function App() {
           onClick={() => setDismissedAlertIds((prev) => new Set([...prev, top.id]))}
           aria-label="Dismiss alert"
         >
-          ✕
+          âœ•
         </button>
       </div>
     );
@@ -3225,13 +3237,13 @@ export function App() {
           </div>
 
           {!appData.gameSetup.myTeamId && (
-            <p className="pregame-error">⚠ No team selected — go to Settings to choose your team.</p>
+            <p className="pregame-error">âš  No team selected â€” go to Settings to choose your team.</p>
           )}
           {!appData.gameSetup.opponent?.trim() && appData.gameSetup.myTeamId && (
-            <p className="pregame-error">⚠ Enter the opponent name above to continue.</p>
+            <p className="pregame-error">âš  Enter the opponent name above to continue.</p>
           )}
           {appData.gameSetup.myTeamId && appData.gameSetup.opponent?.trim() && !lineupIsSet && (
-            <p className="pregame-error">⚠ Set the starting lineup below before starting the game.</p>
+            <p className="pregame-error">âš  Set the starting lineup below before starting the game.</p>
           )}
 
           {myTeam && (
@@ -3248,10 +3260,10 @@ export function App() {
                 });
               }}>
               {showLineupSetup
-                ? "✕ Cancel"
+                ? "âœ• Cancel"
                 : lineupIsSet
-                  ? `✓ Starting Lineup Set (${savedLineup.length}/5) — Edit`
-                  : "⚠ Set Starting Lineup (Required)"}
+                  ? `âœ“ Starting Lineup Set (${savedLineup.length}/5) â€” Edit`
+                  : "âš  Set Starting Lineup (Required)"}
             </button>
           )}
 
@@ -3267,7 +3279,7 @@ export function App() {
                       disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
                     <span className="lineup-player-num">#{p.number}</span>
                     <span className="lineup-player-name">{p.name}</span>
-                    {selectedStarters.has(p.id) && <span className="lineup-player-badge">☆</span>}
+                    {selectedStarters.has(p.id) && <span className="lineup-player-badge">â˜†</span>}
                   </button>
                 ))}
               </div>
@@ -3290,14 +3302,14 @@ export function App() {
               const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
               await startGame(newId);
             }}>
-            ▶ Start Game
+            â–¶ Start Game
           </button>
 
           <div className="pregame-settings-callout">
             <button
               className="pregame-settings-link"
               onClick={() => { setSettingsView("game-setup"); setView("settings"); }}>
-              ⚙ Open Game Settings
+              âš™ Open Game Settings
             </button>
             <p className="pregame-settings-hint">Team/Opponent required. API and Dashboard URLs are critical for live sync and final save.</p>
           </div>
@@ -3368,7 +3380,7 @@ export function App() {
                 onChange={e => setPostGameHomeScoreInput(e.target.value.replace(/[^0-9]/g, ""))}
               />
             </div>
-            <div className="postgame-score-sep">–</div>
+            <div className="postgame-score-sep">â€“</div>
             <div className="postgame-score-team">
               <span className="postgame-score-name">{awayTeamName}</span>
               <input
@@ -3398,7 +3410,7 @@ export function App() {
             href={coachUrl}
             target="_blank"
             rel="noreferrer">
-            📺 Open Dashboard
+            ðŸ“º Open Dashboard
           </a>
 
           <button
@@ -3413,7 +3425,7 @@ export function App() {
               });
             }}
             disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Saving…" : "↑ Re-save Stats"}
+            {submitStatus === "pending" ? "Savingâ€¦" : "â†‘ Re-save Stats"}
           </button>
 
           <button
@@ -3436,7 +3448,7 @@ export function App() {
           </button>
 
           <button className="postgame-new-btn" onClick={handleNewGame}>
-            ▶ Start New Game
+            â–¶ Start New Game
           </button>
         </div>
       </div>
@@ -3506,12 +3518,12 @@ export function App() {
                         <div className="clock-numpad" onClick={e => e.stopPropagation()}>
                           <div className="clock-numpad-preview">{formatClockFromPadInput(summaryClockPadDigits)}</div>
                           <div className="clock-numpad-grid">
-                            {([1,2,3,4,5,6,7,8,9,".",0,"⌫"] as (number|string)[]).map((k, i) => (
+                            {([1,2,3,4,5,6,7,8,9,".",0,"âŒ«"] as (number|string)[]).map((k, i) => (
                               <button
                                 key={i}
                                 className="clock-numpad-key"
                                 onClick={() => {
-                                  if (k === "⌫") {
+                                  if (k === "âŒ«") {
                                     setSummaryClockPadDigits(d => d.slice(0, -1));
                                   } else if (k === ".") {
                                     setSummaryClockPadDigits(d => d.includes(".") ? d : d + ".");
@@ -3546,7 +3558,7 @@ export function App() {
                       onChange={e => setGameMoment(e.target.value)}
                       style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
                     >
-                      <option value="" style={{ background: "#302f68" }}>—</option>
+                      <option value="" style={{ background: "#302f68" }}>â€”</option>
                       {getGameMomentOptions().map(opt => (
                         <option key={opt.value} value={opt.value} style={{ background: "#302f68" }}>{opt.label}</option>
                       ))}
@@ -3580,7 +3592,7 @@ export function App() {
                   </div>
                 </div>
               </div>
-              <button className="modal-close" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>✕</button>
+              <button className="modal-close" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>âœ•</button>
             </div>
 
             {/* Tab bar */}
@@ -3597,11 +3609,11 @@ export function App() {
                     void fetchPlayerAiInsights();
                   }
                 }}
-              >Players{foulAlerts.length > 0 ? ` ⚠ ${foulAlerts.length}` : ""}</button>
+              >Players{foulAlerts.length > 0 ? ` âš  ${foulAlerts.length}` : ""}</button>
             </div>
 
             <div className="summary-body">
-              {/* ── TEAMS TAB ── */}
+              {/* â”€â”€ TEAMS TAB â”€â”€ */}
               {summaryTab === "teams" && (<>
                 <div className="summary-stats-grid">
                   {(() => {
@@ -3626,7 +3638,7 @@ export function App() {
 
                 <div className="summary-highlights">
                   <h3>AI Insights</h3>
-                  {summaryAiLoading && <p className="summary-ai-status">Generating insights…</p>}
+                  {summaryAiLoading && <p className="summary-ai-status">Generating insightsâ€¦</p>}
                   <div className="summary-ai-sections">
                     {!summaryAiLoading && activeSummaryInsights.length === 0 && (
                       <p className="summary-ai-status">No insights yet. Capture a few more possessions.</p>
@@ -3641,12 +3653,12 @@ export function App() {
                     <button
                       className="summary-ai-refresh-btn"
                       onClick={() => { setSummaryAiInsights(null); void fetchOpenAiSummaryInsights(); }}
-                    >↻ Refresh</button>
+                    >â†» Refresh</button>
                   )}
                 </div>
               </>)}
 
-              {/* ── PLAYERS TAB ── */}
+              {/* â”€â”€ PLAYERS TAB â”€â”€ */}
               {summaryTab === "players" && (<>
                 {/* Period filter pills */}
                 <div className="summary-period-filter">
@@ -3669,7 +3681,7 @@ export function App() {
                   ))}
                 </div>
                 {trackedPlayers.length === 0 ? (
-                  <p className="summary-no-players">No tracked players — add a roster to see individual stats.</p>
+                  <p className="summary-no-players">No tracked players â€” add a roster to see individual stats.</p>
                 ) : (
                   <div className="summary-player-list">
                     {/* header row */}
@@ -3714,7 +3726,7 @@ export function App() {
                             <span className="spr-name">
                               {p.number != null ? <span className="spr-num">#{p.number}</span> : null}
                               {p.name}
-                              {isTopScorer && <span className="spr-badge spr-badge-pts">🏆</span>}
+                              {isTopScorer && <span className="spr-badge spr-badge-pts">ðŸ†</span>}
                               {fouls >= 5 && <span className="spr-badge spr-badge-out">OUT</span>}
                             </span>
                             <span className="spr-stat spr-pts">{pts}</span>
@@ -3737,13 +3749,13 @@ export function App() {
                 {/* Player-focused AI suggestions */}
                 <div className="summary-highlights">
                   <h3>Player Suggestions</h3>
-                  {summaryPlayerAiLoading && <p className="summary-ai-status">Generating player insights…</p>}
+                  {summaryPlayerAiLoading && <p className="summary-ai-status">Generating player insightsâ€¦</p>}
                   {!summaryPlayerAiLoading && trackedPlayers.length === 0 && (
                     <p className="summary-ai-status">Add a roster to get player-specific suggestions.</p>
                   )}
                   <div className="summary-ai-sections">
                     {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (summaryPlayerAiInsights ?? []).length === 0 && (
-                      <p className="summary-ai-status">No suggestions yet — capture more possessions or check your connection.</p>
+                      <p className="summary-ai-status">No suggestions yet â€” capture more possessions or check your connection.</p>
                     )}
                     {(summaryPlayerAiInsights ?? []).map((insight, index) => (
                       <div key={index} className="insight-section">
@@ -3755,7 +3767,7 @@ export function App() {
                     <button
                       className="summary-ai-refresh-btn"
                       onClick={() => { setSummaryPlayerAiInsights(null); void fetchPlayerAiInsights(); }}
-                    >↻ Refresh</button>
+                    >â†» Refresh</button>
                   )}
                 </div>
               </>)}
@@ -3765,12 +3777,12 @@ export function App() {
       )}
       {!online && (
         <div className="offline-badge">
-          OFFLINE{pendingEvents.length > 0 ? ` · ${pendingEvents.length} unsaved` : ""}
+          OFFLINE{pendingEvents.length > 0 ? ` Â· ${pendingEvents.length} unsaved` : ""}
         </div>
       )}
       {pendingEvents.length > 0 && online && (
         <button className="offline-badge pending-badge" onClick={() => void flushQueue()}>
-          {pendingEvents.length} pending ↑
+          {pendingEvents.length} pending â†‘
         </button>
       )}
 
@@ -3790,14 +3802,14 @@ export function App() {
                 <>
                   <div className="shot-timeout-title">Timeouts {inOvertimeNow ? "(OT)" : "(Regulation)"}</div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
-                    <div className="shot-timeout-counts">30s: {myTO.short} · 60s: {myTO.full}</div>
+                    <div className="shot-timeout-counts">30s: {myTO.short} Â· 60s: {myTO.full}</div>
                     <div className="timeout-btn-row">
                       <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>30s</button>
                       <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>60s</button>
                     </div>
                   </div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${opponentSide}`}>
-                    <div className="shot-timeout-counts">30s: {oppTO.short} · 60s: {oppTO.full}</div>
+                    <div className="shot-timeout-counts">30s: {oppTO.short} Â· 60s: {oppTO.full}</div>
                     <div className="timeout-btn-row">
                       <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>30s</button>
                       <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>60s</button>
@@ -3825,8 +3837,8 @@ export function App() {
             {appData.gameSetup.deviceId && (
               <div className="score-device-id" style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.4rem" }} title="Operator device identifier">
                 <span>Device ID: {appData.gameSetup.deviceId}</span>
-                <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline — events queued locally"}>
-                  ●
+                <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline â€” events queued locally"}>
+                  â—
                 </span>
               </div>
             )}
@@ -3874,7 +3886,7 @@ export function App() {
           <div className="foul-alerts">
             {foulAlerts.map(p => (
               <div key={p.id} className={`foul-alert ${(pTotals[p.id]?.fouls ?? 0) >= 5 ? "foul-out-alert" : "foul-warn-alert"}`}>
-                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "🚫" : "⚠️"} #{p.number} {p.name} — {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
+                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "ðŸš«" : "âš ï¸"} #{p.number} {p.name} â€” {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
               </div>
             ))}
           </div>
@@ -3922,7 +3934,7 @@ export function App() {
                       void deleteEventRecord({ event, pending });
                     }}
                   >
-                    ↶
+                    â†¶
                   </button>
                 )}
               </div>
@@ -3955,7 +3967,7 @@ export function App() {
                       void deleteOvertimePeriod(lbl);
                     }}
                   >
-                    ×
+                    Ã—
                   </button>
                 )}
               </div>
@@ -3998,12 +4010,12 @@ export function App() {
                   <div className="clock-numpad" onClick={e => e.stopPropagation()}>
                     <div className="clock-numpad-preview">{formatClockFromPadInput(clockPadDigits)}</div>
                     <div className="clock-numpad-grid">
-                      {([1,2,3,4,5,6,7,8,9,".",0,"⌫"] as (number|string)[]).map((k, i) => (
+                      {([1,2,3,4,5,6,7,8,9,".",0,"âŒ«"] as (number|string)[]).map((k, i) => (
                         <button
                           key={i}
                           className="clock-numpad-key"
                           onClick={() => {
-                            if (k === "⌫") {
+                            if (k === "âŒ«") {
                               setClockPadDigits(d => d.slice(0, -1));
                             } else if (k === ".") {
                               // only allow one dot, only when no minutes typed (sub-minute)
@@ -4054,13 +4066,13 @@ export function App() {
               className={`possession-btn possession-btn-home ${possessionTeamId === homeTeamId ? "active" : ""}`}
               onClick={() => setPossession("home")}
               title={`Set possession: ${homeTeamName}`}>
-              ◂ {homeTeamName}
+              â—‚ {homeTeamName}
             </button>
             <button
               className={`possession-btn possession-btn-away ${possessionTeamId === awayTeamId ? "active" : ""}`}
               onClick={() => setPossession("away")}
               title={`Set possession: ${awayTeamName}`}>
-              {awayTeamName} ▸
+              {awayTeamName} â–¸
             </button>
           </div>}
         </div>}
@@ -4110,7 +4122,7 @@ export function App() {
                             className="roster-sub-btn"
                             onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id })}
                             title="Sub out">
-                            ✕
+                            âœ•
                           </button>
                         </div>
                       ))}
@@ -4150,8 +4162,8 @@ export function App() {
       </div>
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
-        <button className="live-nav-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">☰ Settings</button>
-        <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">↩ Undo</button>
+        <button className="live-nav-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">â˜° Settings</button>
+        <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">â†© Undo</button>
         <button
           className="live-nav-btn"
           title="Game summary"
@@ -4164,11 +4176,11 @@ export function App() {
           }}>
           Summary
         </button>
-        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard · ${gameId}`}>
+        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard Â· ${gameId}`}>
           Dashboard
         </a>
         <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
-          🛑 End Game
+          ðŸ›‘ End Game
         </button>
       </div>
     </div>
@@ -4238,7 +4250,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
-  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
+  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:4000");
   const [gsClockVisible, setGsClockVisible] = useState(appData.gameSetup.clockVisible ?? true);
   const [gsClockEnabled, setGsClockEnabled] = useState(appData.gameSetup.clockEnabled ?? true);
   const [gsTrackClock, setGsTrackClock] = useState(appData.gameSetup.trackClock ?? true);
@@ -4259,15 +4271,15 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     if (settingsView !== "ai-settings") return;
     const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
     const gameId = appData.gameSetup.gameId?.trim();
-    if (!gameId) { setAiStatus("No game ID set — save Game Setup first."); return; }
+    if (!gameId) { setAiStatus("No game ID set â€” save Game Setup first."); return; }
     void (async () => {
       try {
-        const response = await fetch(`${apiUrl}/games/${gameId}/ai-settings`, {
+        const response = await fetch(`${apiUrl}/api/games/${gameId}/ai-settings`, {
           headers: apiKeyHeader(appData.gameSetup),
         });
         if (!response.ok) {
           // Seed defaults from stats dashboard if realtime API has nothing yet
-          const dashUrl = (appData.gameSetup.dashboardUrl?.trim()) || "http://localhost:5000";
+          const dashUrl = (appData.gameSetup.dashboardUrl?.trim()) || "http://localhost:4000";
           try {
             const seed = await fetch(`${dashUrl}/api/ai-settings`);
             if (seed.ok) {
@@ -4292,10 +4304,10 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   async function saveAiSettings() {
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const gameId = gsGameId.trim();
-    if (!gameId) { setAiStatus("No game ID set — save Game Setup first."); return; }
-    setAiStatus("Saving…");
+    if (!gameId) { setAiStatus("No game ID set â€” save Game Setup first."); return; }
+    setAiStatus("Savingâ€¦");
     try {
-      const response = await fetch(`${apiUrl}/games/${gameId}/ai-settings`, {
+      const response = await fetch(`${apiUrl}/api/games/${gameId}/ai-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(aiDraft),
@@ -4373,7 +4385,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   }
 
   async function syncRosterToStatsDashboard(teams: Team[]) {
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:4000";
     const preferredTeamId = appData.gameSetup.myTeamId;
     try {
       await fetch(`${dashboardUrl}/api/roster-sync`, {
@@ -4389,8 +4401,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   async function syncRosterFromBackend() {
     const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
     const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     if (teams.length === 0) return;
 
@@ -4410,6 +4423,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     if (!newTeamName.trim()) return;
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const apiKey = gsApiKey.trim() || undefined;
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
     const abbreviation = newTeamAbbr.trim() || newTeamName.slice(0, 3).toUpperCase();
     const created = await createTeamViaRealtime(
       apiUrl,
@@ -4417,12 +4431,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       abbreviation,
       normalizeTeamColor(newTeamColor, DEFAULT_HOME_TEAM_COLOR),
       apiKey,
+      schoolId,
     );
     if (!created) {
       return;
     }
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     onPersist({
       ...appData,
@@ -4439,12 +4454,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   async function deleteTeam(id: string) {
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const apiKey = gsApiKey.trim() || undefined;
-    const removed = await deleteTeamViaRealtime(apiUrl, id, apiKey);
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+    const removed = await deleteTeamViaRealtime(apiUrl, id, apiKey, schoolId);
     if (!removed) {
       return;
     }
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     const hasSelectedTeam = teams.some((team) => team.id === appData.gameSetup.myTeamId);
     const myTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (teams[0]?.id ?? "");
@@ -4460,6 +4476,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     if (!editingTeam || !etName.trim()) return;
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const apiKey = gsApiKey.trim() || undefined;
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
     const updated = await updateTeamViaRealtime(
       apiUrl,
       editingTeam.id,
@@ -4467,12 +4484,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       etAbbr.trim() || etName.slice(0, 3).toUpperCase(),
       normalizeTeamColor(etColor, DEFAULT_HOME_TEAM_COLOR),
       apiKey,
+      schoolId,
     );
     if (!updated) {
       return;
     }
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     onPersist({
       ...appData,
@@ -4487,6 +4505,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     if (!editingTeam || !pNum.trim() || !pName.trim()) return;
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const apiKey = gsApiKey.trim() || undefined;
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
     const created = await addPlayerViaRealtime(apiUrl, editingTeam.id, {
       id: uid(),
       number: pNum.trim(),
@@ -4494,12 +4513,12 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       position: pPos,
       height: pHt.trim() || undefined,
       grade: pGrade.trim() || undefined,
-    }, apiKey);
+    }, apiKey, schoolId);
     if (!created) {
       return;
     }
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     onPersist({ ...appData, teams });
     await syncRosterToStatsDashboard(teams);
@@ -4511,12 +4530,13 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     if (!editingTeam) return;
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const apiKey = gsApiKey.trim() || undefined;
-    const removed = await deletePlayerViaRealtime(apiUrl, editingTeam.id, playerId, apiKey);
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+    const removed = await deletePlayerViaRealtime(apiUrl, editingTeam.id, playerId, apiKey, schoolId);
     if (!removed) {
       return;
     }
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     onPersist({ ...appData, teams });
     await syncRosterToStatsDashboard(teams);
@@ -4535,18 +4555,19 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     if (!editingTeam || !editPlayerId || !epNum.trim() || !epName.trim()) return;
     const apiUrl = gsApiUrl.trim() || DEFAULT_API;
     const apiKey = gsApiKey.trim() || undefined;
+    const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
     const updated = await updatePlayerViaRealtime(apiUrl, editingTeam.id, editPlayerId, {
       number: epNum.trim(),
       name: epName.trim(),
       position: epPos,
       height: epHt.trim() || undefined,
       grade: epGrade.trim() || undefined,
-    }, apiKey);
+    }, apiKey, schoolId);
     if (!updated) {
       return;
     }
 
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
     const teams = remoteTeams.map(convertRosterTeamToAppTeam);
     onPersist({ ...appData, teams });
     await syncRosterToStatsDashboard(teams);
@@ -4579,7 +4600,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         apiKey: gsApiKey.trim() || undefined,
         opponent: gsOpponent.trim(),
         vcSide: gsVcSide,
-        dashboardUrl: gsDashboardUrl.trim() || "http://localhost:5000",
+        dashboardUrl: gsDashboardUrl.trim() || "http://localhost:4000",
         clockVisible: gsClockVisible,
         clockEnabled: gsClockEnabled,
         trackClock: gsTrackClock,
@@ -4609,7 +4630,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
+          <button className="back-btn" onClick={() => onNav("menu")}>â† Back</button>
           <h2>Teams</h2>
           <div style={{ width: 64 }} />
         </header>
@@ -4639,7 +4660,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
               </div>
               <div className="team-list-actions">
                 <button className="edit-btn" onClick={() => { onEditTeam(team.id); onNav("team-edit"); }}>Roster</button>
-                <button className="rm-btn" onClick={() => deleteTeam(team.id)}>✕</button>
+                <button className="rm-btn" onClick={() => deleteTeam(team.id)}>âœ•</button>
               </div>
             </div>
           ))}
@@ -4655,7 +4676,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("teams")}>← Teams</button>
+          <button className="back-btn" onClick={() => onNav("teams")}>â† Teams</button>
           <h2>{editingTeam.name}</h2>
           <div style={{ width: 64 }} />
         </header>
@@ -4698,7 +4719,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                   <input className="ht-inp" placeholder='Ht' value={epHt} onChange={e => setEpHt(e.target.value)} style={{ width: 52 }} />
                   <input className="grade-inp" placeholder='Gr' value={epGrade} onChange={e => setEpGrade(e.target.value)} style={{ width: 36 }} />
                   <button className="add-btn" onClick={saveEditPlayer}>Save</button>
-                  <button className="rm-btn" onClick={() => setEditPlayerId(null)}>✕</button>
+                  <button className="rm-btn" onClick={() => setEditPlayerId(null)}>âœ•</button>
                 </div>
               )
               : (
@@ -4712,7 +4733,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                   </div>
                   <div className="roster-actions">
                     <button className="edit-btn" onClick={() => startEditPlayer(p)}>Edit</button>
-                    <button className="rm-btn" onClick={() => removePlayer(p.id)}>✕</button>
+                    <button className="rm-btn" onClick={() => removePlayer(p.id)}>âœ•</button>
                   </div>
                 </div>
               )
@@ -4732,7 +4753,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
+          <button className="back-btn" onClick={() => onNav("menu")}>â† Back</button>
           <h2>Game Setup</h2>
           <button className="save-btn" onClick={() => { saveGameSetup(); onNav("menu"); }}>Save</button>
         </header>
@@ -4750,7 +4771,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>Your Team</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
+          {appData.teams.length === 0 && <p className="dim-text">No teams yet â€” create one in Teams first.</p>}
           <div className="team-picker">
             {appData.teams.map(t => {
               const isSelected = gsMyTeamId === t.id;
@@ -4873,7 +4894,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>Realtime API URL</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Node API server — use laptop's local IP on game day (e.g. http://192.168.1.5:4000)</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Node API server â€” use laptop's local IP on game day (e.g. http://192.168.1.5:4000)</p>
           <input
             placeholder={DEFAULT_API}
             value={gsApiUrl}
@@ -4894,9 +4915,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>Stats Dashboard URL</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Stats Flask app (for sending game data)</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Stats Dashboard service (for sending game data)</p>
           <input
-            placeholder="http://localhost:5000"
+            placeholder="http://localhost:4000"
             value={gsDashboardUrl}
             onChange={e => setGsDashboardUrl(e.target.value)}
           />
@@ -4927,7 +4948,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
+          <button className="back-btn" onClick={() => onNav("menu")}>â† Back</button>
           <h2>AI Coach Settings</h2>
           <button className="save-btn" onClick={() => void saveAiSettings()}>Save</button>
         </header>
@@ -4938,7 +4959,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
 
         <section className="settings-section">
           <h3>Team Playing Style</h3>
-          <p className="dim-text" style={{ marginBottom: 6 }}>How your team plays — pace, philosophy, offensive tendencies.</p>
+          <p className="dim-text" style={{ marginBottom: 6 }}>How your team plays â€” pace, philosophy, offensive tendencies.</p>
           <textarea
             className="settings-textarea"
             value={aiDraft.playingStyle}
@@ -5008,7 +5029,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   return (
     <div className="settings-page">
       <header className="settings-header">
-        <button className="back-btn" onClick={onBack}>← Game</button>
+        <button className="back-btn" onClick={onBack}>â† Game</button>
         <h2>Settings</h2>
         <div style={{ width: 64 }} />
       </header>
@@ -5020,11 +5041,11 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">Game Setup</span>
             <span className="menu-card-sub">
               {myTeamForMenu
-                ? `${myTeamForMenu.name} (${menuSideLabel}) vs ${appData.gameSetup.opponent || "TBD"} • ${appData.gameSetup.gameId}`
+                ? `${myTeamForMenu.name} (${menuSideLabel}) vs ${appData.gameSetup.opponent || "TBD"} â€¢ ${appData.gameSetup.gameId}`
                 : "No team selected"}
             </span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">â€º</span>
         </div>
       </section>
 
@@ -5033,9 +5054,9 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         <div className="menu-card" onClick={() => onNav("teams")}>
           <div className="menu-card-info">
             <span className="menu-card-title">Teams &amp; Rosters</span>
-            <span className="menu-card-sub">{appData.teams.length} team{appData.teams.length !== 1 ? "s" : ""} • {appData.teams.reduce((n, t) => n + t.players.length, 0)} players total</span>
+            <span className="menu-card-sub">{appData.teams.length} team{appData.teams.length !== 1 ? "s" : ""} â€¢ {appData.teams.reduce((n, t) => n + t.players.length, 0)} players total</span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">â€º</span>
         </div>
       </section>
 
@@ -5046,7 +5067,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">AI Coach Settings</span>
             <span className="menu-card-sub">Playing style, team context, insight focus areas</span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">â€º</span>
         </div>
       </section>
 
@@ -5057,7 +5078,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">iPad Setup Tips</span>
             <span className="menu-card-sub">Home screen, auto-lock, DND, rotation lock &amp; more</span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">â€º</span>
         </div>
       </section>
 
@@ -5081,7 +5102,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title" style={{color:'#f87171'}}>Clear Local Data</span>
             <span className="menu-card-sub">Erase all data stored on this device</span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">â€º</span>
         </div>
       </section>
     </div>

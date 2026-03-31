@@ -43,7 +43,7 @@ self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
     const isSafeApiRead = event.request.method === 'GET' &&
         (url.pathname === '/api/games' ||
-         /^\/api\/game\/\d+(\/|$)/.test(url.pathname) ||
+         /^\/api\/games\/[^/]+(\/|$)/.test(url.pathname) ||
          /^\/api\/players/.test(url.pathname));
 
     if (event.request.method === 'GET' && url.pathname.startsWith('/api/') && !isSafeApiRead) {

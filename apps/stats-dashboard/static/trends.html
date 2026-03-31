@@ -1,6 +1,44 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Bench IQ">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Stats Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+    <link rel="manifest" href="/static/manifest.json" />
+    <link rel="stylesheet" href="/static/style.css?v=3.4">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">Bench IQ</div>
+            <ul class="nav-links">
+                <li><a href="/" class="nav-link" data-page="dashboard">Dashboard</a></li>
+                <li><a href="/games" class="nav-link" data-page="games">Games</a></li>
+                <li><a href="/players" class="nav-link" data-page="players">Players</a></li>
+                <li><a href="/trends" class="nav-link active" data-page="trends">Trends</a></li>
+                <li><a href="/ai-insights" class="nav-link" data-page="ai-insights">AI</a></li>
+                <li><a href="/settings" class="nav-link" data-page="settings">Settings</a></li>
+            </ul>
+            <button class="tour-help-btn" onclick="tourStart()" title="Help &amp; Tutorial" aria-label="Help and Tutorial">?</button>
+        </div>
+    </nav>
+    <style>
+      .tour-help-btn{background:transparent;border:1.5px solid #4f8cff;color:#4f8cff;border-radius:50%;width:28px;height:28px;font-size:14px;font-weight:700;cursor:pointer;line-height:1;transition:background .15s,color .15s;flex-shrink:0;margin-left:8px;}
+      .tour-help-btn:hover{background:#4f8cff;color:#fff;}
+    </style>
 
-{% block content %}
+    <div class="container main-content">
 <style>
     .trends-volatility-grid {
         margin-bottom: 2.5rem;
@@ -360,8 +398,10 @@
         </div>
     </div>
 </div>
-{% endblock %}
+    </div>
 
-{% block scripts %}
-<script src="{{ url_for('static', filename='trends.js') }}?v=3.1"></script>
-{% endblock %}
+    <script src="/static/main.js?v=3.0"></script>
+    <script src="/static/tour.js?v=1.0"></script>
+    <script src="/static/trends.js?v=3.1"></script>
+</body>
+</html>

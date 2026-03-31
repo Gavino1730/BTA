@@ -5,7 +5,6 @@ import type { PlayerStats, TeamStats } from "@bta/game-state";
 import { io } from "socket.io-client";
 import {
   formatBonusIndicator,
-  formatDashboardAnchorSummary,
   formatDashboardClock,
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
@@ -197,30 +196,6 @@ interface Insight {
   relatedPlayerId?: string;
 }
 
-interface VideoAsset {
-  id: string;
-  gameId: string;
-  filename: string;
-  status: "uploaded" | "synced";
-}
-
-interface SyncAnchor {
-  id: string;
-  videoId: string;
-  eventType: "tipoff" | "quarter_start" | "buzzer";
-  period: Period;
-  gameClockSeconds: number;
-  videoSecond: number;
-}
-
-interface VideoResolution {
-  videoId: string;
-  period: Period;
-  gameClockSeconds: number;
-  resolvedVideoSecond: number;
-  anchorId: string;
-}
-
 interface RotationWatchNote {
   playerId: string;
   level: "high" | "medium";
@@ -316,7 +291,7 @@ function extractHistoricalContextFromPrompt(prompt: string): string {
     .trim();
 }
 
-// ── Roster Builder ──────────────────────────────────────────────────────────
+// â”€â”€ Roster Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 
@@ -391,18 +366,22 @@ function slugifyTeamName(name: string): string {
 function newPlayerId(): string {
   return `player-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
-// ────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const defaultHost = window.location.hostname || "localhost";
 const apiBase = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
-const videoBase = import.meta.env.VITE_VIDEO_API ?? `http://${defaultHost}:4100`;
-const statsBase = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
+const statsBase = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:4000`;
 const operatorBase = import.meta.env.VITE_OPERATOR_CONSOLE ?? `http://${defaultHost}:5174`;
 const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
+const SCHOOL_ID: string = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
 
-/** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
+/** Returns auth and tenant headers for realtime API requests. */
 function apiKeyHeader(): Record<string, string> {
-  return API_KEY ? { "x-api-key": API_KEY } : {};
+  const headers: Record<string, string> = { "x-school-id": SCHOOL_ID };
+  if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
+  }
+  return headers;
 }
 
 export function App() {
@@ -436,20 +415,11 @@ export function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
-  const [videos, setVideos] = useState<VideoAsset[]>([]);
-  const [anchors, setAnchors] = useState<SyncAnchor[]>([]);
-  const [videoSrcUrl, setVideoSrcUrl] = useState("");  // URL for the in-page video player
-  const videoRef = useRef<HTMLVideoElement>(null);
   const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [videoId, setVideoId] = useState("vid-1");
-  const [filename, setFilename] = useState("full-game.mp4");
-  const [anchorVideoId, setAnchorVideoId] = useState("vid-1");
-  const [videoSecond, setVideoSecond] = useState("12");
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
-  const [eventClipMap, setEventClipMap] = useState<Record<string, VideoResolution>>({});
-  const [activePage, setActivePage] = useState<"live" | "ai" | "film" | "settings">("live");
+  const [activePage, setActivePage] = useState<"live" | "ai" | "settings">("live");
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('coach:tutorial-complete'));
   const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
@@ -477,7 +447,7 @@ export function App() {
     return `${operatorBase.replace(/\/$/, "")}/?${params.toString()}`;
   }, [deviceId, gameId, setupNames]);
 
-  // ── Roster Builder state ─────────────────────────────────────────────────
+  // â”€â”€ Roster Builder state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [rosterTeams, setRosterTeamsState] = useState<RosterTeam[]>(loadRosterTeams);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
@@ -702,7 +672,8 @@ export function App() {
 
   useEffect(() => {
     const socket = io(apiBase, {
-      auth: API_KEY ? { apiKey: API_KEY } : {}
+      auth: API_KEY ? { apiKey: API_KEY, schoolId: SCHOOL_ID } : { schoolId: SCHOOL_ID },
+      extraHeaders: apiKeyHeader()
     });
 
     // Poll the presence channel every 5s so the coach dashboard can recover
@@ -784,14 +755,10 @@ export function App() {
     }
 
     // Clear ALL game-specific state immediately so the dashboard shows a clean
-    // slate while new game data loads — no stale scores, events, AI chat,
-    // film clips, or device-connection carry-over from the previous game.
+    // slate while new game data loads â€” no stale scores, events, AI chat,
+    // or device-connection carry-over from the previous game.
     setState(null);
     setInsights([]);
-    setVideos([]);
-    setAnchors([]);
-    setVideoSrcUrl("");
-    setEventClipMap({});
     setAiChatMessages([]);
     setAiChatInput("");
     setAiChatSuggestions([]);
@@ -799,14 +766,14 @@ export function App() {
     setPromptPreview(null);
     setAiRefreshError("");
     setDeviceConnected(false);
-    setDashboardStatus("Loading new game…");
+    setDashboardStatus("Loading new gameâ€¦");
     setIsLoading(true);
 
     async function hydrate() {
       // Fetch state and insights in parallel for faster load
       const [stateRes, insightRes] = await Promise.all([
-        fetch(`${apiBase}/games/${gameId}/state`, { headers: apiKeyHeader() }),
-        fetch(`${apiBase}/games/${gameId}/insights`, { headers: apiKeyHeader() })
+        fetch(`${apiBase}/api/games/${gameId}/state`, { headers: apiKeyHeader() }),
+        fetch(`${apiBase}/api/games/${gameId}/insights`, { headers: apiKeyHeader() })
       ]);
 
       // Handle game state
@@ -884,26 +851,6 @@ export function App() {
         }
       }
 
-      // Fetch videos and anchors in parallel (non-critical)
-      try {
-        const [videoRes, anchorRes] = await Promise.all([
-          fetch(`${videoBase}/games/${gameId}/videos`, { headers: apiKeyHeader() }),
-          fetch(`${videoBase}/games/${gameId}/sync-anchors`, { headers: apiKeyHeader() })
-        ]);
-
-        if (videoRes.ok) {
-          const payload = (await videoRes.json()) as VideoAsset[];
-          setVideos(payload);
-        }
-
-        if (anchorRes.ok) {
-          const payload = (await anchorRes.json()) as SyncAnchor[];
-          setAnchors(payload);
-        }
-      } catch {
-        // Ignore video/anchor errors
-      }
-
       setIsLoading(false);
     }
 
@@ -926,7 +873,7 @@ export function App() {
     let cancelled = false;
     async function hydrateAiSettings() {
       try {
-        const response = await fetch(`${apiBase}/games/${gameId}/ai-settings`, {
+        const response = await fetch(`${apiBase}/api/games/${gameId}/ai-settings`, {
           headers: apiKeyHeader(),
         });
         if (!response.ok) {
@@ -980,7 +927,7 @@ export function App() {
 
     setAiSettingsStatus("Saving AI settings...");
     try {
-      const response = await fetch(`${apiBase}/games/${gameId}/ai-settings`, {
+      const response = await fetch(`${apiBase}/api/games/${gameId}/ai-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...apiKeyHeader() },
         body: JSON.stringify(aiSettingsDraft),
@@ -1015,7 +962,7 @@ export function App() {
 
     setPromptPreviewStatus("Loading prompt preview...");
     try {
-      const response = await fetch(`${apiBase}/games/${gameId}/ai-prompt-preview`, {
+      const response = await fetch(`${apiBase}/api/games/${gameId}/ai-prompt-preview`, {
         headers: apiKeyHeader(),
       });
       if (!response.ok) {
@@ -1063,7 +1010,7 @@ export function App() {
     setIsSendingAiChat(true);
 
     try {
-      const response = await fetch(`${apiBase}/games/${gameId}/ai-chat`, {
+      const response = await fetch(`${apiBase}/api/games/${gameId}/ai-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader() },
         body: JSON.stringify({
@@ -1315,11 +1262,11 @@ export function App() {
 
   function displayTeamName(teamId: string): string {
     const canonicalId = canonicalTeamId(teamId);
-    // Prefer the live game-state opponent name over the URL param — the URL may carry
+    // Prefer the live game-state opponent name over the URL param â€” the URL may carry
     // a stale value from a previous game that was bookmarked or scanned weeks ago.
     const opponentName = state?.opponentName || setupNames.opponentName || "";
 
-    // When myTeamId is available in the URL it is the definitive check —
+    // When myTeamId is available in the URL it is the definitive check â€”
     // do NOT mix in teams[0] which depends on vcSide and can mislabel both
     // slots as "our team" when vcSide is wrong.  Fall back to vcSide-based
     // heuristics only when myTeamId was not provided.
@@ -1337,7 +1284,7 @@ export function App() {
          (Boolean(ourRawSideId) && teamId === ourRawSideId));
 
     if (isOurTeam) {
-      // Only return myTeamName if it doesn't duplicate the opponent name—if both would
+      // Only return myTeamName if it doesn't duplicate the opponent nameâ€”if both would
       // show the same label, prefer a roster label or a title-cased fallback so the two
       // sections are visually distinct.
       const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
@@ -1609,7 +1556,7 @@ export function App() {
     }
 
     // When myTeamId isn't in the URL, prefer the team whose starting lineup is
-    // seeded in the game state — avoids defaulting to the opponent's (home) slot.
+    // seeded in the game state â€” avoids defaulting to the opponent's (home) slot.
     const lineupEntry = Object.entries(state?.activeLineupsByTeam ?? {})
       .find(([, lineup]) => lineup.length > 0);
     if (lineupEntry) {
@@ -1870,11 +1817,6 @@ export function App() {
     return byTeam;
   }, [canonicalTeamId, filteredBoxScoreEvents, teams]);
 
-  const selectedVideoForResolution = useMemo(() => {
-    const synced = videos.find((video) => video.status === "synced");
-    return synced?.id ?? videos[0]?.id;
-  }, [videos]);
-
   const aiSubSuggestionCards = useMemo(() => {
     const cards: AiSignalCard[] = [];
 
@@ -1985,7 +1927,7 @@ export function App() {
 
     try {
       const query = new URLSearchParams({ force: "1" });
-      const response = await fetch(`${apiBase}/games/${gameId}/insights?${query.toString()}`, {
+      const response = await fetch(`${apiBase}/api/games/${gameId}/insights?${query.toString()}`, {
         headers: apiKeyHeader()
       });
 
@@ -2003,84 +1945,6 @@ export function App() {
     }
   }
 
-  async function resolveEventClip(eventId: string, period: Period, gameClockSeconds: number) {
-    if (!selectedVideoForResolution) {
-      setDashboardStatus("No registered video available for clip resolution");
-      return;
-    }
-
-    const query = new URLSearchParams({
-      period: String(period),
-      gameClockSeconds: String(gameClockSeconds)
-    });
-
-    const response = await fetch(
-      `${videoBase}/games/${gameId}/videos/${selectedVideoForResolution}/resolve?${query.toString()}`,
-      { headers: apiKeyHeader() }
-    );
-
-    if (!response.ok) {
-      setDashboardStatus("Could not resolve clip time for this event");
-      return;
-    }
-
-    const payload = (await response.json()) as VideoResolution;
-    setEventClipMap((current) => ({ ...current, [eventId]: payload }));
-    setDashboardStatus(`Resolved clip time for event ${eventId}`);
-    // Seek the in-page video player to the resolved time when source is loaded
-    if (videoRef.current) {
-      videoRef.current.currentTime = payload.resolvedVideoSecond;
-      void videoRef.current.play().catch(() => { /* autoplay blocked */ });
-    }
-  }
-
-  async function addVideoAsset() {
-    const response = await fetch(`${videoBase}/games/${gameId}/videos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-      body: JSON.stringify({ id: videoId, filename })
-    });
-
-    if (!response.ok) {
-      setDashboardStatus("Video registration failed");
-      return;
-    }
-
-    const payload = (await response.json()) as VideoAsset;
-    setVideos((current) => [payload, ...current.filter((video) => video.id !== payload.id)]);
-    setAnchorVideoId(payload.id);
-    setDashboardStatus("Video asset registered");
-  }
-
-  async function addSyncAnchor() {
-    const response = await fetch(`${videoBase}/games/${gameId}/sync-anchors`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-      body: JSON.stringify({
-        id: `anchor-${Date.now()}`,
-        videoId: anchorVideoId,
-        eventType: "tipoff",
-        period: "Q1",
-        gameClockSeconds: getPeriodDurationSeconds("Q1"),
-        videoSecond: Number(videoSecond)
-      })
-    });
-
-    if (!response.ok) {
-      setDashboardStatus("Sync anchor failed");
-      return;
-    }
-
-    const payload = (await response.json()) as SyncAnchor;
-    setAnchors((current) => [payload, ...current]);
-    setVideos((current) =>
-      current.map((video) =>
-        video.id === payload.videoId ? { ...video, status: "synced" } : video
-      )
-    );
-    setDashboardStatus("Video sync anchor saved");
-  }
-
   return (
     <>
       {showTutorial && <TutorialOverlay onDismiss={() => setShowTutorial(false)} />}
@@ -2090,10 +1954,9 @@ export function App() {
           <ul className="coach-nav-links">
             <li><button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Live</button></li>
             <li><button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI</button></li>
-            <li><button className={activePage === "film" ? "nav-active" : ""} onClick={() => setActivePage("film")}>Film</button></li>
             <li><button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Settings</button></li>
             <li><a href={operatorConsoleUrl} className="coach-nav-ext-link">Score Operator</a></li>
-            <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats ↗</a></li>
+            <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats â†—</a></li>
           </ul>
           <button
             onClick={() => setShowTutorial(true)}
@@ -2122,10 +1985,10 @@ export function App() {
     <div className="page">
       {!gameId && activePage !== "settings" && (
         <div className="idle-screen">
-          <div className="idle-screen-icon">⏸</div>
+          <div className="idle-screen-icon">â¸</div>
           <p className="idle-screen-title">No Active Game</p>
           <p className="idle-screen-sub">
-            {serverConnected ? "Waiting for the operator to start a game…" : "Not connected to server"}
+            {serverConnected ? "Waiting for the operator to start a gameâ€¦" : "Not connected to server"}
           </p>
         </div>
       )}
@@ -2167,7 +2030,7 @@ export function App() {
                   borderColor: `${teamColor}99`,
                 } : undefined}
               >
-                {/* ── Header ── */}
+                {/* â”€â”€ Header â”€â”€ */}
                 <header className="score-item-header">
                   <div className="score-item-title">
                     <h3>{displayTeamName(teamId)}</h3>
@@ -2175,11 +2038,11 @@ export function App() {
                   </div>
                   <div className="score-block">
                     <p className="score">{td?.score ?? 0}</p>
-                    <span className="score-period-label">{state?.currentPeriod ?? "—"}</span>
+                    <span className="score-period-label">{state?.currentPeriod ?? "â€”"}</span>
                   </div>
                 </header>
 
-                {/* ── Fouls + Bonus + Timeouts row ── */}
+                {/* â”€â”€ Fouls + Bonus + Timeouts row â”€â”€ */}
                 <div className="sb-urgency-row">
                   <div className={`sb-foul-block ${foulUrgency}`}>
                     <span className="sb-urgency-label">FOULS</span>
@@ -2214,7 +2077,7 @@ export function App() {
                   </div>
                 </div>
 
-                {/* ── Quick-stat grid ── */}
+                {/* â”€â”€ Quick-stat grid â”€â”€ */}
                 <div className="sb-stat-grid">
                   <div className="sb-stat-cell">
                     <span className="sb-stat-label">FG</span>
@@ -2245,7 +2108,7 @@ export function App() {
                   </div>
                 </div>
 
-                {/* ── Lineup ── */}
+                {/* â”€â”€ Lineup â”€â”€ */}
                 <div className="sb-lineup-row">
                   <span className="sb-section-label">ON COURT</span>
                   <div className="sb-lineup-chips">
@@ -2260,11 +2123,11 @@ export function App() {
                   </div>
                 </div>
 
-                {/* ── Leaders ── */}
+                {/* â”€â”€ Leaders â”€â”€ */}
                 <div className="sb-leaders-row">
                   {leadersByTeam[teamId]?.scoringLeader ? (
                     <div className="sb-leader-item sb-leader-scorer">
-                      <span className="sb-leader-icon">★</span>
+                      <span className="sb-leader-icon">â˜…</span>
                       <span>
                         {displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)}
                         <strong> {leadersByTeam[teamId].scoringLeader?.points} pts</strong>
@@ -2273,7 +2136,7 @@ export function App() {
                   ) : null}
                   {leadersByTeam[teamId]?.foulLeader ? (
                     <div className={`sb-leader-item sb-leader-fouls ${leadersByTeam[teamId].foulLeader.fouls >= 4 ? "sb-leader-fouls-danger" : ""}`}>
-                      <span className="sb-leader-icon">⚠</span>
+                      <span className="sb-leader-icon">âš </span>
                       <span>
                         {formatFoulTroubleLabel(
                           displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
@@ -2497,7 +2360,7 @@ export function App() {
                             <td>{line.turnovers}</td>
                             <td>
                               <span className={`foul-badge${line.fouls >= 5 ? " foul-badge-out" : line.fouls >= 4 ? " foul-badge-danger" : line.fouls >= 3 ? " foul-badge-warn" : " foul-badge-safe"}`}>
-                                {line.fouls}{line.fouls >= 5 ? " OUT" : line.fouls >= 4 ? " ⚠" : ""}
+                                {line.fouls}{line.fouls >= 5 ? " OUT" : line.fouls >= 4 ? " âš " : ""}
                               </span>
                             </td>
                           </tr>
@@ -2631,7 +2494,7 @@ export function App() {
         {!rotationContext ? <p>No lineup data yet.</p> : null}
         <div className="rotation-grid">
           {rotationContext ? (
-            <article key={rotationContext.teamId} className="film-card rotation-card">
+            <article key={rotationContext.teamId} className="rotation-card">
               <h3>{displayTeamName(rotationContext.teamId)}</h3>
 
               <p className="rotation-label">Currently in game</p>
@@ -2824,128 +2687,7 @@ export function App() {
       </section>
       </>}
 
-      {gameId && activePage === "film" &&
-      <section className="card film-grid">
-        <div>
-          <h2>Film Sync</h2>
-          <p>Register uploaded game film and place manual sync anchors against NFHS game timing.</p>
-
-          {/* Video player — shown when a source URL is provided */}
-          <div className="form-grid" style={{ marginBottom: 12 }}>
-            <label style={{ gridColumn: "1 / -1" }}>
-              Video Source URL
-              <input
-                placeholder="Paste a video URL or file:// path…"
-                value={videoSrcUrl}
-                onChange={(e) => setVideoSrcUrl(e.target.value)}
-              />
-            </label>
-          </div>
-          {videoSrcUrl && (
-            <video
-              ref={videoRef}
-              src={videoSrcUrl}
-              controls
-              style={{ width: "100%", borderRadius: 8, marginBottom: 16, background: "#000" }}
-            />
-          )}
-
-          <div className="form-grid">
-            <label>
-              Video ID
-              <input value={videoId} onChange={(event) => setVideoId(event.target.value)} />
-            </label>
-            <label>
-              Filename
-              <input value={filename} onChange={(event) => setFilename(event.target.value)} />
-            </label>
-            <button onClick={() => void addVideoAsset()}>Register Video</button>
-          </div>
-
-          <div className="form-grid sync-grid">
-            <label>
-              Anchor Video ID
-              <input
-                value={anchorVideoId}
-                onChange={(event) => setAnchorVideoId(event.target.value)}
-              />
-            </label>
-            <label>
-              Video Second
-              <input value={videoSecond} onChange={(event) => setVideoSecond(event.target.value)} />
-            </label>
-            <button className="teal" onClick={() => void addSyncAnchor()}>
-              Save Q1 Tipoff Anchor
-            </button>
-          </div>
-        </div>
-
-        <div className="film-columns">
-          <div>
-            <h3>Videos</h3>
-            {videos.length === 0 ? <p>No video assets yet.</p> : null}
-            <div className="stack-list">
-              {videos.map((video) => (
-                <article key={video.id} className="film-card">
-                  <strong>{video.filename}</strong>
-                  <p>{video.id}</p>
-                  <span className={`status-tag ${video.status}`}>{video.status}</span>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3>Sync Anchors</h3>
-            {anchors.length === 0 ? <p>No anchors saved yet.</p> : null}
-            <div className="stack-list">
-              {anchors.map((anchor) => (
-                <article key={anchor.id} className="film-card">
-                  <strong>{anchor.eventType.replaceAll("_", " ")}</strong>
-                  <p>{anchor.videoId}</p>
-                  <small>{formatDashboardAnchorSummary(anchor)}</small>
-                </article>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <h3>Recent Events</h3>
-          <div className="stack-list">
-            {(state?.events ?? []).slice(-8).reverse().map((event) => (
-              <article key={event.id} className="film-card event-card">
-                <div>
-                  <strong>
-                    #{event.sequence} {event.type.replaceAll("_", " ")}
-                  </strong>
-                  <p>{formatDashboardEventMeta({
-                    teamId: displayTeamName(event.teamId),
-                    period: event.period as Period,
-                    clockSecondsRemaining: event.clockSecondsRemaining,
-                  })}</p>
-                  {eventClipMap[event.id] ? (
-                    <small>
-                      Clip at {formatDashboardClock(eventClipMap[event.id].resolvedVideoSecond)} (video {eventClipMap[event.id].videoId})
-                    </small>
-                  ) : null}
-                </div>
-                <button
-                  className="teal"
-                  onClick={() =>
-                    void resolveEventClip(event.id, event.period as Period, event.clockSecondsRemaining)
-                  }
-                >
-                  Clip
-                </button>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-      }
-
-      {/* Roster page removed — roster management moved to Stats Dashboard */}
+      {/* Roster page removed â€” roster management moved to Stats Dashboard */}
 
       {activePage === "settings" &&
       <>
@@ -2978,7 +2720,7 @@ export function App() {
         <div className="form-grid">
           {rosterTeams.length > 0 && rosterTeams.map((team) => (
             <label key={team.id} style={{ gridColumn: "1 / -1" }}>
-              Coaching Style For AI{rosterTeams.length > 1 ? ` — ${team.name}` : ""}
+              Coaching Style For AI{rosterTeams.length > 1 ? ` â€” ${team.name}` : ""}
               <textarea
                 className="settings-textarea"
                 defaultValue={team.coachStyle ?? ""}
@@ -3058,7 +2800,7 @@ export function App() {
           {promptPreview ? (
             <>
               <p className="text-muted">
-                Model: {promptPreview.model} • Recent events: {promptPreview.recentEventCount}
+                Model: {promptPreview.model} â€¢ Recent events: {promptPreview.recentEventCount}
               </p>
               <div className="prompt-preview-historical-card">
                 <strong>Historical Context (Season + Recent Games)</strong>
@@ -3082,10 +2824,10 @@ export function App() {
       </section>
 
       <section className="card" style={{border:'1.5px solid #7f1d1d', marginTop:'1rem'}}>
-        <h2 style={{color:'#f87171'}}>⚠️ Clear Local Data</h2>
+        <h2 style={{color:'#f87171'}}>âš ï¸ Clear Local Data</h2>
         <p className="text-muted" style={{marginBottom:'1rem'}}>
           Removes all data stored in this browser: roster, AI settings, and cached game state.
-          This only affects this device. Use the Stats Dashboard <strong>Settings → Factory Reset</strong> to wipe server data.
+          This only affects this device. Use the Stats Dashboard <strong>Settings â†’ Factory Reset</strong> to wipe server data.
         </p>
         <button
           style={{background:'#7f1d1d',color:'#fca5a5',border:'none',padding:'8px 18px',borderRadius:'8px',cursor:'pointer',fontWeight:600}}

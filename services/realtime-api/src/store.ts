@@ -16,8 +16,14 @@ import {
   type LiveInsight
 } from "@bta/insight-engine";
 import { parseGameEvent, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
+import {
+  createPostgresPersistenceProvider,
+  type PersistedGameSessionRecord,
+  type PersistenceProvider
+} from "./persistence.js";
 
 export interface CreateGameInput {
+  schoolId?: string;
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
@@ -40,10 +46,16 @@ export interface RosterPlayer {
 
 export interface RosterTeam {
   id: string;
+  schoolId?: string;
   name: string;
   abbreviation: string;
+  season?: string;
   teamColor?: string;
   coachStyle?: string;
+  playingStyle?: string;
+  teamContext?: string;
+  customPrompt?: string;
+  focusInsights?: CoachAiSettings["focusInsights"];
   players: RosterPlayer[];
 }
 
@@ -90,7 +102,140 @@ export interface GameAiContext {
   opponentTrackedStats: string[];
 }
 
+export interface SeasonTeamStats {
+  fg: number;
+  fga: number;
+  fg3: number;
+  fg3a: number;
+  ft: number;
+  fta: number;
+  oreb: number;
+  dreb: number;
+  reb: number;
+  asst: number;
+  to: number;
+  stl: number;
+  blk: number;
+  fouls: number;
+  win: number;
+  loss: number;
+  ppg: number;
+  opp_ppg: number;
+  rpg: number;
+  apg: number;
+  to_avg: number;
+  stl_pg: number;
+  blk_pg: number;
+  oreb_pg: number;
+  dreb_pg: number;
+  fouls_pg: number;
+  fg_pct: number;
+  fg3_pct: number;
+  ft_pct: number;
+}
+
+export interface SeasonGameSummary {
+  gameId: string;
+  date: string;
+  opponent: string;
+  location: "home" | "away";
+  vc_score: number;
+  opp_score: number;
+  result: "W" | "L" | "T";
+  team_stats: {
+    fg: number;
+    fga: number;
+    fg3: number;
+    fg3a: number;
+    ft: number;
+    fta: number;
+    oreb: number;
+    dreb: number;
+    reb: number;
+    asst: number;
+    to: number;
+    stl: number;
+    blk: number;
+    fouls: number;
+  };
+}
+
+export interface SeasonPlayerSummary {
+  name: string;
+  full_name: string;
+  first_name: string;
+  number?: string;
+  position?: string;
+  height?: string;
+  grade?: string;
+  role?: string;
+  notes?: string;
+  games: number;
+  pts: number;
+  fg: number;
+  fga: number;
+  fg3: number;
+  fg3a: number;
+  ft: number;
+  fta: number;
+  oreb: number;
+  dreb: number;
+  reb: number;
+  asst: number;
+  to: number;
+  stl: number;
+  blk: number;
+  fouls: number;
+  plus_minus: number;
+  ppg: number;
+  rpg: number;
+  apg: number;
+  spg: number;
+  bpg: number;
+  tpg: number;
+  fpg: number;
+  fg_pct: number;
+  fg3_pct: number;
+  ft_pct: number;
+  coach_style: string;
+  roster_info: {
+    name: string;
+    number?: string;
+    position?: string;
+    height?: string;
+    grade?: string;
+    role?: string;
+    notes?: string;
+  } | null;
+}
+
+export interface LiveContextPayload {
+  seasonStats: SeasonTeamStats;
+  recentGames: SeasonGameSummary[];
+  players: Array<{
+    name: string;
+    number: string;
+    ppg: number;
+    rpg: number;
+    apg: number;
+    fg_pct: number;
+    fg3_pct: number;
+    ft_pct: number;
+    fpg: number;
+    games: number;
+    role: string;
+    notes: string;
+  }>;
+  teamInfo: {
+    name: string;
+    coachStyle: string;
+    playingStyle: string;
+    teamContext: string;
+  };
+}
+
 interface GameSession {
+  schoolId: string;
   homeTeamId: string;
   awayTeamId: string;
   opponentName?: string;
@@ -112,6 +257,7 @@ interface GameSession {
 }
 
 interface PersistedGameSession {
+  schoolId?: string;
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
@@ -127,14 +273,47 @@ interface PersistedGameSession {
 
 interface PersistedSnapshot {
   sessions: PersistedGameSession[];
-  rosterTeams: RosterTeam[];
+  rosterTeams?: RosterTeam[];
+  rosterTeamsBySchool?: Record<string, RosterTeam[]>;
+}
+
+export interface TenantScope {
+  schoolId?: string;
+}
+
+const DEFAULT_SCHOOL_ID = "default";
+
+function normalizeSchoolId(input: unknown): string {
+  if (typeof input !== "string") {
+    return DEFAULT_SCHOOL_ID;
+  }
+
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    return DEFAULT_SCHOOL_ID;
+  }
+
+  return trimmed.replace(/[^a-z0-9_-]/g, "").slice(0, 64) || DEFAULT_SCHOOL_ID;
+}
+
+function resolveSchoolId(scope?: TenantScope): string {
+  return normalizeSchoolId(scope?.schoolId);
+}
+
+function buildGameSessionKey(gameId: string, schoolId: string): string {
+  return `${schoolId}:${gameId}`;
 }
 
 const sessions = new Map<string, GameSession>();
-let rosterTeams: RosterTeam[] = [];
+const rosterTeamsBySchool = new Map<string, RosterTeam[]>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
+const DATABASE_URL = process.env.DATABASE_URL?.trim();
+const REALTIME_DB_TABLE = process.env.BTA_REALTIME_DB_TABLE?.trim();
+const persistenceProvider: PersistenceProvider | null = persistenceEnabled && DATABASE_URL
+  ? createPostgresPersistenceProvider({ connectionString: DATABASE_URL, tableName: REALTIME_DB_TABLE })
+  : null;
 const OPENAI_API_URL = process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
 const LIVE_AI_MODEL = process.env.BTA_LIVE_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const LIVE_AI_TIMEOUT_MS = readEnvNumber("BTA_LIVE_INSIGHT_TIMEOUT_MS", 12000);
@@ -142,7 +321,7 @@ const LIVE_AI_MIN_EVENTS = readEnvNumber("BTA_LIVE_INSIGHT_MIN_EVENTS", 4);
 const LIVE_AI_REFRESH_EVERY_EVENTS = readEnvNumber("BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS", 3);
 const LIVE_AI_MIN_INTERVAL_MS = readEnvNumber("BTA_LIVE_INSIGHT_MIN_INTERVAL_MS", 20000);
 const LIVE_AI_RECENT_EVENT_WINDOW = readEnvNumber("BTA_LIVE_INSIGHT_RECENT_EVENT_WINDOW", 8);
-const STATS_DASHBOARD_BASE = (process.env.STATS_DASHBOARD_BASE ?? "http://localhost:5000").replace(/\/+$/, "");
+const STATS_DASHBOARD_BASE = (process.env.STATS_DASHBOARD_BASE ?? "http://localhost:4000").replace(/\/+$/, "");
 const HISTORICAL_CONTEXT_TTL_MS = readEnvNumber("BTA_HISTORICAL_CONTEXT_TTL_MS", 60000);
 const FOCUS_INSIGHT_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
@@ -249,6 +428,27 @@ function buildStatsHeaders(): Record<string, string> {
   return headers;
 }
 
+function getSession(gameId: string, scope?: TenantScope): GameSession | null {
+  const schoolId = resolveSchoolId(scope);
+  return sessions.get(buildGameSessionKey(gameId, schoolId)) ?? null;
+}
+
+function getRosterTeamsForSchool(schoolId: string): RosterTeam[] {
+  return rosterTeamsBySchool.get(schoolId) ?? [];
+}
+
+function getSessionsForSchool(schoolId: string): GameSession[] {
+  return [...sessions.values()].filter((session) => session.schoolId === schoolId);
+}
+
+function setRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): RosterTeam[] {
+  const normalized = Array.isArray(teams)
+    ? teams.map((team) => ({ ...team, schoolId: normalizeSchoolId(team.schoolId ?? schoolId) }))
+    : [];
+  rosterTeamsBySchool.set(schoolId, normalized);
+  return normalized;
+}
+
 function combineInsights(session: GameSession): LiveInsight[] {
   return [...session.aiInsights, ...session.ruleInsights]
     .sort((left, right) => Date.parse(right.createdAtIso) - Date.parse(left.createdAtIso))
@@ -340,8 +540,8 @@ function summarizeTeamState(
   return lines;
 }
 
-function buildRosterMetadataLines(state: GameState, teamId: string): string[] {
-  const rosterTeam = rosterTeams.find((team) => team.id === teamId);
+function buildRosterMetadataLines(state: GameState, teamId: string, schoolId: string): string[] {
+  const rosterTeam = getRosterTeamsForSchool(schoolId).find((team) => team.id === teamId);
   if (!rosterTeam) {
     return [];
   }
@@ -401,7 +601,7 @@ function buildAiInsightPrompt(
     ? (state.homeTeamId !== state.opponentTeamId ? state.homeTeamId : state.awayTeamId)
     : session.homeTeamId;
   const opponentTeamId = state.opponentTeamId ?? session.awayTeamId;
-  const rosterTeam = rosterTeams.find((team) => team.id === ourTeamId);
+  const rosterTeam = getRosterTeamsForSchool(session.schoolId).find((team) => team.id === ourTeamId);
 
   const homeLabel = state.homeTeamId === ourTeamId ? "Our team (home)" : (state.opponentName || "Opponent (home)");
   const awayLabel = state.awayTeamId === ourTeamId ? "Our team (away)" : (state.opponentName || "Opponent (away)");
@@ -452,7 +652,7 @@ function buildAiInsightPrompt(
   const historicalLine = historicalContextSummary
     ? `Historical context from stats dashboard: ${historicalContextSummary}`
     : "Historical context from stats dashboard: unavailable";
-  const rosterMetadataLines = buildRosterMetadataLines(state, ourTeamId);
+  const rosterMetadataLines = buildRosterMetadataLines(state, ourTeamId, session.schoolId);
   const clockTrackingLine = `Clock tracking status: ${aiContext.clockEnabled ? "enabled" : "disabled"}`;
   const opponentTrackingLine = aiContext.opponentStatsLimited
     ? `Opponent stat tracking: limited (${aiContext.opponentTrackedStats.join(", ")})`
@@ -516,17 +716,17 @@ function buildAiInsightPrompt(
   ].filter(Boolean).join("\n");
 }
 
-function resolveRecordLine(seasonStats: Record<string, unknown>): string {
-  const wins = Number(seasonStats.win ?? seasonStats.wins ?? 0);
-  const losses = Number(seasonStats.loss ?? seasonStats.losses ?? 0);
+function resolveRecordLine(seasonStats: Pick<SeasonTeamStats, "win" | "loss">): string {
+  const wins = Number(seasonStats.win ?? 0);
+  const losses = Number(seasonStats.loss ?? 0);
   if (Number.isFinite(wins) && Number.isFinite(losses) && (wins > 0 || losses > 0)) {
     return `${wins}-${losses}`;
   }
   return "n/a";
 }
 
-function resolveTeamLabelFromRoster(teamId: string): string {
-  const team = rosterTeams.find((item) => item.id === teamId);
+function resolveTeamLabelFromRoster(teamId: string, schoolId: string): string {
+  const team = getRosterTeamsForSchool(schoolId).find((item) => item.id === teamId);
   return team?.name?.trim() || team?.abbreviation?.trim() || teamId;
 }
 
@@ -543,15 +743,15 @@ function trimToLength(value: unknown, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
-function summarizeHistoricalPlayers(playersPayload: Array<Record<string, unknown>>, session: GameSession): string {
-  if (!Array.isArray(playersPayload) || playersPayload.length === 0) {
+function summarizeHistoricalPlayers(playersPayload: SeasonPlayerSummary[], session: GameSession): string {
+  if (playersPayload.length === 0) {
     return "";
   }
 
   const ourTeamId = session.opponentTeamId
     ? (session.homeTeamId !== session.opponentTeamId ? session.homeTeamId : session.awayTeamId)
     : session.homeTeamId;
-  const rosterTeam = rosterTeams.find((team) => team.id === ourTeamId);
+  const rosterTeam = getRosterTeamsForSchool(session.schoolId).find((team) => team.id === ourTeamId);
   const rosterNames = new Set((rosterTeam?.players ?? []).map((player) => player.name.trim().toLowerCase()).filter(Boolean));
 
   const preferredPlayers = playersPayload.filter((player) => {
@@ -580,8 +780,8 @@ function summarizeHistoricalPlayers(playersPayload: Array<Record<string, unknown
       `${safeNumber(player.rpg).toFixed(1)} rpg`,
       `${safeNumber(player.apg).toFixed(1)} apg`,
       `${safeNumber(player.fg_pct).toFixed(1)} FG%`,
-      `${safeNumber(player.efg_pct).toFixed(1)} eFG%`,
-      `${safeNumber(player.ts_pct).toFixed(1)} TS%`,
+      `${safeNumber(player.fg3_pct).toFixed(1)} 3PT%`,
+      `${safeNumber(player.ft_pct).toFixed(1)} FT%`,
       `${safeNumber(player.fpg).toFixed(1)} fouls/g`,
       role ? `role: ${role}` : "",
       notes ? `notes: ${notes}` : "",
@@ -639,7 +839,7 @@ function buildAiChatPrompt(
   const opponentTeamId = state.opponentTeamId ?? session.awayTeamId;
   const aiSettings = sanitizeCoachAiSettings(session.aiSettings);
   const aiContext = sanitizeGameAiContext(session.aiContext);
-  const rosterTeam = rosterTeams.find((team) => team.id === ourTeamId);
+  const rosterTeam = getRosterTeamsForSchool(session.schoolId).find((team) => team.id === ourTeamId);
   const isOT = isOvertimePeriod(state.currentPeriod);
 
   const clockSec = latestEvent?.clockSecondsRemaining ?? 0;
@@ -658,7 +858,7 @@ function buildAiChatPrompt(
   const contextLine = aiSettings.teamContext ? `Team context: ${aiSettings.teamContext}` : "Team context: not provided";
   const customPromptLine = aiSettings.customPrompt ? `Custom coach instruction: ${aiSettings.customPrompt}` : "";
   const focusLine = aiSettings.focusInsights.length > 0 ? `Coach focus areas: ${aiSettings.focusInsights.join(", ")}` : "";
-  const rosterMetadataLines = buildRosterMetadataLines(state, ourTeamId);
+  const rosterMetadataLines = buildRosterMetadataLines(state, ourTeamId, session.schoolId);
 
   // Player foul summary
   const ourPlayers = Object.values(state.playerStatsByTeam[ourTeamId] ?? {});
@@ -726,34 +926,11 @@ function buildAiChatPrompt(
 
 async function fetchHistoricalContextSummary(session: GameSession): Promise<string> {
   async function attempt(): Promise<string> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-
     try {
-      const [seasonRes, gamesRes, playersRes] = await Promise.all([
-        fetch(`${STATS_DASHBOARD_BASE}/api/season-stats`, {
-          headers: buildStatsHeaders(),
-          signal: controller.signal
-        }),
-        fetch(`${STATS_DASHBOARD_BASE}/api/games`, {
-          headers: buildStatsHeaders(),
-          signal: controller.signal
-        }),
-        fetch(`${STATS_DASHBOARD_BASE}/api/players`, {
-          headers: buildStatsHeaders(),
-          signal: controller.signal
-        })
-      ]);
-
-      const seasonStats = seasonRes.ok
-        ? await seasonRes.json() as Record<string, unknown>
-        : {};
-      const games = gamesRes.ok
-        ? await gamesRes.json() as Array<Record<string, unknown>>
-        : [];
-      const players = playersRes.ok
-        ? await playersRes.json() as Array<Record<string, unknown>>
-        : [];
+      const analytics = buildSchoolAnalytics({ schoolId: session.schoolId });
+      const seasonStats = analytics.seasonTeamStats;
+      const games = analytics.games;
+      const players = analytics.players;
 
       const seasonLine = [
         `record ${resolveRecordLine(seasonStats)}`,
@@ -770,7 +947,7 @@ async function fetchHistoricalContextSummary(session: GameSession): Promise<stri
       const ourTeamId = session.opponentTeamId
         ? (session.homeTeamId !== session.opponentTeamId ? session.homeTeamId : session.awayTeamId)
         : session.homeTeamId;
-      const ourTeamLabel = resolveTeamLabelFromRoster(ourTeamId);
+      const ourTeamLabel = resolveTeamLabelFromRoster(ourTeamId, session.schoolId);
 
       const recentLine = recentGames.length > 0
         ? recentGames.map((game) => {
@@ -787,14 +964,12 @@ async function fetchHistoricalContextSummary(session: GameSession): Promise<stri
       return `${ourTeamLabel} season: ${seasonLine}. Last games: ${recentLine}.${playerLine ? ` Player history:\n${playerLine}` : ""}`;
     } catch {
       return "";
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
   const result = await attempt();
   if (result) return result;
-  // One retry after a short delay to recover from transient network or cold-start timeouts
+  // Retry once in case analytics assembly races with very recent writes.
   await new Promise<void>((resolve) => setTimeout(resolve, 1200));
   return attempt();
 }
@@ -861,7 +1036,7 @@ async function requestAiChatResponse(
               "You are a live varsity basketball assistant for the coaching staff.",
               "Answer in-game questions using the provided live stats, lineup context, recent events, and historical team/player performance.",
               "Favor concrete coaching actions: subs, matchup pressure, foul management, pace, shot diet, timeout use.",
-              "Do not invent film, scheme, or player tendencies that are not present in the provided context.",
+              "Do not invent scheme or player tendencies that are not present in the provided context.",
               "If evidence is thin, say so clearly.",
               "Output strict JSON only: {\"answer\":\"...\",\"suggestions\":[\"...\"]}."
             ].join(" ")
@@ -1035,15 +1210,10 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
   }
 }
 
-function persistSessions() {
-  if (!persistenceEnabled) {
-    return;
-  }
-
-  mkdirSync(dataDirectory, { recursive: true });
-
-  const payload: PersistedSnapshot = {
+function buildPersistedSnapshot(): PersistedSnapshot {
+  return {
     sessions: [...sessions.values()].map((session) => ({
+      schoolId: session.schoolId,
       gameId: session.state.gameId,
       homeTeamId: session.homeTeamId,
       awayTeamId: session.awayTeamId,
@@ -1056,22 +1226,31 @@ function persistSessions() {
       events: listOrderedEvents(session),
       aiSettings: sanitizeCoachAiSettings(session.aiSettings)
     })),
-    rosterTeams
+    rosterTeamsBySchool: Object.fromEntries(rosterTeamsBySchool.entries()),
+    // Backward compatibility for older readers expecting a top-level rosterTeams array.
+    rosterTeams: getRosterTeamsForSchool(DEFAULT_SCHOOL_ID)
   };
-
-  writeFileSync(dataFile, JSON.stringify(payload, null, 2), "utf8");
 }
 
-function restoreSessions() {
-  if (!persistenceEnabled || !existsSync(dataFile)) {
-    return;
-  }
+function buildPersistedSessions(): PersistedGameSessionRecord[] {
+  return buildPersistedSnapshot().sessions;
+}
 
-  const payload = JSON.parse(readFileSync(dataFile, "utf8")) as PersistedSnapshot | PersistedGameSession[];
+function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSession[]): void {
   const persistedSessions = Array.isArray(payload) ? payload : payload.sessions;
   const persistedRosterTeams = Array.isArray(payload) ? [] : payload.rosterTeams;
+  const persistedRosterTeamsBySchool = Array.isArray(payload) ? undefined : payload.rosterTeamsBySchool;
 
-  rosterTeams = Array.isArray(persistedRosterTeams) ? persistedRosterTeams : [];
+  sessions.clear();
+  rosterTeamsBySchool.clear();
+
+  if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
+    for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
+      setRosterTeamsForSchool(normalizeSchoolId(schoolId), Array.isArray(teams) ? teams : []);
+    }
+  } else if (Array.isArray(persistedRosterTeams)) {
+    setRosterTeamsForSchool(DEFAULT_SCHOOL_ID, persistedRosterTeams);
+  }
 
   for (const session of persistedSessions) {
     const initialState = createInitialGameState(
@@ -1093,6 +1272,7 @@ function restoreSessions() {
     }
 
     const restoredSession: GameSession = {
+      schoolId: normalizeSchoolId(session.schoolId),
       homeTeamId: session.homeTeamId,
       awayTeamId: session.awayTeamId,
       opponentName: session.opponentName,
@@ -1114,29 +1294,182 @@ function restoreSessions() {
     };
 
     recomputeSession(restoredSession);
-    sessions.set(session.gameId, restoredSession);
+    sessions.set(buildGameSessionKey(session.gameId, restoredSession.schoolId), restoredSession);
   }
 }
 
-restoreSessions();
+function restoreSessionsFromFile(): boolean {
+  if (!persistenceEnabled || !existsSync(dataFile)) {
+    return false;
+  }
+
+  const payload = JSON.parse(readFileSync(dataFile, "utf8")) as PersistedSnapshot | PersistedGameSession[];
+  applyPersistedSnapshot(payload);
+  return true;
+}
+
+async function restoreRosterTeamsFromProvider(): Promise<boolean> {
+  if (!persistenceProvider) {
+    return false;
+  }
+
+  const payload = await persistenceProvider.loadRosterTeamsBySchool();
+  const entries = Object.entries(payload);
+  if (entries.length === 0) {
+    return false;
+  }
+
+  rosterTeamsBySchool.clear();
+  for (const [schoolId, teams] of entries) {
+    setRosterTeamsForSchool(normalizeSchoolId(schoolId), Array.isArray(teams) ? teams : []);
+  }
+  return true;
+}
+
+async function restoreSessionsFromProvider(): Promise<boolean> {
+  if (!persistenceProvider) {
+    return false;
+  }
+
+  const sessionsPayload = await persistenceProvider.loadPersistedSessions();
+  if (sessionsPayload.length === 0) {
+    return false;
+  }
+
+  applyPersistedSnapshot(sessionsPayload);
+  return true;
+}
+
+function persistRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceRosterTeamsForSchool(schoolId, teams).catch((error) => {
+    console.warn(`[realtime-api] Failed to persist roster teams for school ${schoolId}`, error);
+  });
+}
+
+function persistNormalizedSessions(): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replacePersistedSessions(buildPersistedSessions()).catch((error) => {
+    console.warn("[realtime-api] Failed to persist normalized game sessions", error);
+  });
+}
+
+function clearPersistedRosterTeams(): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.clearAllRosterTeams().catch((error) => {
+    console.warn("[realtime-api] Failed to clear persisted roster teams", error);
+  });
+}
+
+function persistSessions() {
+  if (!persistenceEnabled) {
+    return;
+  }
+
+  mkdirSync(dataDirectory, { recursive: true });
+
+  const payload = buildPersistedSnapshot();
+  writeFileSync(dataFile, JSON.stringify(payload, null, 2), "utf8");
+
+  if (persistenceProvider) {
+    void persistenceProvider.save(payload).catch((error) => {
+      console.warn("[realtime-api] Failed to persist snapshot to PostgreSQL", error);
+    });
+  }
+
+  persistNormalizedSessions();
+}
+
+let storeInitialized = false;
+
+export async function initializeStore(): Promise<void> {
+  if (storeInitialized) {
+    return;
+  }
+
+  let restoredSnapshot = false;
+  if (persistenceProvider) {
+    try {
+      const payload = await persistenceProvider.load();
+      if (payload) {
+        applyPersistedSnapshot(payload as PersistedSnapshot | PersistedGameSession[]);
+        restoredSnapshot = true;
+      }
+    } catch (error) {
+      console.warn("[realtime-api] Failed to restore snapshot from PostgreSQL", error);
+    }
+  }
+
+  if (!restoredSnapshot && persistenceProvider) {
+    try {
+      restoredSnapshot = await restoreSessionsFromProvider();
+    } catch (error) {
+      console.warn("[realtime-api] Failed to restore normalized game sessions from PostgreSQL", error);
+    }
+  }
+
+  if (!restoredSnapshot) {
+    restoreSessionsFromFile();
+  }
+
+  if (persistenceProvider) {
+    try {
+      await restoreRosterTeamsFromProvider();
+    } catch (error) {
+      console.warn("[realtime-api] Failed to restore normalized roster data from PostgreSQL", error);
+    }
+  }
+
+  storeInitialized = true;
+}
 
 export function getRosterTeams(): RosterTeam[] {
-  return rosterTeams;
+  return getRosterTeamsForSchool(DEFAULT_SCHOOL_ID);
 }
 
-export function saveRosterTeams(next: RosterTeam[]): RosterTeam[] {
-  rosterTeams = Array.isArray(next) ? next : [];
+export function getRosterTeamsByScope(scope?: TenantScope): RosterTeam[] {
+  return getRosterTeamsForSchool(resolveSchoolId(scope));
+}
+
+export function saveRosterTeams(next: RosterTeam[], scope?: TenantScope): RosterTeam[] {
+  const schoolId = resolveSchoolId(scope);
+  const saved = setRosterTeamsForSchool(schoolId, next);
   persistSessions();
-  return rosterTeams;
+  persistRosterTeamsForSchool(schoolId, saved);
+  return saved;
 }
 
-export function resetAllData(): void {
-  sessions.clear();
-  rosterTeams = [];
+export function resetAllData(scope?: TenantScope): void {
+  const schoolId = scope ? resolveSchoolId(scope) : null;
+  if (!schoolId) {
+    sessions.clear();
+    rosterTeamsBySchool.clear();
+    persistSessions();
+    clearPersistedRosterTeams();
+    return;
+  }
+
+  for (const key of sessions.keys()) {
+    if (key.startsWith(`${schoolId}:`)) {
+      sessions.delete(key);
+    }
+  }
+  rosterTeamsBySchool.delete(schoolId);
   persistSessions();
+  persistRosterTeamsForSchool(schoolId, []);
 }
 
-export function createGame(input: CreateGameInput): GameState {
+export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {
+  const schoolId = normalizeSchoolId(input.schoolId ?? scope?.schoolId);
   const state = createInitialGameState(
     input.gameId,
     input.homeTeamId,
@@ -1159,7 +1492,8 @@ export function createGame(input: CreateGameInput): GameState {
     }
   }
 
-  sessions.set(input.gameId, {
+  sessions.set(buildGameSessionKey(input.gameId, schoolId), {
+    schoolId,
     homeTeamId: input.homeTeamId,
     awayTeamId: input.awayTeamId,
     opponentName: input.opponentName,
@@ -1185,8 +1519,8 @@ export function createGame(input: CreateGameInput): GameState {
   return state;
 }
 
-export function deleteGame(gameId: string): boolean {
-  const removed = sessions.delete(gameId);
+export function deleteGame(gameId: string, scope?: TenantScope): boolean {
+  const removed = sessions.delete(buildGameSessionKey(gameId, resolveSchoolId(scope)));
   if (removed) {
     persistSessions();
   }
@@ -1201,9 +1535,10 @@ export function deleteGame(gameId: string): boolean {
  */
 export function patchGameLineup(
   gameId: string,
-  startingLineupByTeam: Record<string, string[]>
+  startingLineupByTeam: Record<string, string[]>,
+  scope?: TenantScope
 ): GameState | null {
-  const session = sessions.get(gameId);
+  const session = getSession(gameId, scope);
   if (!session) return null;
 
   let changed = false;
@@ -1236,28 +1571,36 @@ export function patchGameLineup(
   return session.state;
 }
 
-export function getGameState(gameId: string): GameState | null {
-  return sessions.get(gameId)?.state ?? null;
+export function getGameState(gameId: string, scope?: TenantScope): GameState | null {
+  return getSession(gameId, scope)?.state ?? null;
 }
 
-export function getGameAiSettings(gameId: string): CoachAiSettings | null {
-  const session = sessions.get(gameId);
+export function getGameStateByScope(gameId: string, scope?: TenantScope): GameState | null {
+  return getGameState(gameId, scope);
+}
+
+export function getGameAiSettings(gameId: string, scope?: TenantScope): CoachAiSettings | null {
+  const session = getSession(gameId, scope);
   if (!session) {
     return null;
   }
   return sanitizeCoachAiSettings(session.aiSettings);
 }
 
-export function getGameAiContext(gameId: string): GameAiContext | null {
-  const session = sessions.get(gameId);
+export function getGameAiContext(gameId: string, scope?: TenantScope): GameAiContext | null {
+  const session = getSession(gameId, scope);
   if (!session) {
     return null;
   }
   return sanitizeGameAiContext(session.aiContext);
 }
 
-export function updateGameAiSettings(gameId: string, settings: Partial<CoachAiSettings>): CoachAiSettings | null {
-  const session = sessions.get(gameId);
+export function updateGameAiSettings(
+  gameId: string,
+  settings: Partial<CoachAiSettings>,
+  scope?: TenantScope
+): CoachAiSettings | null {
+  const session = getSession(gameId, scope);
   if (!session) {
     return null;
   }
@@ -1273,8 +1616,12 @@ export function updateGameAiSettings(gameId: string, settings: Partial<CoachAiSe
   return session.aiSettings;
 }
 
-export function updateGameAiContext(gameId: string, context: Partial<GameAiContext>): GameAiContext | null {
-  const session = sessions.get(gameId);
+export function updateGameAiContext(
+  gameId: string,
+  context: Partial<GameAiContext>,
+  scope?: TenantScope
+): GameAiContext | null {
+  const session = getSession(gameId, scope);
   if (!session) {
     return null;
   }
@@ -1290,8 +1637,8 @@ export function updateGameAiContext(gameId: string, context: Partial<GameAiConte
   return session.aiContext;
 }
 
-export function getGameAiPromptPreview(gameId: string): AiPromptPreview | null {
-  const session = sessions.get(gameId);
+export function getGameAiPromptPreview(gameId: string, scope?: TenantScope): AiPromptPreview | null {
+  const session = getSession(gameId, scope);
   if (!session) {
     return null;
   }
@@ -1322,9 +1669,10 @@ export function getGameAiPromptPreview(gameId: string): AiPromptPreview | null {
 export async function answerGameAiChat(
   gameId: string,
   question: string,
-  history?: unknown
+  history?: unknown,
+  scope?: TenantScope
 ): Promise<CoachAiChatResponse | null> {
-  const session = sessions.get(gameId);
+  const session = getSession(gameId, scope);
   const trimmedQuestion = trimToLength(question, 1200);
   if (!session || !trimmedQuestion) {
     return null;
@@ -1333,13 +1681,13 @@ export async function answerGameAiChat(
   return requestAiChatResponse(session, trimmedQuestion, sanitizeAiChatHistory(history));
 }
 
-export function getGameInsights(gameId: string): LiveInsight[] {
-  const session = sessions.get(gameId);
+export function getGameInsights(gameId: string, scope?: TenantScope): LiveInsight[] {
+  const session = getSession(gameId, scope);
   return session ? combineInsights(session) : [];
 }
 
-export function getGameEvents(gameId: string): GameEvent[] {
-  const session = sessions.get(gameId);
+export function getGameEvents(gameId: string, scope?: TenantScope): GameEvent[] {
+  const session = getSession(gameId, scope);
   if (!session) {
     return [];
   }
@@ -1347,8 +1695,339 @@ export function getGameEvents(gameId: string): GameEvent[] {
   return listOrderedEvents(session);
 }
 
+export function getSeasonTeamStats(scope?: TenantScope): SeasonTeamStats {
+  return buildSchoolAnalytics(scope).seasonTeamStats;
+}
+
+export function getSeasonGames(scope?: TenantScope): SeasonGameSummary[] {
+  return buildSchoolAnalytics(scope).games;
+}
+
+export function getSeasonPlayers(scope?: TenantScope): SeasonPlayerSummary[] {
+  return buildSchoolAnalytics(scope).players;
+}
+
+export function getLiveContext(scope?: TenantScope): LiveContextPayload {
+  return buildSchoolAnalytics(scope).liveContext;
+}
+
+export function getRosterPlayers(scope?: TenantScope): SeasonPlayerSummary[] {
+  return buildSchoolAnalytics(scope).players;
+}
+
 function listOrderedEvents(session: GameSession): GameEvent[] {
   return [...session.eventsById.values()].sort((left, right) => left.sequence - right.sequence);
+}
+
+function roundStat(value: number, digits = 1): number {
+  return Number(value.toFixed(digits));
+}
+
+function buildSchoolAnalytics(scope?: TenantScope): {
+  seasonTeamStats: SeasonTeamStats;
+  games: SeasonGameSummary[];
+  players: SeasonPlayerSummary[];
+  liveContext: LiveContextPayload;
+} {
+  const schoolId = resolveSchoolId(scope);
+  const rosterTeams = getRosterTeamsForSchool(schoolId);
+  const rosterTeamIds = new Set(rosterTeams.map((team) => team.id));
+  const playerMap = new Map<string, SeasonPlayerSummary>();
+
+  for (const team of rosterTeams) {
+    for (const player of team.players) {
+      playerMap.set(player.id, {
+        name: player.name,
+        full_name: player.name,
+        first_name: player.name.split(" ")[0] ?? player.name,
+        number: player.number,
+        position: player.position,
+        height: player.height,
+        grade: player.grade,
+        role: player.role,
+        notes: player.notes,
+        games: 0,
+        pts: 0,
+        fg: 0,
+        fga: 0,
+        fg3: 0,
+        fg3a: 0,
+        ft: 0,
+        fta: 0,
+        oreb: 0,
+        dreb: 0,
+        reb: 0,
+        asst: 0,
+        to: 0,
+        stl: 0,
+        blk: 0,
+        fouls: 0,
+        plus_minus: 0,
+        ppg: 0,
+        rpg: 0,
+        apg: 0,
+        spg: 0,
+        bpg: 0,
+        tpg: 0,
+        fpg: 0,
+        fg_pct: 0,
+        fg3_pct: 0,
+        ft_pct: 0,
+        coach_style: team.coachStyle ?? "",
+        roster_info: {
+          name: player.name,
+          number: player.number,
+          position: player.position,
+          height: player.height,
+          grade: player.grade,
+          role: player.role,
+          notes: player.notes
+        }
+      });
+    }
+  }
+
+  const aggregatedTeam = {
+    fg: 0,
+    fga: 0,
+    fg3: 0,
+    fg3a: 0,
+    ft: 0,
+    fta: 0,
+    oreb: 0,
+    dreb: 0,
+    reb: 0,
+    asst: 0,
+    to: 0,
+    stl: 0,
+    blk: 0,
+    fouls: 0,
+    win: 0,
+    loss: 0,
+    pointsFor: 0,
+    pointsAgainst: 0
+  };
+
+  const games: SeasonGameSummary[] = [];
+  const sessionsForSchool = getSessionsForSchool(schoolId)
+    .filter((session) => rosterTeamIds.has(session.homeTeamId) || rosterTeamIds.has(session.awayTeamId));
+
+  for (const session of sessionsForSchool) {
+    const ourTeamId = rosterTeamIds.has(session.homeTeamId) ? session.homeTeamId : session.awayTeamId;
+    const opponentTeamId = ourTeamId === session.homeTeamId ? session.awayTeamId : session.homeTeamId;
+    const teamStats = session.state.teamStats[ourTeamId];
+    const ourScore = session.state.scoreByTeam[ourTeamId] ?? 0;
+    const oppScore = session.state.scoreByTeam[opponentTeamId] ?? 0;
+    const playerStats = session.state.playerStatsByTeam[ourTeamId] ?? {};
+    const orderedEvents = listOrderedEvents(session);
+    const latestTimestampIso = orderedEvents[orderedEvents.length - 1]?.timestampIso ?? "";
+    const fg3ByPlayer = new Map<string, { made: number; attempts: number }>();
+    let fg3 = 0;
+    let fg3a = 0;
+
+    for (const event of orderedEvents) {
+      if (event.teamId !== ourTeamId || event.type !== "shot_attempt" || event.points !== 3) {
+        continue;
+      }
+
+      fg3a += 1;
+      const playerId = event.playerId ?? "";
+      const current = fg3ByPlayer.get(playerId) ?? { made: 0, attempts: 0 };
+      current.attempts += 1;
+      if (event.made) {
+        current.made += 1;
+        fg3 += 1;
+      }
+      fg3ByPlayer.set(playerId, current);
+    }
+
+    const assists = Object.values(playerStats).reduce((sum, player) => sum + player.assists, 0);
+    const steals = Object.values(playerStats).reduce((sum, player) => sum + player.steals, 0);
+    const blocks = Object.values(playerStats).reduce((sum, player) => sum + player.blocks, 0);
+
+    aggregatedTeam.fg += teamStats?.shooting.fgMade ?? 0;
+    aggregatedTeam.fga += teamStats?.shooting.fgAttempts ?? 0;
+    aggregatedTeam.fg3 += fg3;
+    aggregatedTeam.fg3a += fg3a;
+    aggregatedTeam.ft += teamStats?.shooting.ftMade ?? 0;
+    aggregatedTeam.fta += teamStats?.shooting.ftAttempts ?? 0;
+    aggregatedTeam.oreb += teamStats?.reboundsOff ?? 0;
+    aggregatedTeam.dreb += teamStats?.reboundsDef ?? 0;
+    aggregatedTeam.reb += (teamStats?.reboundsOff ?? 0) + (teamStats?.reboundsDef ?? 0);
+    aggregatedTeam.asst += assists;
+    aggregatedTeam.to += teamStats?.turnovers ?? 0;
+    aggregatedTeam.stl += steals;
+    aggregatedTeam.blk += blocks;
+    aggregatedTeam.fouls += teamStats?.fouls ?? 0;
+    aggregatedTeam.pointsFor += ourScore;
+    aggregatedTeam.pointsAgainst += oppScore;
+    if (ourScore > oppScore) {
+      aggregatedTeam.win += 1;
+    } else if (ourScore < oppScore) {
+      aggregatedTeam.loss += 1;
+    }
+
+    games.push({
+      gameId: session.state.gameId,
+      date: latestTimestampIso ? latestTimestampIso.slice(0, 10) : "",
+      opponent: session.opponentName?.trim() || resolveTeamLabelFromRoster(opponentTeamId, schoolId),
+      location: ourTeamId === session.homeTeamId ? "home" : "away",
+      vc_score: ourScore,
+      opp_score: oppScore,
+      result: ourScore > oppScore ? "W" : ourScore < oppScore ? "L" : "T",
+      team_stats: {
+        fg: teamStats?.shooting.fgMade ?? 0,
+        fga: teamStats?.shooting.fgAttempts ?? 0,
+        fg3,
+        fg3a,
+        ft: teamStats?.shooting.ftMade ?? 0,
+        fta: teamStats?.shooting.ftAttempts ?? 0,
+        oreb: teamStats?.reboundsOff ?? 0,
+        dreb: teamStats?.reboundsDef ?? 0,
+        reb: (teamStats?.reboundsOff ?? 0) + (teamStats?.reboundsDef ?? 0),
+        asst: assists,
+        to: teamStats?.turnovers ?? 0,
+        stl: steals,
+        blk: blocks,
+        fouls: teamStats?.fouls ?? 0
+      }
+    });
+
+    for (const statLine of Object.values(playerStats)) {
+      const existing = playerMap.get(statLine.playerId) ?? {
+        name: statLine.playerId,
+        full_name: statLine.playerId,
+        first_name: statLine.playerId,
+        games: 0,
+        pts: 0,
+        fg: 0,
+        fga: 0,
+        fg3: 0,
+        fg3a: 0,
+        ft: 0,
+        fta: 0,
+        oreb: 0,
+        dreb: 0,
+        reb: 0,
+        asst: 0,
+        to: 0,
+        stl: 0,
+        blk: 0,
+        fouls: 0,
+        plus_minus: 0,
+        ppg: 0,
+        rpg: 0,
+        apg: 0,
+        spg: 0,
+        bpg: 0,
+        tpg: 0,
+        fpg: 0,
+        fg_pct: 0,
+        fg3_pct: 0,
+        ft_pct: 0,
+        coach_style: "",
+        roster_info: null
+      } as SeasonPlayerSummary;
+      const fg3Line = fg3ByPlayer.get(statLine.playerId) ?? { made: 0, attempts: 0 };
+      existing.games += 1;
+      existing.pts += statLine.points;
+      existing.fg += statLine.fgMade;
+      existing.fga += statLine.fgAttempts;
+      existing.fg3 += fg3Line.made;
+      existing.fg3a += fg3Line.attempts;
+      existing.ft += statLine.ftMade;
+      existing.fta += statLine.ftAttempts;
+      existing.oreb += statLine.reboundsOff;
+      existing.dreb += statLine.reboundsDef;
+      existing.reb += statLine.reboundsOff + statLine.reboundsDef;
+      existing.asst += statLine.assists;
+      existing.to += statLine.turnovers;
+      existing.stl += statLine.steals;
+      existing.blk += statLine.blocks;
+      existing.fouls += statLine.fouls;
+      playerMap.set(statLine.playerId, existing);
+    }
+  }
+
+  const totalGames = games.length;
+  const seasonTeamStats: SeasonTeamStats = {
+    fg: aggregatedTeam.fg,
+    fga: aggregatedTeam.fga,
+    fg3: aggregatedTeam.fg3,
+    fg3a: aggregatedTeam.fg3a,
+    ft: aggregatedTeam.ft,
+    fta: aggregatedTeam.fta,
+    oreb: aggregatedTeam.oreb,
+    dreb: aggregatedTeam.dreb,
+    reb: aggregatedTeam.reb,
+    asst: aggregatedTeam.asst,
+    to: aggregatedTeam.to,
+    stl: aggregatedTeam.stl,
+    blk: aggregatedTeam.blk,
+    fouls: aggregatedTeam.fouls,
+    win: aggregatedTeam.win,
+    loss: aggregatedTeam.loss,
+    ppg: totalGames > 0 ? roundStat(aggregatedTeam.pointsFor / totalGames) : 0,
+    opp_ppg: totalGames > 0 ? roundStat(aggregatedTeam.pointsAgainst / totalGames) : 0,
+    rpg: totalGames > 0 ? roundStat(aggregatedTeam.reb / totalGames) : 0,
+    apg: totalGames > 0 ? roundStat(aggregatedTeam.asst / totalGames) : 0,
+    to_avg: totalGames > 0 ? roundStat(aggregatedTeam.to / totalGames) : 0,
+    stl_pg: totalGames > 0 ? roundStat(aggregatedTeam.stl / totalGames) : 0,
+    blk_pg: totalGames > 0 ? roundStat(aggregatedTeam.blk / totalGames) : 0,
+    oreb_pg: totalGames > 0 ? roundStat(aggregatedTeam.oreb / totalGames) : 0,
+    dreb_pg: totalGames > 0 ? roundStat(aggregatedTeam.dreb / totalGames) : 0,
+    fouls_pg: totalGames > 0 ? roundStat(aggregatedTeam.fouls / totalGames) : 0,
+    fg_pct: aggregatedTeam.fga > 0 ? aggregatedTeam.fg / aggregatedTeam.fga : 0,
+    fg3_pct: aggregatedTeam.fg3a > 0 ? aggregatedTeam.fg3 / aggregatedTeam.fg3a : 0,
+    ft_pct: aggregatedTeam.fta > 0 ? aggregatedTeam.ft / aggregatedTeam.fta : 0
+  };
+
+  const players = [...playerMap.values()]
+    .map((player) => ({
+      ...player,
+      ppg: player.games > 0 ? roundStat(player.pts / player.games) : 0,
+      rpg: player.games > 0 ? roundStat(player.reb / player.games) : 0,
+      apg: player.games > 0 ? roundStat(player.asst / player.games) : 0,
+      spg: player.games > 0 ? roundStat(player.stl / player.games) : 0,
+      bpg: player.games > 0 ? roundStat(player.blk / player.games) : 0,
+      tpg: player.games > 0 ? roundStat(player.to / player.games) : 0,
+      fpg: player.games > 0 ? roundStat(player.fouls / player.games) : 0,
+      fg_pct: player.fga > 0 ? roundStat(player.fg / player.fga, 3) : 0,
+      fg3_pct: player.fg3a > 0 ? roundStat(player.fg3 / player.fg3a, 3) : 0,
+      ft_pct: player.fta > 0 ? roundStat(player.ft / player.fta, 3) : 0
+    }))
+    .sort((left, right) => right.ppg - left.ppg);
+
+  const primaryTeam = rosterTeams[0];
+  return {
+    seasonTeamStats,
+    games: [...games].sort((left, right) => right.gameId.localeCompare(left.gameId)),
+    players,
+    liveContext: {
+      seasonStats: seasonTeamStats,
+      recentGames: [...games].sort((left, right) => right.gameId.localeCompare(left.gameId)).slice(0, 5),
+      players: players.map((player) => ({
+        name: player.full_name,
+        number: player.number ?? "",
+        ppg: player.ppg,
+        rpg: player.rpg,
+        apg: player.apg,
+        fg_pct: player.fg_pct,
+        fg3_pct: player.fg3_pct,
+        ft_pct: player.ft_pct,
+        fpg: player.fpg,
+        games: player.games,
+        role: player.role ?? "",
+        notes: player.notes ?? ""
+      })),
+      teamInfo: {
+        name: primaryTeam?.name ?? "",
+        coachStyle: primaryTeam?.coachStyle ?? "",
+        playingStyle: "",
+        teamContext: ""
+      }
+    }
+  };
 }
 
 function recomputeSession(session: GameSession): void {
@@ -1403,9 +2082,10 @@ function recomputeSession(session: GameSession): void {
 
 export async function refreshGameAiInsights(
   gameId: string,
-  options?: { force?: boolean }
+  options?: { force?: boolean },
+  scope?: TenantScope
 ): Promise<LiveInsight[] | null> {
-  const session = sessions.get(gameId);
+  const session = getSession(gameId, scope);
   if (!session) {
     return null;
   }
@@ -1491,13 +2171,14 @@ export async function refreshGameAiInsights(
   return session.aiRefreshInFlight;
 }
 
-export function ingestEvent(rawEvent: unknown): {
+export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
   event: GameEvent;
   state: GameState;
   insights: LiveInsight[];
 } {
-  const event = parseGameEvent(rawEvent);
-  const session = sessions.get(event.gameId);
+  const schoolId = normalizeSchoolId((rawEvent as { schoolId?: unknown } | null)?.schoolId ?? scope?.schoolId);
+  const event = parseGameEvent({ ...(rawEvent as object), schoolId });
+  const session = getSession(event.gameId, { schoolId });
 
   if (!session) {
     throw new Error(`Game not found: ${event.gameId}`);
@@ -1524,11 +2205,11 @@ export function ingestEvent(rawEvent: unknown): {
   };
 }
 
-export function deleteEvent(gameId: string, eventId: string): {
+export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope): {
   state: GameState;
   insights: LiveInsight[];
 } {
-  const session = sessions.get(gameId);
+  const session = getSession(gameId, scope);
 
   if (!session) {
     throw new Error(`Game not found: ${gameId}`);
@@ -1550,12 +2231,13 @@ export function deleteEvent(gameId: string, eventId: string): {
   };
 }
 
-export function updateEvent(gameId: string, eventId: string, rawEvent: unknown): {
+export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, scope?: TenantScope): {
   event: GameEvent;
   state: GameState;
   insights: LiveInsight[];
 } {
-  const session = sessions.get(gameId);
+  const schoolId = resolveSchoolId(scope);
+  const session = getSession(gameId, { schoolId });
   if (!session) {
     throw new Error(`Game not found: ${gameId}`);
   }
@@ -1568,7 +2250,8 @@ export function updateEvent(gameId: string, eventId: string, rawEvent: unknown):
   const parsed = parseGameEvent({
     ...(rawEvent as object),
     id: eventId,
-    gameId
+    gameId,
+    schoolId
   });
 
   const currentOwner = session.eventIdsBySequence.get(parsed.sequence);

@@ -286,7 +286,7 @@ describe("store", () => {
 
       expect(refreshed?.some((insight) => insight.type === "ai_coaching")).toBe(true);
       expect(getGameInsights("game-ai").some((insight) => insight.type === "ai_coaching")).toBe(true);
-      expect(global.fetch).toHaveBeenCalledTimes(4);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     } finally {
       if (originalApiKey === undefined) {
         delete process.env.OPENAI_API_KEY;
@@ -388,7 +388,7 @@ describe("store", () => {
 
       expect(firstRefresh?.some((insight) => insight.message === "First bench call")).toBe(true);
       expect(forcedRefresh?.some((insight) => insight.message === "Second bench call")).toBe(true);
-      expect(global.fetch).toHaveBeenCalledTimes(5);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
     } finally {
       if (originalApiKey === undefined) {
         delete process.env.OPENAI_API_KEY;

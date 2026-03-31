@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { startServer, stopServer } from "./server.js";
 
 /**
  * Realtime API server endpoint tests
@@ -18,10 +19,468 @@ beforeEach(() => {
   delete process.env.BTA_API_KEY;
 });
 
+async function resetSchool(schoolId: string): Promise<void> {
+  await fetch(`${API_BASE}/admin/reset`, {
+    method: "DELETE",
+    headers: { "x-school-id": schoolId }
+  });
+}
+
+beforeAll(async () => {
+  await startServer();
+});
+
+afterAll(async () => {
+  await stopServer();
+});
+
+describe("school tenancy", () => {
+  it("isolates roster teams by x-school-id", async () => {
+    await resetSchool("alpha");
+    await resetSchool("beta");
+
+    const alphaPayload = {
+      teams: [
+        {
+          id: "alpha-team",
+          name: "Alpha Varsity",
+          abbreviation: "ALP",
+          players: []
+        }
+      ]
+    };
+    const betaPayload = {
+      teams: [
+        {
+          id: "beta-team",
+          name: "Beta Varsity",
+          abbreviation: "BET",
+          players: []
+        }
+      ]
+    };
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "alpha" },
+      body: JSON.stringify(alphaPayload)
+    });
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "beta" },
+      body: JSON.stringify(betaPayload)
+    });
+
+    const alphaRes = await fetch(`${API_BASE}/teams`, {
+      headers: { "x-school-id": "alpha" }
+    });
+    const betaRes = await fetch(`${API_BASE}/teams`, {
+      headers: { "x-school-id": "beta" }
+    });
+
+    expect(alphaRes.status).toBe(200);
+    expect(betaRes.status).toBe(200);
+
+    const alphaBody = await alphaRes.json() as { teams: Array<{ id: string; schoolId?: string }> };
+    const betaBody = await betaRes.json() as { teams: Array<{ id: string; schoolId?: string }> };
+
+    expect(alphaBody.teams).toHaveLength(1);
+    expect(alphaBody.teams[0]?.id).toBe("alpha-team");
+    expect(alphaBody.teams[0]?.schoolId).toBe("alpha");
+
+    expect(betaBody.teams).toHaveLength(1);
+    expect(betaBody.teams[0]?.id).toBe("beta-team");
+    expect(betaBody.teams[0]?.schoolId).toBe("beta");
+  });
+
+  it("resets only the requested school scope", async () => {
+    await resetSchool("alpha-reset");
+    await resetSchool("beta-reset");
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "alpha-reset" },
+      body: JSON.stringify({
+        teams: [{ id: "alpha-only", name: "Alpha", abbreviation: "A", players: [] }]
+      })
+    });
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "beta-reset" },
+      body: JSON.stringify({
+        teams: [{ id: "beta-only", name: "Beta", abbreviation: "B", players: [] }]
+      })
+    });
+
+    const resetRes = await fetch(`${API_BASE}/admin/reset`, {
+      method: "DELETE",
+      headers: { "x-school-id": "alpha-reset" }
+    });
+
+    expect(resetRes.status).toBe(200);
+
+    const alphaRes = await fetch(`${API_BASE}/teams`, {
+      headers: { "x-school-id": "alpha-reset" }
+    });
+    const betaRes = await fetch(`${API_BASE}/teams`, {
+      headers: { "x-school-id": "beta-reset" }
+    });
+
+    const alphaBody = await alphaRes.json() as { teams: Array<{ id: string }> };
+    const betaBody = await betaRes.json() as { teams: Array<{ id: string }> };
+
+    expect(alphaBody.teams).toHaveLength(0);
+    expect(betaBody.teams).toHaveLength(1);
+    expect(betaBody.teams[0]?.id).toBe("beta-only");
+  });
+});
+
+describe("unified stats endpoints", () => {
+  it("serves season stats, players, and live context from realtime-api state", async () => {
+    await resetSchool("stats-school");
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "stats-school" },
+      body: JSON.stringify({
+        teams: [
+          {
+            id: "vc",
+            name: "Valley Catholic",
+            abbreviation: "VC",
+            coachStyle: "Push pace",
+            players: [
+              { id: "p1", number: "1", name: "Cooper Bonnett", position: "G" },
+              { id: "p2", number: "2", name: "Alex Post", position: "G" }
+            ]
+          }
+        ]
+      })
+    });
+
+    await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "stats-school" },
+      body: JSON.stringify({
+        gameId: "stats-game",
+        homeTeamId: "vc",
+        awayTeamId: "opp",
+        opponentName: "OES",
+        opponentTeamId: "opp"
+      })
+    });
+
+    await fetch(`${API_BASE}/api/games/stats-game/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "stats-school" },
+      body: JSON.stringify({
+        id: "evt-1",
+        sequence: 1,
+        timestampIso: "2026-03-30T19:00:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 420,
+        teamId: "vc",
+        operatorId: "op-1",
+        type: "shot_attempt",
+        playerId: "p1",
+        made: true,
+        points: 3,
+        zone: "above_break_three"
+      })
+    });
+
+    await fetch(`${API_BASE}/api/games/stats-game/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "stats-school" },
+      body: JSON.stringify({
+        id: "evt-2",
+        sequence: 2,
+        timestampIso: "2026-03-30T19:00:05.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 415,
+        teamId: "vc",
+        operatorId: "op-1",
+        type: "assist",
+        playerId: "p2"
+      })
+    });
+
+    const [seasonRes, playersRes, liveContextRes] = await Promise.all([
+      fetch(`${API_BASE}/api/season-stats`, { headers: { "x-school-id": "stats-school" } }),
+      fetch(`${API_BASE}/api/players`, { headers: { "x-school-id": "stats-school" } }),
+      fetch(`${API_BASE}/api/live-context`, { headers: { "x-school-id": "stats-school" } })
+    ]);
+
+    expect(seasonRes.status).toBe(200);
+    expect(playersRes.status).toBe(200);
+    expect(liveContextRes.status).toBe(200);
+
+    const seasonBody = await seasonRes.json() as { fg3: number; ppg: number };
+    const playersBody = await playersRes.json() as Array<{ full_name: string; ppg: number }>;
+    const liveContextBody = await liveContextRes.json() as {
+      teamInfo: { name: string; coachStyle: string };
+      recentGames: Array<{ opponent: string }>;
+    };
+
+    expect(seasonBody.fg3).toBe(1);
+    expect(seasonBody.ppg).toBe(3);
+    expect(playersBody.some((player) => player.full_name === "Cooper Bonnett" && player.ppg === 3)).toBe(true);
+    expect(liveContextBody.teamInfo.name).toBe("Valley Catholic");
+    expect(liveContextBody.teamInfo.coachStyle).toBe("Push pace");
+    expect(liveContextBody.recentGames[0]?.opponent).toBe("OES");
+  });
+
+  it("supports stats-dashboard team settings and roster management routes", async () => {
+    await resetSchool("compat-school");
+
+    const teamRes = await fetch(`${API_BASE}/api/team`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "compat-school" },
+      body: JSON.stringify({
+        name: "Valley Catholic",
+        season: "2026",
+        teamColor: "#112233",
+        playingStyle: "Control tempo"
+      })
+    });
+
+    expect(teamRes.status).toBe(201);
+
+    const aiSettingsRes = await fetch(`${API_BASE}/api/ai-settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "compat-school" },
+      body: JSON.stringify({
+        teamContext: "Short bench",
+        customPrompt: "Protect foul trouble",
+        focusInsights: ["timeouts", "ball_security"]
+      })
+    });
+
+    expect(aiSettingsRes.status).toBe(200);
+
+    const playerSaveRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "compat-school" },
+      body: JSON.stringify({
+        number: "4",
+        position: "G",
+        grade: "11",
+        role: "Primary ball handler"
+      })
+    });
+
+    expect(playerSaveRes.status).toBe(201);
+
+    const [teamsRes, settingsRes, playerRes] = await Promise.all([
+      fetch(`${API_BASE}/api/teams`, { headers: { "x-school-id": "compat-school" } }),
+      fetch(`${API_BASE}/api/ai-settings`, { headers: { "x-school-id": "compat-school" } }),
+      fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}`, { headers: { "x-school-id": "compat-school" } })
+    ]);
+
+    expect(teamsRes.status).toBe(200);
+    expect(settingsRes.status).toBe(200);
+    expect(playerRes.status).toBe(200);
+
+    const teamsBody = await teamsRes.json() as {
+      teams: Array<{
+        season: string;
+        playingStyle: string;
+        teamContext: string;
+        customPrompt: string;
+        focusInsights: string[];
+      }>;
+    };
+    const settingsBody = await settingsRes.json() as { customPrompt: string; focusInsights: string[] };
+    const playerBody = await playerRes.json() as { full_name: string; roster_info?: { role?: string } | null };
+
+    expect(teamsBody.teams[0]?.season).toBe("2026");
+    expect(teamsBody.teams[0]?.playingStyle).toBe("Control tempo");
+    expect(teamsBody.teams[0]?.teamContext).toBe("Short bench");
+    expect(teamsBody.teams[0]?.customPrompt).toBe("Protect foul trouble");
+    expect(teamsBody.teams[0]?.focusInsights).toEqual(["timeouts", "ball_security"]);
+    expect(settingsBody.customPrompt).toBe("Protect foul trouble");
+    expect(playerBody.full_name).toBe("Jordan Bell");
+    expect(playerBody.roster_info?.role).toBe("Primary ball handler");
+
+    const playerDeleteRes = await fetch(`${API_BASE}/api/roster/player/${encodeURIComponent("Jordan Bell")}`, {
+      method: "DELETE",
+      headers: { "x-school-id": "compat-school" }
+    });
+
+    expect(playerDeleteRes.status).toBe(200);
+
+    const missingPlayerRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}`, {
+      headers: { "x-school-id": "compat-school" }
+    });
+    expect(missingPlayerRes.status).toBe(404);
+  });
+
+  it("supports game edit and reset compatibility routes", async () => {
+    await resetSchool("games-compat");
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "games-compat" },
+      body: JSON.stringify({
+        teams: [
+          {
+            id: "vc",
+            name: "Valley Catholic",
+            abbreviation: "VC",
+            players: [{ id: "p1", number: "3", name: "Mason Lee", position: "G" }]
+          }
+        ]
+      })
+    });
+
+    await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "games-compat" },
+      body: JSON.stringify({
+        gameId: "101",
+        homeTeamId: "vc",
+        awayTeamId: "opp",
+        opponentName: "Jesuit",
+        opponentTeamId: "opp"
+      })
+    });
+
+    const updateRes = await fetch(`${API_BASE}/api/games/101`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "games-compat" },
+      body: JSON.stringify({
+        date: "2026-03-30",
+        opponent: "Jesuit",
+        location: "away",
+        vc_score: 62,
+        opp_score: 58,
+        team_stats: {
+          fg: 22,
+          fga: 50,
+          fg3: 6,
+          fg3a: 17,
+          ft: 12,
+          fta: 15,
+          oreb: 7,
+          dreb: 19,
+          reb: 26,
+          asst: 14,
+          to: 9,
+          stl: 6,
+          blk: 3,
+          fouls: 11
+        },
+        player_stats: [{ name: "Mason Lee", number: 3, fg_made: 7, fg_att: 14, fg3_made: 2, fg3_att: 6, ft_made: 4, ft_att: 5, oreb: 1, dreb: 4, asst: 5, stl: 2, blk: 0, to: 2, fouls: 2, plus_minus: 4, pts: 20 }]
+      })
+    });
+
+    expect(updateRes.status).toBe(200);
+
+    const gameDetailRes = await fetch(`${API_BASE}/api/games/101`, {
+      headers: { "x-school-id": "games-compat" }
+    });
+    expect(gameDetailRes.status).toBe(200);
+    const gameDetail = await gameDetailRes.json() as { vc_score: number; location: string; player_stats: Array<{ name: string }> };
+    expect(gameDetail.vc_score).toBe(62);
+    expect(gameDetail.location).toBe("away");
+    expect(gameDetail.player_stats[0]?.name).toBe("Mason Lee");
+
+    const deleteRes = await fetch(`${API_BASE}/api/games/101`, {
+      method: "DELETE",
+      headers: { "x-school-id": "games-compat" }
+    });
+    expect(deleteRes.status).toBe(200);
+
+    const resetRes = await fetch(`${API_BASE}/api/reset`, {
+      method: "POST",
+      headers: { "x-school-id": "games-compat" }
+    });
+    expect(resetRes.status).toBe(200);
+  });
+
+  it("serves AI summary compatibility routes", async () => {
+    await resetSchool("ai-compat");
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "ai-compat" },
+      body: JSON.stringify({
+        teams: [
+          {
+            id: "vc",
+            name: "Valley Catholic",
+            abbreviation: "VC",
+            players: [{ id: "p7", number: "7", name: "Eli Carter", position: "G" }]
+          }
+        ]
+      })
+    });
+
+    await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "ai-compat" },
+      body: JSON.stringify({
+        gameId: "301",
+        homeTeamId: "vc",
+        awayTeamId: "opp",
+        opponentName: "Central Catholic",
+        opponentTeamId: "opp"
+      })
+    });
+
+    await fetch(`${API_BASE}/api/games/301/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "ai-compat" },
+      body: JSON.stringify({
+        id: "ai-e1",
+        sequence: 1,
+        timestampIso: "2026-03-30T21:00:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 420,
+        teamId: "vc",
+        operatorId: "op-1",
+        type: "shot_attempt",
+        playerId: "p7",
+        made: true,
+        points: 3,
+        zone: "above_break_three"
+      })
+    });
+
+    const [teamSummaryRes, playerInsightsRes, gameAnalysisRes, chatRes] = await Promise.all([
+      fetch(`${API_BASE}/api/ai/team-summary`, { headers: { "x-school-id": "ai-compat" } }),
+      fetch(`${API_BASE}/api/ai/player-insights/${encodeURIComponent("Eli Carter")}`, { headers: { "x-school-id": "ai-compat" } }),
+      fetch(`${API_BASE}/api/ai/game-analysis/301`, { headers: { "x-school-id": "ai-compat" } }),
+      fetch(`${API_BASE}/api/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-school-id": "ai-compat" },
+        body: JSON.stringify({ message: "What should we focus on next?" })
+      })
+    ]);
+
+    expect(teamSummaryRes.status).toBe(200);
+    expect(playerInsightsRes.status).toBe(200);
+    expect(gameAnalysisRes.status).toBe(200);
+    expect(chatRes.status).toBe(200);
+
+    const teamSummaryBody = await teamSummaryRes.json() as { summary: string };
+    const playerInsightsBody = await playerInsightsRes.json() as { insights: string };
+    const gameAnalysisBody = await gameAnalysisRes.json() as { analysis: string };
+    const chatBody = await chatRes.json() as { reply: string };
+
+    expect(teamSummaryBody.summary.length).toBeGreaterThan(10);
+    expect(playerInsightsBody.insights).toContain("Eli Carter");
+    expect(gameAnalysisBody.analysis).toContain("Central Catholic");
+    expect(chatBody.reply.length).toBeGreaterThan(10);
+  });
+});
+
 describe("Realtime API Server", () => {
-  describe("POST /games/:gameId/events", () => {
+  describe("POST /api/games/:gameId/events", () => {
     it("rejects event with invalid payload structure", async () => {
-      const res = await fetch(`${API_BASE}/games/test-game/events`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ invalid: "payload" })
@@ -47,7 +506,7 @@ describe("Realtime API Server", () => {
         made: true
       };
 
-      const res = await fetch(`${API_BASE}/games/test-game/events`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(event)
@@ -77,7 +536,7 @@ describe("Realtime API Server", () => {
         totalAttempts: 2
       };
 
-      const res = await fetch(`${API_BASE}/games/test-game/events`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(event)
@@ -103,7 +562,7 @@ describe("Realtime API Server", () => {
         totalAttempts: 2
       };
 
-      const res = await fetch(`${API_BASE}/games/test-game/events`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(event)
@@ -115,17 +574,17 @@ describe("Realtime API Server", () => {
     });
   });
 
-  describe("GET /games/:gameId/state", () => {
+  describe("GET /api/games/:gameId/state", () => {
     it("returns game state or 404 for nonexistent game", async () => {
-      const res = await fetch(`${API_BASE}/games/nonexistent-game-xyz/state`);
+      const res = await fetch(`${API_BASE}/api/games/nonexistent-game-xyz/state`);
 
       expect([200, 404]).toContain(res.status);
     });
   });
 
-  describe("GET /games/:gameId/insights", () => {
+  describe("GET /api/games/:gameId/insights", () => {
     it("returns insights array for a game", async () => {
-      const res = await fetch(`${API_BASE}/games/test-game/insights`);
+      const res = await fetch(`${API_BASE}/api/games/test-game/insights`);
 
       expect([200, 404]).toContain(res.status);
       if (res.status === 200) {
@@ -137,7 +596,7 @@ describe("Realtime API Server", () => {
 
   describe("CORS", () => {
     it("allows requests from whitelisted origin", async () => {
-      const res = await fetch(`${API_BASE}/games/test-game/state`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
         headers: { Origin: "http://localhost:5173" }
       });
 
@@ -146,7 +605,7 @@ describe("Realtime API Server", () => {
     });
 
     it("rejects requests from non-whitelisted origin", async () => {
-      const res = await fetch(`${API_BASE}/games/test-game/state`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
         headers: { Origin: "https://evil.com" }
       });
 
@@ -158,9 +617,9 @@ describe("Realtime API Server", () => {
 
   describe("Rate Limiting", () => {
     it("allows burst of requests within limit", async () => {
-      // Send 5 rapid requests to /games/:gameId/events
+      // Send 5 rapid requests to /api/games/:gameId/events
       const promises = Array.from({ length: 5 }).map(() =>
-        fetch(`${API_BASE}/games/test-game/events`, {
+        fetch(`${API_BASE}/api/games/test-game/events`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ invalid: "test" })
@@ -179,7 +638,7 @@ describe("Realtime API Server", () => {
     it("allows requests without key when BTA_API_KEY env not set", async () => {
       delete process.env.BTA_API_KEY;
 
-      const res = await fetch(`${API_BASE}/games/test-game/state`);
+      const res = await fetch(`${API_BASE}/api/games/test-game/state`);
 
       // Should succeed (not 401)
       expect([200, 404]).toContain(res.status);
@@ -187,7 +646,7 @@ describe("Realtime API Server", () => {
 
     it("accepts request with valid API key header", async () => {
       // This test assumes BTA_API_KEY is set in test env
-      const res = await fetch(`${API_BASE}/games/test-game/state`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
         headers: { "x-api-key": API_KEY }
       });
 
@@ -195,7 +654,7 @@ describe("Realtime API Server", () => {
     });
 
     it("rejects request with invalid API key", async () => {
-      const res = await fetch(`${API_BASE}/games/test-game/state`, {
+      const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
         headers: { "x-api-key": "wrong-key-123" }
       });
 

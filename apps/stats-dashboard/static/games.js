@@ -277,7 +277,7 @@ async function saveGameEdits(gameId) {
             saveBtn.textContent = 'Saving...';
         }
 
-        const response = await fetch(`/api/game/${encodeURIComponent(String(gameId))}`, {
+        const response = await fetch(`/api/games/${encodeURIComponent(String(gameId))}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -492,14 +492,15 @@ function renderZeroGameState() {
 window.renderZeroGameState = renderZeroGameState;
 
 async function deleteGame(gameId) {
-    if (!Number.isFinite(Number(gameId))) return;
+    const normalizedGameId = String(gameId ?? '').trim();
+    if (!normalizedGameId) return;
 
-    const confirmed = window.confirm(`Delete game #${gameId} from stats and synced coach data?`);
+    const confirmed = window.confirm(`Delete game #${normalizedGameId} from stats and synced coach data?`);
     if (!confirmed) return;
 
     try {
-        const response = await fetch(`/api/game/${encodeURIComponent(String(gameId))}/delete`, {
-            method: 'POST'
+        const response = await fetch(`/api/games/${encodeURIComponent(normalizedGameId)}`, {
+            method: 'DELETE'
         });
         const payload = await readResponsePayload(response);
         if (!response.ok) {
@@ -830,7 +831,7 @@ async function showGameDetail(game) {
         try {
             const res = await fetch(`/api/ai/game-analysis/${game.gameId}`);
             if (!res.ok) {
-                // AI unavailable (503) or other error — hide section silently
+                // AI unavailable (503) or other error â€” hide section silently
                 if (recapSection) recapSection.style.display = 'none';
                 return;
             }

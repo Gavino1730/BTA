@@ -6,8 +6,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Setup — Bench IQ</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3.4">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/style.css?v=3.4">
     <style>
         body { background: #0d0d1a; color: #e8eaf0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; }
         .ob-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 2rem 1rem 4rem; }
@@ -85,7 +85,7 @@
 </head>
 <body>
 <div class="ob-shell">
-    <div class="ob-logo">🏀 Bench IQ</div>
+    <div class="ob-logo">&#127936; Bench IQ</div>
 
     <div class="ob-card">
         <!-- Step indicator -->
@@ -104,23 +104,23 @@
             <p class="ob-sub">A high-school basketball analytics platform. Let's get your team set up in a few steps.</p>
             <div class="ob-service-cards">
                 <div class="ob-service-card">
-                    <div class="ob-service-icon">📊</div>
+                    <div class="ob-service-icon">&#128202;</div>
                     <div class="ob-service-name">Stats Dashboard</div>
                     <div class="ob-service-desc">Season analytics, game logs, player trends, and AI-powered insights. You're looking at it now.</div>
                 </div>
                 <div class="ob-service-card">
-                    <div class="ob-service-icon">📱</div>
+                    <div class="ob-service-icon">&#128241;</div>
                     <div class="ob-service-name">Operator Console (iPad)</div>
                     <div class="ob-service-desc">Live stat entry during games. Tap to record shots, rebounds, fouls and more — works offline.</div>
                 </div>
                 <div class="ob-service-card">
-                    <div class="ob-service-icon">🖥</div>
+                    <div class="ob-service-icon">&#128421;</div>
                     <div class="ob-service-name">Coach Dashboard</div>
-                    <div class="ob-service-desc">Real-time view for coaches: live score, AI coaching insights, lineups, and film review.</div>
+                    <div class="ob-service-desc">Real-time view for coaches: live score, AI coaching insights, and lineups.</div>
                 </div>
             </div>
             <div class="ob-actions">
-                <button class="ob-btn-primary" onclick="obNext()">Let's go →</button>
+                <button class="ob-btn-primary" onclick="obNext()">Let's go &rarr;</button>
             </div>
         </div>
 
@@ -152,15 +152,15 @@
             </div>
             <div class="ob-status" id="step1-status"></div>
             <div class="ob-actions">
-                <button class="ob-btn-back" onclick="obBack()">← Back</button>
-                <button class="ob-btn-primary" id="step1-next-btn" onclick="obSaveTeam()">Save & Continue →</button>
+                <button class="ob-btn-back" onclick="obBack()">&larr; Back</button>
+                <button class="ob-btn-primary" id="step1-next-btn" onclick="obSaveTeam()">Save &amp; Continue &rarr;</button>
             </div>
         </div>
 
         <!-- Step 2: Roster -->
         <div class="ob-section" id="step-2">
             <div class="ob-title">Add Your Roster</div>
-            <p class="ob-sub">Add your players now, or skip and import later from Settings → Roster.</p>
+            <p class="ob-sub">Add your players now, or skip and import later from Settings &rarr; Roster.</p>
             <table class="ob-player-table">
                 <thead>
                     <tr>
@@ -176,8 +176,8 @@
             <button class="ob-add-player-btn" onclick="obAddPlayerRow()">+ Add Player</button>
             <div class="ob-status" id="step2-status"></div>
             <div class="ob-actions">
-                <button class="ob-btn-back" onclick="obBack()">← Back</button>
-                <button class="ob-btn-primary" onclick="obSavePlayers()">Save & Continue →</button>
+                <button class="ob-btn-back" onclick="obBack()">&larr; Back</button>
+                <button class="ob-btn-primary" onclick="obSavePlayers()">Save &amp; Continue &rarr;</button>
             </div>
             <a class="ob-skip-link" onclick="obSkipRoster()">Skip for now — I'll add the roster later</a>
         </div>
@@ -185,45 +185,45 @@
         <!-- Step 3: iPad Tips -->
         <div class="ob-section" id="step-3">
             <div class="ob-title">iPad Setup Tips</div>
-            <p class="ob-sub">Before game day, configure your iPad for the best experience. More detail is available in the Operator app under Settings → iPad Tips.</p>
+            <p class="ob-sub">Before game day, configure your iPad for the best experience. More detail is available in the Operator app under Settings &rarr; iPad Tips.</p>
             <div class="ob-tip-cards">
                 <div class="ob-tip-card">
-                    <div class="ob-tip-icon">📲</div>
+                    <div class="ob-tip-icon">&#128242;</div>
                     <div>
                         <div class="ob-tip-title">Add to Home Screen</div>
-                        <div class="ob-tip-path">In Safari: tap the <strong>Share</strong> button → <code>Add to Home Screen</code>. Launches full-screen, no browser chrome.</div>
+                        <div class="ob-tip-path">In Safari: tap the <strong>Share</strong> button &rarr; <code>Add to Home Screen</code>. Launches full-screen, no browser chrome.</div>
                     </div>
                 </div>
                 <div class="ob-tip-card">
-                    <div class="ob-tip-icon">💡</div>
+                    <div class="ob-tip-icon">&#128161;</div>
                     <div>
                         <div class="ob-tip-title">Auto-Lock: Never</div>
-                        <div class="ob-tip-path"><code>Settings</code> → <code>Display & Brightness</code> → <code>Auto-Lock</code> → <strong>Never</strong></div>
+                        <div class="ob-tip-path"><code>Settings</code> &rarr; <code>Display &amp; Brightness</code> &rarr; <code>Auto-Lock</code> &rarr; <strong>Never</strong></div>
                     </div>
                 </div>
                 <div class="ob-tip-card">
-                    <div class="ob-tip-icon">↩️</div>
+                    <div class="ob-tip-icon">&#8617;&#65039;</div>
                     <div>
                         <div class="ob-tip-title">Shake to Undo: Off</div>
-                        <div class="ob-tip-path"><code>Settings</code> → <code>Accessibility</code> → <code>Touch</code> → <code>Shake to Undo</code> → <strong>Off</strong></div>
+                        <div class="ob-tip-path"><code>Settings</code> &rarr; <code>Accessibility</code> &rarr; <code>Touch</code> &rarr; <code>Shake to Undo</code> &rarr; <strong>Off</strong></div>
                     </div>
                 </div>
                 <div class="ob-tip-card">
-                    <div class="ob-tip-icon">🔕</div>
+                    <div class="ob-tip-icon">&#128277;</div>
                     <div>
                         <div class="ob-tip-title">Do Not Disturb: On</div>
-                        <div class="ob-tip-path">Prevents notifications and interruptions mid-game. Enable from Control Center or <code>Settings</code> → <code>Focus</code>.</div>
+                        <div class="ob-tip-path">Prevents notifications and interruptions mid-game. Enable from Control Center or <code>Settings</code> &rarr; <code>Focus</code>.</div>
                     </div>
                 </div>
                 <div class="ob-tip-card">
-                    <div class="ob-tip-icon">🔄</div>
+                    <div class="ob-tip-icon">&#128260;</div>
                     <div>
                         <div class="ob-tip-title">Rotation Lock: On</div>
-                        <div class="ob-tip-path">Lock orientation to avoid accidental rotations. Swipe down from top-right corner → tap the <strong>Rotation Lock</strong> icon.</div>
+                        <div class="ob-tip-path">Lock orientation to avoid accidental rotations. Swipe down from top-right corner &rarr; tap the <strong>Rotation Lock</strong> icon.</div>
                     </div>
                 </div>
                 <div class="ob-tip-card">
-                    <div class="ob-tip-icon">📶</div>
+                    <div class="ob-tip-icon">&#128246;</div>
                     <div>
                         <div class="ob-tip-title">WiFi + Bluetooth: On</div>
                         <div class="ob-tip-path">WiFi required for live stat sync. Bluetooth needed if using peripherals or a keyboard.</div>
@@ -231,14 +231,14 @@
                 </div>
             </div>
             <div class="ob-actions">
-                <button class="ob-btn-back" onclick="obBack()">← Back</button>
-                <button class="ob-btn-primary" onclick="obNext()">Got it →</button>
+                <button class="ob-btn-back" onclick="obBack()">&larr; Back</button>
+                <button class="ob-btn-primary" onclick="obNext()">Got it &rarr;</button>
             </div>
         </div>
 
         <!-- Step 4: Done -->
         <div class="ob-section" id="step-4">
-            <div class="ob-title">You're all set! 🎉</div>
+            <div class="ob-title">You're all set! &#127881;</div>
             <p class="ob-sub">Your team is configured. Here are links to all three services. Open each on the right device.</p>
 
             <div class="ob-ip-note">
@@ -251,9 +251,9 @@
                         <span class="ob-done-chip ob-done-chip-stats">Stats</span>
                         <span class="ob-done-title">Stats Dashboard</span>
                     </div>
-                    <div class="ob-done-url" id="done-stats-url">http://localhost:5000</div>
+                    <div class="ob-done-url" id="done-stats-url">http://localhost:4000</div>
                     <div class="ob-done-desc">Season analytics, game history, AI insights, and roster management. You're here now.</div>
-                    <a class="ob-done-link" href="/" target="_self">Open Stats Dashboard →</a>
+                    <a class="ob-done-link" href="/" target="_self">Open Stats Dashboard &rarr;</a>
                     &nbsp;
                     <a class="ob-done-link" href="/tour-start" target="_self" id="done-stats-tour">Start Tutorial</a>
                 </div>
@@ -264,7 +264,7 @@
                     </div>
                     <div class="ob-done-url" id="done-operator-url">http://localhost:5174</div>
                     <div class="ob-done-desc">Live stat entry — open on the iPad used by your stats operator during games.</div>
-                    <a class="ob-done-link" id="done-operator-link" href="http://localhost:5174" target="_blank">Open Operator →</a>
+                    <a class="ob-done-link" id="done-operator-link" href="http://localhost:5174" target="_blank">Open Operator &rarr;</a>
                 </div>
                 <div class="ob-done-card">
                     <div class="ob-done-card-header">
@@ -273,17 +273,17 @@
                     </div>
                     <div class="ob-done-url" id="done-coach-url">http://localhost:5173</div>
                     <div class="ob-done-desc">Realtime coaching view — open in a browser on the laptop or tablet on the bench.</div>
-                    <a class="ob-done-link" id="done-coach-link" href="http://localhost:5173" target="_blank">Open Coach →</a>
+                    <a class="ob-done-link" id="done-coach-link" href="http://localhost:5173" target="_blank">Open Coach &rarr;</a>
                 </div>
             </div>
             <div class="ob-actions">
-                <a href="/" class="ob-btn-primary" style="display:block;text-align:center;text-decoration:none;">Go to Stats Dashboard →</a>
+                <a href="/" class="ob-btn-primary" style="display:block;text-align:center;text-decoration:none;">Go to Stats Dashboard &rarr;</a>
             </div>
             <a class="ob-settings-link" href="/settings">Open Settings to adjust team or roster later</a>
         </div>
     </div><!-- /ob-card -->
 </div><!-- /ob-shell -->
 
-<script src="{{ url_for('static', filename='onboarding.js') }}?v=1.0"></script>
+<script src="/static/onboarding.js?v=1.0"></script>
 </body>
 </html>

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBonusIndicator,
-  formatDashboardAnchorSummary,
   formatDashboardClock,
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
@@ -17,10 +16,6 @@ describe("coach dashboard NFHS display helpers", () => {
   it("formats recent event metadata with NFHS period labels", () => {
     expect(formatDashboardEventMeta({ teamId: "home", period: "Q4", clockSecondsRemaining: 125 })).toBe("home · Q4 · clock 02:05");
     expect(formatDashboardEventMeta({ teamId: "away", period: "OT1", clockSecondsRemaining: 17 })).toBe("away · OT1 · clock 00:17");
-  });
-
-  it("formats anchor summaries with game and video clocks", () => {
-    expect(formatDashboardAnchorSummary({ period: "Q1", gameClockSeconds: 480, videoSecond: 12 })).toBe("Q1 · game 08:00 · video 00:12");
   });
 
   it("shows bonus state, foul-out risk, and fouled-out status using NFHS thresholds", () => {
