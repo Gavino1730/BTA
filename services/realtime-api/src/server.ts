@@ -47,6 +47,14 @@ import {
   verifyBearerToken,
   type AuthContext
 } from "./auth.js";
+import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
+import {
+  hasWriteRole,
+  normalizeSchoolId,
+  readHeaderValue,
+  resolveRequestTenant,
+  resolveSocketTenant
+} from "./tenant-guards.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -963,35 +971,170 @@ function buildPlayerAnalysisPayload(schoolId: string, playerName: string): unkno
 // ---------------------------------------------------------------------------
 const API_KEY = process.env.BTA_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
-const DEFAULT_SCHOOL_ID = "default";
+const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
+const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
+const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
+const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
+const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
+
+type SecurityMetricKey =
+  | "requestTenantMismatch"
+  | "socketTenantMismatch"
+  | "missingTenantScope"
+  | "unauthorizedHttp"
+  | "unauthorizedSocket"
+  | "forbiddenWriteRole";
+
+const securityTelemetry: Record<SecurityMetricKey, number> = {
+  requestTenantMismatch: 0,
+  socketTenantMismatch: 0,
+  missingTenantScope: 0,
+  unauthorizedHttp: 0,
+  unauthorizedSocket: 0,
+  forbiddenWriteRole: 0
+};
+
+let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function renderPrometheusSecurityMetrics(): string {
+  return [
+    "# HELP bta_security_request_tenant_mismatch_total Request tenant mismatch denials.",
+    "# TYPE bta_security_request_tenant_mismatch_total counter",
+    `bta_security_request_tenant_mismatch_total ${securityTelemetry.requestTenantMismatch}`,
+    "# HELP bta_security_socket_tenant_mismatch_total Socket tenant mismatch denials.",
+    "# TYPE bta_security_socket_tenant_mismatch_total counter",
+    `bta_security_socket_tenant_mismatch_total ${securityTelemetry.socketTenantMismatch}`,
+    "# HELP bta_security_missing_tenant_scope_total Missing tenant scope denials.",
+    "# TYPE bta_security_missing_tenant_scope_total counter",
+    `bta_security_missing_tenant_scope_total ${securityTelemetry.missingTenantScope}`,
+    "# HELP bta_security_unauthorized_http_total Unauthorized HTTP attempts.",
+    "# TYPE bta_security_unauthorized_http_total counter",
+    `bta_security_unauthorized_http_total ${securityTelemetry.unauthorizedHttp}`,
+    "# HELP bta_security_unauthorized_socket_total Unauthorized socket attempts.",
+    "# TYPE bta_security_unauthorized_socket_total counter",
+    `bta_security_unauthorized_socket_total ${securityTelemetry.unauthorizedSocket}`,
+    "# HELP bta_security_forbidden_write_role_total Forbidden write role attempts.",
+    "# TYPE bta_security_forbidden_write_role_total counter",
+    `bta_security_forbidden_write_role_total ${securityTelemetry.forbiddenWriteRole}`,
+    ""
+  ].join("\n");
+}
+
+async function pushSecurityMetrics(): Promise<void> {
+  if (!SECURITY_METRICS_PUSH_URL) {
+    return;
+  }
+
+  try {
+    await fetch(SECURITY_METRICS_PUSH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain; version=0.0.4" },
+      body: renderPrometheusSecurityMetrics()
+    });
+  } catch (error) {
+    console.warn("[realtime-api] Failed to push security metrics", error);
+  }
+}
+
+function scheduleMetricsPush(): void {
+  if (!SECURITY_METRICS_PUSH_URL || metricsPushTimer) {
+    return;
+  }
+
+  const interval = Number.isFinite(METRICS_PUSH_MIN_INTERVAL_MS)
+    ? Math.max(Math.floor(METRICS_PUSH_MIN_INTERVAL_MS), 1000)
+    : 10000;
+
+  metricsPushTimer = setTimeout(() => {
+    metricsPushTimer = null;
+    void pushSecurityMetrics();
+  }, interval);
+}
+
+function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): void {
+  securityTelemetry[event] += 1;
+  scheduleMetricsPush();
+  console.warn("[realtime-api] security", {
+    event,
+    ...details
+  });
+}
 
 type AuthedRequest = Request & { authContext?: AuthContext };
+type ScopedRequest = AuthedRequest & { tenantSchoolId?: string };
 
-function normalizeSchoolId(input: unknown): string {
-  if (typeof input !== "string") {
-    return DEFAULT_SCHOOL_ID;
+function resolveRequestSchoolId(req: Request): { schoolId?: string; error?: string; status?: number } {
+  const scopedReq = req as ScopedRequest;
+  if (scopedReq.tenantSchoolId) {
+    return { schoolId: scopedReq.tenantSchoolId };
   }
 
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed) {
-    return DEFAULT_SCHOOL_ID;
+  const result = resolveRequestTenant({
+    authSchoolId: scopedReq.authContext?.schoolId,
+    headerSchoolId: readHeaderValue(req.headers["x-school-id"]),
+    querySchoolId: req.query.schoolId,
+    requireTenant: REQUIRE_TENANT,
+    defaultSchoolId: DEFAULT_SCHOOL_ID
+  });
+
+  if (result.error?.includes("mismatch")) {
+    trackSecurityEvent("requestTenantMismatch", {
+      authSchoolId: normalizeSchoolId(scopedReq.authContext?.schoolId),
+      requestedSchoolId: normalizeSchoolId(readHeaderValue(req.headers["x-school-id"]) ?? req.query.schoolId),
+      path: req.path,
+      method: req.method
+    });
   }
 
-  return trimmed.replace(/[^a-z0-9_-]/g, "").slice(0, 64) || DEFAULT_SCHOOL_ID;
+  if (result.error === "schoolId is required") {
+    trackSecurityEvent("missingTenantScope", {
+      path: req.path,
+      method: req.method
+    });
+  }
+
+  return result;
+}
+
+function resolveSocketSchoolId(socket: {
+  handshake: { auth?: unknown; headers?: Record<string, unknown> };
+  data?: { authContext?: AuthContext };
+}): { schoolId?: string; error?: string } {
+  const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
+  const result = resolveSocketTenant({
+    authSchoolId: socket.data?.authContext?.schoolId,
+    handshakeSchoolId: auth.schoolId ?? readHeaderValue(socket.handshake.headers?.["x-school-id"]),
+    requireTenant: REQUIRE_TENANT,
+    defaultSchoolId: DEFAULT_SCHOOL_ID
+  });
+
+  if (result.error?.includes("mismatch")) {
+    const authSchoolId = normalizeSchoolId(socket.data?.authContext?.schoolId);
+    const requestedSchoolId = normalizeSchoolId(auth.schoolId ?? readHeaderValue(socket.handshake.headers?.["x-school-id"]));
+    trackSecurityEvent("socketTenantMismatch", {
+      authSchoolId,
+      requestedSchoolId
+    });
+  }
+
+  if (result.error === "schoolId is required") {
+    trackSecurityEvent("missingTenantScope", { transport: "socket" });
+  }
+
+  return result;
 }
 
 function getSchoolIdFromRequest(req: Request): string {
-  const authedReq = req as AuthedRequest;
-  return normalizeSchoolId(authedReq.authContext?.schoolId ?? req.headers["x-school-id"] ?? req.query.schoolId);
+  const resolved = resolveRequestSchoolId(req);
+  return resolved.schoolId ?? DEFAULT_SCHOOL_ID;
 }
 
 function getSchoolIdFromSocket(socket: {
   handshake: { auth?: unknown; headers?: Record<string, unknown> };
   data?: { authContext?: AuthContext };
-}): string {
-  const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
-  const schoolHeader = socket.handshake.headers?.["x-school-id"];
-  return normalizeSchoolId(socket.data?.authContext?.schoolId ?? auth.schoolId ?? schoolHeader);
+}): string | null {
+  const resolved = resolveSocketSchoolId(socket);
+  return resolved.schoolId ?? null;
 }
 
 function schoolRoom(schoolId: string): string {
@@ -1007,21 +1150,20 @@ function deviceRoom(schoolId: string, deviceId: string): string {
 }
 
 async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const authedReq = req as AuthedRequest;
-  if (isJwtAuthEnabled()) {
-    const token = extractBearerToken(req.headers, undefined);
-    if (token) {
-      const authContext = await verifyBearerToken(token);
-      if (authContext) {
-        authedReq.authContext = authContext;
-        next();
-        return;
-      }
-    }
+  const scopedReq = req as ScopedRequest;
+  if (scopedReq.authContext) {
+    next();
+    return;
   }
 
   if (!API_KEY && !isJwtAuthEnabled()) {
     next();
+    return;
+  }
+
+  if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED) {
+    trackSecurityEvent("unauthorizedHttp", { reason: "jwt-write-required", path: req.path, method: req.method });
+    res.status(401).json({ error: "Unauthorized — write endpoints require a valid bearer token" });
     return;
   }
 
@@ -1031,7 +1173,58 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
     return;
   }
 
+  trackSecurityEvent("unauthorizedHttp", { reason: "missing-valid-credentials", path: req.path, method: req.method });
   res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
+}
+
+async function attachAuthContext(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const scopedReq = req as ScopedRequest;
+  if (scopedReq.authContext || !isJwtAuthEnabled()) {
+    next();
+    return;
+  }
+
+  const token = extractBearerToken(req.headers, undefined);
+  if (!token) {
+    next();
+    return;
+  }
+
+  const authContext = await verifyBearerToken(token);
+  if (authContext) {
+    scopedReq.authContext = authContext;
+  }
+
+  next();
+}
+
+function requireTenantScope(req: Request, res: Response, next: NextFunction): void {
+  const scopedReq = req as ScopedRequest;
+  const resolved = resolveRequestSchoolId(req);
+  if (!resolved.schoolId) {
+    res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
+    return;
+  }
+
+  scopedReq.tenantSchoolId = resolved.schoolId;
+  next();
+}
+
+function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
+  if (!isJwtAuthEnabled()) {
+    next();
+    return;
+  }
+
+  const scopedReq = req as ScopedRequest;
+  const role = scopedReq.authContext?.role?.trim().toLowerCase();
+  if (!hasWriteRole(role)) {
+    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: role ?? null });
+    res.status(403).json({ error: "Insufficient role for write access" });
+    return;
+  }
+
+  next();
 }
 
 const httpServer = createServer(app);
@@ -1050,15 +1243,15 @@ io.use(async (socket, next) => {
       const authContext = await verifyBearerToken(token);
       if (authContext) {
         socket.data.authContext = authContext;
+        const resolved = resolveSocketSchoolId(socket);
+        if (!resolved.schoolId) {
+          next(new Error(resolved.error ?? "schoolId is required"));
+          return;
+        }
         next();
         return;
       }
     }
-  }
-
-  if (!API_KEY && !isJwtAuthEnabled()) {
-    next();
-    return;
   }
 
   const provided = typeof auth.apiKey === "string"
@@ -1067,16 +1260,33 @@ io.use(async (socket, next) => {
       ? socket.handshake.headers["x-api-key"]
       : undefined;
 
+  if (!API_KEY && !isJwtAuthEnabled()) {
+    const resolved = resolveSocketSchoolId(socket);
+    if (!resolved.schoolId) {
+      next(new Error(resolved.error ?? "schoolId is required"));
+      return;
+    }
+    next();
+    return;
+  }
+
   if (API_KEY && provided === API_KEY) {
+    const resolved = resolveSocketSchoolId(socket);
+    if (!resolved.schoolId) {
+      next(new Error(resolved.error ?? "schoolId is required"));
+      return;
+    }
     next();
     return;
   }
 
   next(new Error("Unauthorized — provide a valid bearer token or apiKey"));
+  trackSecurityEvent("unauthorizedSocket", { reason: "missing-valid-credentials" });
 });
 
 interface OperatorPresence {
   schoolId: string;
+  userId?: string;
   deviceId: string;
   gameId: string;
   socketId: string;
@@ -1098,7 +1308,6 @@ const pendingBroadcasts = new Map<string, PendingBroadcast>();
 const BROADCAST_DEBOUNCE_MS = 200;
 
 function emitToGameRooms(schoolId: string, gameId: string, eventName: string, payload: unknown): void {
-  io.to(gameId).emit(eventName, payload);
   io.to(gameRoom(schoolId, gameId)).emit(eventName, payload);
 }
 
@@ -1164,6 +1373,12 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+app.use(attachAuthContext);
+app.use("/api", requireTenantScope);
+app.use("/teams", requireTenantScope);
+app.use("/config", requireTenantScope);
+app.use("/admin", requireTenantScope);
+
 app.get("/api/teams", (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId }).map((team) => ({
@@ -1188,7 +1403,7 @@ app.get("/api/ai-settings", (req, res) => {
   res.json(extractTeamAiSettings(team));
 });
 
-app.put("/api/ai-settings", (req, res) => {
+app.put("/api/ai-settings", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const savedTeams = upsertPrimaryTeam(schoolId, {
@@ -1200,7 +1415,7 @@ app.put("/api/ai-settings", (req, res) => {
   res.json({ message: "AI settings saved", settings: extractTeamAiSettings(savedTeams[0]) });
 });
 
-app.put("/api/roster-sync", (req, res) => {
+app.put("/api/roster-sync", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
 
@@ -1243,7 +1458,7 @@ app.put("/api/roster-sync", (req, res) => {
   });
 });
 
-app.post("/api/team", (req, res) => {
+app.post("/api/team", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const name = sanitizeTextField(payload.name, 120);
@@ -1259,7 +1474,7 @@ app.post("/api/team", (req, res) => {
   });
 });
 
-app.post("/api/reload-data", (req, res) => {
+app.post("/api/reload-data", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   res.json({ ok: true, teamsLoaded: teams.length, message: "Realtime data already current" });
@@ -1292,7 +1507,7 @@ app.get("/api/player/:playerName", (req, res) => {
   res.json(player);
 });
 
-app.post("/api/player/:playerName", (req, res) => {
+app.post("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const requestedName = normalizePersonName(req.params.playerName);
@@ -1329,7 +1544,7 @@ app.post("/api/player/:playerName", (req, res) => {
   res.status(201).json({ message: "Player saved successfully", player: builtPlayer });
 });
 
-app.delete("/api/roster/player/:playerName", (req, res) => {
+app.delete("/api/roster/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   const record = findPlayerRecord(teams, req.params.playerName);
@@ -1345,7 +1560,7 @@ app.delete("/api/roster/player/:playerName", (req, res) => {
   res.json({ message: "Player deleted successfully", player: record.player.name });
 });
 
-app.delete("/api/player/:playerName", (req, res) => {
+app.delete("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   const record = findPlayerRecord(teams, req.params.playerName);
@@ -1361,7 +1576,7 @@ app.delete("/api/player/:playerName", (req, res) => {
   res.json({ message: "Player deleted successfully", player: record.player.name });
 });
 
-app.post("/api/player/:playerName/delete", (req, res) => {
+app.post("/api/player/:playerName/delete", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   const record = findPlayerRecord(teams, req.params.playerName);
@@ -1412,7 +1627,7 @@ app.get("/api/games/:gameId/audit-log", (req, res) => {
   });
 });
 
-app.put("/api/games/:gameId", (req, res) => {
+app.put("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const gameId = String(req.params.gameId);
   const existing = buildGamesPayload(schoolId).find((entry) => String(entry.gameId) === gameId);
@@ -1464,7 +1679,7 @@ app.put("/api/games/:gameId", (req, res) => {
   res.json({ message: "Game updated successfully", game: override });
 });
 
-app.delete("/api/games/:gameId", (req, res) => {
+app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const gameId = String(req.params.gameId);
   const removedFromState = deleteGame(gameId, { schoolId });
@@ -1731,7 +1946,7 @@ app.get("/config/roster-teams", requireApiKey, (req, res) => {
   res.json({ teams: getRosterTeamsByScope({ schoolId }) });
 });
 
-app.put("/config/roster-teams", requireApiKey, (req, res) => {
+app.put("/config/roster-teams", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = req.body?.teams;
   if (!Array.isArray(teams)) {
@@ -1753,7 +1968,7 @@ app.get("/teams", requireApiKey, (req, res) => {
   res.json({ teams: getRosterTeamsByScope({ schoolId }) });
 });
 
-app.post("/teams", requireApiKey, (req, res) => {
+app.post("/teams", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const { name, abbreviation } = req.body ?? {};
   const teamColor = normalizeTeamColor(req.body?.teamColor);
@@ -1781,7 +1996,7 @@ app.post("/teams", requireApiKey, (req, res) => {
   res.status(201).json({ team: newTeam });
 });
 
-app.put("/teams/:teamId", requireApiKey, (req, res) => {
+app.put("/teams/:teamId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const { name, abbreviation } = req.body ?? {};
   const teamColor = normalizeTeamColor(req.body?.teamColor);
@@ -1806,7 +2021,7 @@ app.put("/teams/:teamId", requireApiKey, (req, res) => {
   res.json({ team });
 });
 
-app.delete("/teams/:teamId", requireApiKey, (req, res) => {
+app.delete("/teams/:teamId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   const idx = teams.findIndex((t) => t.id === req.params.teamId);
@@ -1824,7 +2039,7 @@ app.delete("/teams/:teamId", requireApiKey, (req, res) => {
   res.json({ teamId: deleted.id });
 });
 
-app.post("/teams/:teamId/players", requireApiKey, (req, res) => {
+app.post("/teams/:teamId/players", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const { number, name, position, height, grade } = req.body ?? {};
   if (!name) {
@@ -1858,7 +2073,7 @@ app.post("/teams/:teamId/players", requireApiKey, (req, res) => {
   res.status(201).json({ player });
 });
 
-app.put("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
+app.put("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const { number, name, position, height, grade } = req.body ?? {};
   const teams = getRosterTeamsByScope({ schoolId });
@@ -1888,7 +2103,7 @@ app.put("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
   res.json({ player });
 });
 
-app.delete("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
+app.delete("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   const team = teams.find((t) => t.id === req.params.teamId);
@@ -1912,7 +2127,7 @@ app.delete("/teams/:teamId/players/:playerId", requireApiKey, (req, res) => {
   res.json({ playerId: deleted.id });
 });
 
-app.post("/api/games", requireApiKey, (req, res) => {
+app.post("/api/games", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const {
     gameId,
@@ -1946,7 +2161,7 @@ app.post("/api/games", requireApiKey, (req, res) => {
   res.status(201).json(state);
 });
 
-app.delete("/api/games/:gameId", requireApiKey, (req, res) => {
+app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const removed = deleteGame(req.params.gameId, { schoolId });
   if (!removed) {
@@ -1973,7 +2188,7 @@ app.get("/api/games/:gameId/state", requireApiKey, (req, res) => {
 // Sync (or re-sync) the starting lineup without resetting the game.
 // Only fills teams whose active lineup is currently empty, so in-game
 // substitutions are never overwritten.
-app.patch("/api/games/:gameId/lineup", requireApiKey, (req, res) => {
+app.patch("/api/games/:gameId/lineup", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const { startingLineupByTeam } = req.body ?? {};
   if (!startingLineupByTeam || typeof startingLineupByTeam !== "object") {
@@ -2016,7 +2231,7 @@ app.get("/api/games/:gameId/ai-settings", requireApiKey, (req, res) => {
   res.json(settings);
 });
 
-app.put("/api/games/:gameId/ai-settings", requireApiKey, async (req, res) => {
+app.put("/api/games/:gameId/ai-settings", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -2051,7 +2266,7 @@ app.get("/api/games/:gameId/ai-context", requireApiKey, (req, res) => {
   res.json(context);
 });
 
-app.put("/api/games/:gameId/ai-context", requireApiKey, async (req, res) => {
+app.put("/api/games/:gameId/ai-context", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -2091,7 +2306,7 @@ app.get("/api/games/:gameId/ai-prompt-preview", requireApiKey, (req, res) => {
   res.json(preview as AiPromptPreview);
 });
 
-app.post("/api/games/:gameId/ai-chat", requireApiKey, async (req, res) => {
+app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -2134,7 +2349,7 @@ app.get("/api/games/:gameId/events", requireApiKey, (req, res) => {
   }
 });
 
-app.post("/api/games/:gameId/events", requireApiKey, eventRateLimiter, (req, res) => {
+app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRateLimiter, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   try {
     const payload = {
@@ -2155,7 +2370,7 @@ app.post("/api/games/:gameId/events", requireApiKey, eventRateLimiter, (req, res
   }
 });
 
-app.delete("/api/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
+app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   try {
     const { state, insights } = deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
@@ -2170,7 +2385,7 @@ app.delete("/api/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
   }
 });
 
-app.put("/api/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
+app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   try {
     const { event, state, insights } = updateEvent(
@@ -2193,7 +2408,13 @@ app.put("/api/games/:gameId/events/:eventId", requireApiKey, (req, res) => {
 
 io.on("connection", (socket) => {
   const schoolId = getSchoolIdFromSocket(socket);
-  socket.join(schoolRoom(schoolId));
+  if (!schoolId) {
+    socket.emit("error", { error: "schoolId is required" });
+    socket.disconnect(true);
+    return;
+  }
+  const socketSchoolId = schoolId;
+  socket.join(schoolRoom(socketSchoolId));
 
   function registerOperator(rawPayload: unknown): void {
     const payload = (rawPayload ?? {}) as Record<string, unknown>;
@@ -2204,16 +2425,37 @@ io.on("connection", (socket) => {
       return;
     }
 
+    if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !socket.data.authContext) {
+      socket.emit("error", { error: "operator registration requires bearer auth" });
+      return;
+    }
+
+    if (isJwtAuthEnabled()) {
+      const role = socket.data.authContext?.role?.trim().toLowerCase();
+      if (!hasWriteRole(role)) {
+        socket.emit("error", { error: "insufficient role for operator registration" });
+        return;
+      }
+    }
+
+    const userId = socket.data.authContext?.subject;
+    const claimedDevice = getOperatorByDeviceId(socketSchoolId, deviceId);
+    if (claimedDevice?.userId && userId && claimedDevice.userId !== userId) {
+      socket.emit("error", { error: "device is already registered to another account" });
+      return;
+    }
+
     const now = new Date().toISOString();
     const existing = operatorPresenceBySocketId.get(socket.id);
 
     // Remove old device ID index if changing devices.
     if (existing && existing.deviceId !== deviceId) {
-      operatorPresenceByDeviceId.delete(`${schoolId}:${existing.deviceId}`);
+      operatorPresenceByDeviceId.delete(`${socketSchoolId}:${existing.deviceId}`);
     }
 
     const presence: OperatorPresence = {
-      schoolId,
+      schoolId: socketSchoolId,
+      userId,
       deviceId,
       gameId,
       socketId: socket.id,
@@ -2222,20 +2464,20 @@ io.on("connection", (socket) => {
     };
 
     operatorPresenceBySocketId.set(socket.id, presence);
-    operatorPresenceByDeviceId.set(`${schoolId}:${deviceId}`, presence);
+    operatorPresenceByDeviceId.set(`${socketSchoolId}:${deviceId}`, presence);
 
     socket.join(gameId);
-    socket.join(gameRoom(schoolId, gameId));
-    socket.join(deviceRoom(schoolId, deviceId));
-    emitPresence(schoolId, deviceId);
+    socket.join(gameRoom(socketSchoolId, gameId));
+    socket.join(deviceRoom(socketSchoolId, deviceId));
+    emitPresence(socketSchoolId, deviceId);
 
     // Re-sync the starting lineup if the operator included one and the server
     // has an empty active lineup (e.g. after an API restart).
     const rawLineupByTeam = payload.startingLineupByTeam;
     if (rawLineupByTeam && typeof rawLineupByTeam === "object" && !Array.isArray(rawLineupByTeam)) {
-      const updated = patchGameLineup(gameId, rawLineupByTeam as Record<string, string[]>, { schoolId });
+      const updated = patchGameLineup(gameId, rawLineupByTeam as Record<string, string[]>, { schoolId: socketSchoolId });
       if (updated) {
-        emitToGameRooms(schoolId, gameId, "game:state", updated);
+        emitToGameRooms(socketSchoolId, gameId, "game:state", updated);
       }
     }
   }
@@ -2254,12 +2496,12 @@ io.on("connection", (socket) => {
     }
 
     socket.join(gameId);
-    socket.join(gameRoom(schoolId, gameId));
-    const state = getGameState(gameId, { schoolId });
+    socket.join(gameRoom(socketSchoolId, gameId));
+    const state = getGameState(gameId, { schoolId: socketSchoolId });
     if (state) {
       socket.emit("game:state", state);
-      socket.emit("game:insights", getGameInsights(gameId, { schoolId }));
-      void refreshAndBroadcastInsights(schoolId, gameId);
+      socket.emit("game:insights", getGameInsights(gameId, { schoolId: socketSchoolId }));
+      void refreshAndBroadcastInsights(socketSchoolId, gameId);
     }
   });
 
@@ -2270,18 +2512,18 @@ io.on("connection", (socket) => {
 
     if (gameId) {
       socket.join(gameId);
-      socket.join(gameRoom(schoolId, gameId));
-      const state = getGameState(gameId, { schoolId });
+      socket.join(gameRoom(socketSchoolId, gameId));
+      const state = getGameState(gameId, { schoolId: socketSchoolId });
       if (state) {
         socket.emit("game:state", state);
-        socket.emit("game:insights", getGameInsights(gameId, { schoolId }));
-        void refreshAndBroadcastInsights(schoolId, gameId);
+        socket.emit("game:insights", getGameInsights(gameId, { schoolId: socketSchoolId }));
+        void refreshAndBroadcastInsights(socketSchoolId, gameId);
       }
     }
 
     if (deviceId) {
-      socket.join(deviceRoom(schoolId, deviceId));
-      const operator = getOperatorByDeviceId(schoolId, deviceId);
+      socket.join(deviceRoom(socketSchoolId, deviceId));
+      const operator = getOperatorByDeviceId(socketSchoolId, deviceId);
       socket.emit("presence:status", {
         deviceId,
         online: Boolean(operator),
@@ -2309,7 +2551,15 @@ io.on("connection", (socket) => {
 });
 
 // Factory reset — clears all game sessions and roster data for the selected school.
-app.delete("/admin/reset", requireApiKey, (req, res) => {
+app.get("/admin/security-metrics", requireApiKey, requireWriteRole, (_req, res) => {
+  res.json({ ...securityTelemetry });
+});
+
+app.get("/admin/security-metrics/prometheus", requireApiKey, requireWriteRole, (_req, res) => {
+  res.type("text/plain; version=0.0.4").send(renderPrometheusSecurityMetrics());
+});
+
+app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   resetAllData({ schoolId });
   res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
@@ -2329,6 +2579,8 @@ export async function startServer(): Promise<void> {
   if (serverStarted) {
     return;
   }
+
+  assertRuntimeConfig(readRuntimeConfig(isJwtAuthEnabled()));
 
   await initializeStore().catch((error) => {
     console.error("[realtime-api] Failed to initialize store persistence", error);

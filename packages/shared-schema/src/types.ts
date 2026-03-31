@@ -63,7 +63,7 @@ export type TimeoutType = (typeof TIMEOUT_TYPES)[number];
 
 export interface GameEventBase {
   id: string;
-  schoolId?: string;
+  schoolId: string;
   gameId: string;
   sequence: number;
   timestampIso: string;

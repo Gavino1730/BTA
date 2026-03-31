@@ -17,7 +17,8 @@
     "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach --prefix-colors cyan,green,yellow \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\"",
     "game-day": "pwsh -File scripts/game-day.ps1",
     "smoke-test": "pwsh -File scripts/smoke-test.ps1",
-    "audit:ui": "node scripts/ui-audit.mjs"
+    "audit:ui": "node scripts/ui-audit.mjs",
+    "validate:env": "npm run validate:env -w @bta/realtime-api"
   },
   "devDependencies": {
     "@types/node": "^22.15.19",

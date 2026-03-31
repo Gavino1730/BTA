@@ -6,6 +6,7 @@ describe("gameEventSchema", () => {
   it("parses a valid shot attempt event", () => {
     const parsed = parseGameEvent({
       id: "evt-1",
+      schoolId: "test-school",
       gameId: "game-1",
       sequence: 1,
       timestampIso: "2026-03-18T20:00:00.000Z",
@@ -29,6 +30,7 @@ describe("gameEventSchema", () => {
   it("parses a valid free throw attempt event", () => {
     const parsed = parseGameEvent({
       id: "evt-ft",
+      schoolId: "test-school",
       gameId: "game-1",
       sequence: 2,
       timestampIso: "2026-03-18T20:00:10.000Z",
@@ -49,6 +51,7 @@ describe("gameEventSchema", () => {
   it("parses overtime period values", () => {
     const parsed = parseGameEvent({
       id: "evt-ot",
+      schoolId: "test-school",
       gameId: "game-1",
       sequence: 3,
       timestampIso: "2026-03-18T21:00:00.000Z",
@@ -70,6 +73,7 @@ describe("gameEventSchema", () => {
     expect(
       isGameEvent({
         id: "evt-2",
+        schoolId: "test-school",
         gameId: "game-1",
         sequence: 2,
         timestampIso: "2026-03-18T20:00:00.000Z",
@@ -90,6 +94,7 @@ describe("gameEventSchema", () => {
     expect(
       isGameEvent({
         id: "evt-3",
+        schoolId: "test-school",
         gameId: "game-1",
         sequence: 3,
         timestampIso: "2026-03-18T20:00:00.000Z",
@@ -110,6 +115,7 @@ describe("gameEventSchema", () => {
     expect(
       isGameEvent({
         id: "evt-4",
+        schoolId: "test-school",
         gameId: "game-1",
         sequence: 4,
         timestampIso: "2026-03-18T20:00:00.000Z",
@@ -145,6 +151,7 @@ describe("period helpers", () => {
 
 describe("semantic validation", () => {
   const base = {
+      schoolId: "test-school",
       gameId: "g1", timestampIso: "2026-03-18T20:00:00.000Z",
       teamId: "home", operatorId: "op-1",
   };

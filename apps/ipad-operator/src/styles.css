@@ -1981,7 +1981,6 @@ html, body {
   padding: 0.05rem 0.3rem;
   line-height: 1.3;
 }
-.spr-badge-pts { /* trophy emoji, no bg needed */ }
 .spr-badge-out {
   background: #ff3b30;
   color: #fff;
@@ -2793,6 +2792,8 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+.offline-badge {
   position: fixed;
   top: 0.6rem;
   left: 50%;

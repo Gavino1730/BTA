@@ -478,11 +478,20 @@ describe("unified stats endpoints", () => {
 });
 
 describe("Realtime API Server", () => {
+  describe("tenant enforcement", () => {
+    it("rejects api requests without school scope", async () => {
+      const res = await fetch(`${API_BASE}/api/teams`);
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error?: string };
+      expect(body.error).toMatch(/schoolId is required/i);
+    });
+  });
+
   describe("POST /api/games/:gameId/events", () => {
     it("rejects event with invalid payload structure", async () => {
       const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-school-id": "test-school" },
         body: JSON.stringify({ invalid: "payload" })
       });
 
@@ -494,6 +503,7 @@ describe("Realtime API Server", () => {
     it("accepts valid field goal event", async () => {
       const event = {
         id: "evt-1",
+        schoolId: "test-school",
         gameId: "test-game",
         sequence: 1,
         timestampIso: new Date().toISOString(),
@@ -508,7 +518,7 @@ describe("Realtime API Server", () => {
 
       const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-school-id": "test-school" },
         body: JSON.stringify(event)
       });
 
@@ -522,6 +532,7 @@ describe("Realtime API Server", () => {
     it("accepts valid free throw event with correct attempt count", async () => {
       const event = {
         id: "evt-2",
+        schoolId: "test-school",
         gameId: "test-game",
         sequence: 2,
         timestampIso: new Date().toISOString(),
@@ -538,7 +549,7 @@ describe("Realtime API Server", () => {
 
       const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-school-id": "test-school" },
         body: JSON.stringify(event)
       });
 
@@ -548,6 +559,7 @@ describe("Realtime API Server", () => {
     it("rejects free throw event with impossible attempt count (3 of 2)", async () => {
       const event = {
         id: "evt-3",
+        schoolId: "test-school",
         gameId: "test-game",
         sequence: 3,
         timestampIso: new Date().toISOString(),
@@ -564,7 +576,7 @@ describe("Realtime API Server", () => {
 
       const res = await fetch(`${API_BASE}/api/games/test-game/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-school-id": "test-school" },
         body: JSON.stringify(event)
       });
 
@@ -577,8 +589,10 @@ describe("Realtime API Server", () => {
   describe("GET /api/games/:gameId/state", () => {
     it("returns game state or 404 for nonexistent game", async () => {
       const res = await fetch(`${API_BASE}/api/games/nonexistent-game-xyz/state`);
-
-      expect([200, 404]).toContain(res.status);
+      
+      // strict tenant mode requires explicit school scope
+      const status = res.status;
+      expect([200, 404, 400]).toContain(status);
     });
   });
 
@@ -586,7 +600,7 @@ describe("Realtime API Server", () => {
     it("returns insights array for a game", async () => {
       const res = await fetch(`${API_BASE}/api/games/test-game/insights`);
 
-      expect([200, 404]).toContain(res.status);
+      expect([200, 404, 400]).toContain(res.status);
       if (res.status === 200) {
         const body = await res.json();
         expect(Array.isArray(body)).toBe(true);
@@ -597,7 +611,7 @@ describe("Realtime API Server", () => {
   describe("CORS", () => {
     it("allows requests from whitelisted origin", async () => {
       const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
-        headers: { Origin: "http://localhost:5173" }
+        headers: { Origin: "http://localhost:5173", "x-school-id": "test-school" }
       });
 
       // Should not 403 due to CORS
@@ -606,7 +620,7 @@ describe("Realtime API Server", () => {
 
     it("rejects requests from non-whitelisted origin", async () => {
       const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
-        headers: { Origin: "https://evil.com" }
+        headers: { Origin: "https://evil.com", "x-school-id": "test-school" }
       });
 
       // Should either 200/404 (if CORS check happens at middleware level)
@@ -621,7 +635,7 @@ describe("Realtime API Server", () => {
       const promises = Array.from({ length: 5 }).map(() =>
         fetch(`${API_BASE}/api/games/test-game/events`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-school-id": "test-school" },
           body: JSON.stringify({ invalid: "test" })
         }).then(r => r.status)
       );
@@ -640,14 +654,14 @@ describe("Realtime API Server", () => {
 
       const res = await fetch(`${API_BASE}/api/games/test-game/state`);
 
-      // Should succeed (not 401)
-      expect([200, 404]).toContain(res.status);
+      // Should succeed auth-wise but still enforce tenant scope
+      expect([200, 400, 404]).toContain(res.status);
     });
 
     it("accepts request with valid API key header", async () => {
       // This test assumes BTA_API_KEY is set in test env
       const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
-        headers: { "x-api-key": API_KEY }
+        headers: { "x-api-key": API_KEY, "x-school-id": "test-school" }
       });
 
       expect([200, 404, 401]).toContain(res.status);
@@ -655,7 +669,7 @@ describe("Realtime API Server", () => {
 
     it("rejects request with invalid API key", async () => {
       const res = await fetch(`${API_BASE}/api/games/test-game/state`, {
-        headers: { "x-api-key": "wrong-key-123" }
+        headers: { "x-api-key": "wrong-key-123", "x-school-id": "test-school" }
       });
 
       // May be 401 if key is enforced, or 404/200 if not configured

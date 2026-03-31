@@ -879,7 +879,9 @@ export function App() {
         if (!response.ok) {
           // Seed defaults from stats dashboard
           try {
-            const seed = await fetch(`${statsBase}/api/ai-settings`);
+            const seed = await fetch(`${statsBase}/api/ai-settings`, {
+              headers: apiKeyHeader(),
+            });
             if (seed.ok) {
               const defaults = (await seed.json()) as CoachAiSettings | null;
               const next = defaults ?? defaultCoachAiSettings();
@@ -946,7 +948,7 @@ export function App() {
       // Sync to stats dashboard so all surfaces share the same context
       fetch(`${statsBase}/api/ai-settings`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...apiKeyHeader() },
         body: JSON.stringify(aiSettingsDraft),
       }).catch(() => { /* fire-and-forget */ });
     } catch {

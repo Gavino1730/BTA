@@ -3,7 +3,7 @@ import type { GameEvent } from "@bta/shared-schema";
 import type { CoachAiSettings, GameAiContext, RosterTeam } from "./store.js";
 
 export interface PersistedGameSessionRecord {
-  schoolId?: string;
+  schoolId: string;
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
@@ -26,11 +26,47 @@ export interface PersistenceProvider {
   loadRosterTeamsBySchool(): Promise<Record<string, RosterTeam[]>>;
   replaceRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): Promise<void>;
   clearAllRosterTeams(): Promise<void>;
+  pruneStaleGames(retentionDays: number): Promise<number>;
+  close?(): Promise<void>;
 }
 
 interface PostgresPersistenceOptions {
   connectionString: string;
   tableName?: string;
+}
+
+const DEFAULT_SCHOOL_ID = "default";
+
+function normalizeSchoolId(input: unknown): string {
+  if (typeof input !== "string") {
+    return DEFAULT_SCHOOL_ID;
+  }
+
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    return DEFAULT_SCHOOL_ID;
+  }
+
+  return trimmed.replace(/[^a-z0-9_-]/g, "").slice(0, 64) || DEFAULT_SCHOOL_ID;
+}
+
+async function setTenantContext(client: { query: Pool["query"] }, schoolId: string): Promise<void> {
+  await client.query(`SELECT set_config('app.school_id', $1, false)`, [schoolId]);
+}
+
+export function normalizeEventForPersistence(event: GameEvent, schoolId: string, gameId: string): GameEvent {
+  const normalizedSchoolId = normalizeSchoolId(event.schoolId ?? schoolId);
+  const normalizedEvent: GameEvent = {
+    ...event,
+    schoolId: normalizedSchoolId,
+    gameId
+  };
+
+  if (normalizedEvent.schoolId !== schoolId) {
+    throw new Error(`Event tenant mismatch for game ${gameId}`);
+  }
+
+  return normalizedEvent;
 }
 
 export function createPostgresPersistenceProvider(options: PostgresPersistenceOptions): PersistenceProvider {
@@ -138,6 +174,105 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         FOREIGN KEY (school_id, game_id) REFERENCES ${gamesTableName}(school_id, game_id) ON DELETE CASCADE
       )
     `);
+
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ${eventsTableName}_school_game_sequence_idx
+        ON ${eventsTableName}(school_id, game_id, sequence)
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS ${eventsTableName}_school_game_idx
+        ON ${eventsTableName}(school_id, game_id)
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = '${eventsTableName}_payload_scope_check'
+        ) THEN
+          ALTER TABLE ${eventsTableName}
+            ADD CONSTRAINT ${eventsTableName}_payload_scope_check
+            CHECK (
+              payload ? 'schoolId'
+              AND payload ? 'gameId'
+              AND (payload->>'schoolId') = school_id
+              AND (payload->>'gameId') = game_id
+            );
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`ALTER TABLE ${teamsTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${playersTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${gamesTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${eventsTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${teamsTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${playersTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${gamesTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${eventsTableName} FORCE ROW LEVEL SECURITY`);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${teamsTableName}' AND policyname = '${teamsTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${teamsTableName}_school_policy ON ${teamsTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${playersTableName}' AND policyname = '${playersTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${playersTableName}_school_policy ON ${playersTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${gamesTableName}' AND policyname = '${gamesTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${gamesTableName}_school_policy ON ${gamesTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${eventsTableName}' AND policyname = '${eventsTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${eventsTableName}_school_policy ON ${eventsTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
     schemaReady = true;
   }
 
@@ -172,6 +307,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     },
     async loadPersistedSessions(): Promise<PersistedGameSessionRecord[]> {
       await ensureSchema();
+      await setTenantContext(pool, "*");
       const result = await pool.query<{
         school_id: string;
         game_id: string;
@@ -215,7 +351,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         let session = sessions.get(key);
         if (!session) {
           session = {
-            schoolId: row.school_id,
+            schoolId: normalizeSchoolId(row.school_id),
             gameId: row.game_id,
             homeTeamId: row.home_team_id,
             awayTeamId: row.away_team_id,
@@ -234,7 +370,11 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         }
 
         if (row.event_payload) {
-          session.events.push(row.event_payload);
+          session.events.push({
+            ...row.event_payload,
+            schoolId: normalizeSchoolId(row.event_payload.schoolId ?? row.school_id),
+            gameId: row.game_id
+          });
         }
       }
 
@@ -245,16 +385,17 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        await setTenantContext(client, "*");
         await client.query(`DELETE FROM ${eventsTableName}`);
         await client.query(`DELETE FROM ${gamesTableName}`);
 
-        const schoolIds = [...new Set(sessions.map((session) => String(session.schoolId ?? "default")))];
+        const schoolIds = [...new Set(sessions.map((session) => normalizeSchoolId(session.schoolId)))];
         for (const schoolId of schoolIds) {
           await ensureSchool(client, schoolId);
         }
 
         for (const session of sessions) {
-          const schoolId = String(session.schoolId ?? "default");
+          const schoolId = normalizeSchoolId(session.schoolId);
           await client.query(
             `
               INSERT INTO ${gamesTableName} (
@@ -288,6 +429,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           );
 
           for (const event of session.events) {
+            const normalizedEvent = normalizeEventForPersistence(event, schoolId, session.gameId);
+
             await client.query(
               `
                 INSERT INTO ${eventsTableName} (
@@ -303,10 +446,10 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
               [
                 schoolId,
                 session.gameId,
-                event.id,
-                event.sequence,
-                event.timestampIso,
-                JSON.stringify(event)
+                normalizedEvent.id,
+                normalizedEvent.sequence,
+                normalizedEvent.timestampIso,
+                JSON.stringify(normalizedEvent)
               ]
             );
           }
@@ -322,6 +465,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     },
     async loadRosterTeamsBySchool(): Promise<Record<string, RosterTeam[]>> {
       await ensureSchema();
+      await setTenantContext(pool, "*");
       const result = await pool.query<{
         school_id: string;
         team_id: string;
@@ -419,12 +563,14 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     },
     async replaceRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): Promise<void> {
       await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        await ensureSchool(client, schoolId);
-        await client.query(`DELETE FROM ${playersTableName} WHERE school_id = $1`, [schoolId]);
-        await client.query(`DELETE FROM ${teamsTableName} WHERE school_id = $1`, [schoolId]);
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${playersTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        await client.query(`DELETE FROM ${teamsTableName} WHERE school_id = $1`, [normalizedSchoolId]);
 
         for (const team of teams) {
           await client.query(
@@ -435,7 +581,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW())
             `,
             [
-              schoolId,
+              normalizedSchoolId,
               team.id,
               team.name,
               team.abbreviation,
@@ -458,7 +604,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
               `,
               [
-                schoolId,
+                normalizedSchoolId,
                 team.id,
                 player.id,
                 player.number,
@@ -486,6 +632,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        await setTenantContext(client, "*");
         await client.query(`DELETE FROM ${playersTableName}`);
         await client.query(`DELETE FROM ${teamsTableName}`);
         await client.query(`DELETE FROM ${schoolsTableName}`);
@@ -496,6 +643,27 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       } finally {
         client.release();
       }
+    },
+    async pruneStaleGames(retentionDays: number): Promise<number> {
+      await ensureSchema();
+      await setTenantContext(pool, "*");
+      const safeDays = Number.isFinite(retentionDays) ? Math.max(Math.floor(retentionDays), 1) : 1;
+      const result = await pool.query<{ game_count: string }>(
+        `
+          WITH deleted AS (
+            DELETE FROM ${gamesTableName}
+            WHERE updated_at < NOW() - ($1 * INTERVAL '1 day')
+            RETURNING 1
+          )
+          SELECT COUNT(*)::text AS game_count FROM deleted
+        `,
+        [safeDays]
+      );
+
+      return Number(result.rows[0]?.game_count ?? "0");
+    },
+    async close(): Promise<void> {
+      await pool.end();
     }
   };
 }

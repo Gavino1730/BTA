@@ -14,6 +14,7 @@ import {
 describe("store", () => {
   it("seeds active lineup when provided at game creation", () => {
     const state = createGame({
+      schoolId: "default",
       gameId: "game-seeded-lineup",
       homeTeamId: "home",
       awayTeamId: "away",
@@ -31,6 +32,7 @@ describe("store", () => {
 
   it("creates a game and ingests event idempotently", () => {
     createGame({
+      schoolId: "default",
       gameId: "game-1",
       homeTeamId: "home",
       awayTeamId: "away"
@@ -66,6 +68,7 @@ describe("store", () => {
 
   it("recomputes state after deleting an event", () => {
     createGame({
+      schoolId: "default",
       gameId: "game-2",
       homeTeamId: "home",
       awayTeamId: "away"
@@ -110,6 +113,7 @@ describe("store", () => {
 
   it("recomputes state after updating an event", () => {
     createGame({
+      schoolId: "default",
       gameId: "game-3",
       homeTeamId: "home",
       awayTeamId: "away"
@@ -152,6 +156,7 @@ describe("store", () => {
 
   it("rejects update sequence conflicts", () => {
     createGame({
+      schoolId: "default",
       gameId: "game-4",
       homeTeamId: "home",
       awayTeamId: "away"
@@ -202,6 +207,88 @@ describe("store", () => {
         zone: "paint"
       })
     ).toThrow(/already belongs/);
+  });
+
+  it("rejects createGame when payload and scope schoolIds differ", () => {
+    expect(() =>
+      createGame({
+        schoolId: "alpha",
+        gameId: "game-mismatch-create",
+        homeTeamId: "home",
+        awayTeamId: "away"
+      }, { schoolId: "beta" })
+    ).toThrow(/Tenant schoolId mismatch/i);
+  });
+
+  it("rejects ingestEvent when payload and scope schoolIds differ", () => {
+    createGame({
+      schoolId: "alpha",
+      gameId: "game-mismatch-ingest",
+      homeTeamId: "home",
+      awayTeamId: "away"
+    });
+
+    expect(() =>
+      ingestEvent({
+        id: "evt-mismatch-1",
+        schoolId: "beta",
+        gameId: "game-mismatch-ingest",
+        sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 470,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "shot_attempt",
+        playerId: "h1",
+        made: true,
+        points: 2,
+        zone: "paint"
+      }, { schoolId: "alpha" })
+    ).toThrow(/Tenant schoolId mismatch/i);
+  });
+
+  it("rejects updateEvent when payload and scope schoolIds differ", () => {
+    createGame({
+      schoolId: "alpha",
+      gameId: "game-mismatch-update",
+      homeTeamId: "home",
+      awayTeamId: "away"
+    });
+
+    ingestEvent({
+      id: "evt-mismatch-update",
+      schoolId: "alpha",
+      gameId: "game-mismatch-update",
+      sequence: 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: true,
+      points: 2,
+      zone: "paint"
+    });
+
+    expect(() =>
+      updateEvent("game-mismatch-update", "evt-mismatch-update", {
+        schoolId: "beta",
+        sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 470,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "shot_attempt",
+        playerId: "h1",
+        made: false,
+        points: 2,
+        zone: "paint"
+      }, { schoolId: "alpha" })
+    ).toThrow(/Tenant schoolId mismatch/i);
   });
 
   it("adds ai coaching insights when OpenAI is configured", async () => {
@@ -259,6 +346,7 @@ describe("store", () => {
 
     try {
       createGame({
+        schoolId: "default",
         gameId: "game-ai",
         homeTeamId: "home",
         awayTeamId: "away"
@@ -360,6 +448,7 @@ describe("store", () => {
 
     try {
       createGame({
+        schoolId: "default",
         gameId: "game-ai-force",
         homeTeamId: "home",
         awayTeamId: "away"
@@ -453,6 +542,7 @@ describe("store", () => {
 
     try {
       createGame({
+        schoolId: "default",
         gameId: "game-ai-chat",
         homeTeamId: "home",
         awayTeamId: "away",

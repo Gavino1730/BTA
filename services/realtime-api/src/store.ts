@@ -23,7 +23,7 @@ import {
 } from "./persistence.js";
 
 export interface CreateGameInput {
-  schoolId?: string;
+  schoolId: string;
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
@@ -300,6 +300,17 @@ function resolveSchoolId(scope?: TenantScope): string {
   return normalizeSchoolId(scope?.schoolId);
 }
 
+function resolveRequiredSchoolId(inputSchoolId: unknown, scope?: TenantScope): string {
+  const normalizedInput = normalizeSchoolId(inputSchoolId);
+  const normalizedScope = scope?.schoolId !== undefined ? normalizeSchoolId(scope.schoolId) : undefined;
+
+  if (normalizedScope && normalizedInput !== normalizedScope) {
+    throw new Error("Tenant schoolId mismatch between payload and scope");
+  }
+
+  return normalizedScope ?? normalizedInput;
+}
+
 function buildGameSessionKey(gameId: string, schoolId: string): string {
   return `${schoolId}:${gameId}`;
 }
@@ -323,6 +334,8 @@ const LIVE_AI_MIN_INTERVAL_MS = readEnvNumber("BTA_LIVE_INSIGHT_MIN_INTERVAL_MS"
 const LIVE_AI_RECENT_EVENT_WINDOW = readEnvNumber("BTA_LIVE_INSIGHT_RECENT_EVENT_WINDOW", 8);
 const STATS_DASHBOARD_BASE = (process.env.STATS_DASHBOARD_BASE ?? "http://localhost:4000").replace(/\/+$/, "");
 const HISTORICAL_CONTEXT_TTL_MS = readEnvNumber("BTA_HISTORICAL_CONTEXT_TTL_MS", 60000);
+const DATA_RETENTION_DAYS = Number(process.env.BTA_DATA_RETENTION_DAYS ?? 180);
+const RETENTION_PRUNE_INTERVAL_MINUTES = Number(process.env.BTA_RETENTION_PRUNE_INTERVAL_MINUTES ?? 1440);
 const FOCUS_INSIGHT_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
   "substitutions",
@@ -1233,7 +1246,37 @@ function buildPersistedSnapshot(): PersistedSnapshot {
 }
 
 function buildPersistedSessions(): PersistedGameSessionRecord[] {
-  return buildPersistedSnapshot().sessions;
+  return buildPersistedSnapshot().sessions.map((session) => ({
+    ...session,
+    schoolId: normalizeSchoolId(session.schoolId)
+  }));
+}
+
+function sanitizePersistedEventsForSession(
+  gameId: string,
+  schoolId: string,
+  events: unknown
+): GameEvent[] {
+  if (!Array.isArray(events)) {
+    return [];
+  }
+
+  const normalizedEvents: GameEvent[] = [];
+  for (const rawEvent of events) {
+    try {
+      const parsed = parseGameEvent({
+        ...(rawEvent as object),
+        gameId,
+        schoolId
+      });
+      normalizedEvents.push(parsed);
+    } catch {
+      // Skip malformed legacy events while preserving valid history.
+      continue;
+    }
+  }
+
+  return normalizedEvents;
 }
 
 function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSession[]): void {
@@ -1253,6 +1296,13 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   }
 
   for (const session of persistedSessions) {
+    const normalizedSchoolId = normalizeSchoolId(session.schoolId);
+    const normalizedEvents = sanitizePersistedEventsForSession(
+      session.gameId,
+      normalizedSchoolId,
+      session.events
+    );
+
     const initialState = createInitialGameState(
       session.gameId,
       session.homeTeamId,
@@ -1272,7 +1322,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
     }
 
     const restoredSession: GameSession = {
-      schoolId: normalizeSchoolId(session.schoolId),
+      schoolId: normalizedSchoolId,
       homeTeamId: session.homeTeamId,
       awayTeamId: session.awayTeamId,
       opponentName: session.opponentName,
@@ -1282,9 +1332,9 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
       aiContext: sanitizeGameAiContext(session.aiContext),
       historicalContextSummary: typeof session.historicalContextSummary === "string" ? session.historicalContextSummary : "",
       historicalContextFetchedAtMs: Number(session.historicalContextFetchedAtMs ?? 0),
-      state: replayEvents(initialState, session.events),
-      eventsById: new Map(session.events.map((event) => [event.id, event])),
-      eventIdsBySequence: new Map(session.events.map((event) => [event.sequence, event.id])),
+      state: replayEvents(initialState, normalizedEvents),
+      eventsById: new Map(normalizedEvents.map((event) => [event.id, event])),
+      eventIdsBySequence: new Map(normalizedEvents.map((event) => [event.sequence, event.id])),
       ruleInsights: [],
       aiInsights: [],
       aiRefreshInFlight: null,
@@ -1390,6 +1440,42 @@ function persistSessions() {
 }
 
 let storeInitialized = false;
+let retentionTimer: ReturnType<typeof setInterval> | null = null;
+
+function setupRetentionMaintenance(): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  const retentionDays = Number.isFinite(DATA_RETENTION_DAYS) ? Math.floor(DATA_RETENTION_DAYS) : 0;
+  if (retentionDays <= 0) {
+    return;
+  }
+
+  const runPrune = () => {
+    void persistenceProvider.pruneStaleGames(retentionDays)
+      .then((deletedGames) => {
+        if (deletedGames > 0) {
+          console.log(`[realtime-api] Retention maintenance removed ${deletedGames} stale games older than ${retentionDays} days.`);
+        }
+      })
+      .catch((error) => {
+        console.warn("[realtime-api] Retention maintenance failed", error);
+      });
+  };
+
+  runPrune();
+
+  const intervalMinutes = Number.isFinite(RETENTION_PRUNE_INTERVAL_MINUTES)
+    ? Math.max(Math.floor(RETENTION_PRUNE_INTERVAL_MINUTES), 15)
+    : 1440;
+
+  if (retentionTimer) {
+    clearInterval(retentionTimer);
+  }
+
+  retentionTimer = setInterval(runPrune, intervalMinutes * 60 * 1000);
+}
 
 export async function initializeStore(): Promise<void> {
   if (storeInitialized) {
@@ -1428,6 +1514,8 @@ export async function initializeStore(): Promise<void> {
       console.warn("[realtime-api] Failed to restore normalized roster data from PostgreSQL", error);
     }
   }
+
+  setupRetentionMaintenance();
 
   storeInitialized = true;
 }
@@ -1469,7 +1557,7 @@ export function resetAllData(scope?: TenantScope): void {
 }
 
 export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {
-  const schoolId = normalizeSchoolId(input.schoolId ?? scope?.schoolId);
+  const schoolId = resolveRequiredSchoolId(input.schoolId, scope);
   const state = createInitialGameState(
     input.gameId,
     input.homeTeamId,
@@ -2176,7 +2264,7 @@ export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
   state: GameState;
   insights: LiveInsight[];
 } {
-  const schoolId = normalizeSchoolId((rawEvent as { schoolId?: unknown } | null)?.schoolId ?? scope?.schoolId);
+  const schoolId = resolveRequiredSchoolId((rawEvent as { schoolId?: unknown } | null)?.schoolId, scope);
   const event = parseGameEvent({ ...(rawEvent as object), schoolId });
   const session = getSession(event.gameId, { schoolId });
 
@@ -2236,7 +2324,7 @@ export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, 
   state: GameState;
   insights: LiveInsight[];
 } {
-  const schoolId = resolveSchoolId(scope);
+  const schoolId = resolveRequiredSchoolId((rawEvent as { schoolId?: unknown } | null)?.schoolId, scope);
   const session = getSession(gameId, { schoolId });
   if (!session) {
     throw new Error(`Game not found: ${gameId}`);
