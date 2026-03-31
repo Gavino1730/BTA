@@ -14,6 +14,10 @@ import {
   type AiPromptPreview,
   type GameAiContext,
   type CoachAiSettings,
+  type OnboardingAccountInput,
+  type OnboardingAccountState,
+  type OrganizationMember,
+  type OrganizationProfile,
   type RosterPlayer,
   type RosterTeam,
   createGame,
@@ -35,11 +39,18 @@ import {
   patchGameLineup,
   refreshGameAiInsights,
   saveRosterTeams,
+  saveOrganizationProfile,
   updateGameAiContext,
   updateGameAiSettings,
   updateEvent,
   resetAllData,
-  initializeStore
+  initializeStore,
+  getOrganizationProfileByScope,
+  getOnboardingAccountStateByScope,
+  saveOnboardingAccountState,
+  getOrganizationMembersByScope,
+  saveOrganizationMember,
+  deleteOrganizationMember
 } from "./store.js";
 import {
   extractBearerToken,
@@ -68,6 +79,7 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5174",
 ];
 const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
+const COACH_DASHBOARD_BASE = (process.env.COACH_DASHBOARD_BASE ?? "http://localhost:5173").replace(/\/+$/, "");
 if (PROD_ORIGINS.length > 0) ALLOWED_ORIGINS.push(...PROD_ORIGINS);
 
 app.use(cors({
@@ -133,6 +145,15 @@ function buildTeamAbbreviation(name: string): string {
   return compact.slice(0, 4) || "TEAM";
 }
 
+function buildOrganizationSlug(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
 function defaultTeamAiSettings(): CoachAiSettings {
   return {
     playingStyle: "",
@@ -153,6 +174,169 @@ function defaultTeamAiSettings(): CoachAiSettings {
 
 function sanitizeTextField(value: unknown, maxLength: number): string {
   return String(value ?? "").trim().slice(0, maxLength);
+}
+
+function readAuthClaim(authContext: AuthContext | undefined, path: string): unknown {
+  const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
+  let current: unknown = authContext?.claims;
+  for (const part of parts) {
+    if (!current || typeof current !== "object" || !(part in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function buildSuggestedCoachIdentity(authContext: AuthContext | undefined): { coachName?: string; coachEmail?: string } | null {
+  const coachEmail = sanitizeTextField(
+    readAuthClaim(authContext, "email")
+      ?? readAuthClaim(authContext, "user.email")
+      ?? readAuthClaim(authContext, "preferred_username"),
+    160,
+  ).toLowerCase();
+
+  const fullName = sanitizeTextField(
+    readAuthClaim(authContext, "name")
+      ?? [
+        sanitizeTextField(readAuthClaim(authContext, "given_name"), 80),
+        sanitizeTextField(readAuthClaim(authContext, "family_name"), 80),
+      ].filter(Boolean).join(" ")
+      ?? readAuthClaim(authContext, "user.name"),
+    120,
+  );
+
+  if (!coachEmail && !fullName) {
+    return null;
+  }
+
+  return {
+    coachName: fullName || undefined,
+    coachEmail: coachEmail || undefined,
+  };
+}
+
+function resolveAuthSubject(authContext: AuthContext | undefined): string | undefined {
+  const subject = sanitizeTextField(authContext?.subject, 120);
+  return subject || undefined;
+}
+
+function resolveCurrentOrganizationMember(req: Request, schoolId: string): OrganizationMember | null {
+  const authContext = (req as ScopedRequest).authContext;
+  const subject = resolveAuthSubject(authContext);
+  const email = sanitizeTextField(
+    readAuthClaim(authContext, "email")
+      ?? readAuthClaim(authContext, "user.email")
+      ?? readAuthClaim(authContext, "preferred_username"),
+    160,
+  ).toLowerCase();
+  const members = getOrganizationMembersByScope({ schoolId });
+  return members.find((member) =>
+    (subject && member.authSubject === subject)
+    || (email && member.email === email)
+  ) ?? null;
+}
+
+function ensureAuthenticatedOrganizationMember(req: Request, schoolId: string): OrganizationMember | null {
+  const authContext = (req as ScopedRequest).authContext;
+  const subject = resolveAuthSubject(authContext);
+  const suggested = buildSuggestedCoachIdentity(authContext);
+  const email = sanitizeTextField(suggested?.coachEmail, 160).toLowerCase();
+  if (!subject && !email) {
+    return null;
+  }
+
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  if (!account) {
+    return resolveCurrentOrganizationMember(req, schoolId);
+  }
+
+  const existing = resolveCurrentOrganizationMember(req, schoolId);
+  if (existing?.status === "active" && existing.authSubject === subject) {
+    return existing;
+  }
+
+  if (!existing) {
+    return null;
+  }
+
+  return saveOrganizationMember({
+    memberId: existing.memberId,
+    organizationId: account.organization.organizationId,
+    authSubject: subject,
+    fullName: sanitizeTextField(suggested?.coachName ?? existing.fullName, 120),
+    email: email || existing.email,
+    role: existing.role,
+    status: "active",
+    invitedAtIso: existing.invitedAtIso,
+    joinedAtIso: existing.joinedAtIso || new Date().toISOString(),
+  }, { schoolId });
+}
+
+function ensureOwnerMembership(req: Request, schoolId: string, account: OnboardingAccountState): OrganizationMember {
+  const payload = withSuggestedOnboardingIdentity(req, {});
+  return saveOrganizationMember({
+    organizationId: account.organization.organizationId,
+    authSubject: resolveAuthSubject((req as ScopedRequest).authContext),
+    fullName: sanitizeTextField(payload.coachName ?? account.primaryCoach.fullName, 120),
+    email: sanitizeTextField(payload.coachEmail ?? account.primaryCoach.email, 160).toLowerCase(),
+    role: "owner",
+    status: "active",
+    joinedAtIso: new Date().toISOString(),
+  }, { schoolId });
+}
+
+function requireOrganizationOwner(req: Request, res: Response): OrganizationMember | null {
+  const schoolId = getSchoolIdFromRequest(req);
+  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+  if (!currentMember) {
+    res.status(403).json({ error: "Organization membership required" });
+    return null;
+  }
+  if (currentMember.role !== "owner") {
+    res.status(403).json({ error: "Organization owner role required" });
+    return null;
+  }
+  return currentMember;
+}
+
+function withSuggestedOnboardingIdentity(req: Request, payload: Record<string, unknown>): Record<string, unknown> {
+  const authContext = (req as ScopedRequest).authContext;
+  const suggested = buildSuggestedCoachIdentity(authContext);
+  if (!suggested) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    coachName: sanitizeTextField(payload.coachName, 120) || suggested.coachName,
+    coachEmail: sanitizeTextField(payload.coachEmail, 160) || suggested.coachEmail,
+  };
+}
+
+function buildOnboardingProfileView(schoolId: string): OrganizationProfile | null {
+  const profile = getOrganizationProfileByScope({ schoolId });
+  if (profile) {
+    return profile;
+  }
+
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  if (!account) {
+    return null;
+  }
+
+  return {
+    schoolId,
+    organizationName: account.organization.organizationName,
+    organizationSlug: account.organization.organizationSlug,
+    coachName: account.primaryCoach.fullName,
+    coachEmail: account.primaryCoach.email,
+    teamName: account.organization.teamName,
+    season: account.organization.season,
+    completedAtIso: account.organization.onboardingCompletedAtIso,
+    createdAtIso: account.organization.createdAtIso,
+    updatedAtIso: account.organization.updatedAtIso,
+  };
 }
 
 function sanitizeFocusInsights(value: unknown): CoachAiSettings["focusInsights"] {
@@ -230,6 +414,71 @@ function upsertPrimaryTeam(schoolId: string, payload: Record<string, unknown>): 
   };
 
   return persistSchoolTeams(schoolId, [nextTeam, ...teams.slice(1)]);
+}
+
+function buildOrganizationProfilePayload(
+  schoolId: string,
+  payload: Record<string, unknown>,
+  options?: { complete?: boolean },
+): Partial<OrganizationProfile> {
+  const organizationName = sanitizeTextField(payload.organizationName, 160);
+  const coachName = sanitizeTextField(payload.coachName, 120);
+  const coachEmail = sanitizeTextField(payload.coachEmail, 160).toLowerCase();
+
+  return {
+    schoolId,
+    organizationName,
+    organizationSlug: buildOrganizationSlug(organizationName),
+    coachName,
+    coachEmail,
+    teamName: sanitizeTextField(payload.teamName, 120) || undefined,
+    season: sanitizeTextField(payload.season, 40) || undefined,
+    completedAtIso: options?.complete ? new Date().toISOString() : undefined,
+  };
+}
+
+function buildOnboardingAccountPayload(
+  schoolId: string,
+  payload: Record<string, unknown>,
+  options?: { complete?: boolean },
+): OnboardingAccountInput {
+  const organizationName = sanitizeTextField(payload.organizationName, 160);
+  const coachName = sanitizeTextField(payload.coachName, 120);
+  const coachEmail = sanitizeTextField(payload.coachEmail, 160).toLowerCase();
+
+  return {
+    organization: {
+      schoolId,
+      organizationName,
+      organizationSlug: buildOrganizationSlug(organizationName),
+      teamName: sanitizeTextField(payload.teamName, 120) || undefined,
+      season: sanitizeTextField(payload.season, 40) || undefined,
+      onboardingCompletedAtIso: options?.complete ? new Date().toISOString() : undefined,
+    },
+    primaryCoach: {
+      schoolId,
+      fullName: coachName,
+      email: coachEmail,
+      role: "owner",
+      organizationId: "",
+      accountId: "",
+      createdAtIso: "",
+      updatedAtIso: "",
+    },
+  };
+}
+
+function requireOnboardingIdentity(payload: Record<string, unknown>, res: Response): boolean {
+  const organizationName = sanitizeTextField(payload.organizationName, 160);
+  const coachName = sanitizeTextField(payload.coachName, 120);
+  const coachEmail = sanitizeTextField(payload.coachEmail, 160);
+
+  if (!organizationName || !coachName || !coachEmail) {
+    res.status(400).json({ error: "organizationName, coachName, and coachEmail are required" });
+    return false;
+  }
+
+  return true;
 }
 
 function findPlayerRecord(teams: RosterTeam[], playerName: string): { team: RosterTeam; player: RosterPlayer; playerIndex: number; teamIndex: number } | null {
@@ -1149,6 +1398,10 @@ function deviceRoom(schoolId: string, deviceId: string): string {
   return `school:${schoolId}:device:${deviceId}`;
 }
 
+function connectionRoom(schoolId: string, connectionId: string): string {
+  return `school:${schoolId}:connection:${connectionId}`;
+}
+
 async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
   const scopedReq = req as ScopedRequest;
   if (scopedReq.authContext) {
@@ -1287,7 +1540,8 @@ io.use(async (socket, next) => {
 interface OperatorPresence {
   schoolId: string;
   userId?: string;
-  deviceId: string;
+  deviceId?: string;
+  connectionId?: string;
   gameId: string;
   socketId: string;
   connectedAtIso: string;
@@ -1296,6 +1550,7 @@ interface OperatorPresence {
 
 const operatorPresenceBySocketId = new Map<string, OperatorPresence>();
 const operatorPresenceByDeviceId = new Map<string, OperatorPresence>(); // Index by school+device for O(1) lookup
+const operatorPresenceByConnectionId = new Map<string, OperatorPresence>(); // Index by school+connection for O(1) lookup
 
 // Debounce game state broadcasts to max 1 per 200ms per game
 interface PendingBroadcast {
@@ -1338,16 +1593,34 @@ function getOperatorByDeviceId(schoolId: string, deviceId: string): OperatorPres
   return operatorPresenceByDeviceId.get(`${schoolId}:${deviceId}`) ?? null;
 }
 
-function emitPresence(schoolId: string, deviceId: string): void {
+function getOperatorByConnectionId(schoolId: string, connectionId: string): OperatorPresence | null {
+  return operatorPresenceByConnectionId.get(`${schoolId}:${connectionId}`) ?? null;
+}
+
+function emitPresenceForDevice(schoolId: string, deviceId: string): void {
   const operator = getOperatorByDeviceId(schoolId, deviceId);
   const payload = {
     deviceId,
+    connectionId: operator?.connectionId ?? null,
     online: Boolean(operator),
     gameId: operator?.gameId ?? null,
     lastSeenIso: operator?.lastSeenIso ?? null
   };
 
   io.to(deviceRoom(schoolId, deviceId)).emit("presence:status", payload);
+}
+
+function emitPresenceForConnection(schoolId: string, connectionId: string): void {
+  const operator = getOperatorByConnectionId(schoolId, connectionId);
+  const payload = {
+    deviceId: operator?.deviceId ?? null,
+    connectionId,
+    online: Boolean(operator),
+    gameId: operator?.gameId ?? null,
+    lastSeenIso: operator?.lastSeenIso ?? null
+  };
+
+  io.to(connectionRoom(schoolId, connectionId)).emit("presence:status", payload);
 }
 
 async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Promise<void> {
@@ -1357,17 +1630,21 @@ async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Pr
   }
 }
 
-// Serve stats dashboard static assets and HTML pages
-const STATS_STATIC = path.resolve(__dirname, "../../../apps/stats-dashboard/static");
-app.use("/static", express.static(STATS_STATIC));
-app.get("/", (_req, res) => res.sendFile(path.join(STATS_STATIC, "index.html")));
-app.get("/games", (_req, res) => res.sendFile(path.join(STATS_STATIC, "games.html")));
-app.get("/players", (_req, res) => res.sendFile(path.join(STATS_STATIC, "players.html")));
-app.get("/trends", (_req, res) => res.sendFile(path.join(STATS_STATIC, "trends.html")));
-app.get("/ai-insights", (_req, res) => res.sendFile(path.join(STATS_STATIC, "ai-insights.html")));
-app.get("/analysis", (_req, res) => res.sendFile(path.join(STATS_STATIC, "analysis.html")));
-app.get("/onboarding", (_req, res) => res.sendFile(path.join(STATS_STATIC, "onboarding.html")));
-app.get("/settings", (_req, res) => res.sendFile(path.join(STATS_STATIC, "settings.html")));
+function redirectToCoachWorkspace(route: string) {
+  return (_req: Request, res: Response) => {
+    res.redirect(302, `${COACH_DASHBOARD_BASE}${route}`);
+  };
+}
+
+// Redirect legacy stats dashboard entry routes into the unified coach workspace.
+app.get("/", redirectToCoachWorkspace("/stats"));
+app.get("/games", redirectToCoachWorkspace("/stats/games"));
+app.get("/players", redirectToCoachWorkspace("/stats/players"));
+app.get("/trends", redirectToCoachWorkspace("/stats/trends"));
+app.get("/ai-insights", redirectToCoachWorkspace("/stats/insights"));
+app.get("/analysis", redirectToCoachWorkspace("/stats/insights"));
+app.get("/onboarding", redirectToCoachWorkspace("/setup"));
+app.get("/settings", redirectToCoachWorkspace("/stats/settings"));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -1378,6 +1655,240 @@ app.use("/api", requireTenantScope);
 app.use("/teams", requireTenantScope);
 app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
+
+app.get("/api/onboarding/state", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const profile = buildOnboardingProfileView(schoolId);
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  const suggestedCoach = buildSuggestedCoachIdentity((req as ScopedRequest).authContext);
+  const { teams, team } = getPrimaryTeam(schoolId);
+  const completed = Boolean((account?.organization.onboardingCompletedAtIso || profile?.completedAtIso) && team?.name?.trim());
+
+  res.json({
+    completed,
+    hasAccount: Boolean(account?.organization.organizationName && account?.primaryCoach.email),
+    hasProfile: Boolean(profile),
+    hasTeam: Boolean(team?.name?.trim()),
+    teamCount: teams.length,
+    account,
+    profile,
+    suggestedCoach,
+  });
+});
+
+app.get("/api/onboarding/account", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+  res.json({
+    account: getOnboardingAccountStateByScope({ schoolId }),
+    suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
+    currentMember,
+  });
+});
+
+app.put("/api/onboarding/account", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
+  if (!requireOnboardingIdentity(payload, res)) {
+    return;
+  }
+
+  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload), { schoolId });
+  const member = ensureOwnerMembership(req, schoolId, account);
+  const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload), { schoolId });
+  res.json({ message: "Onboarding account saved", account, profile, member });
+});
+
+app.get("/api/onboarding/profile", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  res.json({ profile: buildOnboardingProfileView(schoolId), suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext) });
+});
+
+app.put("/api/onboarding/profile", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
+  if (!requireOnboardingIdentity(payload, res)) {
+    return;
+  }
+
+  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload), { schoolId });
+  const member = ensureOwnerMembership(req, schoolId, account);
+  const saved = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload), { schoolId });
+  res.json({ message: "Onboarding profile saved", profile: saved, account, member });
+});
+
+app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
+  if (!requireOnboardingIdentity(payload, res)) {
+    return;
+  }
+
+  const teamName = sanitizeTextField(payload.teamName ?? payload.name, 120);
+  if (!teamName) {
+    res.status(400).json({ error: "teamName is required" });
+    return;
+  }
+
+  const existing = getPrimaryTeam(schoolId).team;
+  const teamId = existing?.id ?? "primary-team";
+  const currentPlayers = new Map((existing?.players ?? []).map((player) => [normalizeNameKey(player.name), player]));
+  const rosterPayload = Array.isArray(payload.roster) ? payload.roster : [];
+  const players = rosterPayload
+    .map((entry) => buildRosterPlayer(entry as Record<string, unknown>, teamId, currentPlayers.get(normalizeNameKey((entry as Record<string, unknown>).name))))
+    .filter((player): player is RosterPlayer => Boolean(player));
+
+  const savedTeams = upsertPrimaryTeam(schoolId, {
+    name: teamName,
+    season: payload.season,
+    teamColor: payload.teamColor,
+    coachStyle: payload.coachName,
+    playingStyle: payload.playingStyle,
+    teamContext: payload.organizationName,
+    abbreviation: existing?.abbreviation ?? buildTeamAbbreviation(teamName),
+  });
+
+  savedTeams[0]!.players = players;
+  const persistedTeams = persistSchoolTeams(schoolId, savedTeams);
+  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload, { complete: true }), { schoolId });
+  const member = ensureOwnerMembership(req, schoolId, account);
+  const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload, { complete: true }), { schoolId });
+
+  res.status(201).json({
+    message: "Onboarding completed successfully",
+    completed: true,
+    account,
+    member,
+    profile,
+    team: { id: persistedTeams[0]?.id ?? "primary-team", name: persistedTeams[0]?.name ?? teamName },
+    playersLoaded: persistedTeams[0]?.players.length ?? 0,
+  });
+});
+
+app.get("/api/org/members", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+  res.json({
+    organization: account?.organization ?? null,
+    currentMember,
+    members: getOrganizationMembersByScope({ schoolId }),
+  });
+});
+
+app.post("/api/org/members", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  if (!requireOrganizationOwner(req, res)) {
+    return;
+  }
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  if (!account) {
+    res.status(400).json({ error: "Complete onboarding before adding organization members" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const fullName = sanitizeTextField(payload.fullName, 120);
+  const role = payload.role === "owner" || payload.role === "coach" || payload.role === "analyst"
+    ? payload.role
+    : "coach";
+  if (!email || !fullName) {
+    res.status(400).json({ error: "fullName and email are required" });
+    return;
+  }
+
+  const member = saveOrganizationMember({
+    organizationId: account.organization.organizationId,
+    fullName,
+    email,
+    role,
+    status: "invited",
+    invitedAtIso: new Date().toISOString(),
+  }, { schoolId });
+
+  res.status(201).json({ member, members: getOrganizationMembersByScope({ schoolId }) });
+});
+
+app.put("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const actingOwner = requireOrganizationOwner(req, res);
+  if (!actingOwner) {
+    return;
+  }
+
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  if (!account) {
+    res.status(400).json({ error: "Complete onboarding before updating organization members" });
+    return;
+  }
+
+  const memberId = sanitizeTextField(req.params.memberId, 80);
+  const existing = getOrganizationMembersByScope({ schoolId }).find((member) => member.memberId === memberId);
+  if (!existing) {
+    res.status(404).json({ error: "Organization member not found" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const fullName = sanitizeTextField(payload.fullName ?? existing.fullName, 120);
+  const role = payload.role === "owner" || payload.role === "coach" || payload.role === "analyst"
+    ? payload.role
+    : existing.role;
+  const status = payload.status === "active" || payload.status === "invited"
+    ? payload.status
+    : existing.status;
+
+  const ownerCount = getOrganizationMembersByScope({ schoolId }).filter((member) => member.role === "owner").length;
+  if (existing.role === "owner" && role !== "owner" && ownerCount <= 1) {
+    res.status(400).json({ error: "At least one organization owner is required" });
+    return;
+  }
+
+  const member = saveOrganizationMember({
+    memberId,
+    organizationId: account.organization.organizationId,
+    authSubject: existing.authSubject,
+    email: existing.email,
+    invitedAtIso: existing.invitedAtIso,
+    joinedAtIso: existing.joinedAtIso,
+    fullName,
+    role,
+    status,
+  }, { schoolId });
+
+  res.json({ member, members: getOrganizationMembersByScope({ schoolId }), actingMember: actingOwner });
+});
+
+app.delete("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const actingOwner = requireOrganizationOwner(req, res);
+  if (!actingOwner) {
+    return;
+  }
+
+  const memberId = sanitizeTextField(req.params.memberId, 80);
+  const members = getOrganizationMembersByScope({ schoolId });
+  const target = members.find((member) => member.memberId === memberId);
+  if (!target) {
+    res.status(404).json({ error: "Organization member not found" });
+    return;
+  }
+
+  const ownerCount = members.filter((member) => member.role === "owner").length;
+  if (target.role === "owner" && ownerCount <= 1) {
+    res.status(400).json({ error: "At least one organization owner is required" });
+    return;
+  }
+
+  if (target.memberId === actingOwner.memberId) {
+    res.status(400).json({ error: "Owners cannot remove themselves" });
+    return;
+  }
+
+  deleteOrganizationMember(memberId, { schoolId });
+  res.json({ message: "Organization member removed", members: getOrganizationMembersByScope({ schoolId }) });
+});
 
 app.get("/api/teams", (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -2419,9 +2930,10 @@ io.on("connection", (socket) => {
   function registerOperator(rawPayload: unknown): void {
     const payload = (rawPayload ?? {}) as Record<string, unknown>;
     const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
+    const connectionId = typeof payload.connectionId === "string" ? payload.connectionId.trim() : "";
     const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
 
-    if (!deviceId || !gameId) {
+    if (!connectionId || !gameId) {
       return;
     }
 
@@ -2439,24 +2951,28 @@ io.on("connection", (socket) => {
     }
 
     const userId = socket.data.authContext?.subject;
-    const claimedDevice = getOperatorByDeviceId(socketSchoolId, deviceId);
-    if (claimedDevice?.userId && userId && claimedDevice.userId !== userId) {
-      socket.emit("error", { error: "device is already registered to another account" });
+    const claimedConnection = connectionId ? getOperatorByConnectionId(socketSchoolId, connectionId) : null;
+    if (claimedConnection?.userId && userId && claimedConnection.userId !== userId) {
+      socket.emit("error", { error: "connection is already registered to another account" });
       return;
     }
 
     const now = new Date().toISOString();
     const existing = operatorPresenceBySocketId.get(socket.id);
 
-    // Remove old device ID index if changing devices.
-    if (existing && existing.deviceId !== deviceId) {
+    // Remove old indexes if the operator changed binding keys.
+    if (existing?.deviceId && existing.deviceId !== deviceId) {
       operatorPresenceByDeviceId.delete(`${socketSchoolId}:${existing.deviceId}`);
+    }
+    if (existing?.connectionId && existing.connectionId !== connectionId) {
+      operatorPresenceByConnectionId.delete(`${socketSchoolId}:${existing.connectionId}`);
     }
 
     const presence: OperatorPresence = {
       schoolId: socketSchoolId,
       userId,
-      deviceId,
+      deviceId: deviceId || undefined,
+      connectionId: connectionId || undefined,
       gameId,
       socketId: socket.id,
       connectedAtIso: existing?.connectedAtIso ?? now,
@@ -2464,12 +2980,23 @@ io.on("connection", (socket) => {
     };
 
     operatorPresenceBySocketId.set(socket.id, presence);
-    operatorPresenceByDeviceId.set(`${socketSchoolId}:${deviceId}`, presence);
+    if (deviceId) {
+      operatorPresenceByDeviceId.set(`${socketSchoolId}:${deviceId}`, presence);
+    }
+    if (connectionId) {
+      operatorPresenceByConnectionId.set(`${socketSchoolId}:${connectionId}`, presence);
+    }
 
     socket.join(gameId);
     socket.join(gameRoom(socketSchoolId, gameId));
-    socket.join(deviceRoom(socketSchoolId, deviceId));
-    emitPresence(socketSchoolId, deviceId);
+    if (deviceId) {
+      socket.join(deviceRoom(socketSchoolId, deviceId));
+      emitPresenceForDevice(socketSchoolId, deviceId);
+    }
+    if (connectionId) {
+      socket.join(connectionRoom(socketSchoolId, connectionId));
+      emitPresenceForConnection(socketSchoolId, connectionId);
+    }
 
     // Re-sync the starting lineup if the operator included one and the server
     // has an empty active lineup (e.g. after an API restart).
@@ -2508,7 +3035,7 @@ io.on("connection", (socket) => {
   socket.on("join:coach", (rawPayload: unknown) => {
     const payload = (rawPayload ?? {}) as Record<string, unknown>;
     const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
-    const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
+    const connectionId = typeof payload.connectionId === "string" ? payload.connectionId.trim() : "";
 
     if (gameId) {
       socket.join(gameId);
@@ -2521,11 +3048,12 @@ io.on("connection", (socket) => {
       }
     }
 
-    if (deviceId) {
-      socket.join(deviceRoom(socketSchoolId, deviceId));
-      const operator = getOperatorByDeviceId(socketSchoolId, deviceId);
+    if (connectionId) {
+      socket.join(connectionRoom(socketSchoolId, connectionId));
+      const operator = getOperatorByConnectionId(socketSchoolId, connectionId);
       socket.emit("presence:status", {
-        deviceId,
+        deviceId: operator?.deviceId ?? null,
+        connectionId,
         online: Boolean(operator),
         gameId: operator?.gameId ?? null,
         lastSeenIso: operator?.lastSeenIso ?? null
@@ -2540,13 +3068,23 @@ io.on("connection", (socket) => {
     }
 
     operatorPresenceBySocketId.delete(socket.id);
-    operatorPresenceByDeviceId.delete(`${operator.schoolId}:${operator.deviceId}`);
-
-    socket.leave(deviceRoom(operator.schoolId, operator.deviceId));
+    if (operator.deviceId) {
+      operatorPresenceByDeviceId.delete(`${operator.schoolId}:${operator.deviceId}`);
+      socket.leave(deviceRoom(operator.schoolId, operator.deviceId));
+    }
+    if (operator.connectionId) {
+      operatorPresenceByConnectionId.delete(`${operator.schoolId}:${operator.connectionId}`);
+      socket.leave(connectionRoom(operator.schoolId, operator.connectionId));
+    }
     socket.leave(gameRoom(operator.schoolId, operator.gameId));
     socket.leave(operator.gameId);
 
-    emitPresence(operator.schoolId, operator.deviceId);
+    if (operator.deviceId) {
+      emitPresenceForDevice(operator.schoolId, operator.deviceId);
+    }
+    if (operator.connectionId) {
+      emitPresenceForConnection(operator.schoolId, operator.connectionId);
+    }
   });
 });
 

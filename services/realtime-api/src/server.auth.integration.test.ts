@@ -91,6 +91,258 @@ describe("server auth integration", () => {
     expect(response.status).toBe(403);
   });
 
+  it("returns auth-derived onboarding coach suggestions when no account is saved yet", async () => {
+    const token = makeTestToken({
+      sub: "setup-coach",
+      schoolId: "prefill-school",
+      role: "coach",
+      email: "coach@school.org",
+      name: "Coach Rivera"
+    });
+
+    const response = await fetch(`${API_BASE}/api/onboarding/account`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": "prefill-school"
+      }
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      account: null;
+      suggestedCoach?: { coachName?: string; coachEmail?: string };
+    };
+
+    expect(body.account).toBeNull();
+    expect(body.suggestedCoach?.coachName).toBe("Coach Rivera");
+    expect(body.suggestedCoach?.coachEmail).toBe("coach@school.org");
+  });
+
+  it("bootstraps the authenticated coach as the owner member and supports invited members", async () => {
+    const token = makeTestToken({
+      sub: "org-owner-1",
+      schoolId: "member-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "x-school-id": "member-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Member School Athletics",
+        teamName: "Member School",
+        season: "2026"
+      })
+    });
+
+    expect(completeResponse.status).toBe(201);
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "x-school-id": "member-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant@school.org",
+        role: "analyst"
+      })
+    });
+
+    expect(inviteResponse.status).toBe(201);
+
+    const membersResponse = await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": "member-school"
+      }
+    });
+
+    expect(membersResponse.status).toBe(200);
+    const body = await membersResponse.json() as {
+      currentMember?: { email: string; role: string; status: string } | null;
+      members: Array<{ email: string; role: string; status: string }>;
+    };
+
+    expect(body.currentMember?.email).toBe("owner@school.org");
+    expect(body.currentMember?.role).toBe("owner");
+    expect(body.currentMember?.status).toBe("active");
+    expect(body.members.some((member) => member.email === "assistant@school.org" && member.role === "analyst" && member.status === "invited")).toBe(true);
+  });
+
+  it("accepts an invited member on first authenticated request by matching email", async () => {
+    const ownerToken = makeTestToken({
+      sub: "invite-owner-1",
+      schoolId: "accept-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "accept-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Accept School Athletics",
+        teamName: "Accept School",
+        season: "2026"
+      })
+    });
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "accept-school"
+      },
+      body: JSON.stringify({
+        fullName: "Analyst Dana",
+        email: "dana@school.org",
+        role: "analyst"
+      })
+    });
+
+    expect(inviteResponse.status).toBe(201);
+
+    const invitedToken = makeTestToken({
+      sub: "analyst-user-1",
+      schoolId: "accept-school",
+      role: "coach",
+      email: "dana@school.org",
+      name: "Analyst Dana"
+    });
+
+    const membersResponse = await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${invitedToken}`,
+        "x-school-id": "accept-school"
+      }
+    });
+
+    expect(membersResponse.status).toBe(200);
+    const body = await membersResponse.json() as {
+      currentMember?: { email: string; authSubject?: string; status: string } | null;
+      members: Array<{ email: string; authSubject?: string; status: string }>;
+    };
+
+    expect(body.currentMember?.email).toBe("dana@school.org");
+    expect(body.currentMember?.status).toBe("active");
+    expect(body.members.some((member) => member.email === "dana@school.org" && member.authSubject === "analyst-user-1" && member.status === "active")).toBe(true);
+  });
+
+  it("restricts member management to org owners and protects the last owner", async () => {
+    const ownerToken = makeTestToken({
+      sub: "owner-guard-1",
+      schoolId: "guard-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Guard"
+    });
+
+    await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "guard-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Guard School Athletics",
+        teamName: "Guard School",
+        season: "2026"
+      })
+    });
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "guard-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant@school.org",
+        role: "coach"
+      })
+    });
+
+    const invited = await inviteResponse.json() as { member: { memberId: string } };
+    const assistantToken = makeTestToken({
+      sub: "assistant-guard-1",
+      schoolId: "guard-school",
+      role: "coach",
+      email: "assistant@school.org",
+      name: "Assistant Coach"
+    });
+
+    await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${assistantToken}`,
+        "x-school-id": "guard-school"
+      }
+    });
+
+    const forbiddenUpdate = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${assistantToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "guard-school"
+      },
+      body: JSON.stringify({ role: "owner", fullName: "Assistant Coach" })
+    });
+
+    expect(forbiddenUpdate.status).toBe(403);
+
+    const ownerMembersRes = await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "x-school-id": "guard-school"
+      }
+    });
+    const ownerMembersBody = await ownerMembersRes.json() as {
+      members: Array<{ memberId: string; email: string }>;
+    };
+    const ownerMember = ownerMembersBody.members.find((member) => member.email === "owner@school.org");
+    expect(ownerMember).toBeDefined();
+
+    const lastOwnerDemotion = await fetch(`${API_BASE}/api/org/members/${ownerMember?.memberId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "guard-school"
+      },
+      body: JSON.stringify({ role: "coach", fullName: "Owner Guard" })
+    });
+
+    expect(lastOwnerDemotion.status).toBe(400);
+
+    const selfDelete = await fetch(`${API_BASE}/api/org/members/${ownerMember?.memberId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "x-school-id": "guard-school"
+      }
+    });
+
+    expect(selfDelete.status).toBe(400);
+  });
+
   it("exposes prometheus security metrics to authorized write role", async () => {
     const token = makeTestToken({
       sub: "metrics-coach",

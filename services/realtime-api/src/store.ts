@@ -59,6 +59,79 @@ export interface RosterTeam {
   players: RosterPlayer[];
 }
 
+export interface OrganizationProfile {
+  schoolId?: string;
+  organizationName: string;
+  organizationSlug?: string;
+  coachName: string;
+  coachEmail: string;
+  teamName?: string;
+  season?: string;
+  completedAtIso?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface OrganizationAccount {
+  schoolId?: string;
+  organizationId: string;
+  organizationName: string;
+  organizationSlug?: string;
+  teamName?: string;
+  season?: string;
+  onboardingCompletedAtIso?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface CoachAccount {
+  schoolId?: string;
+  accountId: string;
+  organizationId: string;
+  fullName: string;
+  email: string;
+  role: "owner";
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface OnboardingAccountState {
+  organization: OrganizationAccount;
+  primaryCoach: CoachAccount;
+}
+
+export interface OnboardingAccountInput {
+  organization?: Partial<OrganizationAccount>;
+  primaryCoach?: Partial<CoachAccount>;
+}
+
+export interface OrganizationMember {
+  schoolId?: string;
+  memberId: string;
+  organizationId: string;
+  authSubject?: string;
+  fullName: string;
+  email: string;
+  role: "owner" | "coach" | "analyst";
+  status: "active" | "invited";
+  invitedAtIso?: string;
+  joinedAtIso?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface OrganizationMemberInput {
+  memberId?: string;
+  organizationId?: string;
+  authSubject?: string;
+  fullName?: string;
+  email?: string;
+  role?: OrganizationMember["role"];
+  status?: OrganizationMember["status"];
+  invitedAtIso?: string;
+  joinedAtIso?: string;
+}
+
 export interface CoachAiSettings {
   playingStyle: string;
   teamContext: string;
@@ -275,6 +348,9 @@ interface PersistedSnapshot {
   sessions: PersistedGameSession[];
   rosterTeams?: RosterTeam[];
   rosterTeamsBySchool?: Record<string, RosterTeam[]>;
+  organizationProfilesBySchool?: Record<string, OrganizationProfile>;
+  onboardingAccountsBySchool?: Record<string, OnboardingAccountState>;
+  organizationMembersBySchool?: Record<string, OrganizationMember[]>;
 }
 
 export interface TenantScope {
@@ -317,6 +393,9 @@ function buildGameSessionKey(gameId: string, schoolId: string): string {
 
 const sessions = new Map<string, GameSession>();
 const rosterTeamsBySchool = new Map<string, RosterTeam[]>();
+const organizationProfilesBySchool = new Map<string, OrganizationProfile>();
+const onboardingAccountsBySchool = new Map<string, OnboardingAccountState>();
+const organizationMembersBySchool = new Map<string, OrganizationMember[]>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -460,6 +539,195 @@ function setRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): RosterT
     : [];
   rosterTeamsBySchool.set(schoolId, normalized);
   return normalized;
+}
+
+function trimProfileField(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().slice(0, maxLength);
+}
+
+function buildOrganizationSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function sanitizeOrganizationProfile(
+  input: Partial<OrganizationProfile> | null | undefined,
+  schoolId: string,
+  existing?: OrganizationProfile | null,
+): OrganizationProfile {
+  const now = new Date().toISOString();
+  const organizationName = trimProfileField(input?.organizationName ?? existing?.organizationName, 160);
+  const coachName = trimProfileField(input?.coachName ?? existing?.coachName, 120);
+  const coachEmail = trimProfileField(input?.coachEmail ?? existing?.coachEmail, 160).toLowerCase();
+  const organizationSlug = trimProfileField(input?.organizationSlug ?? existing?.organizationSlug, 80) || buildOrganizationSlug(organizationName);
+
+  return {
+    schoolId,
+    organizationName,
+    organizationSlug: organizationSlug || undefined,
+    coachName,
+    coachEmail,
+    teamName: trimProfileField(input?.teamName ?? existing?.teamName, 120) || undefined,
+    season: trimProfileField(input?.season ?? existing?.season, 40) || undefined,
+    completedAtIso: trimProfileField(input?.completedAtIso ?? existing?.completedAtIso, 64) || undefined,
+    createdAtIso: existing?.createdAtIso ?? now,
+    updatedAtIso: now,
+  };
+}
+
+function buildOrganizationId(schoolId: string, organizationSlug: string): string {
+  return organizationSlug ? `org-${organizationSlug}` : `org-${schoolId}`;
+}
+
+function buildCoachAccountId(email: string, schoolId: string): string {
+  const localPart = email.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || schoolId;
+  return `coach-${localPart.slice(0, 48)}`;
+}
+
+function buildOrganizationMemberId(email: string, organizationId: string): string {
+  const localPart = email.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || organizationId;
+  return `member-${localPart.slice(0, 48)}`;
+}
+
+function sanitizeOnboardingAccountState(
+  input: OnboardingAccountInput | null | undefined,
+  schoolId: string,
+  existing?: OnboardingAccountState | null,
+): OnboardingAccountState {
+  const now = new Date().toISOString();
+  const organizationName = trimProfileField(
+    input?.organization?.organizationName ?? existing?.organization.organizationName,
+    160,
+  );
+  const organizationSlug = trimProfileField(
+    input?.organization?.organizationSlug ?? existing?.organization.organizationSlug,
+    80,
+  ) || buildOrganizationSlug(organizationName);
+  const organizationId = trimProfileField(
+    input?.organization?.organizationId ?? existing?.organization.organizationId,
+    80,
+  ) || buildOrganizationId(schoolId, organizationSlug);
+  const email = trimProfileField(
+    input?.primaryCoach?.email ?? existing?.primaryCoach.email,
+    160,
+  ).toLowerCase();
+
+  return {
+    organization: {
+      schoolId,
+      organizationId,
+      organizationName,
+      organizationSlug: organizationSlug || undefined,
+      teamName: trimProfileField(input?.organization?.teamName ?? existing?.organization.teamName, 120) || undefined,
+      season: trimProfileField(input?.organization?.season ?? existing?.organization.season, 40) || undefined,
+      onboardingCompletedAtIso: trimProfileField(
+        input?.organization?.onboardingCompletedAtIso ?? existing?.organization.onboardingCompletedAtIso,
+        64,
+      ) || undefined,
+      createdAtIso: existing?.organization.createdAtIso ?? now,
+      updatedAtIso: now,
+    },
+    primaryCoach: {
+      schoolId,
+      organizationId,
+      accountId: trimProfileField(input?.primaryCoach?.accountId ?? existing?.primaryCoach.accountId, 80) || buildCoachAccountId(email, schoolId),
+      fullName: trimProfileField(input?.primaryCoach?.fullName ?? existing?.primaryCoach.fullName, 120),
+      email,
+      role: "owner",
+      createdAtIso: existing?.primaryCoach.createdAtIso ?? now,
+      updatedAtIso: now,
+    },
+  };
+}
+
+function setOrganizationProfileForSchool(schoolId: string, profile: Partial<OrganizationProfile> | null | undefined): OrganizationProfile {
+  const existing = organizationProfilesBySchool.get(schoolId) ?? null;
+  const next = sanitizeOrganizationProfile(profile, schoolId, existing);
+  organizationProfilesBySchool.set(schoolId, next);
+  return next;
+}
+
+function setOnboardingAccountStateForSchool(
+  schoolId: string,
+  accountState: OnboardingAccountInput | null | undefined,
+): OnboardingAccountState {
+  const existing = onboardingAccountsBySchool.get(schoolId) ?? null;
+  const next = sanitizeOnboardingAccountState(accountState, schoolId, existing);
+  onboardingAccountsBySchool.set(schoolId, next);
+  return next;
+}
+
+function sanitizeOrganizationMember(
+  input: OrganizationMemberInput,
+  schoolId: string,
+  organizationId: string,
+  existing?: OrganizationMember | null,
+): OrganizationMember {
+  const now = new Date().toISOString();
+  const email = trimProfileField(input.email ?? existing?.email, 160).toLowerCase();
+  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner"
+    ? input.role
+    : existing?.role ?? "coach";
+  const status = input.status === "invited" || input.status === "active"
+    ? input.status
+    : existing?.status ?? "invited";
+
+  return {
+    schoolId,
+    organizationId,
+    memberId: trimProfileField(input.memberId ?? existing?.memberId, 80) || buildOrganizationMemberId(email, organizationId),
+    authSubject: trimProfileField(input.authSubject ?? existing?.authSubject, 120) || undefined,
+    fullName: trimProfileField(input.fullName ?? existing?.fullName, 120),
+    email,
+    role,
+    status,
+    invitedAtIso: trimProfileField(input.invitedAtIso ?? existing?.invitedAtIso, 64) || (status === "invited" ? now : undefined),
+    joinedAtIso: trimProfileField(input.joinedAtIso ?? existing?.joinedAtIso, 64) || (status === "active" ? now : undefined),
+    createdAtIso: existing?.createdAtIso ?? now,
+    updatedAtIso: now,
+  };
+}
+
+function setOrganizationMembersForSchool(schoolId: string, members: OrganizationMember[]): OrganizationMember[] {
+  const normalized = members
+    .map((member) => ({ ...member, schoolId: normalizeSchoolId(member.schoolId ?? schoolId) }))
+    .sort((left, right) => {
+      if (left.role !== right.role) {
+        return left.role === "owner" ? -1 : right.role === "owner" ? 1 : left.role.localeCompare(right.role);
+      }
+      return left.email.localeCompare(right.email);
+    });
+  organizationMembersBySchool.set(schoolId, normalized);
+  return normalized;
+}
+
+function upsertOrganizationMemberForSchool(
+  schoolId: string,
+  input: OrganizationMemberInput,
+  organizationId: string,
+): OrganizationMember {
+  const members = organizationMembersBySchool.get(schoolId) ?? [];
+  const email = trimProfileField(input.email, 160).toLowerCase();
+  const authSubject = trimProfileField(input.authSubject, 120);
+  const existing = members.find((member) =>
+    (authSubject && member.authSubject === authSubject)
+    || (email && member.email === email)
+    || (input.memberId && member.memberId === input.memberId)
+  ) ?? null;
+  const next = sanitizeOrganizationMember(input, schoolId, organizationId, existing);
+  const merged = existing
+    ? members.map((member) => (member.memberId === existing.memberId ? next : member))
+    : [...members, next];
+  setOrganizationMembersForSchool(schoolId, merged);
+  return next;
 }
 
 function combineInsights(session: GameSession): LiveInsight[] {
@@ -1240,6 +1508,9 @@ function buildPersistedSnapshot(): PersistedSnapshot {
       aiSettings: sanitizeCoachAiSettings(session.aiSettings)
     })),
     rosterTeamsBySchool: Object.fromEntries(rosterTeamsBySchool.entries()),
+    organizationProfilesBySchool: Object.fromEntries(organizationProfilesBySchool.entries()),
+    onboardingAccountsBySchool: Object.fromEntries(onboardingAccountsBySchool.entries()),
+    organizationMembersBySchool: Object.fromEntries(organizationMembersBySchool.entries()),
     // Backward compatibility for older readers expecting a top-level rosterTeams array.
     rosterTeams: getRosterTeamsForSchool(DEFAULT_SCHOOL_ID)
   };
@@ -1283,9 +1554,15 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedSessions = Array.isArray(payload) ? payload : payload.sessions;
   const persistedRosterTeams = Array.isArray(payload) ? [] : payload.rosterTeams;
   const persistedRosterTeamsBySchool = Array.isArray(payload) ? undefined : payload.rosterTeamsBySchool;
+  const persistedOrganizationProfiles = Array.isArray(payload) ? undefined : payload.organizationProfilesBySchool;
+  const persistedOnboardingAccounts = Array.isArray(payload) ? undefined : payload.onboardingAccountsBySchool;
+  const persistedOrganizationMembers = Array.isArray(payload) ? undefined : payload.organizationMembersBySchool;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
+  organizationProfilesBySchool.clear();
+  onboardingAccountsBySchool.clear();
+  organizationMembersBySchool.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -1293,6 +1570,24 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
     }
   } else if (Array.isArray(persistedRosterTeams)) {
     setRosterTeamsForSchool(DEFAULT_SCHOOL_ID, persistedRosterTeams);
+  }
+
+  if (persistedOrganizationProfiles && typeof persistedOrganizationProfiles === "object") {
+    for (const [schoolId, profile] of Object.entries(persistedOrganizationProfiles)) {
+      setOrganizationProfileForSchool(normalizeSchoolId(schoolId), profile);
+    }
+  }
+
+  if (persistedOnboardingAccounts && typeof persistedOnboardingAccounts === "object") {
+    for (const [schoolId, accountState] of Object.entries(persistedOnboardingAccounts)) {
+      setOnboardingAccountStateForSchool(normalizeSchoolId(schoolId), accountState);
+    }
+  }
+
+  if (persistedOrganizationMembers && typeof persistedOrganizationMembers === "object") {
+    for (const [schoolId, members] of Object.entries(persistedOrganizationMembers)) {
+      setOrganizationMembersForSchool(normalizeSchoolId(schoolId), Array.isArray(members) ? members : []);
+    }
   }
 
   for (const session of persistedSessions) {
@@ -1541,6 +1836,9 @@ export function resetAllData(scope?: TenantScope): void {
   if (!schoolId) {
     sessions.clear();
     rosterTeamsBySchool.clear();
+    organizationProfilesBySchool.clear();
+    onboardingAccountsBySchool.clear();
+    organizationMembersBySchool.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -1552,8 +1850,60 @@ export function resetAllData(scope?: TenantScope): void {
     }
   }
   rosterTeamsBySchool.delete(schoolId);
+  organizationProfilesBySchool.delete(schoolId);
+  onboardingAccountsBySchool.delete(schoolId);
+  organizationMembersBySchool.delete(schoolId);
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
+}
+
+export function getOrganizationProfileByScope(scope?: TenantScope): OrganizationProfile | null {
+  return organizationProfilesBySchool.get(resolveSchoolId(scope)) ?? null;
+}
+
+export function saveOrganizationProfile(profile: Partial<OrganizationProfile>, scope?: TenantScope): OrganizationProfile {
+  const schoolId = resolveSchoolId(scope);
+  const saved = setOrganizationProfileForSchool(schoolId, profile);
+  persistSessions();
+  return saved;
+}
+
+export function getOnboardingAccountStateByScope(scope?: TenantScope): OnboardingAccountState | null {
+  return onboardingAccountsBySchool.get(resolveSchoolId(scope)) ?? null;
+}
+
+export function saveOnboardingAccountState(accountState: OnboardingAccountInput, scope?: TenantScope): OnboardingAccountState {
+  const schoolId = resolveSchoolId(scope);
+  const saved = setOnboardingAccountStateForSchool(schoolId, accountState);
+  persistSessions();
+  return saved;
+}
+
+export function getOrganizationMembersByScope(scope?: TenantScope): OrganizationMember[] {
+  return organizationMembersBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function saveOrganizationMember(member: OrganizationMemberInput, scope?: TenantScope): OrganizationMember {
+  const schoolId = resolveSchoolId(scope);
+  const organizationId = trimProfileField(member.organizationId, 80)
+    || onboardingAccountsBySchool.get(schoolId)?.organization.organizationId
+    || `org-${schoolId}`;
+  const saved = upsertOrganizationMemberForSchool(schoolId, member, organizationId);
+  persistSessions();
+  return saved;
+}
+
+export function deleteOrganizationMember(memberId: string, scope?: TenantScope): boolean {
+  const schoolId = resolveSchoolId(scope);
+  const members = organizationMembersBySchool.get(schoolId) ?? [];
+  const next = members.filter((member) => member.memberId !== memberId);
+  if (next.length === members.length) {
+    return false;
+  }
+
+  setOrganizationMembersForSchool(schoolId, next);
+  persistSessions();
+  return true;
 }
 
 export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {

@@ -14,12 +14,13 @@
 param(
   [string]$ApiUrl   = "http://localhost:4000",
   [string]$ApiKey   = $env:BTA_API_KEY,
+  [string]$SchoolId = "smoke-school",
   [switch]$StartApi
 )
 
 Set-StrictMode -Version Latest
 
-$headers = @{ "Content-Type" = "application/json" }
+$headers = @{ "Content-Type" = "application/json"; "x-school-id" = $SchoolId }
 if ($ApiKey) { $headers["x-api-key"] = $ApiKey }
 
 $pass = 0
@@ -67,8 +68,29 @@ function InvokeRaw([string]$method, [string]$path, $body = $null) {
   try {
     return Invoke-WebRequest @params
   } catch {
-    return $_.Exception.Response
+    $response = $_.Exception.Response
+    if ($response) {
+      return $response
+    }
+
+    return [pscustomobject]@{ StatusCode = 0 }
   }
+}
+
+function GetStatusCode($response) {
+  if ($null -eq $response) {
+    return 0
+  }
+
+  if ($response.PSObject.Properties.Name -contains "StatusCode") {
+    try {
+      return [int]$response.StatusCode
+    } catch {
+      return 0
+    }
+  }
+
+  return 0
 }
 
 # -- Wait for API if needed ----------------------------------------------------
@@ -150,8 +172,9 @@ $events = @(
 $submitted = 0
 foreach ($ev in $events) {
   $r = InvokeRaw "POST" "/api/games/$GAME_ID/events" $ev
-  if ($r -and [int]$r.StatusCode -in 200,201) { $submitted++ }
-  else { Fail "POST event type=$($ev.type) failed (HTTP $($r.StatusCode))" }
+  $statusCode = GetStatusCode $r
+  if ($statusCode -in 200,201) { $submitted++ }
+  else { Fail "POST event type=$($ev.type) failed (HTTP $statusCode)" }
 }
 if ($submitted -eq $events.Count) { Ok "Submitted $submitted/$($events.Count) events" }
 
@@ -196,14 +219,15 @@ Step "DELETE last event (undo)"
 $lastEvent = $eventList | Sort-Object sequence | Select-Object -Last 1
 if ($lastEvent) {
   $del = InvokeRaw "DELETE" "/api/games/$GAME_ID/events/$($lastEvent.id)"
-  if ($del -and [int]$del.StatusCode -in 200,204) {
+  $deleteStatusCode = GetStatusCode $del
+  if ($deleteStatusCode -in 200,204) {
     Ok "DELETE /api/games/$GAME_ID/events/$($lastEvent.id) -> ok"
     $afterDel = Invoke "GET" "/api/games/$GAME_ID/events"
     $afterDelCount = CountItems $afterDel
     if ($afterDelCount -eq ($events.Count - 1)) { Ok "Event count after delete = $afterDelCount" }
     else { Fail "Expected $($events.Count - 1) events post-delete, got $afterDelCount" }
   } else {
-    Fail "DELETE event failed (HTTP $($del.StatusCode))"
+    Fail "DELETE event failed (HTTP $deleteStatusCode)"
   }
 }
 

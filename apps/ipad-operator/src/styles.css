@@ -53,7 +53,7 @@ html, body {
 }
 
 /* ================================================================
-   LEFT PANEL â€“ Scoring
+  LEFT PANEL - Scoring
    ================================================================ */
 .left-panel {
   gap: 0.75rem;
@@ -204,7 +204,7 @@ html, body {
 .icon-btn:hover { background: rgba(255,255,255,0.08); color: #e8eaf0; }
 
 /* ================================================================
-   CENTER PANEL â€“ Feed
+  CENTER PANEL - Feed
    ================================================================ */
 .center-panel {
   border-right: 1px solid rgba(255,255,255,0.07);
@@ -1021,7 +1021,7 @@ html, body {
 }
 
 /* ================================================================
-   RIGHT PANEL â€“ Stats
+  RIGHT PANEL - Stats
    ================================================================ */
 .right-panel {
   justify-content: space-between;

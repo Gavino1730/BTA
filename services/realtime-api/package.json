@@ -6,6 +6,7 @@
   "types": "dist/server.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
     "test": "vitest run --sequence.concurrent false",
     "dev": "tsx watch src/server.ts",
     "validate:env": "tsx src/validate-env.ts"

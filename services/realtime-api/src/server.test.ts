@@ -138,6 +138,13 @@ describe("school tenancy", () => {
 });
 
 describe("unified stats endpoints", () => {
+  it("redirects legacy stats dashboard pages to the coach workspace", async () => {
+    const response = await fetch(`${API_BASE}/settings`, { redirect: "manual" });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("http://localhost:5173/stats/settings");
+  });
+
   it("serves season stats, players, and live context from realtime-api state", async () => {
     await resetSchool("stats-school");
 
@@ -315,6 +322,79 @@ describe("unified stats endpoints", () => {
       headers: { "x-school-id": "compat-school" }
     });
     expect(missingPlayerRes.status).toBe(404);
+  });
+
+  it("persists onboarding profile and setup completion state", async () => {
+    await resetSchool("onboarding-school");
+
+    const completeRes = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "onboarding-school" },
+      body: JSON.stringify({
+        organizationName: "Valley Catholic Athletics",
+        coachName: "Coach Rivera",
+        coachEmail: "coach@valleycatholic.org",
+        teamName: "Valley Catholic",
+        season: "2026",
+        teamColor: "#1d4ed8",
+        playingStyle: "Control tempo",
+        roster: [
+          { name: "Jordan Bell", number: "4", position: "G", grade: "11" },
+          { name: "Aiden Cole", number: "12", position: "F", grade: "12" }
+        ]
+      })
+    });
+
+    expect(completeRes.status).toBe(201);
+
+    const [stateRes, profileRes, accountRes, teamsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/onboarding/state`, { headers: { "x-school-id": "onboarding-school" } }),
+      fetch(`${API_BASE}/api/onboarding/profile`, { headers: { "x-school-id": "onboarding-school" } }),
+      fetch(`${API_BASE}/api/onboarding/account`, { headers: { "x-school-id": "onboarding-school" } }),
+      fetch(`${API_BASE}/api/teams`, { headers: { "x-school-id": "onboarding-school" } }),
+    ]);
+
+    expect(stateRes.status).toBe(200);
+    expect(profileRes.status).toBe(200);
+    expect(accountRes.status).toBe(200);
+    expect(teamsRes.status).toBe(200);
+
+    const stateBody = await stateRes.json() as { completed: boolean; hasAccount: boolean; hasProfile: boolean; hasTeam: boolean };
+    const profileBody = await profileRes.json() as {
+      profile: {
+        organizationName: string;
+        coachName: string;
+        coachEmail: string;
+        completedAtIso?: string;
+      } | null;
+    };
+    const accountBody = await accountRes.json() as {
+      account: {
+        organization: { organizationName: string; teamName?: string; onboardingCompletedAtIso?: string };
+        primaryCoach: { fullName: string; email: string; role: string };
+      } | null;
+    };
+    const teamsBody = await teamsRes.json() as {
+      teams: Array<{ name: string; season: string; players: Array<{ name: string }> }>;
+    };
+
+    expect(stateBody.completed).toBe(true);
+    expect(stateBody.hasAccount).toBe(true);
+    expect(stateBody.hasProfile).toBe(true);
+    expect(stateBody.hasTeam).toBe(true);
+    expect(profileBody.profile?.organizationName).toBe("Valley Catholic Athletics");
+    expect(profileBody.profile?.coachName).toBe("Coach Rivera");
+    expect(profileBody.profile?.coachEmail).toBe("coach@valleycatholic.org");
+    expect(Boolean(profileBody.profile?.completedAtIso)).toBe(true);
+    expect(accountBody.account?.organization.organizationName).toBe("Valley Catholic Athletics");
+    expect(accountBody.account?.organization.teamName).toBe("Valley Catholic");
+    expect(Boolean(accountBody.account?.organization.onboardingCompletedAtIso)).toBe(true);
+    expect(accountBody.account?.primaryCoach.fullName).toBe("Coach Rivera");
+    expect(accountBody.account?.primaryCoach.email).toBe("coach@valleycatholic.org");
+    expect(accountBody.account?.primaryCoach.role).toBe("owner");
+    expect(teamsBody.teams[0]?.name).toBe("Valley Catholic");
+    expect(teamsBody.teams[0]?.season).toBe("2026");
+    expect(teamsBody.teams[0]?.players).toHaveLength(2);
   });
 
   it("supports game edit and reset compatibility routes", async () => {

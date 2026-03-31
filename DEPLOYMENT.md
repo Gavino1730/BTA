@@ -12,6 +12,22 @@ Run all checks from repo root:
 
 Do not deploy if any command fails.
 
+## Recommended Hosting Split
+
+Use the stack as follows for live gym scorekeeping and coach fanout:
+
+- `services/realtime-api` -> **Railway**
+- `apps/coach-dashboard` -> **Vercel**
+- `apps/ipad-operator` -> **Vercel**
+- `DATABASE_URL` + JWT auth -> **Supabase**
+
+### Platform-specific notes
+
+- **Railway**: deploy from the repo root and start the API with `npm run start:api` after `npm run build`.
+- **Vercel (Coach)**: set the root directory to `apps/coach-dashboard` and configure `VITE_API` to the Railway API URL.
+- **Vercel (Operator)**: set the root directory to `apps/ipad-operator` and configure `VITE_API` plus `VITE_COACH_DASHBOARD`.
+- **Supabase**: use the project Postgres connection string for `DATABASE_URL` and the auth issuer/JWKS values for JWT verification.
+
 ## Required Environment Contract (Production)
 
 ### Tenant and Auth

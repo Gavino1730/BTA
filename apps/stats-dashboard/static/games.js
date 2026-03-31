@@ -831,7 +831,7 @@ async function showGameDetail(game) {
         try {
             const res = await fetch(`/api/ai/game-analysis/${game.gameId}`);
             if (!res.ok) {
-                // AI unavailable (503) or other error â€” hide section silently
+                // AI unavailable (503) or other error - hide section silently
                 if (recapSection) recapSection.style.display = 'none';
                 return;
             }

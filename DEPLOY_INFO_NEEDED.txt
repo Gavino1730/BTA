@@ -1,0 +1,124 @@
+BTA DEPLOY INFO NEEDED
+======================
+
+Fill in or confirm the items below and send them back.
+
+1) SUPABASE
+-----------
+Project URL:
+https://qstubtvexkfwmimftgub.supabase.co
+
+Database URL:
+postgresql://postgres:[YOUR-PASSWORD]@db.qstubtvexkfwmimftgub.supabase.co:5432/postgres
+
+Actual DB password inserted in Railway?
+[ ] Yes
+[x] No
+
+Using JWT auth from Supabase?
+[x] Yes
+[ ] No
+
+JWT school claim path:
+app_metadata.schoolId
+
+JWT role claim path:
+app_metadata.role
+
+Supabase-derived JWT values for Railway:
+BTA_JWT_ISSUER=https://qstubtvexkfwmimftgub.supabase.co/auth/v1
+BTA_JWT_AUDIENCE=authenticated
+BTA_JWT_JWKS_URI=https://qstubtvexkfwmimftgub.supabase.co/auth/v1/.well-known/jwks.json
+
+
+2) RAILWAY
+----------
+Railway project created?
+[ ] Yes
+[ ] No
+
+Railway API URL:
+______________________________
+
+Custom API domain (if any):
+______________________________
+
+Did /health load successfully?
+[ ] Yes
+[ ] No
+
+
+3) VERCEL - COACH DASHBOARD
+---------------------------
+Vercel coach project created?
+[ ] Yes
+[ ] No
+
+Coach deploy URL:
+______________________________
+
+Custom coach domain:
+______________________________
+
+Does the coach app load?
+[ ] Yes
+[ ] No
+
+
+4) VERCEL - IPAD OPERATOR
+-------------------------
+Vercel operator project created?
+[ ] Yes
+[ ] No
+
+Operator deploy URL:
+______________________________
+
+Custom operator domain:
+______________________________
+
+Does the operator app load?
+[ ] Yes
+[ ] No
+
+
+5) DOMAINS / FINAL URLS
+-----------------------
+API domain:
+______________________________
+
+Coach domain:
+______________________________
+
+Operator domain:
+______________________________
+
+
+6) OPTIONAL API KEY FALLBACK
+----------------------------
+Using temporary API key fallback?
+[ ] Yes
+[x] No
+
+If yes, set in Railway/Vercel directly.
+Do not send secrets unless necessary.
+
+
+7) FINAL LIVE TEST
+------------------
+Operator can enter events?
+[ ] Yes
+[ ] No
+
+Coach dashboard updates live?
+[ ] Yes
+[ ] No
+
+Data persists correctly?
+[ ] Yes
+[ ] No
+
+Notes / anything blocked:
+- Hosting decision already chosen: Railway for `services/realtime-api`, Vercel for `apps/coach-dashboard` and `apps/ipad-operator`, Supabase for Postgres + JWT auth.
+- Remaining items are the actual deployed Railway/Vercel URLs, custom domains, and final live validation.
+- DB password should be inserted directly into Railway, not shared in chat.

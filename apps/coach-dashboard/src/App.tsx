@@ -203,10 +203,24 @@ interface RotationWatchNote {
 }
 
 interface PresenceStatus {
-  deviceId: string;
+  deviceId: string | null;
+  connectionId?: string | null;
   online: boolean;
   gameId: string | null;
   lastSeenIso: string | null;
+}
+
+function normalizeConnectionId(value: string | null | undefined): string {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 40);
+}
+
+function generateConnectionId(): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `conn-${Date.now().toString(36)}-${rand}`;
 }
 
 type CoachInsightFocus =
@@ -291,7 +305,7 @@ function extractHistoricalContextFromPrompt(prompt: string): string {
     .trim();
 }
 
-// â”€â”€ Roster Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Roster Builder
 // Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 
@@ -366,11 +380,10 @@ function slugifyTeamName(name: string): string {
 function newPlayerId(): string {
   return `player-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Shared app constants
 
 const defaultHost = window.location.hostname || "localhost";
 const apiBase = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
-const statsBase = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:4000`;
 const operatorBase = import.meta.env.VITE_OPERATOR_CONSOLE ?? `http://${defaultHost}:5174`;
 const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 const SCHOOL_ID: string = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
@@ -406,6 +419,21 @@ export function App() {
     }
     return localStorage.getItem("coach-bound-device-id") ?? "device1";
   });
+  const [connectionId, setConnectionId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = normalizeConnectionId(params.get("connectionId"));
+    if (fromUrl) {
+      localStorage.setItem("coach-bound-connection-id", fromUrl);
+      return fromUrl;
+    }
+    return normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
+  });
+
+  useEffect(() => {
+    if (!connectionId) {
+      setConnectionId(generateConnectionId());
+    }
+  }, [connectionId]);
   const [gameId, setGameId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("gameId") ?? "";
@@ -438,16 +466,38 @@ export function App() {
   );
   const operatorConsoleUrl = useMemo(() => {
     const params = new URLSearchParams();
-    if (deviceId) params.set("deviceId", deviceId);
+    if (connectionId) {
+      params.set("connectionId", connectionId);
+    }
     if (gameId) params.set("gameId", gameId);
     if (setupNames.myTeamId) params.set("myTeamId", setupNames.myTeamId);
     if (setupNames.myTeamName) params.set("myTeamName", setupNames.myTeamName);
     if (setupNames.opponentName) params.set("opponent", setupNames.opponentName);
     if (setupNames.vcSide) params.set("vcSide", setupNames.vcSide);
     return `${operatorBase.replace(/\/$/, "")}/?${params.toString()}`;
-  }, [deviceId, gameId, setupNames]);
+  }, [connectionId, gameId, setupNames]);
 
-  // â”€â”€ Roster Builder state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  useEffect(() => {
+    try {
+      localStorage.setItem("coach-bound-device-id", deviceId);
+    } catch {
+      // ignore storage issues
+    }
+  }, [deviceId]);
+
+  useEffect(() => {
+    try {
+      if (connectionId) {
+        localStorage.setItem("coach-bound-connection-id", connectionId);
+      } else {
+        localStorage.removeItem("coach-bound-connection-id");
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, [connectionId]);
+
+  // Roster Builder state
   const [rosterTeams, setRosterTeamsState] = useState<RosterTeam[]>(loadRosterTeams);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
@@ -483,19 +533,6 @@ export function App() {
         }
       } catch {
         // Keep local fallback when API is unavailable.
-      }
-
-      try {
-        const statsRes = await fetch(`${statsBase}/api/roster-sync`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-          body: JSON.stringify({ teams: next, preferredTeamId }),
-        });
-        if (!statsRes.ok) {
-          console.warn("Roster sync to stats dashboard failed", statsRes.status, statsBase);
-        }
-      } catch {
-        console.warn("Roster sync request to stats dashboard failed", statsBase);
       }
     })();
   }
@@ -652,8 +689,12 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let changed = false;
-    if (params.get("deviceId") !== deviceId) {
-      params.set("deviceId", deviceId);
+    if (params.get("connectionId") !== connectionId) {
+      if (connectionId) {
+        params.set("connectionId", connectionId);
+      } else {
+        params.delete("connectionId");
+      }
       changed = true;
     }
     if (params.get("gameId") !== gameId) {
@@ -668,7 +709,7 @@ export function App() {
     if (changed) {
       window.history.replaceState({}, "", `?${params.toString()}`);
     }
-  }, [deviceId, gameId]);
+  }, [connectionId, gameId]);
 
   useEffect(() => {
     const socket = io(apiBase, {
@@ -680,7 +721,7 @@ export function App() {
     // quickly if the operator console reconnects after a temporary network interruption.
     let pollInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
       if (socket.connected) {
-        socket.emit("join:coach", { deviceId });
+        socket.emit("join:coach", { connectionId });
       }
     }, 5000);
 
@@ -693,7 +734,7 @@ export function App() {
 
     socket.on("connect", () => {
       setServerConnected(true);
-      socket.emit("join:coach", { deviceId });
+      socket.emit("join:coach", { connectionId });
     });
 
     socket.on("disconnect", () => {
@@ -703,10 +744,14 @@ export function App() {
       setGameId("");
     });
 
-    socket.emit("join:coach", { deviceId });
+    socket.emit("join:coach", { connectionId });
 
     function handlePresence(status: PresenceStatus) {
-      if (!status || status.deviceId !== deviceId) {
+      if (!status) {
+        return;
+      }
+
+      if (!connectionId || status.connectionId !== connectionId) {
         return;
       }
 
@@ -718,7 +763,7 @@ export function App() {
       } else {
         setState(null);
         setGameId("");
-        setDashboardStatus(`Waiting for device ${deviceId}`);
+        setDashboardStatus(`Waiting for connection ${connectionId}`);
       }
     }
 
@@ -747,7 +792,7 @@ export function App() {
       socket.off("roster:teams");
       socket.disconnect();
     };
-  }, [deviceId]);
+  }, [connectionId]);
 
   useEffect(() => {
     if (!gameId) {
@@ -755,7 +800,7 @@ export function App() {
     }
 
     // Clear ALL game-specific state immediately so the dashboard shows a clean
-    // slate while new game data loads â€” no stale scores, events, AI chat,
+    // slate while new game data loads - no stale scores, events, AI chat,
     // or device-connection carry-over from the previous game.
     setState(null);
     setInsights([]);
@@ -766,7 +811,7 @@ export function App() {
     setPromptPreview(null);
     setAiRefreshError("");
     setDeviceConnected(false);
-    setDashboardStatus("Loading new gameâ€¦");
+    setDashboardStatus("Loading new game...");
     setIsLoading(true);
 
     async function hydrate() {
@@ -877,9 +922,8 @@ export function App() {
           headers: apiKeyHeader(),
         });
         if (!response.ok) {
-          // Seed defaults from stats dashboard
           try {
-            const seed = await fetch(`${statsBase}/api/ai-settings`, {
+            const seed = await fetch(`${apiBase}/api/ai-settings`, {
               headers: apiKeyHeader(),
             });
             if (seed.ok) {
@@ -888,7 +932,7 @@ export function App() {
               if (!cancelled) {
                 setAiSettings(next);
                 setAiSettingsDraft(next);
-                setAiSettingsStatus("Loaded team defaults from stats dashboard.");
+                setAiSettingsStatus("Loaded team defaults from the unified coach platform.");
               }
               return;
             }
@@ -945,12 +989,6 @@ export function App() {
       setAiSettingsDraft(saved);
       setAiSettingsStatus("AI settings saved and applied to live coaching insights.");
       setPromptPreviewStatus("Settings saved. Refresh prompt preview to inspect current AI input.");
-      // Sync to stats dashboard so all surfaces share the same context
-      fetch(`${statsBase}/api/ai-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-        body: JSON.stringify(aiSettingsDraft),
-      }).catch(() => { /* fire-and-forget */ });
     } catch {
       setAiSettingsStatus("Save failed: could not reach realtime API.");
     }
@@ -1264,11 +1302,11 @@ export function App() {
 
   function displayTeamName(teamId: string): string {
     const canonicalId = canonicalTeamId(teamId);
-    // Prefer the live game-state opponent name over the URL param â€” the URL may carry
+    // Prefer the live game-state opponent name over the URL param - the URL may carry
     // a stale value from a previous game that was bookmarked or scanned weeks ago.
     const opponentName = state?.opponentName || setupNames.opponentName || "";
 
-    // When myTeamId is available in the URL it is the definitive check â€”
+    // When myTeamId is available in the URL it is the definitive check -
     // do NOT mix in teams[0] which depends on vcSide and can mislabel both
     // slots as "our team" when vcSide is wrong.  Fall back to vcSide-based
     // heuristics only when myTeamId was not provided.
@@ -1286,7 +1324,7 @@ export function App() {
          (Boolean(ourRawSideId) && teamId === ourRawSideId));
 
     if (isOurTeam) {
-      // Only return myTeamName if it doesn't duplicate the opponent nameâ€”if both would
+      // Only return myTeamName if it doesn't duplicate the opponent name - if both would
       // show the same label, prefer a roster label or a title-cased fallback so the two
       // sections are visually distinct.
       const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
@@ -1558,7 +1596,7 @@ export function App() {
     }
 
     // When myTeamId isn't in the URL, prefer the team whose starting lineup is
-    // seeded in the game state â€” avoids defaulting to the opponent's (home) slot.
+    // seeded in the game state - avoids defaulting to the opponent's (home) slot.
     const lineupEntry = Object.entries(state?.activeLineupsByTeam ?? {})
       .find(([, lineup]) => lineup.length > 0);
     if (lineupEntry) {
@@ -1958,7 +1996,7 @@ export function App() {
             <li><button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI</button></li>
             <li><button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Settings</button></li>
             <li><a href={operatorConsoleUrl} className="coach-nav-ext-link">Score Operator</a></li>
-            <li><a href={statsBase} className="coach-nav-ext-link" target="_blank" rel="noopener noreferrer">Stats â†—</a></li>
+            <li><a href="/stats" className="coach-nav-ext-link">Stats</a></li>
           </ul>
           <button
             onClick={() => setShowTutorial(true)}
@@ -1967,17 +2005,16 @@ export function App() {
           >?</button>
             <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
               <span className="connection-pill-status">
-                {deviceConnected ? "Device live" : serverConnected ? "Waiting" : "Offline"}
+                {deviceConnected ? "Operator live" : serverConnected ? "Waiting" : "Offline"}
               </span>
               <label className="connection-pill-editor" title="Operator device identifier">
-                <span className="connection-pill-label">Device</span>
+                <span className="connection-pill-label">Connection</span>
                 <input
                   className="connection-pill-input"
-                  value={deviceId}
-                  onChange={(event) => setDeviceId(event.target.value)}
-                  onBlur={(event) => setDeviceId(event.target.value.trim())}
-                  placeholder="device-1"
-                  aria-label="Device ID"
+                  value={connectionId}
+                  readOnly
+                  placeholder="conn-..."
+                  aria-label="Connection ID"
                 />
               </label>
             </div>
@@ -1987,10 +2024,10 @@ export function App() {
     <div className="page">
       {!gameId && activePage !== "settings" && (
         <div className="idle-screen">
-          <div className="idle-screen-icon">â¸</div>
+          <div className="idle-screen-icon">||</div>
           <p className="idle-screen-title">No Active Game</p>
           <p className="idle-screen-sub">
-            {serverConnected ? "Waiting for the operator to start a gameâ€¦" : "Not connected to server"}
+            {serverConnected ? "Waiting for the operator to start a game..." : "Not connected to server"}
           </p>
         </div>
       )}
@@ -2032,7 +2069,7 @@ export function App() {
                   borderColor: `${teamColor}99`,
                 } : undefined}
               >
-                {/* â”€â”€ Header â”€â”€ */}
+                {/* Header */}
                 <header className="score-item-header">
                   <div className="score-item-title">
                     <h3>{displayTeamName(teamId)}</h3>
@@ -2040,11 +2077,11 @@ export function App() {
                   </div>
                   <div className="score-block">
                     <p className="score">{td?.score ?? 0}</p>
-                    <span className="score-period-label">{state?.currentPeriod ?? "â€”"}</span>
+                    <span className="score-period-label">{state?.currentPeriod ?? "-"}</span>
                   </div>
                 </header>
 
-                {/* â”€â”€ Fouls + Bonus + Timeouts row â”€â”€ */}
+                {/* Fouls + Bonus + Timeouts row */}
                 <div className="sb-urgency-row">
                   <div className={`sb-foul-block ${foulUrgency}`}>
                     <span className="sb-urgency-label">FOULS</span>
@@ -2079,7 +2116,7 @@ export function App() {
                   </div>
                 </div>
 
-                {/* â”€â”€ Quick-stat grid â”€â”€ */}
+                {/* Quick-stat grid */}
                 <div className="sb-stat-grid">
                   <div className="sb-stat-cell">
                     <span className="sb-stat-label">FG</span>
@@ -2110,7 +2147,7 @@ export function App() {
                   </div>
                 </div>
 
-                {/* â”€â”€ Lineup â”€â”€ */}
+                {/* Lineup */}
                 <div className="sb-lineup-row">
                   <span className="sb-section-label">ON COURT</span>
                   <div className="sb-lineup-chips">
@@ -2125,11 +2162,11 @@ export function App() {
                   </div>
                 </div>
 
-                {/* â”€â”€ Leaders â”€â”€ */}
+                {/* Leaders */}
                 <div className="sb-leaders-row">
                   {leadersByTeam[teamId]?.scoringLeader ? (
                     <div className="sb-leader-item sb-leader-scorer">
-                      <span className="sb-leader-icon">â˜…</span>
+                      <span className="sb-leader-icon">*</span>
                       <span>
                         {displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)}
                         <strong> {leadersByTeam[teamId].scoringLeader?.points} pts</strong>
@@ -2138,7 +2175,7 @@ export function App() {
                   ) : null}
                   {leadersByTeam[teamId]?.foulLeader ? (
                     <div className={`sb-leader-item sb-leader-fouls ${leadersByTeam[teamId].foulLeader.fouls >= 4 ? "sb-leader-fouls-danger" : ""}`}>
-                      <span className="sb-leader-icon">âš </span>
+                      <span className="sb-leader-icon">!</span>
                       <span>
                         {formatFoulTroubleLabel(
                           displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
@@ -2362,7 +2399,7 @@ export function App() {
                             <td>{line.turnovers}</td>
                             <td>
                               <span className={`foul-badge${line.fouls >= 5 ? " foul-badge-out" : line.fouls >= 4 ? " foul-badge-danger" : line.fouls >= 3 ? " foul-badge-warn" : " foul-badge-safe"}`}>
-                                {line.fouls}{line.fouls >= 5 ? " OUT" : line.fouls >= 4 ? " âš " : ""}
+                                {line.fouls}{line.fouls >= 5 ? " OUT" : line.fouls >= 4 ? " !" : ""}
                               </span>
                             </td>
                           </tr>
@@ -2689,7 +2726,7 @@ export function App() {
       </section>
       </>}
 
-      {/* Roster page removed â€” roster management moved to Stats Dashboard */}
+      {/* Roster page removed - roster management moved to Stats Dashboard */}
 
       {activePage === "settings" &&
       <>
@@ -2709,20 +2746,28 @@ export function App() {
 
         <div className="settings-device-row">
           <label className="settings-device-label">
-            Device ID
+            Connection ID
             <input
               className="settings-device-input"
-              value={deviceId}
-              onChange={(event) => setDeviceId(event.target.value)}
-              placeholder="e.g. device-1"
+              value={connectionId}
+              readOnly
+              placeholder="e.g. conn-abc123"
             />
           </label>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setConnectionId(generateConnectionId())}
+            style={{ alignSelf: "end" }}
+          >
+            Generate Connection ID
+          </button>
         </div>
 
         <div className="form-grid">
           {rosterTeams.length > 0 && rosterTeams.map((team) => (
             <label key={team.id} style={{ gridColumn: "1 / -1" }}>
-              Coaching Style For AI{rosterTeams.length > 1 ? ` â€” ${team.name}` : ""}
+              Coaching Style For AI{rosterTeams.length > 1 ? ` - ${team.name}` : ""}
               <textarea
                 className="settings-textarea"
                 defaultValue={team.coachStyle ?? ""}
@@ -2802,7 +2847,7 @@ export function App() {
           {promptPreview ? (
             <>
               <p className="text-muted">
-                Model: {promptPreview.model} â€¢ Recent events: {promptPreview.recentEventCount}
+                Model: {promptPreview.model} | Recent events: {promptPreview.recentEventCount}
               </p>
               <div className="prompt-preview-historical-card">
                 <strong>Historical Context (Season + Recent Games)</strong>
@@ -2826,10 +2871,10 @@ export function App() {
       </section>
 
       <section className="card" style={{border:'1.5px solid #7f1d1d', marginTop:'1rem'}}>
-        <h2 style={{color:'#f87171'}}>âš ï¸ Clear Local Data</h2>
+        <h2 style={{color:'#f87171'}}>Warning: Clear Local Data</h2>
         <p className="text-muted" style={{marginBottom:'1rem'}}>
           Removes all data stored in this browser: roster, AI settings, and cached game state.
-          This only affects this device. Use the Stats Dashboard <strong>Settings â†’ Factory Reset</strong> to wipe server data.
+          This only affects this device. Use the Stats Dashboard <strong>Settings to Factory Reset</strong> to wipe server data.
         </p>
         <button
           style={{background:'#7f1d1d',color:'#fca5a5',border:'none',padding:'8px 18px',borderRadius:'8px',cursor:'pointer',fontWeight:600}}
