@@ -2004,13 +2004,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   return (
     <>
       {showTutorial && <TutorialOverlay onDismiss={() => onDismissTutorial?.()} />}
-      <div className="live-subnav">
-        <button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Scoreboard</button>
-        <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
-        <button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Game Settings</button>
-      </div>
-
-    <div className="page">
+      <div className="page">
+        <div className="live-subnav">
+          <button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Scoreboard</button>
+          <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
+          <button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Game Settings</button>
+        </div>
       {!gameId && activePage !== "settings" && (
         <div className="idle-screen">
           <div className="idle-screen-icon">||</div>

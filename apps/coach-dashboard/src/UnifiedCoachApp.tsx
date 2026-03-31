@@ -3,7 +3,7 @@ import { App as LiveDashboardApp, type AppConnectionInfo } from "./App.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, operatorBase } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -11,15 +11,30 @@ import { TeamSettingsPage } from "./TeamSettingsPage.js";
 import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 
+function normalizeConnectionId(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function buildOperatorConsoleUrl(connectionId: string): string {
+  const params = new URLSearchParams(window.location.search);
+  const storedConnectionId = normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
+  const resolvedConnectionId = normalizeConnectionId(params.get("connectionId")) || connectionId || storedConnectionId;
+  if (resolvedConnectionId) {
+    params.set("connectionId", resolvedConnectionId);
+  }
+  return `${operatorBase.replace(/\/+$/, "")}/?${params.toString()}`;
+}
+
 export function UnifiedCoachApp() {
+  const initialConnectionId = normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId")) || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
   const [connectionInfo, setConnectionInfo] = useState<AppConnectionInfo>({
     deviceConnected: false,
     serverConnected: false,
-    connectionId: "",
-    operatorConsoleUrl: "",
+    connectionId: initialConnectionId,
+    operatorConsoleUrl: buildOperatorConsoleUrl(initialConnectionId),
   });
 
   useEffect(() => {
@@ -80,7 +95,10 @@ export function UnifiedCoachApp() {
   }, []);
 
   const handleConnectionChange = useCallback((info: AppConnectionInfo) => {
-    setConnectionInfo(info);
+    setConnectionInfo({
+      ...info,
+      operatorConsoleUrl: info.operatorConsoleUrl || buildOperatorConsoleUrl(info.connectionId),
+    });
   }, []);
 
   function navigate(nextPath: string) {
@@ -117,6 +135,7 @@ export function UnifiedCoachApp() {
   }
 
   const isLive = route === "live";
+  const operatorConsoleUrl = connectionInfo.operatorConsoleUrl || buildOperatorConsoleUrl(connectionInfo.connectionId);
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
     return (
@@ -148,21 +167,17 @@ export function UnifiedCoachApp() {
             {navBtn("Trends", "stats-trends", "/stats/trends")}
             {navBtn("AI Insights", "stats-insights", "/stats/insights")}
             {navBtn("Settings", "stats-settings", "/stats/settings")}
-            {isLive && connectionInfo.operatorConsoleUrl && (
-              <li>
-                <a href={connectionInfo.operatorConsoleUrl} className="coach-nav-ext-link">
-                  Score Operator
-                </a>
-              </li>
-            )}
           </ul>
-          <button
-            type="button"
-            onClick={() => setShowTutorial(true)}
-            title="Help &amp; Tutorial"
-            style={{ background: "transparent", border: "1.5px solid #4f8cff", color: "#4f8cff", borderRadius: "50%", width: "28px", height: "28px", fontSize: "14px", fontWeight: 700, cursor: "pointer", flexShrink: 0, marginLeft: "8px", lineHeight: 1 }}
-          >?</button>
-          {isLive && (
+          <div className="coach-nav-actions">
+            <a href={operatorConsoleUrl} className="coach-nav-ext-link">
+              Score Operator
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowTutorial(true)}
+              title="Help &amp; Tutorial"
+              style={{ background: "transparent", border: "1.5px solid #4f8cff", color: "#4f8cff", borderRadius: "50%", width: "28px", height: "28px", fontSize: "14px", fontWeight: 700, cursor: "pointer", flexShrink: 0, lineHeight: 1 }}
+            >?</button>
             <div className={`connection-pill ${connectionInfo.deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
               <span className="connection-pill-status">
                 {connectionInfo.deviceConnected ? "Operator live" : connectionInfo.serverConnected ? "Waiting" : "Offline"}
@@ -178,7 +193,7 @@ export function UnifiedCoachApp() {
                 />
               </label>
             </div>
-          )}
+          </div>
         </div>
       </nav>
       {isLive && (

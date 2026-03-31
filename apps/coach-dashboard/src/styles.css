@@ -271,9 +271,9 @@ body {
 }
 
 .stats-page {
-  max-width: 1180px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 1.25rem 1.25rem 2rem;
+  padding: 1.25rem;
 }
 
 .stats-page-hero {
@@ -2153,6 +2153,13 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   justify-content: center;
 }
 
+.coach-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
 .coach-nav-links li {
   display: flex;
 }
@@ -2219,9 +2226,8 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .live-subnav {
   display: flex;
   gap: 0.25rem;
-  padding: 0.5rem 1.25rem;
-  max-width: 1100px;
-  margin: 0 auto;
+  padding: 0 0 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .live-subnav button {
