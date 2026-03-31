@@ -37,3 +37,4 @@ site/
 apps/stats-dashboard/data/season_analysis.json
 apps/stats-dashboard/data/player_analysis_cache.json
 apps/stats-dashboard/data/team_summary.json
+DEPLOY_INFO_NEEDED.txt

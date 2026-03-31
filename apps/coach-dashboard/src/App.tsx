@@ -382,9 +382,9 @@ function newPlayerId(): string {
 }
 // Shared app constants
 
-const defaultHost = window.location.hostname || "localhost";
-const apiBase = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
-const operatorBase = import.meta.env.VITE_OPERATOR_CONSOLE ?? `http://${defaultHost}:5174`;
+// When VITE_API is unset, use the current origin (served from same host as API).
+const apiBase = (import.meta.env.VITE_API ?? window.location.origin).replace(/\/+$/, "");
+const operatorBase = (import.meta.env.VITE_OPERATOR_CONSOLE ?? "").replace(/\/+$/, "");
 const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 const SCHOOL_ID: string = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
 
@@ -397,7 +397,20 @@ function apiKeyHeader(): Record<string, string> {
   return headers;
 }
 
-export function App() {
+export interface AppConnectionInfo {
+  deviceConnected: boolean;
+  serverConnected: boolean;
+  connectionId: string;
+  operatorConsoleUrl: string;
+}
+
+interface AppProps {
+  onConnectionChange?: (info: AppConnectionInfo) => void;
+  showTutorial?: boolean;
+  onDismissTutorial?: () => void;
+}
+
+export function App({ onConnectionChange, showTutorial = false, onDismissTutorial }: AppProps = {}) {
   const setupNames = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -448,7 +461,6 @@ export function App() {
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
   const [activePage, setActivePage] = useState<"live" | "ai" | "settings">("live");
-  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('coach:tutorial-complete'));
   const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsStatus, setAiSettingsStatus] = useState("No saved settings for this game yet.");
@@ -476,6 +488,10 @@ export function App() {
     if (setupNames.vcSide) params.set("vcSide", setupNames.vcSide);
     return `${operatorBase.replace(/\/$/, "")}/?${params.toString()}`;
   }, [connectionId, gameId, setupNames]);
+
+  useEffect(() => {
+    onConnectionChange?.({ deviceConnected, serverConnected, connectionId, operatorConsoleUrl });
+  }, [deviceConnected, serverConnected, connectionId, operatorConsoleUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     try {
@@ -1987,39 +2003,12 @@ export function App() {
 
   return (
     <>
-      {showTutorial && <TutorialOverlay onDismiss={() => setShowTutorial(false)} />}
-      <nav className="coach-navbar">
-        <div className="coach-nav-container">
-          <div className="coach-nav-logo">Bench IQ</div>
-          <ul className="coach-nav-links">
-            <li><button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Live</button></li>
-            <li><button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI</button></li>
-            <li><button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Settings</button></li>
-            <li><a href={operatorConsoleUrl} className="coach-nav-ext-link">Score Operator</a></li>
-            <li><a href="/stats" className="coach-nav-ext-link">Stats</a></li>
-          </ul>
-          <button
-            onClick={() => setShowTutorial(true)}
-            title="Help &amp; Tutorial"
-            style={{background:'transparent',border:'1.5px solid #4f8cff',color:'#4f8cff',borderRadius:'50%',width:'28px',height:'28px',fontSize:'14px',fontWeight:700,cursor:'pointer',flexShrink:0,marginLeft:'8px',lineHeight:1}}
-          >?</button>
-            <div className={`connection-pill ${deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
-              <span className="connection-pill-status">
-                {deviceConnected ? "Operator live" : serverConnected ? "Waiting" : "Offline"}
-              </span>
-              <label className="connection-pill-editor" title="Operator device identifier">
-                <span className="connection-pill-label">Connection</span>
-                <input
-                  className="connection-pill-input"
-                  value={connectionId}
-                  readOnly
-                  placeholder="conn-..."
-                  aria-label="Connection ID"
-                />
-              </label>
-            </div>
-        </div>
-      </nav>
+      {showTutorial && <TutorialOverlay onDismiss={() => onDismissTutorial?.()} />}
+      <div className="live-subnav">
+        <button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Scoreboard</button>
+        <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
+        <button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Game Settings</button>
+      </div>
 
     <div className="page">
       {!gameId && activePage !== "settings" && (

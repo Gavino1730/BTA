@@ -79,7 +79,6 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5174",
 ];
 const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
-const COACH_DASHBOARD_BASE = (process.env.COACH_DASHBOARD_BASE ?? "http://localhost:5173").replace(/\/+$/, "");
 if (PROD_ORIGINS.length > 0) ALLOWED_ORIGINS.push(...PROD_ORIGINS);
 
 app.use(cors({
@@ -1630,21 +1629,9 @@ async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Pr
   }
 }
 
-function redirectToCoachWorkspace(route: string) {
-  return (_req: Request, res: Response) => {
-    res.redirect(302, `${COACH_DASHBOARD_BASE}${route}`);
-  };
-}
-
-// Redirect legacy stats dashboard entry routes into the unified coach workspace.
-app.get("/", redirectToCoachWorkspace("/stats"));
-app.get("/games", redirectToCoachWorkspace("/stats/games"));
-app.get("/players", redirectToCoachWorkspace("/stats/players"));
-app.get("/trends", redirectToCoachWorkspace("/stats/trends"));
-app.get("/ai-insights", redirectToCoachWorkspace("/stats/insights"));
-app.get("/analysis", redirectToCoachWorkspace("/stats/insights"));
-app.get("/onboarding", redirectToCoachWorkspace("/setup"));
-app.get("/settings", redirectToCoachWorkspace("/stats/settings"));
+// Serve the built coach-dashboard SPA from the same origin.
+const COACH_DIST = path.join(__dirname, "..", "..", "..", "apps", "coach-dashboard", "dist");
+app.use(express.static(COACH_DIST, { index: false }));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -3101,6 +3088,15 @@ app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   resetAllData({ schoolId });
   res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
+});
+
+// SPA fallback: serve index.html for any non-API route not matched above.
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(COACH_DIST, "index.html"), (err) => {
+    if (err) {
+      res.status(404).json({ error: "Not found" });
+    }
+  });
 });
 
 const port = Number(process.env.PORT ?? 4000);

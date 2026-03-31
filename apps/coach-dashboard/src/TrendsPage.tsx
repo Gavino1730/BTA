@@ -21,6 +21,141 @@ interface TrendRow {
   fg3Pct: number;
 }
 
+function ScoreChart({ rows }: { rows: TrendRow[] }) {
+  const CHART_H = 180;
+  const CHART_W = 600;
+  const PAD = { top: 16, right: 16, bottom: 28, left: 32 };
+  const plotW = CHART_W - PAD.left - PAD.right;
+  const plotH = CHART_H - PAD.top - PAD.bottom;
+
+  const chronological = useMemo(() =>
+    [...rows].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    [rows]
+  );
+
+  if (chronological.length === 0) return null;
+
+  const allScores = chronological.flatMap(r => [r.teamScore, r.oppScore]);
+  const maxScore = Math.max(...allScores, 10);
+  const n = chronological.length;
+  const barW = Math.min(18, (plotW / (n * 2 + n + 1)));
+  const groupW = barW * 2 + barW * 0.4;
+  const spacing = n > 1 ? (plotW - groupW) / (n - 1) : 0;
+
+  const scaleY = (v: number) => PAD.top + plotH - (v / maxScore) * plotH;
+
+  // Y-axis ticks
+  const ticks = [0, Math.round(maxScore / 2), maxScore];
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        style={{ width: "100%", maxWidth: CHART_W, display: "block" }}
+        aria-label="Score chart"
+      >
+        {/* grid lines */}
+        {ticks.map(t => (
+          <g key={t}>
+            <line
+              x1={PAD.left} y1={scaleY(t)}
+              x2={PAD.left + plotW} y2={scaleY(t)}
+              stroke="rgba(255,255,255,0.07)" strokeWidth={1}
+            />
+            <text x={PAD.left - 4} y={scaleY(t) + 4} fontSize={9} fill="rgba(255,255,255,0.35)" textAnchor="end">{t}</text>
+          </g>
+        ))}
+
+        {chronological.map((row, i) => {
+          const cx = PAD.left + i * (n > 1 ? spacing : 0) + groupW / 2;
+          const teamX = cx - barW - barW * 0.2;
+          const oppX = cx + barW * 0.2;
+          const teamH = (row.teamScore / maxScore) * plotH;
+          const oppH = (row.oppScore / maxScore) * plotH;
+          const label = row.opponent.length > 8 ? row.opponent.slice(0, 7) + "…" : row.opponent;
+
+          return (
+            <g key={row.id}>
+              {/* team bar */}
+              <rect
+                x={teamX} y={scaleY(row.teamScore)}
+                width={barW} height={teamH}
+                fill="#4f8cff" rx={3}
+                opacity={0.9}
+              />
+              {/* opp bar */}
+              <rect
+                x={oppX} y={scaleY(row.oppScore)}
+                width={barW} height={oppH}
+                fill="rgba(248,113,113,0.7)" rx={3}
+              />
+              {/* score labels above bars */}
+              <text x={teamX + barW / 2} y={scaleY(row.teamScore) - 3} fontSize={8} fill="#4f8cff" textAnchor="middle">{row.teamScore}</text>
+              <text x={oppX + barW / 2} y={scaleY(row.oppScore) - 3} fontSize={8} fill="#f87171" textAnchor="middle">{row.oppScore}</text>
+              {/* x-axis label */}
+              <text x={cx} y={CHART_H - 4} fontSize={8} fill="rgba(255,255,255,0.4)" textAnchor="middle">{label}</text>
+            </g>
+          );
+        })}
+
+        {/* legend */}
+        <rect x={PAD.left} y={4} width={8} height={8} fill="#4f8cff" rx={2} />
+        <text x={PAD.left + 11} y={11} fontSize={9} fill="rgba(255,255,255,0.6)">Team</text>
+        <rect x={PAD.left + 44} y={4} width={8} height={8} fill="rgba(248,113,113,0.7)" rx={2} />
+        <text x={PAD.left + 55} y={11} fontSize={9} fill="rgba(255,255,255,0.6)">Opponent</text>
+      </svg>
+    </div>
+  );
+}
+
+function FgChart({ rows }: { rows: TrendRow[] }) {
+  const CHART_H = 140;
+  const CHART_W = 600;
+  const PAD = { top: 16, right: 16, bottom: 28, left: 32 };
+  const plotW = CHART_W - PAD.left - PAD.right;
+  const plotH = CHART_H - PAD.top - PAD.bottom;
+
+  const chronological = useMemo(() =>
+    [...rows].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    [rows]
+  );
+
+  if (chronological.length < 2) return null;
+
+  const n = chronological.length;
+  const scaleX = (i: number) => PAD.left + (i / (n - 1)) * plotW;
+  const scaleY = (v: number) => PAD.top + plotH - (v / 100) * plotH;
+
+  const fgPath = chronological.map((r, i) => `${i === 0 ? "M" : "L"} ${scaleX(i)} ${scaleY(r.fgPct)}`).join(" ");
+  const fg3Path = chronological.map((r, i) => `${i === 0 ? "M" : "L"} ${scaleX(i)} ${scaleY(r.fg3Pct)}`).join(" ");
+
+  return (
+    <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
+      <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} style={{ width: "100%", maxWidth: CHART_W, display: "block" }} aria-label="FG% trend chart">
+        {[0, 25, 50].map(t => (
+          <g key={t}>
+            <line x1={PAD.left} y1={scaleY(t)} x2={PAD.left + plotW} y2={scaleY(t)} stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
+            <text x={PAD.left - 4} y={scaleY(t) + 4} fontSize={9} fill="rgba(255,255,255,0.35)" textAnchor="end">{t}%</text>
+          </g>
+        ))}
+        <path d={fgPath} fill="none" stroke="#4f8cff" strokeWidth={2} strokeLinejoin="round" />
+        <path d={fg3Path} fill="none" stroke="#f2c24b" strokeWidth={2} strokeLinejoin="round" strokeDasharray="4 2" />
+        {chronological.map((r, i) => (
+          <g key={r.id}>
+            <circle cx={scaleX(i)} cy={scaleY(r.fgPct)} r={3} fill="#4f8cff" />
+            <circle cx={scaleX(i)} cy={scaleY(r.fg3Pct)} r={3} fill="#f2c24b" />
+          </g>
+        ))}
+        <rect x={PAD.left} y={4} width={8} height={3} fill="#4f8cff" />
+        <text x={PAD.left + 11} y={10} fontSize={9} fill="rgba(255,255,255,0.6)">FG%</text>
+        <rect x={PAD.left + 38} y={3} width={12} height={3} fill="#f2c24b" />
+        <text x={PAD.left + 53} y={10} fontSize={9} fill="rgba(255,255,255,0.6)">3PT%</text>
+      </svg>
+    </div>
+  );
+}
+
+
 export function TrendsPage() {
   const [rows, setRows] = useState<TrendRow[]>([]);
   const [status, setStatus] = useState("Loading trends...");
@@ -98,11 +233,11 @@ export function TrendsPage() {
     <div className="stats-page">
       <section className="stats-page-hero compact">
         <div>
-          <p className="stats-page-eyebrow">Unified Coach Platform</p>
+          <p className="stats-page-eyebrow">Coach Platform</p>
           <h1>Trends</h1>
-          <p className="stats-page-subtitle">Recent form and efficiency trends are now integrated directly in coach routes.</p>
+          <p className="stats-page-subtitle">Season-long scoring and efficiency trends.</p>
         </div>
-        <p className="stats-page-status">{status}</p>
+        {status && <p className="stats-page-status">{status}</p>}
       </section>
 
       <section className="stats-metric-grid">
@@ -112,7 +247,7 @@ export function TrendsPage() {
           <span className="stats-metric-detail">Recent games only</span>
         </div>
         <div className="stats-metric-card">
-          <span className="stats-metric-label">Avg Diff</span>
+          <span className="stats-metric-label">Avg Margin</span>
           <strong className="stats-metric-value">{summary.avgDiff}</strong>
           <span className="stats-metric-detail">Points margin over last 5</span>
         </div>
@@ -130,31 +265,49 @@ export function TrendsPage() {
 
       {rows.length === 0 ? (
         <section className="stats-page-card">
-          <p className="stats-empty-copy">No trend rows are available yet.</p>
+          <p className="stats-empty-copy">No trend data available yet.</p>
         </section>
       ) : (
-        <section className="stats-page-card">
-          <div className="stats-page-card-head">
-            <h3>Game-by-Game Trends</h3>
-          </div>
-          <div className="stats-game-list">
-            {rows.map((row) => {
-              const diff = row.teamScore - row.oppScore;
-              return (
-                <div key={row.id} className="stats-game-row">
-                  <div>
-                    <strong>{row.date || "No date"} - {row.opponent}</strong>
-                    <span>Score {row.teamScore}-{row.oppScore}</span>
+        <>
+          <section className="stats-page-card">
+            <div className="stats-page-card-head">
+              <h3>Scoring by Game</h3>
+            </div>
+            <ScoreChart rows={rows} />
+          </section>
+
+          <section className="stats-page-card">
+            <div className="stats-page-card-head">
+              <h3>Shooting Efficiency</h3>
+            </div>
+            <FgChart rows={rows} />
+          </section>
+
+          <section className="stats-page-card">
+            <div className="stats-page-card-head">
+              <h3>Game Log</h3>
+            </div>
+            <div className="stats-game-list">
+              {rows.map((row) => {
+                const diff = row.teamScore - row.oppScore;
+                return (
+                  <div key={row.id} className="stats-game-row">
+                    <div>
+                      <strong>{row.date || "No date"} — {row.opponent}</strong>
+                      <span>Score {row.teamScore}–{row.oppScore}</span>
+                    </div>
+                    <div className="stats-game-score-block">
+                      <strong style={{ color: diff > 0 ? "var(--teal)" : diff < 0 ? "var(--red)" : undefined }}>
+                        {diff > 0 ? `+${diff}` : String(diff)}
+                      </strong>
+                      <span>FG {row.fgPct.toFixed(1)}% | 3PT {row.fg3Pct.toFixed(1)}%</span>
+                    </div>
                   </div>
-                  <div className="stats-game-score-block">
-                    <strong>{diff > 0 ? `+${diff}` : String(diff)}</strong>
-                    <span>FG {row.fgPct.toFixed(1)}% | 3PT {row.fg3Pct.toFixed(1)}%</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+                );
+              })}
+            </div>
+          </section>
+        </>
       )}
     </div>
   );
