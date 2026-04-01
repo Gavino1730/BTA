@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiBase, generateConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultSchoolId } from "./platform.js";
+import { apiBase, generateConnectionCode, normalizeConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultSchoolId } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
@@ -38,5 +38,10 @@ describe("coach route helpers", () => {
 
   it("generates a simple six-digit connection code", () => {
     expect(generateConnectionCode()).toMatch(/^\d{6}$/);
+  });
+
+  it("keeps only six-digit pairing codes and drops legacy random ids", () => {
+    expect(normalizeConnectionCode(" 482 913 ")).toBe("482913");
+    expect(normalizeConnectionCode("conn-mnf7rz6u-u1")).toBe("");
   });
 });

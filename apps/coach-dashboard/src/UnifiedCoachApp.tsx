@@ -5,7 +5,7 @@ import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -14,11 +14,7 @@ import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 
 function normalizeConnectionId(value: string | null | undefined): string {
-  return (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 40);
+  return normalizeConnectionCode(value);
 }
 
 function buildOperatorConsoleUrl(connectionId: string): string {
@@ -38,7 +34,7 @@ function buildOperatorConsoleUrl(connectionId: string): string {
 }
 
 export function UnifiedCoachApp() {
-  const initialConnectionId = normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId")) || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
+  const initialConnectionId = normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId")) || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id")) || generateConnectionCode();
   const initialAuthSession = readStoredAuthSession();
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => Boolean(initialAuthSession?.token));

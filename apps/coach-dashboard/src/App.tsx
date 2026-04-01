@@ -9,7 +9,7 @@ import {
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
 } from "./display.js";
-import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
+import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 
 interface GameState {
   gameId: string;
@@ -212,11 +212,7 @@ interface PresenceStatus {
 }
 
 function normalizeConnectionId(value: string | null | undefined): string {
-  return (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 40);
+  return normalizeConnectionCode(value);
 }
 
 function generateConnectionId(): string {
@@ -424,7 +420,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       localStorage.setItem("coach-bound-connection-id", fromUrl);
       return fromUrl;
     }
-    return normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
+    return normalizeConnectionId(localStorage.getItem("coach-bound-connection-id")) || generateConnectionId();
   });
 
   useEffect(() => {
@@ -445,7 +441,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
-  const [activePage, setActivePage] = useState<"live" | "ai" | "settings">("live");
+  const [activePage, setActivePage] = useState<"live" | "ai">("live");
   const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsStatus, setAiSettingsStatus] = useState("No saved settings for this game yet.");
@@ -2031,9 +2027,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
         <div className="live-subnav">
           <button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Scoreboard</button>
           <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
-          <button className={activePage === "settings" ? "nav-active" : ""} onClick={() => setActivePage("settings")}>Game Settings</button>
         </div>
-      {!gameId && activePage !== "settings" && (
+      {!gameId && (
         <div className="idle-screen">
           <div className="idle-screen-icon">||</div>
           <p className="idle-screen-title">No Active Game</p>
@@ -2737,174 +2732,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       </section>
       </>}
 
-      {/* Roster management now lives in the stats pages within the coach dashboard. */}
-
-      {activePage === "settings" &&
-      <>
-      <section className="card">
-        <div className="settings-header-row">
-          <div>
-            <h2>Coach AI Settings</h2>
-            <p className="text-muted">Customize how live coaching insights are generated for this game.</p>
-          </div>
-          <div className="settings-header-actions">
-            <button className="secondary" onClick={() => void loadPromptPreview()}>Show Current Prompt</button>
-            <button onClick={() => void saveAiSettings()}>Save AI Settings</button>
-          </div>
-        </div>
-
-        <p className="settings-status text-muted">{aiSettingsStatus}</p>
-
-        <div className="settings-device-row">
-          <label className="settings-device-label">
-            Connection Code
-            <input
-              className="settings-device-input"
-              value={connectionId}
-              readOnly
-              placeholder="e.g. 482913"
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => setConnectionId(generateConnectionId())}
-            style={{ alignSelf: "end" }}
-          >
-            New 6-Digit Code
-          </button>
-        </div>
-
-        <div className="form-grid">
-          {rosterTeams.length > 0 && rosterTeams.map((team) => (
-            <label key={team.id} style={{ gridColumn: "1 / -1" }}>
-              Coaching Style For AI{rosterTeams.length > 1 ? ` - ${team.name}` : ""}
-              <textarea
-                className="settings-textarea"
-                defaultValue={team.coachStyle ?? ""}
-                placeholder="Example: We want to play fast, pressure the ball, and trust our bench in second-quarter runs."
-                onBlur={(event) => {
-                  if ((team.coachStyle ?? "") !== event.target.value) {
-                    updateTeamCoachStyle(team.id, event.target.value);
-                  }
-                }}
-              />
-            </label>
-          ))}
-
-          <label style={{ gridColumn: "1 / -1" }}>
-            Team Playing Style
-            <textarea
-              className="settings-textarea"
-              value={aiSettingsDraft.playingStyle}
-              onChange={(event) => setAiSettingsDraft((current) => ({ ...current, playingStyle: event.target.value }))}
-              placeholder="Example: We play fast in transition, pressure passing lanes, and prioritize paint touches."
-            />
-          </label>
-
-          <label style={{ gridColumn: "1 / -1" }}>
-            Team Notes and Context
-            <textarea
-              className="settings-textarea"
-              value={aiSettingsDraft.teamContext}
-              onChange={(event) => setAiSettingsDraft((current) => ({ ...current, teamContext: event.target.value }))}
-              placeholder="Anything a coach wants AI to remember: player limits, matchup concerns, depth, who can handle pressure, etc."
-            />
-          </label>
-
-          <label style={{ gridColumn: "1 / -1" }}>
-            Custom Prompt Modification
-            <textarea
-              className="settings-textarea"
-              value={aiSettingsDraft.customPrompt}
-              onChange={(event) => setAiSettingsDraft((current) => ({ ...current, customPrompt: event.target.value }))}
-              placeholder="Custom instruction for AI output style or priorities."
-            />
-          </label>
-        </div>
-
-        <h3 style={{ marginTop: "1rem" }}>Focus Insight Types</h3>
-        <div className="settings-chip-grid">
-          {AI_FOCUS_OPTIONS.map((option) => {
-            const active = aiSettingsDraft.focusInsights.includes(option.id);
-            return (
-              <button
-                key={option.id}
-                className={`settings-chip ${active ? "settings-chip-active" : "settings-chip-inactive"}`}
-                onClick={() => toggleFocusInsight(option.id)}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <p className="text-muted" style={{ marginTop: "1rem" }}>
-          Saved settings now drive live coach insights. The shared stats pages and operator workflows can build on the same model next.
-        </p>
-
-        {(aiSettings.playingStyle || aiSettings.teamContext || aiSettings.customPrompt) ? (
-          <div className="card" style={{ marginTop: "1rem" }}>
-            <h3>Current Applied Settings</h3>
-            {aiSettings.playingStyle ? <p><strong>Style:</strong> {aiSettings.playingStyle}</p> : null}
-            {aiSettings.teamContext ? <p><strong>Context:</strong> {aiSettings.teamContext}</p> : null}
-            {aiSettings.customPrompt ? <p><strong>Custom Prompt:</strong> {aiSettings.customPrompt}</p> : null}
-          </div>
-        ) : null}
-
-        <div className="card" style={{ marginTop: "1rem" }}>
-          <h3>Prompt Preview (Read-Only)</h3>
-          <p className="text-muted">{promptPreviewStatus}</p>
-          {promptPreview ? (
-            <>
-              <p className="text-muted">
-                Model: {promptPreview.model} | Recent events: {promptPreview.recentEventCount}
-              </p>
-              <div className="prompt-preview-historical-card">
-                <strong>Historical Context (Season + Recent Games)</strong>
-                <p className="text-muted prompt-preview-historical-text">
-                  {historicalPromptContext || "Historical context is not currently available in this prompt."}
-                </p>
-              </div>
-              <label>
-                Current AI Input Prompt
-                <textarea className="settings-textarea prompt-preview-textarea" value={promptPreview.userPrompt} readOnly />
-              </label>
-              <div className="stack-list" style={{ marginTop: "0.6rem" }}>
-                <strong>System Guide Summary</strong>
-                {promptPreview.systemGuide.map((line) => (
-                  <p key={line} className="text-muted" style={{ margin: 0 }}>{line}</p>
-                ))}
-              </div>
-            </>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="card" style={{border:'1.5px solid #7f1d1d', marginTop:'1rem'}}>
-        <h2 style={{color:'#f87171'}}>Warning: Clear Local Data</h2>
-        <p className="text-muted" style={{marginBottom:'1rem'}}>
-          Removes all data stored in this browser: roster, AI settings, and cached game state.
-          This only affects this device. Use the coach dashboard <strong>Stats → Settings</strong> area to wipe shared server data.
-        </p>
-        <button
-          style={{background:'#7f1d1d',color:'#fca5a5',border:'none',padding:'8px 18px',borderRadius:'8px',cursor:'pointer',fontWeight:600}}
-          onClick={() => {
-            if (!confirm('Clear all local data on this device? This removes roster, settings, and cached game state stored here.')) return;
-            const keysToRemove: string[] = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i);
-              if (k) keysToRemove.push(k);
-            }
-            keysToRemove.forEach(k => localStorage.removeItem(k));
-            window.location.reload();
-          }}
-        >
-          Clear Local Data
-        </button>
-      </section>
-      </>
-      }
+      {/* Game settings now live in the main Settings page within the coach dashboard. */}
 
     </div>
     </>

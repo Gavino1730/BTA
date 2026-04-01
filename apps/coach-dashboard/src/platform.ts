@@ -73,6 +73,11 @@ export function generateConnectionCode(): string {
   return String(Math.floor(100000 + (Math.random() * 900000)));
 }
 
+export function normalizeConnectionCode(value: string | null | undefined): string {
+  const digitsOnly = (value ?? "").replace(/\D/g, "").slice(0, 6);
+  return /^\d{6}$/.test(digitsOnly) ? digitsOnly : "";
+}
+
 export function readStoredAuthSession(): StoredAuthSession | null {
   if (typeof window === "undefined") {
     return null;

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode } from "./platform.js";
 
 interface TeamDto {
   id: string;
@@ -72,6 +72,16 @@ export function TeamSettingsPage() {
   const [teamContext, setTeamContext] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [focusInsightsText, setFocusInsightsText] = useState("");
+  const [connectionCode, setConnectionCode] = useState(() => {
+    if (typeof window === "undefined") {
+      return generateConnectionCode();
+    }
+
+    const storedCode = normalizeConnectionCode(window.localStorage.getItem("coach-bound-connection-id"));
+    const initialCode = storedCode || generateConnectionCode();
+    window.localStorage.setItem("coach-bound-connection-id", initialCode);
+    return initialCode;
+  });
   const [status, setStatus] = useState("Loading team settings...");
   const [saving, setSaving] = useState(false);
 
@@ -133,6 +143,14 @@ export function TeamSettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem("coach-bound-connection-id", connectionCode);
+  }, [connectionCode]);
 
   async function saveOrganizationProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -337,6 +355,28 @@ export function TeamSettingsPage() {
           <p className="stats-page-subtitle">Manage team profile and AI context directly inside the coach workspace.</p>
         </div>
         <p className="stats-page-status">{status}</p>
+      </section>
+
+      <section className="stats-page-card setup-form">
+        <div className="stats-page-card-head">
+          <h3>Live Pairing</h3>
+          <div className="settings-header-actions">
+            <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionCode)}>
+              Copy Code
+            </button>
+            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionCode(generateConnectionCode())}>
+              New 6-Digit Code
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-device-row">
+          <label className="settings-device-label">
+            Connection Code
+            <input className="settings-device-input" value={connectionCode} readOnly placeholder="e.g. 482913" />
+          </label>
+        </div>
+        <p className="text-muted">Use this code on the score operator iPad to link the live dashboard.</p>
       </section>
 
       <form className="stats-page-card setup-form" onSubmit={saveOrganizationProfile}>

@@ -62,7 +62,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [coachEmail, setCoachEmail] = useState("");
   const [teamName, setTeamName] = useState("");
   const [season, setSeason] = useState(String(new Date().getFullYear()));
-  const [playingStyle, setPlayingStyle] = useState("");
   const [teamColor, setTeamColor] = useState("#1d4ed8");
   const [rows, setRows] = useState<RosterRow[]>([buildEmptyRosterRow(1)]);
   const [status, setStatus] = useState("Create your account and complete setup to unlock the unified coach workspace.");
@@ -153,12 +152,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       coachEmail.trim(),
       teamName.trim(),
       season.trim(),
-      playingStyle.trim(),
       validRows.length > 0 ? "roster" : "",
     ].filter(Boolean).length;
 
-    return Math.round((completed / 8) * 100);
-  }, [authSession?.email, organizationName, coachName, coachEmail, teamName, season, playingStyle, validRows.length]);
+    return Math.round((completed / 7) * 100);
+  }, [authSession?.email, organizationName, coachName, coachEmail, teamName, season, validRows.length]);
 
   async function handleAuthSubmit() {
     const normalizedName = coachName.trim();
@@ -269,7 +267,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           teamName: normalizedTeam,
           season: season.trim() || undefined,
           teamColor,
-          playingStyle: playingStyle.trim() || undefined,
           roster: validRows,
         }),
       });
@@ -412,7 +409,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           <article className="setup-summary-card">
             <span className="setup-summary-label">Program identity</span>
             <strong>{teamName.trim() || "Team name"}</strong>
-            <p>{season.trim() ? `Season ${season.trim()}` : "Choose the current season"} · {playingStyle.trim() || "Add your playing style"}</p>
+            <p>{season.trim() ? `Season ${season.trim()}` : "Choose the current season"}</p>
           </article>
         </div>
 
@@ -436,10 +433,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             <label className="stats-filter-field">
               <span>Season</span>
               <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="2026" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Playing Style</span>
-              <input value={playingStyle} onChange={(event) => setPlayingStyle(event.target.value)} placeholder="Pace and space" />
             </label>
             <label className="stats-filter-field setup-color-field">
               <span>Team Color</span>
