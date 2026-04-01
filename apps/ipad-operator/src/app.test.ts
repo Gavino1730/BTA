@@ -339,3 +339,137 @@ describe("offline and sync behavior", () => {
     expect(sorted.map(e => e.id)).toEqual(["evt-1", "evt-2", "evt-3"]);
   });
 });
+
+describe("coach code sync snapshot", () => {
+  interface SyncPlayer { id: string; number: string; name: string; position: string; }
+  interface SyncTeam { id: string; name: string; abbreviation: string; players: SyncPlayer[]; }
+  interface SyncState {
+    teams: SyncTeam[];
+    gameSetup: {
+      connectionId?: string;
+      gameId: string;
+      myTeamId: string;
+      opponent: string;
+      vcSide: "home" | "away";
+      dashboardUrl: string;
+      startingLineup?: string[];
+      homeTeamColor?: string;
+      awayTeamColor?: string;
+    };
+  }
+
+  function normalizeConnectionId(value: string | null | undefined): string {
+    return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40);
+  }
+
+  function mergeCoachLinkSnapshot(
+    current: SyncState,
+    snapshot: {
+      connectionId: string;
+      setup?: { gameId?: string; myTeamId?: string; opponentName?: string; vcSide?: "home" | "away"; homeTeamColor?: string; awayTeamColor?: string; dashboardUrl?: string };
+      teams?: SyncTeam[];
+    },
+  ): SyncState {
+    const teams = snapshot.teams ?? current.teams;
+    const nextTeamId = snapshot.setup?.myTeamId?.trim() || current.gameSetup.myTeamId || teams[0]?.id || "";
+    const allowed = new Set((teams.find((team) => team.id === nextTeamId)?.players ?? []).map((player) => player.id));
+    const startingLineup = (current.gameSetup.startingLineup ?? []).filter((playerId) => allowed.has(playerId));
+    return {
+      ...current,
+      teams,
+      gameSetup: {
+        ...current.gameSetup,
+        connectionId: normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId),
+        gameId: snapshot.setup?.gameId ?? current.gameSetup.gameId,
+        myTeamId: nextTeamId,
+        opponent: snapshot.setup?.opponentName ?? current.gameSetup.opponent,
+        vcSide: snapshot.setup?.vcSide ?? current.gameSetup.vcSide,
+        dashboardUrl: snapshot.setup?.dashboardUrl ?? current.gameSetup.dashboardUrl,
+        homeTeamColor: snapshot.setup?.homeTeamColor ?? current.gameSetup.homeTeamColor,
+        awayTeamColor: snapshot.setup?.awayTeamColor ?? current.gameSetup.awayTeamColor,
+        startingLineup,
+      },
+    };
+  }
+
+  it("hydrates the operator team and matchup from the coach code", () => {
+    const state: SyncState = {
+      teams: [],
+      gameSetup: {
+        gameId: "local-game",
+        myTeamId: "",
+        opponent: "",
+        vcSide: "home",
+        dashboardUrl: "http://localhost:4000",
+        startingLineup: ["p1"],
+      },
+    };
+
+    const merged = mergeCoachLinkSnapshot(state, {
+      connectionId: " Conn-VC-2026 ",
+      setup: {
+        gameId: "vc-vs-central",
+        myTeamId: "vc-varsity",
+        opponentName: "Central Christian",
+        vcSide: "away",
+        dashboardUrl: "http://localhost:5173/live",
+      },
+      teams: [
+        {
+          id: "vc-varsity",
+          name: "Valley Catholic Varsity",
+          abbreviation: "VC",
+          players: [{ id: "p1", number: "1", name: "Ava", position: "PG" }],
+        },
+      ],
+    });
+
+    expect(merged.gameSetup.connectionId).toBe("conn-vc-2026");
+    expect(merged.gameSetup.gameId).toBe("vc-vs-central");
+    expect(merged.gameSetup.myTeamId).toBe("vc-varsity");
+    expect(merged.gameSetup.opponent).toBe("Central Christian");
+    expect(merged.gameSetup.vcSide).toBe("away");
+    expect(merged.teams[0]?.name).toBe("Valley Catholic Varsity");
+    expect(merged.gameSetup.startingLineup).toEqual(["p1"]);
+  });
+
+  it("drops stale starters that are no longer on the synced roster", () => {
+    const state: SyncState = {
+      teams: [
+        {
+          id: "vc-varsity",
+          name: "Valley Catholic Varsity",
+          abbreviation: "VC",
+          players: [
+            { id: "p1", number: "1", name: "Ava", position: "PG" },
+            { id: "p2", number: "2", name: "Mia", position: "SG" },
+          ],
+        },
+      ],
+      gameSetup: {
+        connectionId: "conn-vc-2026",
+        gameId: "vc-vs-central",
+        myTeamId: "vc-varsity",
+        opponent: "Central Christian",
+        vcSide: "home",
+        dashboardUrl: "http://localhost:4000",
+        startingLineup: ["p1", "p2", "missing-player"],
+      },
+    };
+
+    const merged = mergeCoachLinkSnapshot(state, {
+      connectionId: "conn-vc-2026",
+      setup: { myTeamId: "vc-varsity" },
+      teams: [
+        {
+          id: "vc-varsity",
+          name: "Valley Catholic Varsity",
+          abbreviation: "VC",
+          players: [{ id: "p1", number: "1", name: "Ava", position: "PG" }],
+        },
+      ],
+    });
+
+    expect(merged.gameSetup.startingLineup).toEqual(["p1"]);
+  });
+});

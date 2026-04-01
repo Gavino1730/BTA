@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
-import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent } from "@bta/shared-schema";
+import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent, type RosterTeam } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
   addPlayerViaRealtime,
@@ -169,6 +169,58 @@ export interface GameSetup {
 export interface AppData {
   teams: Team[];
   gameSetup: GameSetup;
+}
+
+interface OperatorLinkResponse {
+  connectionId: string;
+  setup?: {
+    gameId?: string;
+    myTeamId?: string;
+    myTeamName?: string;
+    opponentName?: string;
+    vcSide?: "home" | "away";
+    homeTeamColor?: string;
+    awayTeamColor?: string;
+    dashboardUrl?: string;
+    updatedAtIso?: string;
+  } | null;
+  teams?: RosterTeam[];
+}
+
+const DEFAULT_CONNECTION_SYNC_STATUS = "Paste the coach connection code to sync roster, team setup, and keep a local backup on this iPad.";
+
+function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse): AppData {
+  const convertedTeams = Array.isArray(snapshot.teams)
+    ? snapshot.teams.map(convertRosterTeamToAppTeam)
+    : current.teams;
+  const nextSide = snapshot.setup?.vcSide === "away"
+    ? "away"
+    : snapshot.setup?.vcSide === "home"
+      ? "home"
+      : (current.gameSetup.vcSide ?? "home");
+  const nextTeamId = snapshot.setup?.myTeamId?.trim() || current.gameSetup.myTeamId || convertedTeams[0]?.id || "";
+  const selectedTeam = convertedTeams.find((team) => team.id === nextTeamId);
+  const allowedPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
+  const safeStartingLineup = Array.isArray(current.gameSetup.startingLineup)
+    ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
+    : [];
+
+  return {
+    ...current,
+    teams: convertedTeams,
+    gameSetup: {
+      ...current.gameSetup,
+      connectionId: normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId) || undefined,
+      gameId: snapshot.setup?.gameId?.trim() || current.gameSetup.gameId,
+      myTeamId: nextTeamId,
+      opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
+      vcSide: nextSide,
+      dashboardUrl: snapshot.setup?.dashboardUrl?.trim() || current.gameSetup.dashboardUrl,
+      homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor, current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR),
+      awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor, current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR),
+      startingLineup: safeStartingLineup,
+    },
+  };
 }
 
 const DEFAULT_DATA: AppData = {
@@ -767,6 +819,57 @@ export function App() {
     saveAppData(next);
   }
 
+  async function syncFromCoachCode(connectionCode = appData.gameSetup.connectionId, options?: { silent?: boolean }): Promise<boolean> {
+    const normalizedConnectionId = normalizeConnectionId(connectionCode);
+    if (!normalizedConnectionId) {
+      setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
+      return false;
+    }
+
+    setConnectionSyncStatus(`Syncing ${normalizedConnectionId} from the coach dashboard...`);
+
+    try {
+      const response = await fetch(
+        `${appData.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(normalizedConnectionId)}`,
+        apiHeaders(appData.gameSetup),
+      );
+
+      if (response.status === 404) {
+        setConnectionSyncStatus("Code saved locally. Waiting for the coach dashboard to publish the linked team and roster.");
+        if (!options?.silent) {
+          showInlineNotice("That code is saved on this iPad. Open the coach dashboard live page or try Sync again in a moment.", "warning", 5000);
+        }
+        return false;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Sync failed (${response.status})`);
+      }
+
+      const payload = await response.json() as OperatorLinkResponse;
+      let syncedTeamName = "team";
+
+      setAppData((current) => {
+        const next = mergeCoachLinkSnapshot(current, payload);
+        syncedTeamName = next.teams.find((team) => team.id === next.gameSetup.myTeamId)?.name ?? payload.setup?.myTeamName?.trim() ?? "team";
+        saveAppData(next);
+        return next;
+      });
+
+      setConnectionSyncStatus(`Synced ${syncedTeamName} roster and game setup. This iPad will keep the latest copy saved locally if it disconnects.`);
+      if (!options?.silent) {
+        showInlineNotice(`Synced ${syncedTeamName} from the coach dashboard.`, "success", 2500);
+      }
+      return true;
+    } catch {
+      setConnectionSyncStatus("Coach sync is temporarily offline. The last synced roster and lineup stay saved locally on this iPad.");
+      if (!options?.silent) {
+        showInlineNotice("Could not reach the coach session right now. Your last synced data is still saved locally.", "warning", 6000);
+      }
+      return false;
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -807,6 +910,23 @@ export function App() {
   }, [
     appData,
   ]);
+
+  useEffect(() => {
+    const normalizedConnectionId = normalizeConnectionId(appData.gameSetup.connectionId);
+    if (!normalizedConnectionId) {
+      setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
+      return;
+    }
+
+    void syncFromCoachCode(normalizedConnectionId, { silent: true });
+    const intervalId = window.setInterval(() => {
+      void syncFromCoachCode(normalizedConnectionId, { silent: true });
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, appData.gameSetup.schoolId]);
 
   // ---- Navigation state ----
   const [view, setView] = useState<"game" | "settings">("game");
@@ -875,6 +995,7 @@ export function App() {
 
   const [showLineupSetup, setShowLineupSetup] = useState(false);
   const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
+  const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
 
   // ---- In-game roster state ----
   const [showRosterPanel, setShowRosterPanel] = useState(false);
@@ -1108,6 +1229,46 @@ export function App() {
       }
     });
 
+    socket.on("operator:link:updated", (payload: unknown) => {
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+      const snapshot = payload as OperatorLinkResponse;
+      if (normalizeConnectionId(snapshot.connectionId) !== connectionId) {
+        return;
+      }
+
+      setAppData((current) => {
+        const next = mergeCoachLinkSnapshot(current, snapshot);
+        saveAppData(next);
+        return next;
+      });
+      setConnectionSyncStatus("Coach updates received. The latest team and roster info are saved locally on this iPad.");
+    });
+
+    socket.on("roster:teams", (payload: unknown) => {
+      if (!Array.isArray(payload)) {
+        return;
+      }
+
+      const nextTeams = (payload as RosterTeam[]).map(convertRosterTeamToAppTeam);
+      setAppData((current) => {
+        const hasSelectedTeam = nextTeams.some((team) => team.id === current.gameSetup.myTeamId);
+        const nextMyTeamId = hasSelectedTeam ? current.gameSetup.myTeamId : (nextTeams[0]?.id ?? "");
+        const allowedPlayerIds = new Set((nextTeams.find((team) => team.id === nextMyTeamId)?.players ?? []).map((player) => player.id));
+        const startingLineup = Array.isArray(current.gameSetup.startingLineup)
+          ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
+          : [];
+        const next = {
+          ...current,
+          teams: nextTeams,
+          gameSetup: { ...current.gameSetup, myTeamId: nextMyTeamId, startingLineup },
+        };
+        saveAppData(next);
+        return next;
+      });
+    });
+
     register();
 
     const heartbeat = setInterval(() => {
@@ -1123,6 +1284,8 @@ export function App() {
       socket.off("disconnect");
       socket.off("error");
       socket.off("game:insights");
+      socket.off("operator:link:updated");
+      socket.off("roster:teams");
       socket.disconnect();
     };
   }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, gameId, gamePhase]);
@@ -1320,7 +1483,7 @@ export function App() {
       : undefined;
 
     try {
-      const res = await fetch(`${latest.gameSetup.apiUrl}/games`, {
+      const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
         body: JSON.stringify({
@@ -3092,6 +3255,9 @@ export function App() {
                 value={appData.gameSetup.connectionId ?? ""}
                 onChange={(event) => {
                   const nextConnectionId = normalizeConnectionId(event.target.value);
+                  setConnectionSyncStatus(nextConnectionId
+                    ? `Connection code ${nextConnectionId} saved locally. Syncing coach setup...`
+                    : DEFAULT_CONNECTION_SYNC_STATUS);
                   persistData({
                     ...appData,
                     gameSetup: {
@@ -3108,36 +3274,14 @@ export function App() {
               type="button"
               className="pregame-device-copy-btn"
               onClick={() => {
-                const url = buildCoachViewUrl(appData.gameSetup.gameId, {
-                  connectionId: appData.gameSetup.connectionId,
-                  myTeamId: appData.gameSetup.myTeamId,
-                  myTeamName: myTeam?.name,
-                  opponentName: appData.gameSetup.opponent,
-                  vcSide: appData.gameSetup.vcSide,
-                  homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
-                  awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
-                });
-                const copyFallback = () => {
-                  const ta = document.createElement("textarea");
-                  ta.value = url;
-                  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
-                  document.body.appendChild(ta);
-                  ta.focus();
-                  ta.select();
-                  document.execCommand("copy");
-                  document.body.removeChild(ta);
-                };
-                if (navigator.clipboard) {
-                  navigator.clipboard.writeText(url).catch(copyFallback);
-                } else {
-                  copyFallback();
-                }
+                void syncFromCoachCode(undefined, { silent: false });
               }}
-              title="Copy coach dashboard link to clipboard"
+              title="Pull roster and game setup from the coach dashboard"
             >
-              Copy Link
+              Sync Now
             </button>
           </div>
+          <p className="pregame-settings-hint">{connectionSyncStatus}</p>
 
           <div className="pregame-matchup">
             <div className="pregame-team my-team">
@@ -3230,7 +3374,7 @@ export function App() {
             <p className="pregame-error">Warning: No team selected - go to Settings to choose your team.</p>
           )}
           {!hasConnectionId && (
-            <p className="pregame-error">Warning: Paste the coach dashboard connection ID above before starting the game.</p>
+            <p className="pregame-error">Warning: Paste the coach dashboard connection code above to sync the roster before starting the game.</p>
           )}
           {!appData.gameSetup.opponent?.trim() && appData.gameSetup.myTeamId && (
             <p className="pregame-error">Warning: Enter the opponent name above to continue.</p>

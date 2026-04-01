@@ -24,8 +24,8 @@ Use the stack as follows for live gym scorekeeping and coach fanout:
 ### Platform-specific notes
 
 - **Railway**: deploy from the repo root and start the API with `npm run start:api` after `npm run build`.
-- **Vercel (Coach)**: set the root directory to `apps/coach-dashboard` and configure `VITE_API` to the Railway API URL.
-- **Vercel (Operator)**: set the root directory to `apps/ipad-operator` and configure `VITE_API` plus `VITE_COACH_DASHBOARD`.
+- **Vercel (Coach)**: set the root directory to `apps/coach-dashboard` and configure `VITE_API` to the Railway API URL. If you use the API-key fallback for live writes, also set `VITE_API_KEY` to the same value as Railway `BTA_API_KEY`.
+- **Vercel (Operator)**: set the root directory to `apps/ipad-operator` and configure `VITE_API` plus `VITE_COACH_DASHBOARD`. If you use the API-key fallback for live writes, also set `VITE_API_KEY` to the same value as Railway `BTA_API_KEY`.
 - **Supabase**: use the project Postgres connection string for `DATABASE_URL` and the auth issuer/JWKS values for JWT verification.
 
 ## Required Environment Contract (Production)

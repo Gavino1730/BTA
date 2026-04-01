@@ -9,6 +9,7 @@ import {
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
 } from "./display.js";
+import { apiBase, API_KEY, apiKeyHeader, operatorBase, SCHOOL_ID } from "./platform.js";
 
 interface GameState {
   gameId: string;
@@ -382,21 +383,6 @@ function newPlayerId(): string {
 }
 // Shared app constants
 
-// When VITE_API is unset, use the current origin (served from same host as API).
-const apiBase = (import.meta.env.VITE_API ?? window.location.origin).replace(/\/+$/, "");
-const operatorBase = (import.meta.env.VITE_OPERATOR_CONSOLE ?? "").replace(/\/+$/, "");
-const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
-const SCHOOL_ID: string = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
-
-/** Returns auth and tenant headers for realtime API requests. */
-function apiKeyHeader(): Record<string, string> {
-  const headers: Record<string, string> = { "x-school-id": SCHOOL_ID };
-  if (API_KEY) {
-    headers["x-api-key"] = API_KEY;
-  }
-  return headers;
-}
-
 export interface AppConnectionInfo {
   deviceConnected: boolean;
   serverConnected: boolean;
@@ -486,6 +472,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     if (setupNames.myTeamName) params.set("myTeamName", setupNames.myTeamName);
     if (setupNames.opponentName) params.set("opponent", setupNames.opponentName);
     if (setupNames.vcSide) params.set("vcSide", setupNames.vcSide);
+    if (setupNames.homeColor) params.set("homeColor", setupNames.homeColor);
+    if (setupNames.awayColor) params.set("awayColor", setupNames.awayColor);
     return `${operatorBase.replace(/\/$/, "")}/?${params.toString()}`;
   }, [connectionId, gameId, setupNames]);
 
@@ -583,6 +571,34 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       clearInterval(pollInterval);
     };
   }, []);
+
+  useEffect(() => {
+    const normalizedConnectionId = normalizeConnectionId(connectionId);
+    if (!normalizedConnectionId) {
+      return;
+    }
+
+    const preferredTeam = rosterTeams.find((team) => team.id === setupNames.myTeamId) ?? rosterTeams[0] ?? null;
+    const trackedTeamColor = normalizeTeamColor(preferredTeam?.teamColor);
+    const payload = {
+      gameId: gameId || undefined,
+      myTeamId: setupNames.myTeamId || preferredTeam?.id || undefined,
+      myTeamName: setupNames.myTeamName || preferredTeam?.name || undefined,
+      opponentName: setupNames.opponentName || undefined,
+      vcSide: setupNames.vcSide,
+      homeTeamColor: normalizeTeamColor(setupNames.homeColor) ?? (setupNames.vcSide === "home" ? trackedTeamColor : undefined),
+      awayTeamColor: normalizeTeamColor(setupNames.awayColor) ?? (setupNames.vcSide === "away" ? trackedTeamColor : undefined),
+      dashboardUrl: window.location.href,
+    };
+
+    void fetch(`${apiBase}/api/operator-links/${encodeURIComponent(normalizedConnectionId)}`, {
+      method: "PUT",
+      headers: apiKeyHeader(true),
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Fail open: the operator app keeps the last saved local snapshot if the API is temporarily offline.
+    });
+  }, [connectionId, gameId, rosterTeams, setupNames]);
 
   function addTeam() {
     if (!newTeamName.trim()) return;

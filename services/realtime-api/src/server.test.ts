@@ -137,6 +137,68 @@ describe("school tenancy", () => {
   });
 });
 
+describe("operator pairing endpoints", () => {
+  it("returns coach-linked roster and game setup for a connection code", async () => {
+    await resetSchool("pairing-school");
+
+    await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-school" },
+      body: JSON.stringify({
+        teams: [
+          {
+            id: "vc-varsity",
+            name: "Valley Catholic Varsity",
+            abbreviation: "VC",
+            teamColor: "#1d4ed8",
+            players: [
+              { id: "p1", number: "1", name: "Ava", position: "PG" },
+              { id: "p2", number: "2", name: "Mia", position: "SG" }
+            ]
+          }
+        ]
+      })
+    });
+
+    const putRes = await fetch(`${API_BASE}/api/operator-links/conn-pair-123`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-school" },
+      body: JSON.stringify({
+        gameId: "pairing-game",
+        myTeamId: "vc-varsity",
+        myTeamName: "Valley Catholic Varsity",
+        opponentName: "Central Christian",
+        vcSide: "home",
+        homeTeamColor: "#1d4ed8",
+        awayTeamColor: "#ef4444",
+        dashboardUrl: "http://localhost:5173/live"
+      })
+    });
+
+    expect(putRes.status).toBe(200);
+
+    const getRes = await fetch(`${API_BASE}/api/operator-links/conn-pair-123`, {
+      headers: { "x-school-id": "pairing-school" }
+    });
+
+    expect(getRes.status).toBe(200);
+    const body = await getRes.json() as {
+      connectionId: string;
+      setup: { myTeamId: string; opponentName: string; vcSide: string; gameId: string };
+      teams: Array<{ id: string; players: Array<{ id: string }> }>;
+    };
+
+    expect(body.connectionId).toBe("conn-pair-123");
+    expect(body.setup.myTeamId).toBe("vc-varsity");
+    expect(body.setup.opponentName).toBe("Central Christian");
+    expect(body.setup.vcSide).toBe("home");
+    expect(body.setup.gameId).toBe("pairing-game");
+    expect(body.teams).toHaveLength(1);
+    expect(body.teams[0]?.id).toBe("vc-varsity");
+    expect(body.teams[0]?.players).toHaveLength(2);
+  });
+});
+
 describe("unified stats endpoints", () => {
   it("redirects legacy stats dashboard pages to the coach workspace", async () => {
     const response = await fetch(`${API_BASE}/settings`, { redirect: "manual" });
@@ -237,6 +299,28 @@ describe("unified stats endpoints", () => {
     expect(liveContextBody.teamInfo.name).toBe("Valley Catholic");
     expect(liveContextBody.teamInfo.coachStyle).toBe("Push pace");
     expect(liveContextBody.recentGames[0]?.opponent).toBe("OES");
+  });
+
+  it("accepts the legacy operator game registration route", async () => {
+    await resetSchool("legacy-game-route");
+
+    const response = await fetch(`${API_BASE}/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "legacy-game-route" },
+      body: JSON.stringify({
+        gameId: "legacy-route-game",
+        homeTeamId: "vc",
+        awayTeamId: "opp",
+        opponentName: "OES",
+        opponentTeamId: "opp"
+      })
+    });
+
+    expect(response.status).toBe(201);
+
+    const body = await response.json() as { gameId: string; opponentName?: string };
+    expect(body.gameId).toBe("legacy-route-game");
+    expect(body.opponentName).toBe("OES");
   });
 
   it("supports stats-dashboard team settings and roster management routes", async () => {

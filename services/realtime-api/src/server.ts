@@ -1407,9 +1407,18 @@ function hasValidApiKeyRequest(req: Request): boolean {
   return Boolean(API_KEY && candidate === API_KEY);
 }
 
+function isReadOnlyRequest(req: Request): boolean {
+  return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
+}
+
 async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
   const scopedReq = req as ScopedRequest;
   if (scopedReq.authContext) {
+    next();
+    return;
+  }
+
+  if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && isReadOnlyRequest(req)) {
     next();
     return;
   }
@@ -1424,7 +1433,7 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
     return;
   }
 
-  const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED
+  const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !isReadOnlyRequest(req)
     ? "jwt-write-required"
     : "missing-valid-credentials";
   trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
@@ -1558,6 +1567,20 @@ const operatorPresenceBySocketId = new Map<string, OperatorPresence>();
 const operatorPresenceByDeviceId = new Map<string, OperatorPresence>(); // Index by school+device for O(1) lookup
 const operatorPresenceByConnectionId = new Map<string, OperatorPresence>(); // Index by school+connection for O(1) lookup
 
+interface OperatorLinkSetup {
+  gameId?: string;
+  myTeamId?: string;
+  myTeamName?: string;
+  opponentName?: string;
+  vcSide: "home" | "away";
+  homeTeamColor?: string;
+  awayTeamColor?: string;
+  dashboardUrl?: string;
+  updatedAtIso: string;
+}
+
+const operatorLinkByConnectionId = new Map<string, OperatorLinkSetup>();
+
 // Debounce game state broadcasts to max 1 per 200ms per game
 interface PendingBroadcast {
   state: unknown;
@@ -1599,8 +1622,33 @@ function getOperatorByDeviceId(schoolId: string, deviceId: string): OperatorPres
   return operatorPresenceByDeviceId.get(`${schoolId}:${deviceId}`) ?? null;
 }
 
+function normalizeConnectionKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 40);
+}
+
+function operatorLinkKey(schoolId: string, connectionId: string): string {
+  return `${schoolId}:${connectionId}`;
+}
+
 function getOperatorByConnectionId(schoolId: string, connectionId: string): OperatorPresence | null {
-  return operatorPresenceByConnectionId.get(`${schoolId}:${connectionId}`) ?? null;
+  return operatorPresenceByConnectionId.get(operatorLinkKey(schoolId, connectionId)) ?? null;
+}
+
+function getOperatorLinkSetup(schoolId: string, connectionId: string): OperatorLinkSetup | null {
+  return operatorLinkByConnectionId.get(operatorLinkKey(schoolId, connectionId)) ?? null;
+}
+
+function clearOperatorLinksForSchool(schoolId: string): void {
+  const prefix = `${schoolId}:`;
+  for (const key of operatorLinkByConnectionId.keys()) {
+    if (key.startsWith(prefix)) {
+      operatorLinkByConnectionId.delete(key);
+    }
+  }
 }
 
 function emitPresenceForDevice(schoolId: string, deviceId: string): void {
@@ -1638,7 +1686,36 @@ async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Pr
 
 // Serve the built coach-dashboard SPA from the same origin.
 const COACH_DIST = path.join(__dirname, "..", "..", "..", "apps", "coach-dashboard", "dist");
+const LEGACY_COACH_ROUTE_REDIRECTS: Record<string, string> = {
+  "/games": "/stats/games",
+  "/players": "/stats/players",
+  "/trends": "/stats/trends",
+  "/ai-insights": "/stats/insights",
+  "/analysis": "/stats/insights",
+  "/settings": "/stats/settings",
+};
+
+function resolveCoachRedirectOrigin(req: Request): string {
+  const configured = process.env.COACH_DASHBOARD_ORIGIN?.trim();
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+  if ((process.env.NODE_ENV ?? "development") === "production") {
+    return `${req.protocol}://${req.get("host") ?? ""}`.replace(/\/$/, "");
+  }
+  return "http://localhost:5173";
+}
+
 app.use(express.static(COACH_DIST, { index: false }));
+app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
+  const targetPath = LEGACY_COACH_ROUTE_REDIRECTS[req.path];
+  if (!targetPath) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  res.redirect(302, `${resolveCoachRedirectOrigin(req)}${targetPath}`);
+});
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -2464,6 +2541,60 @@ app.put("/config/roster-teams", requireApiKey, requireWriteRole, (req, res) => {
   res.json({ teams: saved });
 });
 
+app.get("/api/operator-links/:connectionId", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const connectionId = normalizeConnectionKey(req.params.connectionId);
+  if (!connectionId) {
+    res.status(400).json({ error: "connectionId is required" });
+    return;
+  }
+
+  const setup = getOperatorLinkSetup(schoolId, connectionId);
+  if (!setup) {
+    res.status(404).json({ error: "Connection code not found" });
+    return;
+  }
+
+  res.json({
+    connectionId,
+    setup,
+    teams: getRosterTeamsByScope({ schoolId }),
+  });
+});
+
+app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const connectionId = normalizeConnectionKey(req.params.connectionId);
+  if (!connectionId) {
+    res.status(400).json({ error: "connectionId is required" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const setup: OperatorLinkSetup = {
+    gameId: sanitizeTextField(payload.gameId, 120) || undefined,
+    myTeamId: sanitizeTextField(payload.myTeamId, 120) || undefined,
+    myTeamName: sanitizeTextField(payload.myTeamName, 120) || undefined,
+    opponentName: sanitizeTextField(payload.opponentName, 120) || undefined,
+    vcSide: payload.vcSide === "away" ? "away" : "home",
+    homeTeamColor: normalizeTeamColor(payload.homeTeamColor),
+    awayTeamColor: normalizeTeamColor(payload.awayTeamColor),
+    dashboardUrl: sanitizeTextField(payload.dashboardUrl, 320) || undefined,
+    updatedAtIso: new Date().toISOString(),
+  };
+
+  operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
+
+  const response = {
+    connectionId,
+    setup,
+    teams: getRosterTeamsByScope({ schoolId }),
+  };
+
+  io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
+  res.json(response);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Team Management Routes
 // ─────────────────────────────────────────────────────────────────────────
@@ -2632,7 +2763,7 @@ app.delete("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, 
   res.json({ playerId: deleted.id });
 });
 
-app.post("/api/games", requireApiKey, requireWriteRole, (req, res) => {
+app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const {
     gameId,
@@ -2924,7 +3055,7 @@ io.on("connection", (socket) => {
   function registerOperator(rawPayload: unknown): void {
     const payload = (rawPayload ?? {}) as Record<string, unknown>;
     const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
-    const connectionId = typeof payload.connectionId === "string" ? payload.connectionId.trim() : "";
+    const connectionId = normalizeConnectionKey(payload.connectionId);
     const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
 
     if (!connectionId || !gameId) {
@@ -3029,7 +3160,7 @@ io.on("connection", (socket) => {
   socket.on("join:coach", (rawPayload: unknown) => {
     const payload = (rawPayload ?? {}) as Record<string, unknown>;
     const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
-    const connectionId = typeof payload.connectionId === "string" ? payload.connectionId.trim() : "";
+    const connectionId = normalizeConnectionKey(payload.connectionId);
 
     if (gameId) {
       socket.join(gameId);
@@ -3094,6 +3225,7 @@ app.get("/admin/security-metrics/prometheus", requireApiKey, requireWriteRole, (
 app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   resetAllData({ schoolId });
+  clearOperatorLinksForSchool(schoolId);
   res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
 });
 

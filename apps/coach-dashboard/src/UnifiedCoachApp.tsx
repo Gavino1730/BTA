@@ -12,7 +12,11 @@ import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 
 function normalizeConnectionId(value: string | null | undefined): string {
-  return (value ?? "").trim();
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 40);
 }
 
 function buildOperatorConsoleUrl(connectionId: string): string {
@@ -171,6 +175,19 @@ export function UnifiedCoachApp() {
             <a href={operatorConsoleUrl} className="coach-nav-ext-link">
               Score Operator
             </a>
+            <button
+              type="button"
+              className="coach-nav-ext-link"
+              onClick={() => {
+                if (!connectionInfo.connectionId) {
+                  return;
+                }
+                void navigator.clipboard?.writeText(connectionInfo.connectionId);
+              }}
+              title="Copy the operator connection code"
+            >
+              Copy Code
+            </button>
             <button
               type="button"
               onClick={() => setShowTutorial(true)}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { apiBase } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
@@ -14,5 +15,9 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/players")).toBe("stats-players");
     expect(resolveCoachRoute("/settings")).toBe("stats-settings");
     expect(resolveCoachRoute("/live")).toBe("live");
+  });
+
+  it("defaults the coach API base to the realtime API port for local development", () => {
+    expect(apiBase).toBe("http://localhost:4000");
   });
 });

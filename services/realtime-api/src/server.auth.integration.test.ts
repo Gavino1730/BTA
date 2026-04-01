@@ -50,6 +50,16 @@ describe("server auth integration", () => {
     expect(response.status).toBe(200);
   });
 
+  it("allows tenant-scoped roster reads without credentials when only writes require JWT", async () => {
+    const response = await fetch(`${API_BASE}/config/roster-teams`, {
+      headers: {
+        "x-school-id": "public-read-school"
+      }
+    });
+
+    expect(response.status).toBe(200);
+  });
+
   it("denies write endpoint for viewer role and allows coach role", async () => {
     const viewerToken = makeTestToken({
       sub: "viewer-user",
