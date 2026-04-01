@@ -90,6 +90,20 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       .filter((row) => row.name.length > 0);
   }, [rows]);
 
+  const completionPercent = useMemo(() => {
+    const completed = [
+      organizationName.trim(),
+      coachName.trim(),
+      coachEmail.trim(),
+      teamName.trim(),
+      season.trim(),
+      playingStyle.trim(),
+      validRows.length > 0 ? "roster" : "",
+    ].filter(Boolean).length;
+
+    return Math.round((completed / 7) * 100);
+  }, [organizationName, coachName, coachEmail, teamName, season, playingStyle, validRows.length]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedTeam = teamName.trim();
@@ -143,117 +157,175 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
   return (
     <div className="stats-page">
-      <section className="stats-page-hero">
+      <section className="stats-page-hero setup-hero">
         <div>
+          <p className="stats-page-eyebrow">Coach onboarding</p>
           <h1>Organization Setup</h1>
-          <p className="stats-page-subtitle">Create your organization profile, team, and roster in one onboarding flow.</p>
+          <p className="stats-page-subtitle">Create your organization profile, team, and roster in one streamlined flow.</p>
         </div>
-        <p className="stats-page-status">{status}</p>
+        <div className="setup-hero-status">
+          <span className="setup-status-pill">{completionPercent}% ready</span>
+          <p className="stats-page-status">{status}</p>
+        </div>
       </section>
 
-      <form className="stats-page-card setup-form" onSubmit={handleSubmit}>
-        <div className="setup-grid">
-          <label className="stats-filter-field">
-            <span>Organization Name</span>
-            <input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder="Valley Catholic Athletics" />
-          </label>
-          <label className="stats-filter-field">
-            <span>Coach Name</span>
-            <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Coach Rivera" />
-          </label>
-          <label className="stats-filter-field">
-            <span>Coach Email</span>
-            <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.org" />
-          </label>
-          <label className="stats-filter-field">
-            <span>Team Name *</span>
-            <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Valley Catholic" required />
-          </label>
-          <label className="stats-filter-field">
-            <span>Season</span>
-            <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="2026" />
-          </label>
-          <label className="stats-filter-field">
-            <span>Playing Style</span>
-            <input value={playingStyle} onChange={(event) => setPlayingStyle(event.target.value)} placeholder="Pace and space" />
-          </label>
-          <label className="stats-filter-field">
-            <span>Team Color</span>
-            <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} />
-          </label>
+      <form className="stats-page-card setup-form setup-form-shell" onSubmit={handleSubmit}>
+        <div className="setup-summary-grid">
+          <article className="setup-summary-card setup-summary-card-accent">
+            <span className="setup-summary-label">Workspace readiness</span>
+            <strong>{completionPercent}%</strong>
+            <p>
+              {validRows.length > 0
+                ? `${validRows.length} player${validRows.length === 1 ? "" : "s"} added so far.`
+                : "Add your first player to unlock live lineup context."}
+            </p>
+          </article>
+          <article className="setup-summary-card">
+            <span className="setup-summary-label">Coach profile</span>
+            <strong>{coachName.trim() || "Add lead coach"}</strong>
+            <p>{coachEmail.trim() || "Set the main contact email for alerts and invites."}</p>
+          </article>
+          <article className="setup-summary-card">
+            <span className="setup-summary-label">Program identity</span>
+            <strong>{teamName.trim() || "Team name"}</strong>
+            <p>{season.trim() ? `Season ${season.trim()}` : "Choose the current season"} · {playingStyle.trim() || "Add your playing style"}</p>
+          </article>
         </div>
 
-        <div className="stats-page-card-head">
-          <h3>Roster</h3>
-          <button
-            type="button"
-            className="shell-nav-link"
-            onClick={() => setRows((current) => [...current, buildEmptyRosterRow(current.length + 1)])}
-          >
-            Add Player
-          </button>
-        </div>
+        <section className="setup-section">
+          <div className="setup-section-head">
+            <div>
+              <h3>Program Details</h3>
+              <p className="setup-section-copy">These details appear across the coach dashboard, operator app, and live reports.</p>
+            </div>
+          </div>
 
-        <div className="setup-roster-list">
-          {rows.map((row, index) => (
-            <div key={row.id} className="setup-roster-row">
-              <label className="stats-filter-field">
-                <span>Name</span>
-                <input
-                  value={row.name}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, name: value } : entry)));
-                  }}
-                  placeholder="Player name"
-                />
-              </label>
-              <label className="stats-filter-field">
-                <span>#</span>
-                <input
-                  value={row.number}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, number: value } : entry)));
-                  }}
-                  placeholder="0"
-                />
-              </label>
-              <label className="stats-filter-field">
-                <span>Position</span>
-                <input
-                  value={row.position}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, position: value } : entry)));
-                  }}
-                  placeholder="PG"
-                />
-              </label>
-              <label className="stats-filter-field">
-                <span>Grade</span>
-                <input
-                  value={row.grade}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, grade: value } : entry)));
-                  }}
-                  placeholder="11"
-                />
-              </label>
+          <div className="setup-grid">
+            <label className="stats-filter-field">
+              <span>Organization Name</span>
+              <input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder="Central High Athletics" />
+            </label>
+            <label className="stats-filter-field">
+              <span>Coach Name</span>
+              <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Coach Taylor" />
+            </label>
+            <label className="stats-filter-field">
+              <span>Coach Email</span>
+              <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
+            </label>
+            <label className="stats-filter-field">
+              <span>Team Name *</span>
+              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Varsity Boys Basketball" required />
+            </label>
+            <label className="stats-filter-field">
+              <span>Season</span>
+              <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="2026" />
+            </label>
+            <label className="stats-filter-field">
+              <span>Playing Style</span>
+              <input value={playingStyle} onChange={(event) => setPlayingStyle(event.target.value)} placeholder="Pace and space" />
+            </label>
+            <label className="stats-filter-field setup-color-field">
+              <span>Team Color</span>
+              <div className="setup-color-control">
+                <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} aria-label="Team color" />
+                <div className="setup-color-preview">
+                  <span className="setup-color-swatch" style={{ backgroundColor: teamColor }} />
+                  <strong>{teamColor.toUpperCase()}</strong>
+                </div>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section className="setup-section">
+          <div className="stats-page-card-head setup-section-head setup-section-head-inline">
+            <div>
+              <h3>Roster</h3>
+              <p className="setup-section-copy">Add players now so live tracking, AI insights, and box scores are ready on day one.</p>
+            </div>
+            <div className="setup-roster-toolbar">
+              <span className="setup-count-badge">{validRows.length} player{validRows.length === 1 ? "" : "s"}</span>
               <button
                 type="button"
                 className="shell-nav-link"
-                onClick={() => setRows((current) => (current.length <= 1 ? current : current.filter((entry) => entry.id !== row.id)))}
+                onClick={() => setRows((current) => [...current, buildEmptyRosterRow(current.length + 1)])}
               >
-                Remove
+                Add Player
               </button>
             </div>
-          ))}
-        </div>
+          </div>
+
+          <div className="setup-roster-list">
+            {rows.map((row, index) => (
+              <div key={row.id} className="setup-roster-row setup-player-row">
+                <div className="setup-player-row-head">
+                  <div className="setup-roster-index" aria-hidden="true">
+                    <span>Player</span>
+                    <strong>{index + 1}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="shell-nav-link setup-remove-button"
+                    onClick={() => setRows((current) => (current.length <= 1 ? current : current.filter((entry) => entry.id !== row.id)))}
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="setup-player-fields">
+                  <label className="stats-filter-field">
+                    <span>Name</span>
+                    <input
+                      value={row.name}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, name: value } : entry)));
+                      }}
+                      placeholder="Player name"
+                    />
+                  </label>
+                  <label className="stats-filter-field">
+                    <span>#</span>
+                    <input
+                      value={row.number}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, number: value } : entry)));
+                      }}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label className="stats-filter-field">
+                    <span>Position</span>
+                    <input
+                      value={row.position}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, position: value } : entry)));
+                      }}
+                      placeholder="PG"
+                    />
+                  </label>
+                  <label className="stats-filter-field">
+                    <span>Grade</span>
+                    <input
+                      value={row.grade}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, grade: value } : entry)));
+                      }}
+                      placeholder="11"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <div className="setup-actions">
-          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>
+          <button type="submit" className="shell-nav-link shell-nav-link-active setup-submit-button" disabled={saving}>
             {saving ? "Saving..." : "Complete Setup"}
           </button>
         </div>

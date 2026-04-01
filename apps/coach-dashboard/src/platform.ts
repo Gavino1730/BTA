@@ -1,3 +1,5 @@
+const defaultHost = typeof window !== "undefined" ? (window.location.hostname || "localhost") : "localhost";
+
 export const apiBase = (import.meta.env.VITE_API ?? "").replace(/\/+$/, "");
 export const operatorBase = import.meta.env.VITE_OPERATOR_CONSOLE ?? `http://${defaultHost}:5174`;
 export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
