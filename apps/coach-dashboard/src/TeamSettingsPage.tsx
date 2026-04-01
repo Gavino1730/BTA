@@ -80,6 +80,8 @@ interface RosterPlayerDto {
   number?: string | number;
   position?: string;
   grade?: string;
+  role?: string;
+  notes?: string;
 }
 
 interface RosterEditRow {
@@ -88,25 +90,22 @@ interface RosterEditRow {
   number: string;
   position: string;
   grade: string;
+  role: string;
+  notes: string;
   isNew?: boolean;
+  showExpanded?: boolean;
 }
 
-const FOCUS_INSIGHT_OPTIONS = [
-  "Timeouts",
-  "Substitutions",
-  "Foul trouble",
-  "Defensive matchups",
-  "Momentum shifts",
-  "Scoring runs",
-  "Rebounding",
-  "Turnovers",
-  "Transition defense",
-  "Halftime adjustments",
-  "Late-game situations",
-  "Three-point shooting",
-  "Paint scoring",
-  "Fast breaks",
-  "Press defense",
+// Map of backend key → display label
+const FOCUS_INSIGHT_OPTIONS: { key: string; label: string }[] = [
+  { key: "timeouts", label: "Timeouts" },
+  { key: "substitutions", label: "Substitutions" },
+  { key: "foul_management", label: "Foul Trouble" },
+  { key: "momentum", label: "Momentum" },
+  { key: "shot_selection", label: "Shot Selection" },
+  { key: "ball_security", label: "Turnovers" },
+  { key: "hot_hand", label: "Hot Hand" },
+  { key: "defense", label: "Defense" },
 ];
 
 function FocusInsightsChips({ value, onChange }: { value: string; onChange: (next: string) => void }) {
@@ -114,34 +113,31 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
     value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
   );
 
-  function toggle(label: string) {
-    const key = label.toLowerCase();
+  function toggle(key: string) {
     const next = new Set(active);
     if (next.has(key)) {
       next.delete(key);
     } else {
       next.add(key);
     }
-    // Preserve canonical label casing for active chips
     const ordered = FOCUS_INSIGHT_OPTIONS
-      .map((opt) => opt.toLowerCase())
-      .filter((k) => next.has(k))
-      .map((k) => FOCUS_INSIGHT_OPTIONS.find((o) => o.toLowerCase() === k) ?? k);
-    // Then append any custom values not in the preset list
-    const customs = [...next].filter((k) => !FOCUS_INSIGHT_OPTIONS.some((o) => o.toLowerCase() === k));
+      .map((opt) => opt.key)
+      .filter((k) => next.has(k));
+    // Append any custom values not in the preset list
+    const customs = [...next].filter((k) => !FOCUS_INSIGHT_OPTIONS.some((o) => o.key === k));
     onChange([...ordered, ...customs].join(", "));
   }
 
   return (
     <div className="focus-chips-wrap">
-      {FOCUS_INSIGHT_OPTIONS.map((label) => {
-        const on = active.has(label.toLowerCase());
+      {FOCUS_INSIGHT_OPTIONS.map(({ key, label }) => {
+        const on = active.has(key);
         return (
           <button
-            key={label}
+            key={key}
             type="button"
             className={`focus-chip${on ? " focus-chip-on" : ""}`}
-            onClick={() => toggle(label)}
+            onClick={() => toggle(key)}
           >
             {on && <span className="focus-chip-check" aria-hidden="true">✓ </span>}
             {label}
@@ -161,7 +157,7 @@ export function TeamSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
-  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string }>({ name: "", number: "", position: "", grade: "" });
+  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; role: string; notes: string }>({ name: "", number: "", position: "", grade: "", role: "", notes: "" });
   const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">("pairing");
   const [playingStyle, setPlayingStyle] = useState("");
   const [teamContext, setTeamContext] = useState("");
@@ -234,6 +230,8 @@ export function TeamSettingsPage() {
                     number: String(p.number ?? ""),
                     position: p.position ?? "",
                     grade: p.grade ?? "",
+                    role: p.role ?? "",
+                    notes: p.notes ?? "",
                   }))
                 : []
             );
@@ -477,6 +475,8 @@ export function TeamSettingsPage() {
           number: newPlayer.number.trim() || undefined,
           position: newPlayer.position.trim() || undefined,
           grade: newPlayer.grade.trim() || undefined,
+          role: newPlayer.role.trim() || undefined,
+          notes: newPlayer.notes.trim() || undefined,
         }),
       });
 
@@ -486,9 +486,9 @@ export function TeamSettingsPage() {
 
       setRoster((current) => [
         ...current,
-        { key: `new-${Date.now()}`, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim() },
+        { key: `new-${Date.now()}`, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim() },
       ]);
-      setNewPlayer({ name: "", number: "", position: "", grade: "" });
+      setNewPlayer({ name: "", number: "", position: "", grade: "", role: "", notes: "" });
       setStatus(`${name} added to roster.`);
     } catch {
       setStatus("Could not add player.");
@@ -512,6 +512,8 @@ export function TeamSettingsPage() {
           number: row.number.trim() || undefined,
           position: row.position.trim() || undefined,
           grade: row.grade.trim() || undefined,
+          role: row.role?.trim() || undefined,
+          notes: row.notes?.trim() || undefined,
         }),
       });
 
@@ -624,60 +626,78 @@ export function TeamSettingsPage() {
           </div>
 
           {roster.length > 0 && (
-            <div className="settings-roster-table-wrap">
-              <table className="settings-roster-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th>Pos</th>
-                    <th>Grade</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {roster.map((row) => (
-                    <tr key={row.key}>
-                      <td>
-                        <input
-                          className="settings-roster-input settings-roster-input-sm"
-                          value={row.number}
-                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, number: e.target.value } : r))}
-                          placeholder="0"
-                        />
-                      </td>
-                      <td>
+            <div className="settings-roster-list">
+              {roster.map((row) => (
+                <div key={row.key} className="settings-roster-row-card">
+                  <div className="settings-roster-row-main">
+                    <div className="settings-roster-row-fields">
+                      <input
+                        className="settings-roster-input settings-roster-input-num"
+                        value={row.number}
+                        onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, number: e.target.value } : r))}
+                        placeholder="#"
+                        aria-label="Jersey number"
+                      />
+                      <input
+                        className="settings-roster-input settings-roster-input-name"
+                        value={row.name}
+                        onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, name: e.target.value } : r))}
+                        placeholder="Player name"
+                        aria-label="Player name"
+                      />
+                      <input
+                        className="settings-roster-input settings-roster-input-sm"
+                        value={row.position}
+                        onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, position: e.target.value } : r))}
+                        placeholder="Pos"
+                        aria-label="Position"
+                      />
+                      <input
+                        className="settings-roster-input settings-roster-input-sm"
+                        value={row.grade}
+                        onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, grade: e.target.value } : r))}
+                        placeholder="Yr"
+                        aria-label="Grade/Year"
+                      />
+                    </div>
+                    <div className="settings-roster-row-actions">
+                      <button
+                        type="button"
+                        className="settings-roster-expand-btn"
+                        onClick={() => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, showExpanded: !r.showExpanded } : r))}
+                        title="Edit AI context (role &amp; notes)"
+                      >
+                        {row.showExpanded ? "▲" : "▼"} AI
+                      </button>
+                      <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void savePlayer(row)}>Save</button>
+                      <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void removePlayer(row)}>Remove</button>
+                    </div>
+                  </div>
+                  {row.showExpanded && (
+                    <div className="settings-roster-row-expanded">
+                      <label className="stats-filter-field">
+                        <span>Role / Description <span className="settings-hint">(used by AI — e.g. "Primary ball handler, shoots 3s")</span></span>
                         <input
                           className="settings-roster-input"
-                          value={row.name}
-                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, name: e.target.value } : r))}
-                          placeholder="Player name"
+                          value={row.role}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, role: e.target.value } : r))}
+                          placeholder="e.g. Primary ball handler, strong defender"
                         />
-                      </td>
-                      <td>
-                        <input
-                          className="settings-roster-input settings-roster-input-sm"
-                          value={row.position}
-                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, position: e.target.value } : r))}
-                          placeholder="PG"
+                      </label>
+                      <label className="stats-filter-field">
+                        <span>Notes <span className="settings-hint">(injuries, tendencies, matchup notes)</span></span>
+                        <textarea
+                          className="settings-roster-textarea"
+                          value={row.notes}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, notes: e.target.value } : r))}
+                          placeholder="e.g. Recovering from ankle sprain, tends to go left"
+                          rows={2}
                         />
-                      </td>
-                      <td>
-                        <input
-                          className="settings-roster-input settings-roster-input-sm"
-                          value={row.grade}
-                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, grade: e.target.value } : r))}
-                          placeholder="11"
-                        />
-                      </td>
-                      <td className="settings-roster-actions">
-                        <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void savePlayer(row)}>Save</button>
-                        <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void removePlayer(row)}>Remove</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
@@ -699,6 +719,20 @@ export function TeamSettingsPage() {
               <label className="stats-filter-field">
                 <span>Grade</span>
                 <input value={newPlayer.grade} onChange={(e) => setNewPlayer((cur) => ({ ...cur, grade: e.target.value }))} placeholder="11" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Role / Description</span>
+                <input value={newPlayer.role} onChange={(e) => setNewPlayer((cur) => ({ ...cur, role: e.target.value }))} placeholder="Primary ball handler, shoots 3s" />
+              </label>
+              <label className="stats-filter-field stats-filter-field-full">
+                <span>Notes</span>
+                <textarea
+                  className="settings-roster-textarea"
+                  value={newPlayer.notes}
+                  onChange={(e) => setNewPlayer((cur) => ({ ...cur, notes: e.target.value }))}
+                  placeholder="Injuries, tendencies, matchup notes..."
+                  rows={2}
+                />
               </label>
             </div>
             <div className="settings-form-footer">

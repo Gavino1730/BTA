@@ -2621,53 +2621,129 @@ body {
 }
 
 /* Roster table */
+.settings-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.settings-roster-row-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.settings-roster-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.settings-roster-row-fields {
+  display: flex;
+  gap: 0.35rem;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.settings-roster-row-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.settings-roster-expand-btn {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--surface-3);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  color: var(--text-muted);
+  padding: 0.28rem 0.55rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.settings-roster-expand-btn:hover {
+  background: var(--border-hi);
+  color: var(--text);
+}
+
+.settings-roster-row-expanded {
+  padding: 0.65rem 0.9rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-roster-textarea {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border-radius: 7px;
+  border: 1px solid var(--border-hi);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.85rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.settings-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Keep old table wrapper styles for backward compatibility */
 .settings-roster-table-wrap {
   overflow-x: auto;
   margin-bottom: 1.5rem;
 }
 
-.settings-roster-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-
-.settings-roster-table th {
-  text-align: left;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  padding: 0.4rem 0.5rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.settings-roster-table td {
-  padding: 0.3rem 0.4rem;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
 .settings-roster-input {
-  width: 100%;
-  min-width: 120px;
   padding: 0.3rem 0.5rem;
   border-radius: 7px;
   border: 1px solid var(--border-hi);
   background: var(--surface-2);
   color: var(--text);
   font-size: 0.85rem;
+  min-width: 90px;
+  flex: 1;
+}
+
+.settings-roster-input-num {
+  max-width: 52px;
+  min-width: 42px;
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.settings-roster-input-name {
+  min-width: 130px;
+  flex: 2;
 }
 
 .settings-roster-input-sm {
-  min-width: 52px;
+  max-width: 62px;
+  min-width: 46px;
 }
 
 .settings-roster-actions {
   display: flex;
   gap: 0.35rem;
   white-space: nowrap;
+}
+
+.stats-filter-field-full {
+  grid-column: 1 / -1;
 }
 
 /* Add player / invite form footer */
@@ -3549,3 +3625,260 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   to { transform: rotate(360deg); }
 }
 
+
+/* ── AI Insights Page ── */
+
+.ai-live-banner {
+  background: linear-gradient(135deg, rgba(var(--accent-blue-rgb, 59,130,246), 0.18) 0%, rgba(var(--accent-green-rgb, 34,197,94), 0.12) 100%);
+  border: 1px solid rgba(59,130,246,0.35);
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ai-live-banner-score {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.ai-live-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  background: rgba(239,68,68,0.85);
+  color: #fff;
+  border-radius: 5px;
+  padding: 0.15rem 0.45rem;
+  animation: ai-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ai-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.ai-live-banner-score strong {
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+.ai-live-vs {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.ai-live-meta {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.ai-live-lineup {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.ai-live-lineup-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+}
+
+.ai-live-player-chip {
+  font-size: 0.8rem;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.18rem 0.6rem;
+  color: var(--text);
+}
+
+.ai-live-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ai-live-insight-item {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  padding-left: 0.9rem;
+  position: relative;
+}
+
+.ai-live-insight-item::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: rgba(59,130,246,0.7);
+}
+
+/* Chat */
+.ai-chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 360px;
+  overflow-y: auto;
+  margin-bottom: 0.9rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-width: 88%;
+}
+
+.ai-chat-bubble-user {
+  align-self: flex-end;
+}
+
+.ai-chat-bubble-assistant {
+  align-self: flex-start;
+}
+
+.ai-chat-role {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.ai-chat-bubble-user .ai-chat-role {
+  text-align: right;
+}
+
+.ai-chat-content {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.8rem;
+}
+
+.ai-chat-bubble-user .ai-chat-content {
+  background: rgba(59,130,246,0.15);
+  border-color: rgba(59,130,246,0.3);
+}
+
+.ai-chat-bubble-loading .ai-chat-content {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.ai-chat-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ai-chat-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-hi);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0.75rem 0.9rem;
+  font: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ai-chat-textarea:focus {
+  outline: none;
+  border-color: rgba(59,130,246,0.5);
+}
+
+.ai-chat-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ai-chat-suggestions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ai-chat-suggestions-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.ai-chat-suggestion-chip {
+  font-size: 0.78rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  padding: 0.2rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ai-chat-suggestion-chip:hover:not(:disabled) {
+  background: rgba(255,255,255,0.12);
+  color: var(--text);
+}
+
+/* Player cards grid */
+.ai-player-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ai-player-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+}
+
+.ai-player-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.ai-player-card-head strong {
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+/* Per-game performance chips */
+.ai-perf-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+}
+
+.ai-perf-chip {
+  font-size: 0.74rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.18rem 0.55rem;
+  color: var(--text-muted);
+}

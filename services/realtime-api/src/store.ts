@@ -900,26 +900,56 @@ function combineInsights(session: GameSession): LiveInsight[] {
     .slice(0, 20);
 }
 
-function describeEvent(event: GameEvent): string {
+/**
+ * Build a lookup map from player ID → "#number name" display label.
+ * Falls back to pretty-printing the raw ID if the player is not in the roster.
+ */
+function buildPlayerLookup(rosterTeam: RosterTeam | null | undefined): Map<string, string> {
+  const lookup = new Map<string, string>();
+  if (!rosterTeam) return lookup;
+  for (const player of rosterTeam.players) {
+    const label = player.number ? `#${player.number} ${player.name}` : player.name;
+    lookup.set(player.id, label);
+  }
+  return lookup;
+}
+
+/**
+ * Resolve a raw player ID to a human-readable label using the roster lookup.
+ * Falls back to stripping known prefixes and title-casing the ID.
+ */
+function resolvePlayerDisplay(playerId: string, lookup: Map<string, string>): string {
+  if (lookup.has(playerId)) return lookup.get(playerId)!;
+  // Pretty-print: strip common team prefix (e.g. "vc-", "vc_"), replace separators
+  return playerId
+    .replace(/^[a-z]{1,4}[-_]/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    || playerId;
+}
+
+function describeEvent(event: GameEvent, lookup?: Map<string, string>): string {
+  const pl = lookup ? (id: string) => resolvePlayerDisplay(id, lookup) : (id: string) => id;
   switch (event.type) {
     case "shot_attempt":
       return `${event.teamId} ${event.made ? "made" : "missed"} ${event.points}pt shot (${event.zone})`;
     case "free_throw_attempt":
       return `${event.teamId} ${event.made ? "made" : "missed"} free throw ${event.attemptNumber}/${event.totalAttempts}`;
     case "rebound":
-      return `${event.teamId} ${event.offensive ? "offensive" : "defensive"} rebound by ${event.playerId}`;
+      return `${event.teamId} ${event.offensive ? "offensive" : "defensive"} rebound by ${pl(event.playerId)}`;
     case "turnover":
-      return `${event.teamId} turnover${event.playerId ? ` by ${event.playerId}` : ""} (${event.turnoverType})`;
+      return `${event.teamId} turnover${event.playerId ? ` by ${pl(event.playerId)}` : ""} (${event.turnoverType})`;
     case "foul":
-      return `${event.teamId} foul on ${event.playerId} (${event.foulType})`;
+      return `${event.teamId} foul on ${pl(event.playerId)} (${event.foulType})`;
     case "assist":
-      return `${event.teamId} assist by ${event.playerId}`;
+      return `${event.teamId} assist by ${pl(event.playerId)}`;
     case "steal":
-      return `${event.teamId} steal by ${event.playerId}`;
+      return `${event.teamId} steal by ${pl(event.playerId)}`;
     case "block":
-      return `${event.teamId} block by ${event.playerId}`;
+      return `${event.teamId} block by ${pl(event.playerId)}`;
     case "substitution":
-      return `${event.teamId} substitution ${event.playerOutId} -> ${event.playerInId}`;
+      return `${event.teamId} substitution ${pl(event.playerOutId)} → ${pl(event.playerInId)}`;
     case "possession_start":
       return `possession starts for ${event.possessedByTeamId}`;
     case "possession_end":
@@ -947,7 +977,8 @@ function summarizeTeamState(
   state: GameState,
   teamId: string,
   isOurTeam: boolean,
-  opponentStatsLimited: boolean
+  opponentStatsLimited: boolean,
+  lookup?: Map<string, string>
 ): string {
   const teamStats = state.teamStats[teamId];
   const players = Object.values(state.playerStatsByTeam[teamId] ?? {});
@@ -957,13 +988,14 @@ function summarizeTeamState(
 
   const sortedPlayers = [...players].sort((left, right) => right.points - left.points);
   const topScorer = sortedPlayers[0];
+  const pl = lookup ? (id: string) => resolvePlayerDisplay(id, lookup) : (id: string) => id;
   const foulTroubledPlayers = players
     .filter((p) => (state.playerFouls[p.playerId] ?? 0) >= 3)
-    .map((p) => `${p.playerId}(${state.playerFouls[p.playerId]}f)`)
+    .map((p) => `${pl(p.playerId)}(${state.playerFouls[p.playerId]}f)`)
     .join(", ");
 
   const fgPct = formatFgPct(teamStats?.shooting.fgMade ?? 0, teamStats?.shooting.fgAttempts ?? 0);
-  const activeLineup = (state.activeLineupsByTeam[teamId] ?? []).join(", ");
+  const activeLineup = (state.activeLineupsByTeam[teamId] ?? []).map(pl).join(", ");
 
   const lines = [
     `${teamLabel}: ${state.scoreByTeam[teamId] ?? 0} pts`,
@@ -973,7 +1005,7 @@ function summarizeTeamState(
     `TO ${teamStats?.turnovers ?? 0}`,
     `Fouls ${teamStats?.fouls ?? 0}`,
     `Bonus ${state.bonusByTeam[teamId] ? "YES" : "no"}`,
-    topScorer ? `Top scorer: ${topScorer.playerId} (${topScorer.points}pts, ${topScorer.fgMade}/${topScorer.fgAttempts}FG)` : "Top scorer: none",
+    topScorer ? `Top scorer: ${pl(topScorer.playerId)} (${topScorer.points}pts, ${topScorer.fgMade}/${topScorer.fgAttempts}FG)` : "Top scorer: none",
     foulTroubledPlayers ? `Foul trouble: ${foulTroubledPlayers}` : "",
     activeLineup ? `Active lineup: ${activeLineup}` : ""
   ].filter(Boolean).join(", ");
@@ -1009,13 +1041,14 @@ function buildRosterMetadataLines(state: GameState, teamId: string, schoolId: st
     .slice(0, 8);
 
   return playersToDescribe.map((player) => {
+    const displayLabel = player.number ? `#${player.number} ${player.name}` : player.name;
     const details = [
       player.role?.trim() ? `role: ${player.role.trim()}` : "",
       player.notes?.trim() ? `context: ${player.notes.trim()}` : "",
       liveLineup.has(player.id) ? "currently in lineup" : ""
     ].filter(Boolean).join("; ");
 
-    return `- ${player.id}${player.number ? ` (#${player.number})` : ""}: ${details}`;
+    return `- ${displayLabel}: ${details}`;
   });
 }
 
@@ -1047,6 +1080,7 @@ function buildAiInsightPrompt(
     : session.homeTeamId;
   const opponentTeamId = state.opponentTeamId ?? session.awayTeamId;
   const rosterTeam = getRosterTeamsForSchool(session.schoolId).find((team) => team.id === ourTeamId);
+  const playerLookup = buildPlayerLookup(rosterTeam);
 
   const homeLabel = state.homeTeamId === ourTeamId ? "Our team (home)" : (state.opponentName || "Opponent (home)");
   const awayLabel = state.awayTeamId === ourTeamId ? "Our team (away)" : (state.opponentName || "Opponent (away)");
@@ -1063,7 +1097,7 @@ function buildAiInsightPrompt(
   const maxOTTimeouts = 1;
   const maxTimeouts = isOT ? maxOTTimeouts : maxRegTimeouts;
 
-  // Player foul summary for our team
+  // Player foul summary for our team — use display names
   const ourPlayers = Object.values(state.playerStatsByTeam[ourTeamId] ?? {});
   const playerFoulLines = ourPlayers
     .filter((p) => (state.playerFouls[p.playerId] ?? 0) >= 2)
@@ -1071,14 +1105,15 @@ function buildAiInsightPrompt(
     .map((p) => {
       const f = state.playerFouls[p.playerId] ?? 0;
       const foulNote = f >= 4 ? " (FOUL OUT RISK)" : f === 3 ? " (watch)" : "";
-      return `${p.playerId}: ${f} fouls${foulNote}, ${p.points}pts, ${p.fgMade}/${p.fgAttempts}FG`;
+      const display = resolvePlayerDisplay(p.playerId, playerLookup);
+      return `${display}: ${f} fouls${foulNote}, ${p.points}pts, ${p.fgMade}/${p.fgAttempts}FG`;
     });
 
-  // Our active lineup
-  const ourLineup = (state.activeLineupsByTeam[ourTeamId] ?? []).join(", ");
+  // Our active lineup — resolve to display names
+  const ourLineup = (state.activeLineupsByTeam[ourTeamId] ?? []).map((id) => resolvePlayerDisplay(id, playerLookup)).join(", ");
   const theirLineup = (state.activeLineupsByTeam[opponentTeamId] ?? []).join(", ");
 
-  const recentEventLines = recentEvents.map((event) => `- ${describeEvent(event)}`).join("\n");
+  const recentEventLines = recentEvents.map((event) => `- ${describeEvent(event, playerLookup)}`).join("\n");
   const focusInsightsLine = aiSettings.focusInsights.length > 0
     ? `Coach requested focus: ${aiSettings.focusInsights.join(", ")}`
     : "Coach requested focus: none";
@@ -1123,7 +1158,7 @@ function buildAiInsightPrompt(
     `Score: ${homeLabel} ${state.scoreByTeam[session.homeTeamId] ?? 0} — ${awayLabel} ${state.scoreByTeam[session.awayTeamId] ?? 0}`,
     "",
     "Team snapshots:",
-    summarizeTeamState(state, ourTeamId, true, aiContext.opponentStatsLimited),
+    summarizeTeamState(state, ourTeamId, true, aiContext.opponentStatsLimited, playerLookup),
     summarizeTeamState(state, opponentTeamId, false, aiContext.opponentStatsLimited),
     "",
     `Timeouts used — us: ${ourTimeouts}/${maxTimeouts}, them: ${oppTimeouts}/${maxTimeouts}`,
@@ -1236,7 +1271,7 @@ function summarizeHistoricalPlayers(playersPayload: SeasonPlayerSummary[], sessi
   }).join("\n");
 }
 
-function buildCurrentPlayerSnapshot(state: GameState, teamId: string): string {
+function buildCurrentPlayerSnapshot(state: GameState, teamId: string, lookup?: Map<string, string>): string {
   const playerStats = Object.values(state.playerStatsByTeam[teamId] ?? {})
     .slice()
     .sort((left, right) => right.points - left.points || right.fgMade - left.fgMade);
@@ -1245,11 +1280,12 @@ function buildCurrentPlayerSnapshot(state: GameState, teamId: string): string {
     return "No tracked player stats yet.";
   }
 
+  const pl = lookup ? (id: string) => resolvePlayerDisplay(id, lookup) : (id: string) => id;
   return playerStats
     .map((player) => {
       const fgPct = player.fgAttempts > 0 ? Math.round((player.fgMade / player.fgAttempts) * 100) : 0;
       const fouls = state.playerFouls[player.playerId] ?? player.fouls ?? 0;
-      return `- ${player.playerId}: ${player.points} pts, ${player.fgMade}/${player.fgAttempts} FG (${fgPct}%), ${player.ftMade}/${player.ftAttempts} FT, ${player.reboundsOff + player.reboundsDef} reb, ${player.assists} ast, ${player.turnovers} to, ${fouls} fouls`;
+      return `- ${pl(player.playerId)}: ${player.points} pts, ${player.fgMade}/${player.fgAttempts} FG (${fgPct}%), ${player.ftMade}/${player.ftAttempts} FT, ${player.reboundsOff + player.reboundsDef} reb, ${player.assists} ast, ${player.turnovers} to, ${fouls} fouls`;
     })
     .join("\n");
 }
@@ -1285,6 +1321,7 @@ function buildAiChatPrompt(
   const aiSettings = sanitizeCoachAiSettings(session.aiSettings);
   const aiContext = sanitizeGameAiContext(session.aiContext);
   const rosterTeam = getRosterTeamsForSchool(session.schoolId).find((team) => team.id === ourTeamId);
+  const playerLookup = buildPlayerLookup(rosterTeam);
   const isOT = isOvertimePeriod(state.currentPeriod);
 
   const clockSec = latestEvent?.clockSecondsRemaining ?? 0;
@@ -1292,7 +1329,7 @@ function buildAiChatPrompt(
     ? `${Math.floor(clockSec / 60)}:${String(clockSec % 60).padStart(2, "0")}`
     : `${clockSec}s`;
 
-  const recentEvents = orderedEvents.slice(-10).map((event) => `- ${describeEvent(event)}`).join("\n") || "- none";
+  const recentEvents = orderedEvents.slice(-10).map((event) => `- ${describeEvent(event, playerLookup)}`).join("\n") || "- none";
   const chatHistory = history.length > 0
     ? history.map((entry) => `${entry.role === "assistant" ? "Assistant" : "Coach"}: ${entry.content}`).join("\n")
     : "Coach: no prior chat in this thread";
@@ -1305,7 +1342,7 @@ function buildAiChatPrompt(
   const focusLine = aiSettings.focusInsights.length > 0 ? `Coach focus areas: ${aiSettings.focusInsights.join(", ")}` : "";
   const rosterMetadataLines = buildRosterMetadataLines(state, ourTeamId, session.schoolId);
 
-  // Player foul summary
+  // Player foul summary — use display names
   const ourPlayers = Object.values(state.playerStatsByTeam[ourTeamId] ?? {});
   const playerFoulLines = ourPlayers
     .filter((p) => (state.playerFouls[p.playerId] ?? 0) >= 2)
@@ -1313,11 +1350,12 @@ function buildAiChatPrompt(
     .map((p) => {
       const f = state.playerFouls[p.playerId] ?? 0;
       const foulNote = f >= 4 ? " (FOUL OUT RISK)" : f === 3 ? " (watch)" : "";
-      return `${p.playerId}: ${f} fouls${foulNote}, ${p.points}pts, ${p.fgMade}/${p.fgAttempts}FG`;
+      const display = resolvePlayerDisplay(p.playerId, playerLookup);
+      return `${display}: ${f} fouls${foulNote}, ${p.points}pts, ${p.fgMade}/${p.fgAttempts}FG`;
     });
 
-  // Active lineups
-  const ourLineup = (state.activeLineupsByTeam[ourTeamId] ?? []).join(", ");
+  // Active lineups — resolve to display names
+  const ourLineup = (state.activeLineupsByTeam[ourTeamId] ?? []).map((id) => resolvePlayerDisplay(id, playerLookup)).join(", ");
   const theirLineup = (state.activeLineupsByTeam[opponentTeamId] ?? []).join(", ");
 
   // Active rule insights context
@@ -1329,10 +1367,10 @@ function buildAiChatPrompt(
     `Clock tracking: ${aiContext.clockEnabled ? "enabled" : "disabled"}`,
     `Opponent stats: ${aiContext.opponentStatsLimited ? "limited" : "expanded"}`,
     "",
-    `Our team: ${summarizeTeamState(state, ourTeamId, true, aiContext.opponentStatsLimited)}`,
+    `Our team: ${summarizeTeamState(state, ourTeamId, true, aiContext.opponentStatsLimited, playerLookup)}`,
     `Opponent: ${summarizeTeamState(state, opponentTeamId, false, aiContext.opponentStatsLimited)}`,
     "",
-    `Current player stats (our team):\n${buildCurrentPlayerSnapshot(state, ourTeamId)}`,
+    `Current player stats (our team):\n${buildCurrentPlayerSnapshot(state, ourTeamId, playerLookup)}`,
     "",
     playerFoulLines.length > 0 ? `Player foul detail:\n${playerFoulLines.join("\n")}` : "",
     ourLineup ? `Our lineup: ${ourLineup}` : "",
@@ -2695,12 +2733,20 @@ function recomputeSession(session: GameSession): void {
   const insights: LiveInsight[] = [];
   let rollingState = initialState;
 
+  // Build roster player list for insight engine player label resolution
+  const ourTeamIdForInsights = session.state.opponentTeamId
+    ? (session.homeTeamId !== session.state.opponentTeamId ? session.homeTeamId : session.awayTeamId)
+    : session.homeTeamId;
+  const rosterTeamForInsights = getRosterTeamsForSchool(session.schoolId).find((t) => t.id === ourTeamIdForInsights);
+  const rosterPlayersForInsights = rosterTeamForInsights?.players.map((p) => ({ id: p.id, number: p.number, name: p.name }));
+
   for (const event of orderedEvents) {
     rollingState = applyEvent(rollingState, event);
     const nextInsights = generateInsights({
       state: rollingState,
       latestEvent: event,
-      clockEnabled: session.aiContext.clockEnabled
+      clockEnabled: session.aiContext.clockEnabled,
+      rosterPlayers: rosterPlayersForInsights
     }).filter((insight) => !insightIds.has(insight.id));
 
     for (const insight of nextInsights) {
