@@ -171,7 +171,13 @@ export function UnifiedCoachApp() {
   }
 
   if (route === "login") {
-    return <LoginPage onBackHome={() => navigate("/")} onSuccess={handleAuthSuccess} />;
+    return (
+      <LoginPage
+        onBackHome={() => navigate("/")}
+        onCreateAccount={() => navigate("/setup")}
+        onSuccess={handleAuthSuccess}
+      />
+    );
   }
 
   if (requiresSetup === null) {

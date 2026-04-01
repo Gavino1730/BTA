@@ -4,6 +4,7 @@ import { apiBase, apiKeyHeader, storeAuthSession } from "./platform.js";
 interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
   onBackHome: () => void;
+  onCreateAccount: () => void;
 }
 
 interface AuthUser {
@@ -25,7 +26,7 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
+export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageProps) {
   const [coachEmail, setCoachEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
@@ -132,12 +133,13 @@ export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
           <p className="stats-page-eyebrow">Coach access</p>
           <h1>Sign in to your dashboard</h1>
           <p className="stats-page-subtitle">
-            Invite-only preview. Only approved coaches can sign in right now.
+            Sign in below, or use the temporary create-account flow to unlock your dashboard.
           </p>
 
           <div className="marketing-login-note">
-            <strong>Coming soon</strong>
-            <p>We are still polishing the product, so public sign-ups are disabled for now.</p>
+            <strong>Temporary access enabled</strong>
+            <p>If you do not have a coach login yet, create one first and then finish setup.</p>
+            <button type="button" className="shell-nav-link" onClick={onCreateAccount}>Create Account</button>
           </div>
 
           <form className="marketing-login-form" onSubmit={handleSubmit}>
