@@ -26,12 +26,9 @@ interface AuthSessionPayload {
 }
 
 export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [coachName, setCoachName] = useState("");
   const [coachEmail, setCoachEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [status, setStatus] = useState("Sign in to access your coach dashboard.");
+  const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -69,13 +66,11 @@ export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const isRegister = authMode === "register";
-    const normalizedName = coachName.trim();
     const normalizedEmail = coachEmail.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
-    if (!normalizedEmail || !normalizedPassword || (isRegister && !normalizedName)) {
-      setStatus("Enter the required account details to continue.");
+    if (!normalizedEmail || !normalizedPassword) {
+      setStatus("Enter your approved coach email and password to continue.");
       return;
     }
 
@@ -84,25 +79,14 @@ export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
       return;
     }
 
-    if (isRegister && normalizedPassword.length < 8) {
-      setStatus("Password must be at least 8 characters.");
-      return;
-    }
-
-    if (isRegister && normalizedPassword !== confirmPassword.trim()) {
-      setStatus("Password confirmation does not match.");
-      return;
-    }
-
     setBusy(true);
-    setStatus(isRegister ? "Creating your account..." : "Signing in...");
+    setStatus("Signing in...");
 
     try {
-      const response = await fetch(`${apiBase}/api/auth/${isRegister ? "register" : "login"}`, {
+      const response = await fetch(`${apiBase}/api/auth/login`, {
         method: "POST",
         headers: apiKeyHeader(true),
         body: JSON.stringify({
-          fullName: normalizedName,
           email: normalizedEmail,
           password: normalizedPassword,
         }),
@@ -123,11 +107,10 @@ export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
       });
 
       setPassword("");
-      setConfirmPassword("");
       setStatus(
         payload.onboarding?.completed
           ? "Signed in successfully. Opening your dashboard..."
-          : "Account ready. Finish your team setup next.",
+          : "Signed in. Finish your setup next.",
       );
       onSuccess(Boolean(payload.onboarding?.completed));
     } catch (error) {
@@ -141,60 +124,34 @@ export function LoginPage({ onSuccess, onBackHome }: LoginPageProps) {
     <div className="marketing-page">
       <header className="marketing-header marketing-header-tight">
         <button type="button" className="shell-nav-link" onClick={onBackHome}>← Back Home</button>
-        <button type="button" className="shell-nav-link" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>
-          {authMode === "login" ? "Create Account" : "I Already Have an Account"}
-        </button>
+        <span className="marketing-coming-pill">Invite Only</span>
       </header>
 
       <main className="marketing-login-shell">
         <section className="marketing-login-card stats-page-card">
           <p className="stats-page-eyebrow">Coach access</p>
-          <h1>{authMode === "login" ? "Sign in to your dashboard" : "Create your coach account"}</h1>
+          <h1>Sign in to your dashboard</h1>
           <p className="stats-page-subtitle">
-            Use your email and password to open the coach dashboard and the team information connected to your account.
+            Invite-only preview. Only approved coaches can sign in right now.
           </p>
 
-          <div className="setup-auth-toggle">
-            <button
-              type="button"
-              className={authMode === "login" ? "shell-nav-link shell-nav-link-active" : "shell-nav-link"}
-              onClick={() => setAuthMode("login")}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              className={authMode === "register" ? "shell-nav-link shell-nav-link-active" : "shell-nav-link"}
-              onClick={() => setAuthMode("register")}
-            >
-              Create Account
-            </button>
+          <div className="marketing-login-note">
+            <strong>Coming soon</strong>
+            <p>We are still polishing the product, so public sign-ups are disabled for now.</p>
           </div>
 
           <form className="marketing-login-form" onSubmit={handleSubmit}>
-            {authMode === "register" && (
-              <label className="stats-filter-field">
-                <span>Coach Name</span>
-                <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Coach Taylor" />
-              </label>
-            )}
             <label className="stats-filter-field">
               <span>Coach Email</span>
               <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
             </label>
             <label className="stats-filter-field">
               <span>Password</span>
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" />
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
             </label>
-            {authMode === "register" && (
-              <label className="stats-filter-field">
-                <span>Confirm Password</span>
-                <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Re-enter password" />
-              </label>
-            )}
 
             <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={busy}>
-              {busy ? (authMode === "login" ? "Signing In..." : "Creating Account...") : (authMode === "login" ? "Sign In" : "Create Account")}
+              {busy ? "Signing In..." : "Sign In"}
             </button>
           </form>
 

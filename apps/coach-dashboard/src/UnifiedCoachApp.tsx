@@ -39,8 +39,9 @@ function buildOperatorConsoleUrl(connectionId: string): string {
 
 export function UnifiedCoachApp() {
   const initialConnectionId = normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId")) || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
+  const initialAuthSession = readStoredAuthSession();
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => Boolean(initialAuthSession?.token));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
   const [connectionInfo, setConnectionInfo] = useState<AppConnectionInfo>({
@@ -59,6 +60,10 @@ export function UnifiedCoachApp() {
   }, []);
 
   useEffect(() => {
+    if (route === "marketing") {
+      return;
+    }
+
     let cancelled = false;
 
     async function loadSetupState() {
@@ -97,7 +102,7 @@ export function UnifiedCoachApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [route]);
 
   useEffect(() => {
     if (!requiresSetup) {
@@ -161,6 +166,14 @@ export function UnifiedCoachApp() {
     setRoute(resolveCoachRoute(nextPath));
   }
 
+  if (route === "marketing") {
+    return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
+  }
+
+  if (route === "login") {
+    return <LoginPage onBackHome={() => navigate("/")} onSuccess={handleAuthSuccess} />;
+  }
+
   if (requiresSetup === null) {
     return (
       <div className="stats-page">
@@ -169,14 +182,6 @@ export function UnifiedCoachApp() {
         </section>
       </div>
     );
-  }
-
-  if (route === "marketing") {
-    return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
-  }
-
-  if (route === "login") {
-    return <LoginPage onBackHome={() => navigate("/")} onSuccess={handleAuthSuccess} />;
   }
 
   if (route === "setup") {

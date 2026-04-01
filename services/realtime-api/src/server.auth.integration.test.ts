@@ -138,6 +138,46 @@ describe("server auth integration", () => {
     expect(body.token).toBeTruthy();
   });
 
+  it("restores the auth session from the bearer token without requiring a public default school id", async () => {
+    const registerResponse = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        fullName: "Session Coach",
+        email: "session-coach@example.org",
+        password: "supersecure123"
+      })
+    });
+
+    expect(registerResponse.status).toBe(201);
+    const registerBody = await registerResponse.json() as {
+      token?: string | null;
+      user?: { schoolId?: string } | null;
+      onboarding?: { completed?: boolean } | null;
+    };
+
+    const sessionResponse = await fetch(`${API_BASE}/api/auth/session`, {
+      headers: {
+        Authorization: `Bearer ${registerBody.token ?? ""}`
+      }
+    });
+
+    expect(sessionResponse.status).toBe(200);
+    const sessionBody = await sessionResponse.json() as {
+      authenticated?: boolean;
+      user?: { email?: string; schoolId?: string } | null;
+      onboarding?: { completed?: boolean } | null;
+    };
+
+    expect(sessionBody.authenticated).toBe(true);
+    expect(sessionBody.user?.email).toBe("session-coach@example.org");
+    expect(sessionBody.user?.schoolId).toBe(registerBody.user?.schoolId);
+    expect(sessionBody.user?.schoolId).not.toBe("default");
+    expect(sessionBody.onboarding?.completed).toBe(false);
+  });
+
   it("returns auth-derived onboarding coach suggestions when no account is saved yet", async () => {
     const token = makeTestToken({
       sub: "setup-coach",

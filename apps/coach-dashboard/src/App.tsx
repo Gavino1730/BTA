@@ -463,9 +463,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   );
   const operatorConsoleUrl = useMemo(() => {
     const params = new URLSearchParams();
+    const schoolId = resolveActiveSchoolId();
     if (connectionId) {
       params.set("connectionId", connectionId);
     }
+    if (schoolId) params.set("schoolId", schoolId);
     if (gameId) params.set("gameId", gameId);
     if (setupNames.myTeamId) params.set("myTeamId", setupNames.myTeamId);
     if (setupNames.myTeamName) params.set("myTeamName", setupNames.myTeamName);
