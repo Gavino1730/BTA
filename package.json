@@ -11,7 +11,7 @@
     "services/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && npm run build -w @bta/insight-engine && npm run build -w @bta/realtime-api && npm run build -w @bta/coach-dashboard && npm run build -w @bta/ipad-operator",
     "test": "npm run test --workspaces --if-present",
     "dev:api": "npm run dev -w @bta/realtime-api",
     "start:api": "npm run start -w @bta/realtime-api",
