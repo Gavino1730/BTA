@@ -184,7 +184,7 @@ export function UnifiedCoachApp() {
                 }
                 void navigator.clipboard?.writeText(connectionInfo.connectionId);
               }}
-              title="Copy the operator connection code"
+              title="Copy the 6-digit operator code"
             >
               Copy Code
             </button>
@@ -199,14 +199,14 @@ export function UnifiedCoachApp() {
               <span className="connection-pill-status">
                 {connectionInfo.deviceConnected ? "Operator live" : connectionInfo.serverConnected ? "Waiting" : "Offline"}
               </span>
-              <label className="connection-pill-editor" title="Operator device identifier">
-                <span className="connection-pill-label">Connection</span>
+              <label className="connection-pill-editor" title="Operator pairing code">
+                <span className="connection-pill-label">Code</span>
                 <input
                   className="connection-pill-input"
                   value={connectionInfo.connectionId}
                   readOnly
-                  placeholder="conn-..."
-                  aria-label="Connection ID"
+                  placeholder="6-digit code"
+                  aria-label="Connection code"
                 />
               </label>
             </div>

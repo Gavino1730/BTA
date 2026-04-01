@@ -15,9 +15,33 @@ import {
 } from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
-const DEFAULT_API = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
-const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? `http://${defaultHost}:5173`;
-const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:4000`;
+const defaultOrigin = window.location.origin || `http://${defaultHost}`;
+
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
+
+function resolveDefaultAppBase(hostname: string, origin: string, port: number): string {
+  if (isLocalNetworkHost(hostname)) {
+    return `http://${hostname}:${port}`;
+  }
+
+  return origin.replace(/\/+$/, "") || `https://${hostname}`;
+}
+
+const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
+const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
+const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
 const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
@@ -3266,8 +3290,8 @@ export function App() {
                     },
                   });
                 }}
-                placeholder="Paste coach connection code"
-                aria-label="Connection ID"
+                placeholder="Enter 6-digit coach code"
+                aria-label="Connection code"
               />
             </div>
             <button
@@ -4455,9 +4479,9 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
         </section>
 
         <section className="settings-section">
-          <h3>Connection ID</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach dashboard connection ID here to link this operator.</p>
-          <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="conn-..." />
+          <h3>Connection Code</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code here to link this operator.</p>
+          <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="482913" />
         </section>
 
         <section className="settings-section">

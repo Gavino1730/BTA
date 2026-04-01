@@ -9,7 +9,7 @@ import {
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
 } from "./display.js";
-import { apiBase, API_KEY, apiKeyHeader, operatorBase, SCHOOL_ID } from "./platform.js";
+import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, operatorBase, SCHOOL_ID } from "./platform.js";
 
 interface GameState {
   gameId: string;
@@ -220,8 +220,7 @@ function normalizeConnectionId(value: string | null | undefined): string {
 }
 
 function generateConnectionId(): string {
-  const rand = Math.random().toString(36).slice(2, 8);
-  return `conn-${Date.now().toString(36)}-${rand}`;
+  return generateConnectionCode();
 }
 
 type CoachInsightFocus =
@@ -2750,12 +2749,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
 
         <div className="settings-device-row">
           <label className="settings-device-label">
-            Connection ID
+            Connection Code
             <input
               className="settings-device-input"
               value={connectionId}
               readOnly
-              placeholder="e.g. conn-abc123"
+              placeholder="e.g. 482913"
             />
           </label>
           <button
@@ -2764,7 +2763,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             onClick={() => setConnectionId(generateConnectionId())}
             style={{ alignSelf: "end" }}
           >
-            Generate Connection ID
+            New 6-Digit Code
           </button>
         </div>
 
