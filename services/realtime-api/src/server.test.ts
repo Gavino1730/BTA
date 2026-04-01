@@ -459,7 +459,7 @@ describe("unified stats endpoints", () => {
       } | null;
     };
     const teamsBody = await teamsRes.json() as {
-      teams: Array<{ name: string; season: string; players: Array<{ name: string }> }>;
+      teams: Array<{ name: string; season: string; coachStyle?: string; players: Array<{ name: string }> }>;
     };
 
     expect(stateBody.completed).toBe(true);
@@ -468,6 +468,7 @@ describe("unified stats endpoints", () => {
     expect(stateBody.hasTeam).toBe(true);
     expect(profileBody.profile?.organizationName).toBe("Valley Catholic Athletics");
     expect(profileBody.profile?.coachName).toBe("Coach Rivera");
+    expect(teamsBody.teams[0]?.coachStyle ?? "").toBe("");
     expect(profileBody.profile?.coachEmail).toBe("coach@valleycatholic.org");
     expect(Boolean(profileBody.profile?.completedAtIso)).toBe(true);
     expect(accountBody.account?.organization.organizationName).toBe("Valley Catholic Athletics");

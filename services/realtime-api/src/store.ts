@@ -554,8 +554,25 @@ function getSession(gameId: string, scope?: TenantScope): GameSession | null {
   return sessions.get(buildGameSessionKey(gameId, schoolId)) ?? null;
 }
 
+function sanitizeCoachStyleValue(style: unknown, schoolId: string): string | undefined {
+  if (typeof style !== "string") {
+    return undefined;
+  }
+
+  const trimmedStyle = style.trim().slice(0, 500);
+  if (!trimmedStyle) {
+    return undefined;
+  }
+
+  const coachName = organizationProfilesBySchool.get(schoolId)?.coachName?.trim().toLowerCase() ?? "";
+  return coachName && trimmedStyle.toLowerCase() === coachName ? undefined : trimmedStyle;
+}
+
 function getRosterTeamsForSchool(schoolId: string): RosterTeam[] {
-  return rosterTeamsBySchool.get(schoolId) ?? [];
+  return (rosterTeamsBySchool.get(schoolId) ?? []).map((team) => ({
+    ...team,
+    coachStyle: sanitizeCoachStyleValue(team.coachStyle, schoolId),
+  }));
 }
 
 function getSessionsForSchool(schoolId: string): GameSession[] {
@@ -564,7 +581,11 @@ function getSessionsForSchool(schoolId: string): GameSession[] {
 
 function setRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): RosterTeam[] {
   const normalized = Array.isArray(teams)
-    ? teams.map((team) => ({ ...team, schoolId: normalizeSchoolId(team.schoolId ?? schoolId) }))
+    ? teams.map((team) => ({
+        ...team,
+        schoolId: normalizeSchoolId(team.schoolId ?? schoolId),
+        coachStyle: sanitizeCoachStyleValue(team.coachStyle, schoolId),
+      }))
     : [];
   rosterTeamsBySchool.set(schoolId, normalized);
   return normalized;

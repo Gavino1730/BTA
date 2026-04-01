@@ -130,9 +130,11 @@ export function UnifiedCoachApp() {
   }, []);
 
   const handleConnectionChange = useCallback((info: AppConnectionInfo) => {
+    const normalizedConnectionId = normalizeConnectionId(info.connectionId) || generateConnectionCode();
     setConnectionInfo({
       ...info,
-      operatorConsoleUrl: info.operatorConsoleUrl || buildOperatorConsoleUrl(info.connectionId),
+      connectionId: normalizedConnectionId,
+      operatorConsoleUrl: info.operatorConsoleUrl || buildOperatorConsoleUrl(normalizedConnectionId),
     });
   }, []);
 
@@ -238,7 +240,7 @@ export function UnifiedCoachApp() {
               Score Operator
             </a>
             {currentAuthSession?.email && (
-              <span className="coach-nav-ext-link" title={currentAuthSession.email}>
+              <span className="coach-nav-ext-link coach-nav-email-pill" title={currentAuthSession.email}>
                 {currentAuthSession.email}
               </span>
             )}

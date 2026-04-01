@@ -424,7 +424,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   });
 
   useEffect(() => {
-    if (!connectionId) {
+    const normalizedConnectionId = normalizeConnectionId(connectionId);
+    if (normalizedConnectionId !== connectionId) {
+      setConnectionId(normalizedConnectionId || generateConnectionId());
+      return;
+    }
+
+    if (!normalizedConnectionId) {
       setConnectionId(generateConnectionId());
     }
   }, [connectionId]);
