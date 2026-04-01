@@ -1401,6 +1401,12 @@ function connectionRoom(schoolId: string, connectionId: string): string {
   return `school:${schoolId}:connection:${connectionId}`;
 }
 
+function hasValidApiKeyRequest(req: Request): boolean {
+  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
+  const candidate = Array.isArray(provided) ? provided[0] : provided;
+  return Boolean(API_KEY && candidate === API_KEY);
+}
+
 async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
   const scopedReq = req as ScopedRequest;
   if (scopedReq.authContext) {
@@ -1413,19 +1419,15 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
     return;
   }
 
-  if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED) {
-    trackSecurityEvent("unauthorizedHttp", { reason: "jwt-write-required", path: req.path, method: req.method });
-    res.status(401).json({ error: "Unauthorized — write endpoints require a valid bearer token" });
-    return;
-  }
-
-  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
-  if (API_KEY && provided === API_KEY) {
+  if (hasValidApiKeyRequest(req)) {
     next();
     return;
   }
 
-  trackSecurityEvent("unauthorizedHttp", { reason: "missing-valid-credentials", path: req.path, method: req.method });
+  const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED
+    ? "jwt-write-required"
+    : "missing-valid-credentials";
+  trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
   res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
 }
 
@@ -1464,6 +1466,11 @@ function requireTenantScope(req: Request, res: Response, next: NextFunction): vo
 
 function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
   if (!isJwtAuthEnabled()) {
+    next();
+    return;
+  }
+
+  if (hasValidApiKeyRequest(req)) {
     next();
     return;
   }

@@ -66,7 +66,6 @@ export function PlayersPage() {
     <div className="stats-page">
       <section className="stats-page-hero compact">
         <div>
-          <p className="stats-page-eyebrow">Unified Coach Platform</p>
           <h1>Players</h1>
           <p className="stats-page-subtitle">Player summaries are now available directly in the coach workspace.</p>
         </div>

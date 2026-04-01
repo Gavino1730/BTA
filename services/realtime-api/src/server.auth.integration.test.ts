@@ -17,6 +17,7 @@ describe("server auth integration", () => {
     process.env.BTA_AUTH_TEST_MODE = "1";
     process.env.BTA_REQUIRE_TENANT = "1";
     process.env.BTA_JWT_WRITE_REQUIRED = "1";
+    process.env.BTA_API_KEY = "rollout-api-key";
     process.env.NODE_ENV = "test";
     process.env.PORT = API_PORT;
 
@@ -34,7 +35,19 @@ describe("server auth integration", () => {
     delete process.env.BTA_AUTH_TEST_MODE;
     delete process.env.BTA_REQUIRE_TENANT;
     delete process.env.BTA_JWT_WRITE_REQUIRED;
+    delete process.env.BTA_API_KEY;
     delete process.env.PORT;
+  });
+
+  it("allows API-key fallback for roster reads when JWT auth is enabled", async () => {
+    const response = await fetch(`${API_BASE}/config/roster-teams`, {
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "rollout-school"
+      }
+    });
+
+    expect(response.status).toBe(200);
   });
 
   it("denies write endpoint for viewer role and allows coach role", async () => {

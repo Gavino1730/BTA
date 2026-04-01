@@ -948,7 +948,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
               if (!cancelled) {
                 setAiSettings(next);
                 setAiSettingsDraft(next);
-                setAiSettingsStatus("Loaded team defaults from the unified coach platform.");
+                setAiSettingsStatus("Loaded team defaults.");
               }
               return;
             }

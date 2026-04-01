@@ -2119,45 +2119,62 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
 /* ---- Coach Navbar ---- */
 .coach-navbar {
-  background-color: var(--surface);
-  border-bottom: 1px solid rgba(242,194,75,0.25);
-  padding: 0.75rem 0;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 10px 24px rgba(5,10,25,0.35);
+  padding: 0.65rem 0;
+  background: linear-gradient(180deg, rgba(10,22,48,0.98), rgba(12,31,66,0.94));
+  border-bottom: 1px solid rgba(79,140,255,0.22);
+  box-shadow: 0 12px 30px rgba(5,10,25,0.35);
+  backdrop-filter: blur(10px);
 }
 
 .coach-nav-container {
-  max-width: 1100px;
+  max-width: 1380px;
   margin: 0 auto;
-  padding: 0 1.25rem;
+  padding: 0 1rem;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
 }
 
 .coach-nav-logo {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(79,140,255,0.18), rgba(79,140,255,0.06));
+  border: 1px solid rgba(79,140,255,0.26);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  font-size: 1rem;
   font-weight: 800;
-  color: var(--teal);
+  color: #a8c8ff;
   letter-spacing: 0.08em;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .coach-nav-links {
   display: flex;
+  align-items: center;
   list-style: none;
-  gap: 0.25rem;
-  flex: 1;
+  gap: 0.35rem;
+  flex: 1 1 420px;
+  min-width: 0;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .coach-nav-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex: 1 1 320px;
+  min-width: 0;
+  margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .coach-nav-links li {
@@ -2165,48 +2182,117 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .coach-nav-links button {
-  background: none;
-  border: none;
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 0.875rem;
-  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  color: rgba(232,234,240,0.76);
+  font-weight: 650;
+  font-size: 0.84rem;
+  line-height: 1;
+  min-height: 36px;
   cursor: pointer;
   font-family: inherit;
-  letter-spacing: 0.02em;
-  transition: background 0.15s, color 0.15s;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
 }
 
 .coach-nav-links button:hover {
-  background: var(--surface-2);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.08);
   color: var(--text);
-  opacity: 1;
+  transform: translateY(-1px);
 }
 
 .coach-nav-links button.nav-active {
-  background: var(--teal-soft);
-  color: var(--teal);
-  box-shadow: inset 0 -2px 0 rgba(242,194,75,0.85);
+  background: linear-gradient(180deg, rgba(79,140,255,0.22), rgba(79,140,255,0.12));
+  border-color: rgba(242,194,75,0.55);
+  color: #d9e7ff;
+  box-shadow: inset 0 -2px 0 rgba(242,194,75,0.85), 0 6px 16px rgba(0,0,0,0.18);
 }
 
-.coach-nav-ext-link {
+.coach-nav-ext-link,
+.coach-nav-help-button {
   display: inline-flex;
   align-items: center;
-  padding: 0.5rem 1rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 0.875rem;
-  border-radius: 8px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  color: var(--text);
+  font-weight: 650;
+  font-size: 0.82rem;
   text-decoration: none;
-  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
 }
 
-.coach-nav-ext-link:hover {
-  background: var(--surface-2);
-  color: var(--text);
+.coach-nav-ext-link:hover,
+.coach-nav-help-button:hover {
+  background: rgba(79,140,255,0.12);
+  border-color: rgba(79,140,255,0.28);
+  color: #dce8ff;
   text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.coach-nav-help-button {
+  width: 36px;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.coach-nav-actions .connection-pill {
+  padding: 0.28rem 0.45rem 0.28rem 0.6rem;
+  border-radius: 14px;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
+  min-height: 38px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.coach-nav-actions .connection-pill-status {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.coach-nav-actions .connection-pill-editor {
+  gap: 0.3rem;
+}
+
+.coach-nav-actions .connection-pill-label {
+  opacity: 0.65;
+}
+
+.coach-nav-actions .connection-pill-input {
+  width: 7.75rem;
+  font-size: 0.74rem;
+  padding: 0.18rem 0.5rem;
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.14);
+}
+
+@media (max-width: 1200px) {
+  .coach-nav-container {
+    gap: 0.7rem;
+  }
+
+  .coach-nav-links {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+
+  .coach-nav-actions {
+    flex: 0 1 auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2214,10 +2300,30 @@ h3 { font-size: 0.95rem; font-weight: 700; }
     display: none;
   }
 
+  .coach-nav-container {
+    padding: 0 0.75rem;
+  }
+
   .coach-nav-links button,
-  .coach-nav-ext-link {
-    padding: 0.5rem 0.6rem;
-    font-size: 0.8rem;
+  .coach-nav-ext-link,
+  .coach-nav-help-button {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+  }
+
+  .coach-nav-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .coach-nav-actions .connection-pill {
+    flex: 1 1 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .coach-nav-actions .connection-pill-input {
+    width: min(100%, 9rem);
   }
 }
 

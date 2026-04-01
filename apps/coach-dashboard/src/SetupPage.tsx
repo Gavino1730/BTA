@@ -145,7 +145,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     <div className="stats-page">
       <section className="stats-page-hero">
         <div>
-          <p className="stats-page-eyebrow">Unified Coach Platform</p>
           <h1>Organization Setup</h1>
           <p className="stats-page-subtitle">Create your organization profile, team, and roster in one onboarding flow.</p>
         </div>

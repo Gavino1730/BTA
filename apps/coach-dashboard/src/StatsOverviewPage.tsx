@@ -137,7 +137,6 @@ export function StatsOverviewPage() {
     <div className="stats-page">
       <section className="stats-page-hero">
         <div>
-          <p className="stats-page-eyebrow">Unified Coach Platform</p>
           <h1>Season Overview</h1>
           <p className="stats-page-subtitle">This is the first integrated stats surface inside the coach dashboard. Live stays at the root while analytics migrates here.</p>
         </div>

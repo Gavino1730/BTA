@@ -3085,23 +3085,25 @@ export function App() {
           </div>
 
           <div className="pregame-device-id">
-            <label className="pregame-device-label">Connection</label>
-            <input
-              className="pregame-device-input"
-              value={appData.gameSetup.connectionId ?? ""}
-              onChange={(event) => {
-                const nextConnectionId = normalizeConnectionId(event.target.value);
-                persistData({
-                  ...appData,
-                  gameSetup: {
-                    ...appData.gameSetup,
-                    connectionId: nextConnectionId || undefined,
-                  },
-                });
-              }}
-              placeholder="Paste coach connection code"
-              aria-label="Connection ID"
-            />
+            <div className="pregame-device-field">
+              <label className="pregame-device-label">Connection Code</label>
+              <input
+                className="pregame-device-input"
+                value={appData.gameSetup.connectionId ?? ""}
+                onChange={(event) => {
+                  const nextConnectionId = normalizeConnectionId(event.target.value);
+                  persistData({
+                    ...appData,
+                    gameSetup: {
+                      ...appData.gameSetup,
+                      connectionId: nextConnectionId || undefined,
+                    },
+                  });
+                }}
+                placeholder="Paste coach connection code"
+                aria-label="Connection ID"
+              />
+            </div>
             <button
               type="button"
               className="pregame-device-copy-btn"
@@ -3133,7 +3135,7 @@ export function App() {
               }}
               title="Copy coach dashboard link to clipboard"
             >
-              Copy Coach Link
+              Copy Link
             </button>
           </div>
 
@@ -3237,49 +3239,54 @@ export function App() {
             <p className="pregame-error">Warning: Set the starting lineup below before starting the game.</p>
           )}
 
-          {myTeam && (
+          {myTeam && !showLineupSetup && (
             <button
-              className={`pregame-lineup-btn${lineupIsSet && !showLineupSetup ? " lineup-is-set" : ""}${!lineupIsSet && !showLineupSetup ? " lineup-required" : ""}`}
+              className={`pregame-lineup-btn${lineupIsSet ? " lineup-is-set" : ""}${!lineupIsSet ? " lineup-required" : ""}`}
               onClick={() => {
-                setShowLineupSetup((current) => {
-                  const next = !current;
-                  if (next) {
-                    // Preload from saved lineup so edits show current state
-                    setSelectedStarters(new Set(savedLineup));
-                  }
-                  return next;
-                });
+                setSelectedStarters(new Set(savedLineup));
+                setShowLineupSetup(true);
               }}>
-              {showLineupSetup
-                ? "Cancel"
-                : lineupIsSet
-                  ? `Starting Lineup Set (${savedLineup.length}/5) - Edit`
-                  : "Set Starting Lineup (Required)"}
+              {lineupIsSet
+                ? `Edit Starting Lineup (${savedLineup.length}/5)`
+                : "Set Starting Lineup"}
             </button>
           )}
 
           {showLineupSetup && myTeam && (
             <div className="pregame-lineup-setup">
-              <h3 className="lineup-setup-title">Select Starting Lineup</h3>
+              <div className="lineup-setup-head">
+                <div>
+                  <h3 className="lineup-setup-title">Select Starting Lineup</h3>
+                  <p className="lineup-setup-subtitle">Choose 5 players to begin the game.</p>
+                </div>
+                <button
+                  type="button"
+                  className="lineup-cancel-btn"
+                  onClick={() => setShowLineupSetup(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="lineup-setup-status">{selectedStarters.size}/5 selected</div>
               <div className="lineup-player-grid">
                 {myTeam.players.map(p => (
                   <button
                     key={p.id}
                     className={`lineup-player-btn${selectedStarters.has(p.id) ? " lineup-player-selected" : ""}`}
-                      onClick={() => handleStarterToggle(p.id)}
-                      disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
+                    onClick={() => handleStarterToggle(p.id)}
+                    disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
                     <span className="lineup-player-num">#{p.number}</span>
                     <span className="lineup-player-name">{p.name}</span>
                     {selectedStarters.has(p.id) && <span className="lineup-player-badge">*</span>}
                   </button>
                 ))}
               </div>
-              <div className="lineup-setup-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                <button className="lineup-save-btn" onClick={handleSaveLineup}>
-                  Set Lineup ({selectedStarters.size}/5)
-                </button>
+              <div className="lineup-setup-actions">
                 <button className="lineup-clear-btn" onClick={() => setSelectedStarters(new Set())}>
-                  Clear All
+                  Clear
+                </button>
+                <button className="lineup-save-btn" onClick={handleSaveLineup}>
+                  Save Lineup ({selectedStarters.size}/5)
                 </button>
               </div>
             </div>

@@ -346,7 +346,6 @@ export function GamesPage() {
 
       <section className="stats-page-hero compact">
         <div>
-          <p className="stats-page-eyebrow">Coach Platform</p>
           <h1>Games</h1>
           <p className="stats-page-subtitle">Full season history. Click any game to view or edit the box score.</p>
         </div>

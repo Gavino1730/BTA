@@ -52,6 +52,7 @@ Choose at least one authentication path:
 
 - `ALLOWED_ORIGINS` must be explicitly set to production UI origins.
 - `DATABASE_URL` should be set for durable multi-instance persistence.
+- On Railway, prefer the Supabase **Session/Connection Pooler** / IPv4-compatible `DATABASE_URL`; direct IPv6-only database hosts can surface `ENETUNREACH` during startup.
 
 ### Data Retention
 

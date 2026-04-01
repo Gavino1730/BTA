@@ -333,7 +333,6 @@ export function TeamSettingsPage() {
     <div className="stats-page">
       <section className="stats-page-hero compact">
         <div>
-          <p className="stats-page-eyebrow">Unified Coach Platform</p>
           <h1>Team Settings</h1>
           <p className="stats-page-subtitle">Manage team profile and AI context directly inside the coach workspace.</p>
         </div>

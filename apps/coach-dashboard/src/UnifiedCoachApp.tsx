@@ -158,7 +158,6 @@ export function UnifiedCoachApp() {
       )}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
-          <div className="coach-nav-logo">Bench IQ</div>
           <ul className="coach-nav-links">
             {navBtn("Live", "live", "/live")}
             {navBtn("Overview", "stats-overview", "/stats")}
@@ -176,7 +175,8 @@ export function UnifiedCoachApp() {
               type="button"
               onClick={() => setShowTutorial(true)}
               title="Help &amp; Tutorial"
-              style={{ background: "transparent", border: "1.5px solid #4f8cff", color: "#4f8cff", borderRadius: "50%", width: "28px", height: "28px", fontSize: "14px", fontWeight: 700, cursor: "pointer", flexShrink: 0, lineHeight: 1 }}
+              aria-label="Open help and tutorial"
+              className="coach-nav-help-button"
             >?</button>
             <div className={`connection-pill ${connectionInfo.deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
               <span className="connection-pill-status">

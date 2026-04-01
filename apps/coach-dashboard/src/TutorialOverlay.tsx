@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const STEPS = [
   {
-    title: "Welcome to Bench IQ Coach",
+    title: "Welcome",
     body: "Your real-time coaching dashboard. Follow the live game feed, manage lineups, and get AI-powered insights — all in one place.",
     icon: "📊",
   },

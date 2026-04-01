@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build -w @bta/shared-schema && vite build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

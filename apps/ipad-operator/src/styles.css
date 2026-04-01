@@ -3058,40 +3058,50 @@ html, body {
   justify-content: center;
   min-height: 100vh;
   padding: 1.5rem;
-  background: #0b1226;
+  background:
+    radial-gradient(circle at top center, rgba(79,140,255,0.18), transparent 0 42%),
+    linear-gradient(180deg, #081224 0%, #0b1226 100%);
 }
 
 .pregame-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 20px;
-  padding: 2rem 2rem 1.5rem;
+  background: linear-gradient(180deg, rgba(18,35,71,0.95), rgba(12,24,51,0.94));
+  border: 1px solid rgba(79,140,255,0.22);
+  border-radius: 22px;
+  padding: 1.4rem 1.4rem 1.2rem;
   width: 100%;
-  max-width: 460px;
+  max-width: 620px;
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
+  gap: 1rem;
+  box-shadow: 0 22px 48px rgba(0,0,0,0.3);
 }
 
-.pregame-header { text-align: center; }
+.pregame-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
 
 .pregame-eyebrow {
   display: block;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  color: #4f8cff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: #8fb7ff;
   text-transform: uppercase;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.15rem;
 }
 
 .pregame-title {
-  font-size: 1.65rem;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
   font-weight: 800;
+  line-height: 1.05;
 }
 
 .pregame-matchup {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 0.75rem;
 }
@@ -3099,17 +3109,18 @@ html, body {
 .pregame-team { flex: 1; text-align: center; }
 
 .my-team {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #4f8cff;
-  padding: 0.6rem 0.5rem;
-  background: rgba(79,140,255,0.1);
-  border: 1px solid rgba(79,140,255,0.25);
-  border-radius: 10px;
-  min-height: 44px;
+  font-size: 1.02rem;
+  font-weight: 750;
+  color: #9bc1ff;
+  padding: 0.8rem 0.65rem;
+  background: linear-gradient(180deg, rgba(79,140,255,0.16), rgba(79,140,255,0.08));
+  border: 1px solid rgba(79,140,255,0.3);
+  border-radius: 12px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 .pregame-no-team {
@@ -3119,10 +3130,20 @@ html, body {
 }
 
 .pregame-vs {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: rgba(232,234,240,0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: rgba(232,234,240,0.55);
   flex-shrink: 0;
+  text-transform: uppercase;
 }
 
 .opp-team { flex: 1; }
@@ -3131,13 +3152,13 @@ html, body {
   width: 100%;
   background: rgba(255,255,255,0.07);
   border: 1.5px solid rgba(255,255,255,0.18);
-  border-radius: 10px;
+  border-radius: 12px;
   color: #e8eaf0;
   font-size: 0.98rem;
   font-weight: 600;
   text-align: center;
-  padding: 0.5rem 0.65rem;
-  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  min-height: 48px;
   outline: none;
 }
 
@@ -3382,39 +3403,47 @@ html, body {
 
 /* Pre-game device ID */
 .pregame-device-id {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  padding: 0.75rem;
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(79,140,255,0.2);
-  border-radius: 10px;
+  border-radius: 12px;
+}
+
+.pregame-device-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
 }
 
 .pregame-device-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: rgba(232,234,240,0.4);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: rgba(232,234,240,0.48);
   text-transform: uppercase;
   white-space: nowrap;
 }
 
 .pregame-device-input {
-  flex: 1;
-  min-height: 36px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
+  width: 100%;
+  min-height: 42px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
   color: #e8eaf0;
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   font-weight: 700;
-  padding: 0.25rem 0.5rem;
+  padding: 0.35rem 0.65rem;
   outline: none;
 }
 
 .pregame-device-input:focus {
-  border-color: rgba(79,140,255,0.4);
+  border-color: rgba(79,140,255,0.45);
 }
 
 .pregame-device-value {
@@ -3427,31 +3456,33 @@ html, body {
 }
 
 .pregame-device-copy-btn {
-  padding: 0.3rem 0.75rem;
-  min-height: 32px;
-  background: rgba(79,140,255,0.12);
+  padding: 0.55rem 0.9rem;
+  min-height: 42px;
+  background: rgba(79,140,255,0.14);
   border: 1px solid rgba(79,140,255,0.35);
-  border-radius: 8px;
-  color: #7ff3df;
-  font-size: 0.75rem;
-  font-weight: 700;
+  border-radius: 10px;
+  color: #cfe6ff;
+  font-size: 0.78rem;
+  font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
 }
 
 .pregame-device-copy-btn:hover {
   background: rgba(79,140,255,0.22);
+  border-color: rgba(79,140,255,0.5);
+  transform: translateY(-1px);
 }
 
 /* Pre-game lineup setup */
 .pregame-lineup-btn {
   width: 100%;
-  padding: 0.75rem 1.5rem;
-  min-height: 46px;
+  padding: 0.8rem 1rem;
+  min-height: 48px;
   border-radius: 12px;
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   background: rgba(79,140,255,0.1);
   border: 1.5px solid rgba(79,140,255,0.35);
@@ -3497,11 +3528,52 @@ html, body {
   border-radius: 12px;
 }
 
+.lineup-setup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .lineup-setup-title {
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 800;
   color: rgba(232,234,240,0.95);
-  text-align: center;
+  text-align: left;
+}
+
+.lineup-setup-subtitle {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: rgba(232,234,240,0.56);
+}
+
+.lineup-setup-status {
+  align-self: flex-start;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(79,140,255,0.12);
+  border: 1px solid rgba(79,140,255,0.28);
+  color: #a8c8ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.lineup-cancel-btn {
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.04);
+  color: rgba(232,234,240,0.82);
+  border-radius: 10px;
+  min-height: 38px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lineup-cancel-btn:hover {
+  background: rgba(255,255,255,0.08);
 }
 
 .lineup-player-grid {
@@ -3568,20 +3640,20 @@ html, body {
 }
 
 .lineup-setup-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 0.9fr 1.3fr;
   gap: 0.6rem;
-  justify-content: space-between;
+  align-items: stretch;
 }
 
 .lineup-clear-btn {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
-  min-height: 38px;
+  padding: 0.65rem 0.8rem;
+  min-height: 42px;
   background: rgba(248,113,113,0.1);
   border: 1px solid rgba(248,113,113,0.25);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #f87171;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.12s;
@@ -3592,15 +3664,14 @@ html, body {
 }
 
 .lineup-save-btn {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
-  min-height: 38px;
+  padding: 0.65rem 0.8rem;
+  min-height: 42px;
   background: rgba(79,140,255,0.12);
   border: 1px solid rgba(79,140,255,0.35);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #7ff3df;
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 800;
   cursor: pointer;
   transition: all 0.12s;
 }
@@ -4205,6 +4276,27 @@ html, body {
 
   .pregame-title {
     font-size: 1.25rem;
+  }
+
+  .pregame-device-id,
+  .pregame-matchup,
+  .pregame-meta-row {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .pregame-device-copy-btn {
+    width: 100%;
+  }
+
+  .pregame-vs {
+    justify-self: center;
+  }
+
+  .lineup-setup-head,
+  .lineup-setup-actions {
+    grid-template-columns: 1fr;
+    display: grid;
   }
 
   .postgame-title {

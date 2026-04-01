@@ -233,7 +233,6 @@ export function TrendsPage() {
     <div className="stats-page">
       <section className="stats-page-hero compact">
         <div>
-          <p className="stats-page-eyebrow">Coach Platform</p>
           <h1>Trends</h1>
           <p className="stats-page-subtitle">Season-long scoring and efficiency trends.</p>
         </div>

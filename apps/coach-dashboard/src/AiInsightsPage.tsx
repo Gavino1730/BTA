@@ -73,7 +73,6 @@ export function AiInsightsPage() {
     <div className="stats-page">
       <section className="stats-page-hero compact">
         <div>
-          <p className="stats-page-eyebrow">Unified Coach Platform</p>
           <h1>AI Insights</h1>
           <p className="stats-page-subtitle">Rules-based analysis and season recommendations in one place.</p>
         </div>

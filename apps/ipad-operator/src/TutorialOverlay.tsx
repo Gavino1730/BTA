@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 const STEPS = [
   {
-    title: 'Welcome to Bench IQ Operator',
+    title: 'Welcome',
     body: 'This app is your live stat-entry hub during games. You\'ll log every play in real time, and the coach dashboard updates instantly.',
     icon: '🏀',
   },
