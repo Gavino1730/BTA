@@ -10,9 +10,8 @@ This monorepo powers a high school basketball platform with:
 Prioritize safe, minimal, test-backed changes that preserve live game reliability.
 
 ## Repo Map
-- apps/coach-dashboard: React + Vite live coach UI
-- operator app: React + Vite operator stat entry (offline-capable)
-- apps/stats-dashboard: static dashboard assets and pages served by realtime-api
+- apps/coach-dashboard: React + Vite live coach UI plus stats and analytics pages
+- apps/ipad-operator: React + Vite operator stat entry (offline-capable)
 - packages/shared-schema: Canonical Zod event schema and shared types
 - packages/game-state: Deterministic game state engine and replay logic
 - services/realtime-api: Express + Socket.io ingest/fanout service
@@ -27,7 +26,7 @@ Run commands from repo root unless noted.
 - Dev realtime API: npm run dev:api
 - Dev operator app: npm run dev:operator
 - Dev coach dashboard: npm run dev:coach
-- Dev stats routes/pages: npm run dev:stats (alias of dev:api)
+- Dev stats routes/pages: npm run dev:stats (compatibility alias of dev:coach)
 - Start all apps/services: npm run dev:all
 - Smoke checks: npm run smoke-test
 - UI audit: npm run audit:ui
@@ -38,9 +37,9 @@ Run commands from repo root unless noted.
 - Keep game-state deterministic: prefer replay-safe updates over ad hoc mutation.
 - Do not create direct app-to-app imports; share through packages/*.
 - Keep insight-engine rules-based and deterministic unless explicitly adding model-backed logic.
-- Keep realtime-api concerns separated from stats-dashboard concerns:
-  - realtime-api: low-latency ingest, corrections, websocket fanout
-  - stats-dashboard: static UI assets and page shells
+- Keep realtime-api concerns separated from UI concerns:
+  - realtime-api: low-latency ingest, corrections, websocket fanout, auth, persistence
+  - coach-dashboard / ipad-operator: rendering, workflow, local UI state
 
 ## Code Conventions
 - TypeScript uses ESM and strict mode from tsconfig.base.json.
@@ -52,7 +51,7 @@ Run commands from repo root unless noted.
 ## Reliability and Ops Notes
 - Vite uses strict ports (5173 and 5174); dev start fails if occupied.
 - Realtime persistence is file-backed in services/realtime-api/.platform-data.
-- Stats dashboard can run JSON-only locally; DATABASE_URL is required for durable production storage.
+- Local development can use file-backed API persistence; DATABASE_URL is required for durable production storage.
 - Season analysis endpoints may be slow on first run due to AI generation and caching.
 
 ## Working Style for This Repo
@@ -61,18 +60,12 @@ Run commands from repo root unless noted.
 - If changing ingest, replay, foul, period, or lineup logic, run relevant tests and inspect for regression risk.
 - If changing API payloads, update both producers and consumers in the same change.
 - Avoid committing generated data artifacts unless the task explicitly requires fixture/data updates.
-- Treat `apps/stats-dashboard` as a monorepo app: prefer root-level scripts/config over app-local repo metadata.
+- Treat the coach dashboard as the home for current stats routes/pages; prefer root-level scripts/config over duplicate app-local docs.
 
 ## Link, Do Not Duplicate
 Use these docs for detailed procedures instead of repeating them in code comments or instructions:
-- Root overview and runbook: README.md
-- Stats deployment: apps/stats-dashboard/docs/DEPLOY.md
-- Production deployment detail: apps/stats-dashboard/docs/DEPLOYMENT.md
-- Stats output contract: apps/stats-dashboard/docs/OUTPUT_STRUCTURE.md
-- Stats project structure: apps/stats-dashboard/docs/guide/STRUCTURE.md
-- Stats testing guide: apps/stats-dashboard/docs/guide/TESTING_GUIDE.md
-- DB troubleshooting: apps/stats-dashboard/docs/guide/DATABASE_TROUBLESHOOTING.md
-- Production timeout/cache fixes: apps/stats-dashboard/docs/PRODUCTION_FIXES.md
+- Production deployment runbook: `DEPLOYMENT.md`
+- Hosting setup quickstart: `HOSTING_SETUP.md`
 
 ## High-Value Files to Inspect Before Major Changes
 - packages/shared-schema/src/types.ts

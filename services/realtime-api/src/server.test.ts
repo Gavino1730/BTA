@@ -323,7 +323,7 @@ describe("unified stats endpoints", () => {
     expect(body.opponentName).toBe("OES");
   });
 
-  it("supports stats-dashboard team settings and roster management routes", async () => {
+  it("supports legacy team settings and roster management routes", async () => {
     await resetSchool("compat-school");
 
     const teamRes = await fetch(`${API_BASE}/api/team`, {

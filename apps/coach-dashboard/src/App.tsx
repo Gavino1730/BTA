@@ -2737,7 +2737,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       </section>
       </>}
 
-      {/* Roster page removed - roster management moved to Stats Dashboard */}
+      {/* Roster management now lives in the stats pages within the coach dashboard. */}
 
       {activePage === "settings" &&
       <>
@@ -2840,7 +2840,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
         </div>
 
         <p className="text-muted" style={{ marginTop: "1rem" }}>
-          Saved settings now drive live coach insights. Stats dashboard and operator customization screens can use the same model next.
+          Saved settings now drive live coach insights. The shared stats pages and operator workflows can build on the same model next.
         </p>
 
         {(aiSettings.playingStyle || aiSettings.teamContext || aiSettings.customPrompt) ? (
@@ -2885,7 +2885,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
         <h2 style={{color:'#f87171'}}>Warning: Clear Local Data</h2>
         <p className="text-muted" style={{marginBottom:'1rem'}}>
           Removes all data stored in this browser: roster, AI settings, and cached game state.
-          This only affects this device. Use the Stats Dashboard <strong>Settings to Factory Reset</strong> to wipe server data.
+          This only affects this device. Use the coach dashboard <strong>Stats → Settings</strong> area to wipe shared server data.
         </p>
         <button
           style={{background:'#7f1d1d',color:'#fca5a5',border:'none',padding:'8px 18px',borderRadius:'8px',cursor:'pointer',fontWeight:600}}

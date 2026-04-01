@@ -23,7 +23,7 @@ const STEPS = [
   },
   {
     title: "Settings",
-    body: "Configure your Stats Dashboard URL, Realtime API key, and AI preferences. You can also re-run this tutorial any time from the ? button.",
+    body: "Configure your Realtime API connection, optional legacy export URL, and AI preferences. You can also re-run this tutorial any time from the ? button.",
     icon: "⚙️",
   },
 ];

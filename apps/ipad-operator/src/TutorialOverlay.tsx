@@ -23,7 +23,7 @@ const STEPS = [
   },
   {
     title: 'Post-Game',
-    body: 'After the final buzzer, tap End Game to close the period and lock the score. Stats are sent to the Stats Dashboard for full analysis.',
+    body: 'After the final buzzer, tap End Game to close the period and lock the score. Your stats stay available in the coach dashboard for post-game analysis.',
     icon: '🏁',
   },
   {

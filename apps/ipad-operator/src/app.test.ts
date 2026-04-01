@@ -77,6 +77,17 @@ function computeScores(events: GameEvent[]) {
   return s;
 }
 
+function normalizeUrlBase(url: string | undefined): string {
+  return (url ?? "").trim().replace(/\/+$/, "");
+}
+
+function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
+  const apiBase = normalizeUrlBase(setup.apiUrl);
+  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
+  if (!dashboardBase) return false;
+  return dashboardBase !== apiBase;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function shot(overrides: Partial<GameEvent> & { made: boolean; points: 2 | 3; teamId: string; playerId: string }): GameEvent {
@@ -182,6 +193,22 @@ describe("computeScores", () => {
     // it just takes whatever array is given (app passes allEventObjs including pending).
     const pending = shot({ teamId: "home", playerId: "h1", made: true, points: 3 });
     expect(computeScores([pending]).home).toBe(3);
+  });
+});
+
+describe("legacy dashboard export detection", () => {
+  it("skips legacy export when the dashboard URL matches the realtime API", () => {
+    expect(isLegacyStatsExportConfigured({
+      apiUrl: "http://localhost:4000",
+      dashboardUrl: "http://localhost:4000/",
+    })).toBe(false);
+  });
+
+  it("keeps legacy export enabled when a separate endpoint is configured", () => {
+    expect(isLegacyStatsExportConfigured({
+      apiUrl: "http://localhost:4000",
+      dashboardUrl: "https://stats.example.com",
+    })).toBe(true);
   });
 });
 

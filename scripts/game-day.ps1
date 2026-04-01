@@ -41,11 +41,11 @@ Write-Host "  │  SERVICE ENDPOINTS                                  │" -Fore
 Write-Host "  ├─────────────────────────────────────────────────────┤" -ForegroundColor DarkGray
 
 foreach ($ip in $ips) {
-  Write-Host "  │  Realtime API   http://${ip}:4000                  " -ForegroundColor Green -NoNewline
+  Write-Host "  │  Realtime API    http://${ip}:4000                 " -ForegroundColor Green -NoNewline
   Write-Host "│" -ForegroundColor DarkGray
   Write-Host "  │  Coach Dashboard http://${ip}:5173                 " -ForegroundColor Yellow -NoNewline
   Write-Host "│" -ForegroundColor DarkGray
-  Write-Host "  │  Stats Dashboard http://${ip}:4000                 " -ForegroundColor Blue -NoNewline
+  Write-Host "  │  Operator Console http://${ip}:5174                " -ForegroundColor Blue -NoNewline
   Write-Host "│" -ForegroundColor DarkGray
   Write-Host "  │                                                     │" -ForegroundColor DarkGray
 }
@@ -75,13 +75,6 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   Write-Host "  ✗  node not found. Install Node.js 20+." -ForegroundColor Red; exit 1
 }
 Write-Host "  ✓  node $(node --version)" -ForegroundColor Green
-
-# Data directory
-$dataDir = Join-Path $PSScriptRoot "..\apps\stats-dashboard\data"
-if (-not (Test-Path $dataDir)) {
-  New-Item -ItemType Directory -Path $dataDir | Out-Null
-  Write-Host "  ✓  Created data/ directory" -ForegroundColor Green
-}
 
 Write-Host ""
 Write-Host "  Starting all apps/services with concurrently..." -ForegroundColor Cyan

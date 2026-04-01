@@ -79,7 +79,7 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// CORS whitelist: allow only known app origins + stats dashboard
+// CORS whitelist: allow only known app origins and explicitly configured deployments
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",      // iPad operator dev
   "http://localhost:5174",      // Coach dashboard dev

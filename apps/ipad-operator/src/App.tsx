@@ -100,6 +100,17 @@ function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit 
   return { headers: apiKeyHeader(setup) };
 }
 
+function normalizeUrlBase(url: string | undefined): string {
+  return (url ?? "").trim().replace(/\/+$/, "");
+}
+
+function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
+  const apiBase = normalizeUrlBase(setup.apiUrl);
+  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
+  if (!dashboardBase) return false;
+  return dashboardBase !== apiBase;
+}
+
 function buildAiContextFromSetup(setup: GameSetup): {
   clockEnabled: boolean;
   opponentStatsLimited: boolean;
@@ -699,7 +710,7 @@ function playerNameFromId(playerId: string | undefined, players: Player[]): stri
   return match?.name ?? playerId;
 }
 
-// ---- Dashboard stats helpers (Stats dashboard integration) ----
+// ---- Dashboard stats helpers (legacy export + summaries) ----
 
 function abbreviateName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
@@ -1591,7 +1602,7 @@ export function App() {
     if (!ok) return;
 
     setSubmitStatus("idle");
-    setSubmitMessage("Review game details, then tap Re-save Stats to publish to the dashboard.");
+    setSubmitMessage("Review game details, then tap Re-save Stats only if you use a separate legacy export endpoint.");
     persistPhase("post-game");
   }
 
@@ -1611,7 +1622,7 @@ export function App() {
     saveSeq(newId, 1);
     setGameDate(new Date().toISOString().slice(0, 10));
     setSubmitStatus("idle");
-    setSubmitMessage("Ready to save final stats to the dashboard.");
+    setSubmitMessage("Ready to publish final stats.");
     persistPhase("pre-game");
   }
 
@@ -1634,6 +1645,16 @@ export function App() {
       setSubmitMessage(message);
       showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
       return false;
+    }
+
+    if (!isLegacyStatsExportConfigured(appData.gameSetup)) {
+      setSubmitStatus("success");
+      setSubmitMessage("Live stats are already available in the coach dashboard.");
+      setTimeout(() => {
+        setSubmitStatus("idle");
+        setSubmitMessage("Ready to publish final stats.");
+      }, 4000);
+      return true;
     }
 
     setSubmitStatus("pending");
@@ -1700,7 +1721,7 @@ export function App() {
         setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
         setTimeout(() => {
           setSubmitStatus("idle");
-          setSubmitMessage("Ready to save final stats to the dashboard.");
+          setSubmitMessage("Ready to publish final stats.");
         }, 4000);
         return true;
       } else {
@@ -1708,7 +1729,7 @@ export function App() {
         console.error("Dashboard ingest error:", errorMessage);
         setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
         showInlineNotice(
-          `Could not save final stats to the Stats dashboard. ${errorMessage} Check Settings > Game Setup > Stats Dashboard URL and make sure the dashboard is running.`,
+          `Could not save final stats to the legacy stats export endpoint. ${errorMessage} Check Settings > Game Setup > Legacy Stats Export URL and make sure that service is running.`,
           "error"
         );
         setSubmitStatus("error");
@@ -1718,7 +1739,7 @@ export function App() {
       console.error("Could not reach Stats dashboard:", err);
       setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
       showInlineNotice(
-        `Could not reach the Stats dashboard at ${dashboardUrl}. Start the Stats Dashboard service or update Settings > Game Setup > Stats Dashboard URL, then retry.`,
+        `Could not reach the legacy stats export endpoint at ${dashboardUrl}. Start that service or update Settings > Game Setup > Legacy Stats Export URL, then retry.`,
         "error"
       );
       setSubmitStatus("error");
@@ -4476,6 +4497,12 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
     const setupErrors: string[] = [];
     if (!gsMyTeamId) setupErrors.push("Select your team");
     if (!gsOpponent.trim()) setupErrors.push("Enter the opponent name");
+    const trackingBadges = [
+      gsTrackClock ? "Clock" : null,
+      gsTrackPossession ? "Possession" : null,
+      gsTrackTimeouts ? "Timeouts" : null,
+    ].filter(Boolean);
+
     return (
       <div className="settings-page">
         <header className="settings-header">
@@ -4484,16 +4511,34 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
           <button className="save-btn" onClick={() => { saveGameSetup(); onNav("menu"); }}>Save</button>
         </header>
 
-        <section className="settings-section">
-          <h3>Game ID</h3>
-          <input value={gsGameId} onChange={e => setGsGameId(e.target.value)} placeholder="game-1" />
+        <section className="settings-section settings-hero-section">
+          <div className="settings-overview">
+            <div className="settings-overview-copy">
+              <h3>Current setup</h3>
+              <div className="settings-overview-title">{gsMyTeamName} vs {gsOpponentName}</div>
+              <p className="dim-text">
+                {gsVcSide === "home" ? "VC is home" : "VC is away"} • Game ID {gsGameId.trim() || "game-1"}
+              </p>
+            </div>
+            <div className="settings-overview-meta">
+              <span className="settings-badge">{gsConnectionId ? `Linked • ${gsConnectionId}` : "Not linked yet"}</span>
+              <span className="settings-badge">{trackingBadges.length > 0 ? trackingBadges.join(" • ") : "Manual stats only"}</span>
+            </div>
+          </div>
         </section>
 
-        <section className="settings-section">
-          <h3>Connection Code</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code here to link this operator.</p>
-          <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="482913" />
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Game ID</h3>
+            <input value={gsGameId} onChange={e => setGsGameId(e.target.value)} placeholder="game-1" />
+          </section>
+
+          <section className="settings-section">
+            <h3>Connection Code</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code to link roster and matchup sync.</p>
+            <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="482913" />
+          </section>
+        </div>
 
         <section className="settings-section">
           <h3>Your Team</h3>
@@ -4530,23 +4575,25 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
           </div>
         </section>
 
-        <section className="settings-section">
-          <h3>Opponent Name</h3>
-          <input
-            placeholder="e.g. Knappa"
-            value={gsOpponent}
-            onChange={e => setGsOpponent(e.target.value)}
-          />
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Opponent Name</h3>
+            <input
+              placeholder="e.g. Knappa"
+              value={gsOpponent}
+              onChange={e => setGsOpponent(e.target.value)}
+            />
+          </section>
 
-        <section className="settings-section">
-          <h3>Your Side</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
-            <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
-          </div>
-        </section>
+          <section className="settings-section">
+            <h3>Your Side</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
+            <div className="team-toggle">
+              <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
+              <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
+            </div>
+          </section>
+        </div>
 
         <section className="settings-section">
           <h3>Opponent Color</h3>
@@ -4593,44 +4640,58 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
           </div>
         </section>
 
-        <section className="settings-section">
-          <h3>Tracking Toggles</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Choose what the operator tracks during the game.</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsTrackTimeouts ? " tt-teal" : ""}`} onClick={() => setGsTrackTimeouts(!gsTrackTimeouts)}>
-              Timeouts {gsTrackTimeouts ? "On" : "Off"}
-            </button>
-            <button className={`tt-btn${gsTrackPossession ? " tt-teal" : ""}`} onClick={() => setGsTrackPossession(!gsTrackPossession)}>
-              Possession {gsTrackPossession ? "On" : "Off"}
-            </button>
-            <button className={`tt-btn${gsTrackClock ? " tt-teal" : ""}`} onClick={() => setGsTrackClock(!gsTrackClock)}>
-              Game Clock {gsTrackClock ? "Tracked" : "Off"}
-            </button>
-          </div>
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Tracking Toggles</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Choose what the operator tracks during the game.</p>
+            <div className="team-toggle">
+              <button className={`tt-btn${gsTrackTimeouts ? " tt-teal" : ""}`} onClick={() => setGsTrackTimeouts(!gsTrackTimeouts)}>
+                Timeouts {gsTrackTimeouts ? "On" : "Off"}
+              </button>
+              <button className={`tt-btn${gsTrackPossession ? " tt-teal" : ""}`} onClick={() => setGsTrackPossession(!gsTrackPossession)}>
+                Possession {gsTrackPossession ? "On" : "Off"}
+              </button>
+              <button className={`tt-btn${gsTrackClock ? " tt-teal" : ""}`} onClick={() => setGsTrackClock(!gsTrackClock)}>
+                Game Clock {gsTrackClock ? "Tracked" : "Off"}
+              </button>
+            </div>
+          </section>
 
-        <section className="settings-section">
-          <h3>Clock Panel</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>These only affect the operator screen controls when game clock tracking is on.</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsClockVisible ? " tt-teal" : ""}`} onClick={() => setGsClockVisible(!gsClockVisible)}>{gsClockVisible ? "Panel Visible" : "Panel Hidden"}</button>
-            <button className={`tt-btn${gsClockEnabled ? " tt-teal" : ""}`} onClick={() => setGsClockEnabled(!gsClockEnabled)}>{gsClockEnabled ? "Controls Unlocked" : "Controls Locked"}</button>
-          </div>
-        </section>
+          <section className="settings-section">
+            <h3>Clock Panel</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>These only affect the operator screen controls when game clock tracking is on.</p>
+            <div className="team-toggle">
+              <button className={`tt-btn${gsClockVisible ? " tt-teal" : ""}`} onClick={() => setGsClockVisible(!gsClockVisible)}>{gsClockVisible ? "Panel Visible" : "Panel Hidden"}</button>
+              <button className={`tt-btn${gsClockEnabled ? " tt-teal" : ""}`} onClick={() => setGsClockEnabled(!gsClockEnabled)}>{gsClockEnabled ? "Controls Unlocked" : "Controls Locked"}</button>
+            </div>
+          </section>
+        </div>
 
-        <section className="settings-section">
-          <h3>Realtime API URL</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Node API server - use laptop's local IP on game day (e.g. http://192.168.1.5:4000)</p>
-          <input
-            placeholder={DEFAULT_API}
-            value={gsApiUrl}
-            onChange={e => setGsApiUrl(e.target.value)}
-          />
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Realtime API URL</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Use the laptop's local IP on game day (example: http://192.168.1.5:4000).</p>
+            <input
+              placeholder={DEFAULT_API}
+              value={gsApiUrl}
+              onChange={e => setGsApiUrl(e.target.value)}
+            />
+          </section>
+
+          <section className="settings-section">
+            <h3>Legacy Stats Export URL</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Optional separate post-game export endpoint. If you only use the coach dashboard, leave this on the same host as the Realtime API.</p>
+            <input
+              placeholder="http://localhost:4000"
+              value={gsDashboardUrl}
+              onChange={e => setGsDashboardUrl(e.target.value)}
+            />
+          </section>
+        </div>
 
         <section className="settings-section">
           <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set the API key env var on the server). Leave blank in development.</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret. Leave blank during local development.</p>
           <input
             type="password"
             placeholder="Leave blank to disable auth"
@@ -4640,27 +4701,19 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
         </section>
 
         <section className="settings-section">
-          <h3>Stats Dashboard URL</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Stats Dashboard service (for sending game data)</p>
-          <input
-            placeholder="http://localhost:4000"
-            value={gsDashboardUrl}
-            onChange={e => setGsDashboardUrl(e.target.value)}
-          />
-        </section>
-
-        <section className="settings-section">
           {setupErrors.length > 0 && (
             <ul className="setup-errors">
               {setupErrors.map(err => <li key={err}>{err}</li>)}
             </ul>
           )}
-          <button
-            className="save-btn"
-            disabled={setupErrors.length > 0}
-            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onNav("menu"); } }}>
-            Save
-          </button>
+          <div className="settings-actions">
+            <button
+              className="save-btn"
+              disabled={setupErrors.length > 0}
+              onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onNav("menu"); } }}>
+              Save Game Setup
+            </button>
+          </div>
         </section>
 
       </div>

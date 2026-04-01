@@ -1064,7 +1064,8 @@ html, body {
 .team-toggle {
   display: flex;
   gap: 0.5rem;
-  padding-top: 0.75rem;
+  padding-top: 0.35rem;
+  flex-wrap: wrap;
 }
 
 .live-bottom-nav {
@@ -2340,14 +2341,16 @@ html, body {
   min-height: 100vh;
   background: #0b1226;
   overflow-y: auto;
-  padding-bottom: 2rem;
+  padding: 0 clamp(0.85rem, 2.4vw, 1.75rem) 2.5rem;
 }
 
 .settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.5rem;
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  padding: 1rem 0;
   border-bottom: 1px solid rgba(255,255,255,0.07);
   position: sticky;
   top: 0;
@@ -2380,8 +2383,13 @@ html, body {
 }
 
 .settings-section {
-  padding: 1.2rem 1.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  width: min(100%, 1040px);
+  margin: 0.8rem auto 0;
+  padding: 1.05rem 1.15rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  background: rgba(17,24,39,0.44);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.14);
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
@@ -2390,7 +2398,7 @@ html, body {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(232,234,240,0.4);
+  color: rgba(232,234,240,0.46);
   margin-bottom: 0.15rem;
 }
 .settings-section label {
@@ -2412,6 +2420,69 @@ html, body {
 }
 .settings-section input:focus { outline: none; border-color: rgba(79,140,255,0.5); }
 
+.settings-hero-section {
+  background: linear-gradient(180deg, rgba(24, 35, 71, 0.9), rgba(17, 24, 39, 0.52));
+  border-color: rgba(79,140,255,0.24);
+}
+
+.settings-overview {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.settings-overview-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settings-overview-title {
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.settings-overview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.settings-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(79,140,255,0.28);
+  background: rgba(11,18,38,0.55);
+  color: rgba(232,234,240,0.86);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.settings-grid-2 {
+  width: min(100%, 1040px);
+  margin: 0.8rem auto 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.settings-grid-2 > .settings-section {
+  width: auto;
+  margin: 0;
+  height: 100%;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .team-color-rows {
   display: flex;
   flex-direction: column;
@@ -2420,9 +2491,10 @@ html, body {
 
 .team-color-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.7rem;
+  flex-wrap: wrap;
 }
 
 .team-color-input {
@@ -2444,6 +2516,8 @@ html, body {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 220px;
 }
 
 .team-color-swatch {
@@ -2710,9 +2784,9 @@ html, body {
 
 /* ---- Team picker (game setup) ---- */
 .team-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
 }
 .team-pick-btn {
   display: flex;
@@ -2743,7 +2817,7 @@ html, body {
 .tp-count { font-size: 0.75rem; color: rgba(232,234,240,0.4); }
 
 /* ---- Misc ---- */
-.dim-text { color: rgba(232,234,240,0.35); font-size: 0.85rem; }
+.dim-text { color: rgba(232,234,240,0.52); font-size: 0.85rem; line-height: 1.45; }
 .ppos { font-size: 0.7rem; color: rgba(232,234,240,0.4); background: rgba(255,255,255,0.07); padding: 0.1rem 0.35rem; border-radius: 4px; }
 
 /* team picker: locked = already picked as home */
@@ -2854,6 +2928,11 @@ html, body {
 }
 
 /* ---- Setup validation errors ---- */
+.save-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .setup-errors {
   list-style: none;
   display: flex;
@@ -4174,6 +4253,22 @@ html, body {
 @media (max-width: 820px) {
   :root {
     --live-bottom-nav-h: 134px;
+  }
+
+  .settings-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .team-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-actions {
+    justify-content: stretch;
+  }
+
+  .settings-actions .save-btn {
+    width: 100%;
   }
 
   .inline-notice {
