@@ -669,6 +669,75 @@ body {
   line-height: 1.4;
 }
 
+.setup-auth-section {
+  gap: 0.8rem;
+}
+
+.setup-auth-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(79,140,255,0.2);
+  background: rgba(8,18,36,0.32);
+}
+
+.setup-auth-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.setup-auth-pill-active {
+  border-color: rgba(79,140,255,0.45);
+  background: rgba(79,140,255,0.18);
+  color: #dbeafe;
+}
+
+.setup-auth-toggle {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.setup-auth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.setup-auth-submit {
+  min-width: 190px;
+}
+
+.setup-auth-signed-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.setup-auth-signed-in strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 0.2rem;
+}
+
+.setup-auth-signed-in p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
 .setup-section {
   display: flex;
   flex-direction: column;
@@ -885,6 +954,118 @@ body {
     justify-self: stretch;
     width: 100%;
   }
+}
+
+.marketing-page {
+  min-height: 100vh;
+  padding: 1.25rem;
+  background:
+    radial-gradient(circle at top left, rgba(79,140,255,0.18), transparent 24%),
+    linear-gradient(180deg, #081224 0%, #0b1226 100%);
+}
+
+.marketing-header {
+  max-width: 1180px;
+  margin: 0 auto 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.marketing-header-tight {
+  margin-bottom: 1.5rem;
+}
+
+.marketing-logo {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.marketing-header-actions,
+.marketing-hero-actions {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.marketing-main {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.marketing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.marketing-hero h2 {
+  margin: 0.35rem 0 0.65rem;
+  font-size: clamp(2rem, 3vw, 3rem);
+}
+
+.marketing-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(79,140,255,0.16);
+  border: 1px solid rgba(79,140,255,0.35);
+  color: #dbeafe;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.marketing-hero-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.marketing-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text-muted);
+}
+
+.marketing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.marketing-card {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.marketing-login-shell {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.marketing-login-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.marketing-login-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.marketing-submit {
+  justify-content: center;
 }
 
 .connection-pill.offline,

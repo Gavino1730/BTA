@@ -1,4 +1,6 @@
 export type AppRoute =
+  | "marketing"
+  | "login"
   | "live"
   | "setup"
   | "stats-overview"
@@ -9,7 +11,7 @@ export type AppRoute =
   | "stats-settings";
 
 const LEGACY_ROUTE_ALIASES: Record<string, string> = {
-  "/": "/live",
+  "/dashboard": "/live",
   "/games": "/stats/games",
   "/players": "/stats/players",
   "/trends": "/stats/trends",
@@ -17,6 +19,9 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/analysis": "/stats/insights",
   "/settings": "/stats/settings",
   "/onboarding": "/setup",
+  "/signin": "/login",
+  "/sign-in": "/login",
+  "/home": "/",
 };
 
 export function canonicalizeCoachPath(pathname: string): string {
@@ -26,6 +31,12 @@ export function canonicalizeCoachPath(pathname: string): string {
 
 export function resolveCoachRoute(pathname: string): AppRoute {
   const canonical = canonicalizeCoachPath(pathname);
+  if (canonical === "/") {
+    return "marketing";
+  }
+  if (canonical === "/login") {
+    return "login";
+  }
   if (canonical === "/setup") {
     return "setup";
   }

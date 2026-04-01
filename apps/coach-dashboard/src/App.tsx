@@ -9,7 +9,7 @@ import {
   formatDashboardEventMeta,
   formatFoulTroubleLabel,
 } from "./display.js";
-import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, operatorBase, SCHOOL_ID } from "./platform.js";
+import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 
 interface GameState {
   gameId: string;
@@ -743,8 +743,14 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   }, [connectionId, gameId]);
 
   useEffect(() => {
+    const authSession = readStoredAuthSession();
+    const schoolId = resolveActiveSchoolId();
     const socket = io(apiBase, {
-      auth: API_KEY ? { apiKey: API_KEY, schoolId: SCHOOL_ID } : { schoolId: SCHOOL_ID },
+      auth: {
+        ...(schoolId ? { schoolId } : {}),
+        ...(API_KEY ? { apiKey: API_KEY } : {}),
+        ...(authSession?.token ? { token: authSession.token } : {}),
+      },
       extraHeaders: apiKeyHeader()
     });
 

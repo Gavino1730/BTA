@@ -481,6 +481,72 @@ describe("unified stats endpoints", () => {
     expect(teamsBody.teams[0]?.players).toHaveLength(2);
   });
 
+  it("supports local email/password accounts through onboarding", async () => {
+    await resetSchool("account-school");
+
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "account-school" },
+      body: JSON.stringify({
+        fullName: "Coach Jordan",
+        email: "coach@accountschool.org",
+        password: "Secret123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      token: string;
+      user: { email: string; fullName: string; role: string };
+    };
+
+    expect(registerBody.token.startsWith("bta.")).toBe(true);
+    expect(registerBody.user.email).toBe("coach@accountschool.org");
+    expect(registerBody.user.fullName).toBe("Coach Jordan");
+    expect(registerBody.user.role).toBe("owner");
+
+    const completeRes = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${registerBody.token}`,
+        "Content-Type": "application/json",
+        "x-school-id": "account-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Account School Athletics",
+        teamName: "Account School Varsity",
+        season: "2026",
+        playingStyle: "Pressure and pace",
+        roster: [{ name: "Ava Stone", number: "2", position: "G", grade: "11" }]
+      })
+    });
+
+    expect(completeRes.status).toBe(201);
+
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "account-school" },
+      body: JSON.stringify({
+        email: "coach@accountschool.org",
+        password: "Secret123!"
+      })
+    });
+
+    expect(loginRes.status).toBe(200);
+    const loginBody = await loginRes.json() as {
+      token: string;
+      user: { email: string };
+      onboarding: { completed: boolean };
+      currentMember?: { email: string; role: string } | null;
+    };
+
+    expect(loginBody.token.startsWith("bta.")).toBe(true);
+    expect(loginBody.user.email).toBe("coach@accountschool.org");
+    expect(loginBody.onboarding.completed).toBe(true);
+    expect(loginBody.currentMember?.email).toBe("coach@accountschool.org");
+    expect(loginBody.currentMember?.role).toBe("owner");
+  });
+
   it("supports game edit and reset compatibility routes", async () => {
     await resetSchool("games-compat");
 

@@ -20,12 +20,35 @@ export interface Player {
   notes?: string;
 }
 
-const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
+
+function resolveDefaultSchoolId(hostname: string): string {
+  return isLocalNetworkHost(hostname) ? "default" : "";
+}
+
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID
+  ?? (typeof window !== "undefined" ? resolveDefaultSchoolId(window.location.hostname || "localhost") : "default"))
+  .toString()
+  .trim();
 
 function buildHeaders(apiKey?: string, schoolId?: string, withJson = false): Record<string, string> {
-  const headers: Record<string, string> = {
-    "x-school-id": schoolId?.trim() || DEFAULT_SCHOOL_ID,
-  };
+  const headers: Record<string, string> = {};
+  const resolvedSchoolId = schoolId?.trim() || DEFAULT_SCHOOL_ID;
+  if (resolvedSchoolId) {
+    headers["x-school-id"] = resolvedSchoolId;
+  }
   if (withJson) {
     headers["Content-Type"] = "application/json";
   }

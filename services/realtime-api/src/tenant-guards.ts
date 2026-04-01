@@ -12,7 +12,7 @@ export interface TenantResolutionResult {
   status?: number;
 }
 
-const WRITE_ROLES = new Set(["admin", "coach", "operator"]);
+const WRITE_ROLES = new Set(["admin", "owner", "coach", "operator"]);
 
 export function normalizeSchoolId(input: unknown): string | undefined {
   if (typeof input !== "string") {

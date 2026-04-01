@@ -114,6 +114,30 @@ describe("server auth integration", () => {
     expect(response.status).toBe(403);
   });
 
+  it("creates an isolated school workspace when a public user registers without a preset school id", async () => {
+    const response = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        fullName: "Public Coach",
+        email: "public-coach@example.org",
+        password: "supersecure123"
+      })
+    });
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      user?: { schoolId?: string };
+      token?: string | null;
+    };
+
+    expect(body.user?.schoolId).toBeTruthy();
+    expect(body.user?.schoolId).not.toBe("default");
+    expect(body.token).toBeTruthy();
+  });
+
   it("returns auth-derived onboarding coach suggestions when no account is saved yet", async () => {
     const token = makeTestToken({
       sub: "setup-coach",

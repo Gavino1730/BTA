@@ -1,5 +1,6 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import path from "path";
 import { fileURLToPath } from "node:url";
@@ -49,12 +50,19 @@ import {
   getOnboardingAccountStateByScope,
   saveOnboardingAccountState,
   getOrganizationMembersByScope,
+  getLocalAuthAccountByEmail,
+  getLocalAuthAccountsByEmailAcrossSchools,
+  getLocalAuthAccountsByScope,
+  saveLocalAuthAccount,
+  recordLocalAuthLogin,
   saveOrganizationMember,
-  deleteOrganizationMember
+  deleteOrganizationMember,
+  type LocalAuthAccount
 } from "./store.js";
 import {
   extractBearerToken,
   isJwtAuthEnabled,
+  issueLocalAuthToken,
   verifyBearerToken,
   type AuthContext
 } from "./auth.js";
@@ -175,6 +183,74 @@ function sanitizeTextField(value: unknown, maxLength: number): string {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function hashPassword(password: string, salt?: string): { passwordHash: string; passwordSalt: string } {
+  const passwordSalt = salt ?? randomBytes(16).toString("hex");
+  const passwordHash = scryptSync(password, passwordSalt, 64).toString("hex");
+  return { passwordHash, passwordSalt };
+}
+
+function verifyPassword(password: string, passwordSalt: string, passwordHash: string): boolean {
+  if (!password || !passwordSalt || !passwordHash) {
+    return false;
+  }
+
+  try {
+    const actual = scryptSync(password, passwordSalt, 64);
+    const expected = Buffer.from(passwordHash, "hex");
+    if (actual.length !== expected.length) {
+      return false;
+    }
+    return timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
+function buildAuthUserView(account: LocalAuthAccount, currentMember: OrganizationMember | null) {
+  return {
+    accountId: account.accountId,
+    email: account.email,
+    fullName: account.fullName,
+    role: currentMember?.role ?? account.role,
+    status: currentMember?.status ?? account.status,
+    schoolId: account.schoolId,
+    organizationId: currentMember?.organizationId ?? account.organizationId,
+    lastLoginAtIso: account.lastLoginAtIso,
+  };
+}
+
+function buildOnboardingCompletionSummary(schoolId: string) {
+  const profile = buildOnboardingProfileView(schoolId);
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  const { teams, team } = getPrimaryTeam(schoolId);
+  return {
+    completed: Boolean((account?.organization.onboardingCompletedAtIso || profile?.completedAtIso) && team?.name?.trim()),
+    hasAccount: Boolean(account?.organization.organizationName && account?.primaryCoach.email),
+    hasProfile: Boolean(profile),
+    hasTeam: Boolean(team?.name?.trim()),
+    teamCount: teams.length,
+  };
+}
+
+function buildAuthSessionResponse(
+  schoolId: string,
+  account: LocalAuthAccount,
+  currentMember: OrganizationMember | null,
+  token?: string | null,
+) {
+  return {
+    authenticated: true,
+    token: token ?? null,
+    user: buildAuthUserView(account, currentMember),
+    currentMember,
+    onboarding: buildOnboardingCompletionSummary(schoolId),
+  };
+}
+
 function readAuthClaim(authContext: AuthContext | undefined, path: string): unknown {
   const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
   let current: unknown = authContext?.claims;
@@ -234,6 +310,29 @@ function resolveCurrentOrganizationMember(req: Request, schoolId: string): Organ
     (subject && member.authSubject === subject)
     || (email && member.email === email)
   ) ?? null;
+}
+
+function activateKnownMemberForAccount(schoolId: string, account: LocalAuthAccount): OrganizationMember | null {
+  const existing = getOrganizationMembersByScope({ schoolId }).find((member) =>
+    member.authSubject === account.accountId
+    || member.email === account.email
+  ) ?? null;
+
+  if (!existing) {
+    return null;
+  }
+
+  return saveOrganizationMember({
+    memberId: existing.memberId,
+    organizationId: existing.organizationId,
+    authSubject: account.accountId,
+    fullName: account.fullName || existing.fullName,
+    email: account.email,
+    role: existing.role,
+    status: "active",
+    invitedAtIso: existing.invitedAtIso,
+    joinedAtIso: existing.joinedAtIso || new Date().toISOString(),
+  }, { schoolId });
 }
 
 function ensureAuthenticatedOrganizationMember(req: Request, schoolId: string): OrganizationMember | null {
@@ -1372,9 +1471,102 @@ function resolveSocketSchoolId(socket: {
   return result;
 }
 
+function isPublicAuthBootstrapRequest(req: Request): boolean {
+  return req.method === "POST"
+    && (req.path.endsWith("/auth/register") || req.path.endsWith("/auth/login"));
+}
+
+function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    const raw = sanitizeTextField(candidate, 120);
+    if (!raw) {
+      continue;
+    }
+
+    const source = raw.includes("@") ? (raw.split("@")[0] ?? raw) : raw;
+    const seed = normalizeSchoolId(buildOrganizationSlug(source));
+    if (seed && seed !== DEFAULT_SCHOOL_ID) {
+      return seed;
+    }
+  }
+
+  return "";
+}
+
+function schoolScopeHasData(schoolId: string): boolean {
+  return Boolean(
+    getLocalAuthAccountsByScope({ schoolId }).length
+    || getOnboardingAccountStateByScope({ schoolId })
+    || getOrganizationProfileByScope({ schoolId })
+    || getOrganizationMembersByScope({ schoolId }).length
+    || getPrimaryTeam(schoolId).teams.length
+  );
+}
+
+function allocateBootstrapSchoolId(seed: string): string {
+  const base = normalizeSchoolId(seed) || `school-${randomBytes(3).toString("hex")}`;
+  let candidate = base;
+  let attempt = 1;
+
+  while (schoolScopeHasData(candidate)) {
+    const suffix = String(attempt);
+    candidate = `${base.slice(0, Math.max(1, 64 - suffix.length - 1))}-${suffix}`;
+    attempt += 1;
+  }
+
+  return candidate;
+}
+
+function resolveAuthSchoolId(
+  req: Request,
+  payload: Record<string, unknown>,
+  email: string,
+): { schoolId?: string; error?: string; status?: number } {
+  const resolved = resolveRequestSchoolId(req);
+  if (resolved.schoolId) {
+    return { schoolId: resolved.schoolId };
+  }
+
+  if (!isPublicAuthBootstrapRequest(req)) {
+    return resolved;
+  }
+
+  const matches = getLocalAuthAccountsByEmailAcrossSchools(email);
+  if (req.path.endsWith("/auth/login")) {
+    if (matches.length === 1) {
+      return { schoolId: matches[0]?.schoolId };
+    }
+    if (matches.length > 1) {
+      return {
+        status: 409,
+        error: "Multiple workspaces match this email. Reopen your school link or include schoolId.",
+      };
+    }
+    return { status: 401, error: "Invalid email or password" };
+  }
+
+  if (matches.length > 0) {
+    return { status: 409, error: "An account with that email already exists. Sign in instead." };
+  }
+
+  return {
+    schoolId: allocateBootstrapSchoolId(buildBootstrapSchoolSeed(
+      payload.schoolId,
+      payload.organizationName,
+      payload.teamName,
+      email,
+      payload.fullName,
+      payload.coachName,
+    ))
+  };
+}
+
 function getSchoolIdFromRequest(req: Request): string {
   const resolved = resolveRequestSchoolId(req);
-  return resolved.schoolId ?? DEFAULT_SCHOOL_ID;
+  if (!resolved.schoolId) {
+    throw new Error(resolved.error ?? "schoolId is required");
+  }
+  return resolved.schoolId;
 }
 
 function getSchoolIdFromSocket(socket: {
@@ -1442,7 +1634,7 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
 
 async function attachAuthContext(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const scopedReq = req as ScopedRequest;
-  if (scopedReq.authContext || !isJwtAuthEnabled()) {
+  if (scopedReq.authContext) {
     next();
     return;
   }
@@ -1465,6 +1657,11 @@ function requireTenantScope(req: Request, res: Response, next: NextFunction): vo
   const scopedReq = req as ScopedRequest;
   const resolved = resolveRequestSchoolId(req);
   if (!resolved.schoolId) {
+    if (isPublicAuthBootstrapRequest(req)) {
+      next();
+      return;
+    }
+
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
     return;
   }
@@ -1505,20 +1702,18 @@ const io = new Server(httpServer, {
 io.use(async (socket, next) => {
   const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
 
-  if (isJwtAuthEnabled()) {
-    const token = extractBearerToken(socket.handshake.headers, auth);
-    if (token) {
-      const authContext = await verifyBearerToken(token);
-      if (authContext) {
-        socket.data.authContext = authContext;
-        const resolved = resolveSocketSchoolId(socket);
-        if (!resolved.schoolId) {
-          next(new Error(resolved.error ?? "schoolId is required"));
-          return;
-        }
-        next();
+  const token = extractBearerToken(socket.handshake.headers, auth);
+  if (token) {
+    const authContext = await verifyBearerToken(token);
+    if (authContext) {
+      socket.data.authContext = authContext;
+      const resolved = resolveSocketSchoolId(socket);
+      if (!resolved.schoolId) {
+        next(new Error(resolved.error ?? "schoolId is required"));
         return;
       }
+      next();
+      return;
     }
   }
 
@@ -1726,6 +1921,185 @@ app.use("/api", requireTenantScope);
 app.use("/teams", requireTenantScope);
 app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
+
+app.get("/api/auth/session", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const authContext = (req as ScopedRequest).authContext;
+  if (!authContext) {
+    res.json({
+      authenticated: false,
+      token: null,
+      user: null,
+      currentMember: null,
+      onboarding: buildOnboardingCompletionSummary(schoolId),
+    });
+    return;
+  }
+
+  const suggested = buildSuggestedCoachIdentity(authContext);
+  const email = sanitizeTextField(suggested?.coachEmail, 160).toLowerCase();
+  const currentMember = resolveCurrentOrganizationMember(req, schoolId);
+  const localAccount = email ? getLocalAuthAccountByEmail(email, { schoolId }) : null;
+
+  if (localAccount) {
+    res.json(buildAuthSessionResponse(schoolId, localAccount, currentMember));
+    return;
+  }
+
+  res.json({
+    authenticated: true,
+    token: null,
+    user: {
+      accountId: resolveAuthSubject(authContext) ?? email ?? "authenticated-user",
+      email: email || undefined,
+      fullName: sanitizeTextField(suggested?.coachName, 120) || undefined,
+      role: currentMember?.role ?? (sanitizeTextField(authContext.role, 40) || "coach"),
+      status: currentMember?.status ?? "active",
+      schoolId,
+      organizationId: currentMember?.organizationId,
+      lastLoginAtIso: null,
+    },
+    currentMember,
+    onboarding: buildOnboardingCompletionSummary(schoolId),
+  });
+});
+
+app.post("/api/auth/register", (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const fullName = sanitizeTextField(payload.fullName ?? payload.coachName, 120);
+  const email = sanitizeTextField(payload.email ?? payload.coachEmail, 160).toLowerCase();
+  const password = String(payload.password ?? "").trim();
+
+  if (!fullName || !email || !password) {
+    res.status(400).json({ error: "fullName, email, and password are required" });
+    return;
+  }
+
+  const schoolResolution = resolveAuthSchoolId(req, payload, email);
+  if (!schoolResolution.schoolId) {
+    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
+    return;
+  }
+
+  const schoolId = schoolResolution.schoolId;
+
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address" });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  if (getLocalAuthAccountByEmail(email, { schoolId })) {
+    res.status(409).json({ error: "An account with that email already exists" });
+    return;
+  }
+
+  const existingMember = getOrganizationMembersByScope({ schoolId }).find((member) => member.email === email) ?? null;
+  const { passwordHash, passwordSalt } = hashPassword(password);
+  const account = saveLocalAuthAccount({
+    email,
+    fullName,
+    passwordHash,
+    passwordSalt,
+    organizationId: existingMember?.organizationId,
+    role: existingMember?.role ?? "owner",
+    status: existingMember?.status === "invited" ? "invited" : "active",
+  }, { schoolId });
+
+  saveOnboardingAccountState({
+    organization: { schoolId },
+    primaryCoach: {
+      schoolId,
+      fullName,
+      email,
+      role: "owner",
+      organizationId: existingMember?.organizationId ?? "",
+      accountId: account.accountId,
+      createdAtIso: "",
+      updatedAtIso: "",
+    },
+  }, { schoolId });
+
+  const currentMember = activateKnownMemberForAccount(schoolId, account);
+  const token = issueLocalAuthToken({
+    subject: account.accountId,
+    email: account.email,
+    name: account.fullName,
+    schoolId,
+    role: currentMember?.role ?? account.role,
+  });
+
+  if (!token) {
+    res.status(500).json({ error: "Local auth token signing is not configured" });
+    return;
+  }
+
+  res.status(201).json(buildAuthSessionResponse(schoolId, account, currentMember, token));
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const password = String(payload.password ?? "").trim();
+
+  if (!email || !password) {
+    res.status(400).json({ error: "email and password are required" });
+    return;
+  }
+
+  const schoolResolution = resolveAuthSchoolId(req, payload, email);
+  if (!schoolResolution.schoolId) {
+    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
+    return;
+  }
+
+  const schoolId = schoolResolution.schoolId;
+
+  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  if (!account || !verifyPassword(password, account.passwordSalt, account.passwordHash)) {
+    res.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+
+  const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
+  saveOnboardingAccountState({
+    organization: { schoolId },
+    primaryCoach: {
+      schoolId,
+      fullName: refreshedAccount.fullName,
+      email: refreshedAccount.email,
+      role: "owner",
+      organizationId: refreshedAccount.organizationId ?? "",
+      accountId: refreshedAccount.accountId,
+      createdAtIso: "",
+      updatedAtIso: "",
+    },
+  }, { schoolId });
+
+  const currentMember = activateKnownMemberForAccount(schoolId, refreshedAccount);
+  const token = issueLocalAuthToken({
+    subject: refreshedAccount.accountId,
+    email: refreshedAccount.email,
+    name: refreshedAccount.fullName,
+    schoolId,
+    role: currentMember?.role ?? refreshedAccount.role,
+  });
+
+  if (!token) {
+    res.status(500).json({ error: "Local auth token signing is not configured" });
+    return;
+  }
+
+  res.json(buildAuthSessionResponse(schoolId, refreshedAccount, currentMember, token));
+});
+
+app.post("/api/auth/logout", (_req, res) => {
+  res.status(204).send();
+});
 
 app.get("/api/onboarding/state", (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);

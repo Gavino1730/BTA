@@ -132,6 +132,33 @@ export interface OrganizationMemberInput {
   joinedAtIso?: string;
 }
 
+export interface LocalAuthAccount {
+  schoolId?: string;
+  accountId: string;
+  organizationId?: string;
+  email: string;
+  fullName: string;
+  passwordHash: string;
+  passwordSalt: string;
+  role: "owner" | "coach" | "analyst";
+  status: "active" | "invited";
+  createdAtIso: string;
+  updatedAtIso: string;
+  lastLoginAtIso?: string;
+}
+
+export interface LocalAuthAccountInput {
+  accountId?: string;
+  organizationId?: string;
+  email?: string;
+  fullName?: string;
+  passwordHash?: string;
+  passwordSalt?: string;
+  role?: LocalAuthAccount["role"];
+  status?: LocalAuthAccount["status"];
+  lastLoginAtIso?: string;
+}
+
 export interface CoachAiSettings {
   playingStyle: string;
   teamContext: string;
@@ -351,6 +378,7 @@ interface PersistedSnapshot {
   organizationProfilesBySchool?: Record<string, OrganizationProfile>;
   onboardingAccountsBySchool?: Record<string, OnboardingAccountState>;
   organizationMembersBySchool?: Record<string, OrganizationMember[]>;
+  localAuthAccountsBySchool?: Record<string, LocalAuthAccount[]>;
 }
 
 export interface TenantScope {
@@ -396,6 +424,7 @@ const rosterTeamsBySchool = new Map<string, RosterTeam[]>();
 const organizationProfilesBySchool = new Map<string, OrganizationProfile>();
 const onboardingAccountsBySchool = new Map<string, OnboardingAccountState>();
 const organizationMembersBySchool = new Map<string, OrganizationMember[]>();
+const localAuthAccountsBySchool = new Map<string, LocalAuthAccount[]>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -592,6 +621,11 @@ function buildCoachAccountId(email: string, schoolId: string): string {
   return `coach-${localPart.slice(0, 48)}`;
 }
 
+function buildLocalAuthAccountId(email: string, schoolId: string): string {
+  const localPart = email.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || schoolId;
+  return `acct-${localPart.slice(0, 48)}`;
+}
+
 function buildOrganizationMemberId(email: string, organizationId: string): string {
   const localPart = email.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || organizationId;
   return `member-${localPart.slice(0, 48)}`;
@@ -707,6 +741,92 @@ function setOrganizationMembersForSchool(schoolId: string, members: Organization
     });
   organizationMembersBySchool.set(schoolId, normalized);
   return normalized;
+}
+
+function sanitizeLocalAuthAccount(
+  input: LocalAuthAccountInput,
+  schoolId: string,
+  existing?: LocalAuthAccount | null,
+): LocalAuthAccount {
+  const now = new Date().toISOString();
+  const email = trimProfileField(input.email ?? existing?.email, 160).toLowerCase();
+  const organizationId = trimProfileField(input.organizationId ?? existing?.organizationId, 80)
+    || onboardingAccountsBySchool.get(schoolId)?.organization.organizationId
+    || undefined;
+  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner"
+    ? input.role
+    : existing?.role ?? "owner";
+  const status = input.status === "invited" || input.status === "active"
+    ? input.status
+    : existing?.status ?? "active";
+
+  return {
+    schoolId,
+    accountId: trimProfileField(input.accountId ?? existing?.accountId, 80) || buildLocalAuthAccountId(email, schoolId),
+    organizationId,
+    email,
+    fullName: trimProfileField(input.fullName ?? existing?.fullName, 120),
+    passwordHash: trimProfileField(input.passwordHash ?? existing?.passwordHash, 240),
+    passwordSalt: trimProfileField(input.passwordSalt ?? existing?.passwordSalt, 240),
+    role,
+    status,
+    createdAtIso: existing?.createdAtIso ?? now,
+    updatedAtIso: now,
+    lastLoginAtIso: trimProfileField(input.lastLoginAtIso ?? existing?.lastLoginAtIso, 64) || undefined,
+  };
+}
+
+function setLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuthAccount[]): LocalAuthAccount[] {
+  const normalized = accounts
+    .map((account) => ({ ...account, schoolId: normalizeSchoolId(account.schoolId ?? schoolId) }))
+    .sort((left, right) => left.email.localeCompare(right.email));
+  localAuthAccountsBySchool.set(schoolId, normalized);
+  return normalized;
+}
+
+function upsertLocalAuthAccountForSchool(schoolId: string, input: LocalAuthAccountInput): LocalAuthAccount {
+  const accounts = localAuthAccountsBySchool.get(schoolId) ?? [];
+  const email = trimProfileField(input.email, 160).toLowerCase();
+  const existing = accounts.find((account) =>
+    (email && account.email === email)
+    || (input.accountId && account.accountId === input.accountId)
+  ) ?? null;
+  const next = sanitizeLocalAuthAccount(input, schoolId, existing);
+  const merged = existing
+    ? accounts.map((account) => (account.accountId === existing.accountId ? next : account))
+    : [...accounts, next];
+  setLocalAuthAccountsForSchool(schoolId, merged);
+  return next;
+}
+
+function findLocalAuthAccountByEmailForSchool(schoolId: string, email: string): LocalAuthAccount | null {
+  const normalizedEmail = trimProfileField(email, 160).toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const accounts = localAuthAccountsBySchool.get(schoolId) ?? [];
+  return accounts.find((account) => account.email === normalizedEmail) ?? null;
+}
+
+function touchLocalAuthAccountLoginForSchool(schoolId: string, accountId: string): LocalAuthAccount | null {
+  const accounts = localAuthAccountsBySchool.get(schoolId) ?? [];
+  const existing = accounts.find((account) => account.accountId === accountId) ?? null;
+  if (!existing) {
+    return null;
+  }
+
+  return upsertLocalAuthAccountForSchool(schoolId, {
+    accountId: existing.accountId,
+    email: existing.email,
+    fullName: existing.fullName,
+    organizationId: existing.organizationId,
+    passwordHash: existing.passwordHash,
+    passwordSalt: existing.passwordSalt,
+    role: existing.role,
+    status: existing.status,
+    lastLoginAtIso: new Date().toISOString(),
+  });
 }
 
 function upsertOrganizationMemberForSchool(
@@ -1511,6 +1631,7 @@ function buildPersistedSnapshot(): PersistedSnapshot {
     organizationProfilesBySchool: Object.fromEntries(organizationProfilesBySchool.entries()),
     onboardingAccountsBySchool: Object.fromEntries(onboardingAccountsBySchool.entries()),
     organizationMembersBySchool: Object.fromEntries(organizationMembersBySchool.entries()),
+    localAuthAccountsBySchool: Object.fromEntries(localAuthAccountsBySchool.entries()),
     // Backward compatibility for older readers expecting a top-level rosterTeams array.
     rosterTeams: getRosterTeamsForSchool(DEFAULT_SCHOOL_ID)
   };
@@ -1557,12 +1678,14 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedOrganizationProfiles = Array.isArray(payload) ? undefined : payload.organizationProfilesBySchool;
   const persistedOnboardingAccounts = Array.isArray(payload) ? undefined : payload.onboardingAccountsBySchool;
   const persistedOrganizationMembers = Array.isArray(payload) ? undefined : payload.organizationMembersBySchool;
+  const persistedLocalAuthAccounts = Array.isArray(payload) ? undefined : payload.localAuthAccountsBySchool;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
   organizationProfilesBySchool.clear();
   onboardingAccountsBySchool.clear();
   organizationMembersBySchool.clear();
+  localAuthAccountsBySchool.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -1587,6 +1710,12 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   if (persistedOrganizationMembers && typeof persistedOrganizationMembers === "object") {
     for (const [schoolId, members] of Object.entries(persistedOrganizationMembers)) {
       setOrganizationMembersForSchool(normalizeSchoolId(schoolId), Array.isArray(members) ? members : []);
+    }
+  }
+
+  if (persistedLocalAuthAccounts && typeof persistedLocalAuthAccounts === "object") {
+    for (const [schoolId, accounts] of Object.entries(persistedLocalAuthAccounts)) {
+      setLocalAuthAccountsForSchool(normalizeSchoolId(schoolId), Array.isArray(accounts) ? accounts : []);
     }
   }
 
@@ -1839,6 +1968,7 @@ export function resetAllData(scope?: TenantScope): void {
     organizationProfilesBySchool.clear();
     onboardingAccountsBySchool.clear();
     organizationMembersBySchool.clear();
+    localAuthAccountsBySchool.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -1853,6 +1983,7 @@ export function resetAllData(scope?: TenantScope): void {
   organizationProfilesBySchool.delete(schoolId);
   onboardingAccountsBySchool.delete(schoolId);
   organizationMembersBySchool.delete(schoolId);
+  localAuthAccountsBySchool.delete(schoolId);
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
 }
@@ -1881,6 +2012,40 @@ export function saveOnboardingAccountState(accountState: OnboardingAccountInput,
 
 export function getOrganizationMembersByScope(scope?: TenantScope): OrganizationMember[] {
   return organizationMembersBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function getLocalAuthAccountsByScope(scope?: TenantScope): LocalAuthAccount[] {
+  return localAuthAccountsBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function getLocalAuthAccountByEmail(email: string, scope?: TenantScope): LocalAuthAccount | null {
+  const schoolId = resolveSchoolId(scope);
+  return findLocalAuthAccountByEmailForSchool(schoolId, email);
+}
+
+export function getLocalAuthAccountsByEmailAcrossSchools(email: string): LocalAuthAccount[] {
+  const normalizedEmail = trimProfileField(email, 160).toLowerCase();
+  if (!normalizedEmail) {
+    return [];
+  }
+
+  return Array.from(localAuthAccountsBySchool.values())
+    .flat()
+    .filter((account) => account.email === normalizedEmail);
+}
+
+export function saveLocalAuthAccount(account: LocalAuthAccountInput, scope?: TenantScope): LocalAuthAccount {
+  const schoolId = resolveSchoolId(scope);
+  const saved = upsertLocalAuthAccountForSchool(schoolId, account);
+  persistSessions();
+  return saved;
+}
+
+export function recordLocalAuthLogin(accountId: string, scope?: TenantScope): LocalAuthAccount | null {
+  const schoolId = resolveSchoolId(scope);
+  const saved = touchLocalAuthAccountLoginForSchool(schoolId, accountId);
+  persistSessions();
+  return saved;
 }
 
 export function saveOrganizationMember(member: OrganizationMemberInput, scope?: TenantScope): OrganizationMember {

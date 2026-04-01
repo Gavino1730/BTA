@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { App as LiveDashboardApp, type AppConnectionInfo } from "./App.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
+import { LoginPage } from "./LoginPage.js";
+import { MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, operatorBase } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -23,8 +25,14 @@ function buildOperatorConsoleUrl(connectionId: string): string {
   const params = new URLSearchParams(window.location.search);
   const storedConnectionId = normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
   const resolvedConnectionId = normalizeConnectionId(params.get("connectionId")) || connectionId || storedConnectionId;
+  const schoolId = resolveActiveSchoolId();
   if (resolvedConnectionId) {
     params.set("connectionId", resolvedConnectionId);
+  }
+  if (schoolId) {
+    params.set("schoolId", schoolId);
+  } else {
+    params.delete("schoolId");
   }
   return `${operatorBase.replace(/\/+$/, "")}/?${params.toString()}`;
 }
@@ -32,6 +40,7 @@ function buildOperatorConsoleUrl(connectionId: string): string {
 export function UnifiedCoachApp() {
   const initialConnectionId = normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId")) || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
   const [connectionInfo, setConnectionInfo] = useState<AppConnectionInfo>({
@@ -54,18 +63,32 @@ export function UnifiedCoachApp() {
 
     async function loadSetupState() {
       try {
-        const response = await fetch(`${apiBase}/api/onboarding/state`, { headers: apiKeyHeader() });
-        if (!response.ok) {
-          throw new Error("Failed to load teams");
+        const [sessionResponse, onboardingResponse] = await Promise.all([
+          fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() }),
+          fetch(`${apiBase}/api/onboarding/state`, { headers: apiKeyHeader() }),
+        ]);
+
+        const sessionPayload = sessionResponse.ok
+          ? await sessionResponse.json() as { authenticated?: boolean }
+          : { authenticated: false };
+        const onboardingPayload = onboardingResponse.ok
+          ? await onboardingResponse.json() as { completed?: boolean }
+          : { completed: false };
+
+        if (!sessionPayload.authenticated) {
+          clearAuthSession();
         }
 
-        const payload = await response.json() as { completed?: boolean };
         if (!cancelled) {
-          setRequiresSetup(!Boolean(payload.completed));
+          const authenticated = Boolean(sessionPayload.authenticated);
+          setIsAuthenticated(authenticated);
+          setRequiresSetup(!authenticated || !Boolean(onboardingPayload.completed));
         }
       } catch {
         if (!cancelled) {
-          setRequiresSetup(false);
+          const storedSession = readStoredAuthSession();
+          setIsAuthenticated(Boolean(storedSession?.token));
+          setRequiresSetup(!Boolean(storedSession?.token));
         }
       }
     }
@@ -77,11 +100,18 @@ export function UnifiedCoachApp() {
   }, []);
 
   useEffect(() => {
-    if (requiresSetup && route !== "setup") {
-      window.history.replaceState({}, "", "/setup");
-      setRoute("setup");
+    if (!requiresSetup) {
+      return;
     }
-  }, [requiresSetup, route]);
+
+    if (route === "marketing" || route === "login" || route === "setup") {
+      return;
+    }
+
+    const targetPath = isAuthenticated ? "/setup" : "/login";
+    window.history.replaceState({}, "", targetPath);
+    setRoute(resolveCoachRoute(targetPath));
+  }, [isAuthenticated, requiresSetup, route]);
 
   useEffect(() => {
     function handlePopState() {
@@ -105,10 +135,25 @@ export function UnifiedCoachApp() {
     });
   }, []);
 
+  const handleAuthSuccess = useCallback((setupComplete: boolean) => {
+    setIsAuthenticated(true);
+    setRequiresSetup(!setupComplete);
+    const nextPath = setupComplete ? "/live" : "/setup";
+    window.history.replaceState({}, "", nextPath);
+    setRoute(resolveCoachRoute(nextPath));
+  }, []);
+
   function navigate(nextPath: string) {
-    if (requiresSetup && nextPath !== "/setup") {
+    const isPublicPath = nextPath === "/" || nextPath === "/login";
+
+    if (requiresSetup && !isAuthenticated && !isPublicPath && nextPath !== "/setup") {
+      nextPath = "/login";
+    }
+
+    if (requiresSetup && isAuthenticated && !isPublicPath && nextPath !== "/setup") {
       nextPath = "/setup";
     }
+
     if (window.location.pathname === nextPath) {
       return;
     }
@@ -126,10 +171,19 @@ export function UnifiedCoachApp() {
     );
   }
 
+  if (route === "marketing") {
+    return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
+  }
+
+  if (route === "login") {
+    return <LoginPage onBackHome={() => navigate("/")} onSuccess={handleAuthSuccess} />;
+  }
+
   if (route === "setup") {
     return (
       <SetupPage
         onComplete={() => {
+          setIsAuthenticated(true);
           setRequiresSetup(false);
           window.history.replaceState({}, "", "/live");
           setRoute("live");
@@ -140,6 +194,7 @@ export function UnifiedCoachApp() {
 
   const isLive = route === "live";
   const operatorConsoleUrl = connectionInfo.operatorConsoleUrl || buildOperatorConsoleUrl(connectionInfo.connectionId);
+  const currentAuthSession = readStoredAuthSession();
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
     return (
@@ -175,6 +230,24 @@ export function UnifiedCoachApp() {
             <a href={operatorConsoleUrl} className="coach-nav-ext-link">
               Score Operator
             </a>
+            {currentAuthSession?.email && (
+              <span className="coach-nav-ext-link" title={currentAuthSession.email}>
+                {currentAuthSession.email}
+              </span>
+            )}
+            <button
+              type="button"
+              className="coach-nav-ext-link"
+              onClick={() => {
+                clearAuthSession();
+                setIsAuthenticated(false);
+                setRequiresSetup(true);
+                window.history.replaceState({}, "", "/login");
+                setRoute("login");
+              }}
+            >
+              Sign Out
+            </button>
             <button
               type="button"
               className="coach-nav-ext-link"

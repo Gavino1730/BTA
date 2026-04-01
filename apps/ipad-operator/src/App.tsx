@@ -39,10 +39,14 @@ function resolveDefaultAppBase(hostname: string, origin: string, port: number): 
   return origin.replace(/\/+$/, "") || `https://${hostname}`;
 }
 
+function resolveDefaultSchoolId(hostname: string): string {
+  return isLocalNetworkHost(hostname) ? "default" : "";
+}
+
 const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
 const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
-const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? "default").toString().trim() || "default";
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? resolveDefaultSchoolId(defaultHost)).toString().trim();
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
 const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
@@ -81,7 +85,11 @@ const TEAM_COLOR_OPTIONS = [
 
 /** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
 function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<string, string> {
-  const headers: Record<string, string> = { "x-school-id": setup.schoolId?.trim() || DEFAULT_SCHOOL_ID };
+  const headers: Record<string, string> = {};
+  const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+  if (schoolId) {
+    headers["x-school-id"] = schoolId;
+  }
   if (setup.apiKey) {
     headers["x-api-key"] = setup.apiKey;
   }
@@ -118,14 +126,17 @@ function buildCoachViewUrl(
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
+    schoolId?: string;
   }
 ): string {
   const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
   const params = new URLSearchParams();
   const normalizedConnectionId = normalizeConnectionId(setup.connectionId);
+  const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
   if (normalizedConnectionId) {
     params.set("connectionId", normalizedConnectionId);
   }
+  if (schoolId) params.set("schoolId", schoolId);
   if (gameId) params.set("gameId", gameId);
   if (setup.myTeamId) params.set("myTeamId", setup.myTeamId);
   if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiBase, generateConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase } from "./platform.js";
+import { apiBase, generateConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultSchoolId } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
@@ -7,10 +7,12 @@ describe("coach route helpers", () => {
     expect(canonicalizeCoachPath("/games")).toBe("/stats/games");
     expect(canonicalizeCoachPath("/ai-insights")).toBe("/stats/insights");
     expect(canonicalizeCoachPath("/onboarding")).toBe("/setup");
-    expect(canonicalizeCoachPath("/")).toBe("/live");
+    expect(canonicalizeCoachPath("/dashboard")).toBe("/live");
   });
 
-  it("resolves canonical and aliased routes to the same coach views", () => {
+  it("resolves public, canonical, and aliased routes to the same coach views", () => {
+    expect(resolveCoachRoute("/")).toBe("marketing");
+    expect(resolveCoachRoute("/signin")).toBe("login");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
     expect(resolveCoachRoute("/players")).toBe("stats-players");
     expect(resolveCoachRoute("/settings")).toBe("stats-settings");
@@ -26,6 +28,12 @@ describe("coach route helpers", () => {
   it("keeps deployed dashboard links on the current secure origin when env vars are unset", () => {
     expect(resolveDefaultApiBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app")).toBe("https://bta-demo.up.railway.app");
     expect(resolveDefaultAppBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app", 5174)).toBe("https://bta-demo.up.railway.app");
+  });
+
+  it("avoids pinning public deployments to the shared default school", () => {
+    expect(resolveDefaultSchoolId("localhost")).toBe("default");
+    expect(resolveDefaultSchoolId("192.168.1.25")).toBe("default");
+    expect(resolveDefaultSchoolId("bta-demo.up.railway.app")).toBe("");
   });
 
   it("generates a simple six-digit connection code", () => {
