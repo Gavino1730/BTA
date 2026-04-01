@@ -91,6 +91,67 @@ interface RosterEditRow {
   isNew?: boolean;
 }
 
+const FOCUS_INSIGHT_OPTIONS = [
+  "Timeouts",
+  "Substitutions",
+  "Foul trouble",
+  "Defensive matchups",
+  "Momentum shifts",
+  "Scoring runs",
+  "Rebounding",
+  "Turnovers",
+  "Transition defense",
+  "Halftime adjustments",
+  "Late-game situations",
+  "Three-point shooting",
+  "Paint scoring",
+  "Fast breaks",
+  "Press defense",
+];
+
+function FocusInsightsChips({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const active = new Set(
+    value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+  );
+
+  function toggle(label: string) {
+    const key = label.toLowerCase();
+    const next = new Set(active);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    // Preserve canonical label casing for active chips
+    const ordered = FOCUS_INSIGHT_OPTIONS
+      .map((opt) => opt.toLowerCase())
+      .filter((k) => next.has(k))
+      .map((k) => FOCUS_INSIGHT_OPTIONS.find((o) => o.toLowerCase() === k) ?? k);
+    // Then append any custom values not in the preset list
+    const customs = [...next].filter((k) => !FOCUS_INSIGHT_OPTIONS.some((o) => o.toLowerCase() === k));
+    onChange([...ordered, ...customs].join(", "));
+  }
+
+  return (
+    <div className="focus-chips-wrap">
+      {FOCUS_INSIGHT_OPTIONS.map((label) => {
+        const on = active.has(label.toLowerCase());
+        return (
+          <button
+            key={label}
+            type="button"
+            className={`focus-chip${on ? " focus-chip-on" : ""}`}
+            onClick={() => toggle(label)}
+          >
+            {on && <span className="focus-chip-check" aria-hidden="true">✓ </span>}
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TeamSettingsPage() {
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
@@ -746,22 +807,22 @@ export function TeamSettingsPage() {
               Save
             </button>
           </div>
-          <div className="setup-grid">
+          <div className="settings-ai-grid">
             <label className="stats-filter-field">
               <span>Playing Style</span>
-              <input value={playingStyle} onChange={(event) => setPlayingStyle(event.target.value)} placeholder="Fast pace, drive and kick" />
+              <textarea className="settings-ai-textarea" value={playingStyle} onChange={(event) => setPlayingStyle(event.target.value)} placeholder="Fast pace, drive and kick. Emphasis on transition offense and ball movement." rows={4} />
             </label>
-            <label className="stats-filter-field">
+            <div className="stats-filter-field">
               <span>Focus Insights</span>
-              <input value={focusInsightsText} onChange={(event) => setFocusInsightsText(event.target.value)} placeholder="timeouts, substitutions, defensive matchups" />
-            </label>
+              <FocusInsightsChips value={focusInsightsText} onChange={setFocusInsightsText} />
+            </div>
             <label className="stats-filter-field">
               <span>Team Context</span>
-              <input value={teamContext} onChange={(event) => setTeamContext(event.target.value)} placeholder="Rebounding emphasis and transition defense" />
+              <textarea className="settings-ai-textarea" value={teamContext} onChange={(event) => setTeamContext(event.target.value)} placeholder="Rebounding emphasis and transition defense. Young roster still building chemistry." rows={4} />
             </label>
             <label className="stats-filter-field">
               <span>Custom AI Prompt</span>
-              <input value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} placeholder="Use concise halftime adjustments with risk level." />
+              <textarea className="settings-ai-textarea" value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} placeholder="Use concise halftime adjustments with risk level. Prioritize matchup-based recommendations." rows={4} />
             </label>
           </div>
         </section>

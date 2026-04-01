@@ -568,10 +568,32 @@ function sanitizeCoachStyleValue(style: unknown, schoolId: string): string | und
   return coachName && trimmedStyle.toLowerCase() === coachName ? undefined : trimmedStyle;
 }
 
+function sanitizeTeamContextValue(context: unknown, schoolId: string): string | undefined {
+  if (typeof context !== "string") {
+    return undefined;
+  }
+
+  const trimmed = context.trim().slice(0, 1200);
+  if (!trimmed) {
+    return undefined;
+  }
+
+  // If teamContext exactly matches the organization name it was accidentally written from onboarding bug
+  const orgName = organizationProfilesBySchool.get(schoolId)?.organizationName?.trim().toLowerCase() ?? "";
+  const teamName = (rosterTeamsBySchool.get(schoolId)?.[0]?.name ?? "").trim().toLowerCase();
+  const lower = trimmed.toLowerCase();
+  if ((orgName && lower === orgName) || (teamName && lower === teamName)) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
 function getRosterTeamsForSchool(schoolId: string): RosterTeam[] {
   return (rosterTeamsBySchool.get(schoolId) ?? []).map((team) => ({
     ...team,
     coachStyle: sanitizeCoachStyleValue(team.coachStyle, schoolId),
+    teamContext: sanitizeTeamContextValue(team.teamContext, schoolId),
   }));
 }
 
@@ -585,6 +607,7 @@ function setRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): RosterT
         ...team,
         schoolId: normalizeSchoolId(team.schoolId ?? schoolId),
         coachStyle: sanitizeCoachStyleValue(team.coachStyle, schoolId),
+        teamContext: sanitizeTeamContextValue(team.teamContext, schoolId),
       }))
     : [];
   rosterTeamsBySchool.set(schoolId, normalized);

@@ -2189,7 +2189,7 @@ app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res)
     teamColor: payload.teamColor,
     coachStyle: payload.coachStyle ?? existing?.coachStyle,
     playingStyle: payload.playingStyle,
-    teamContext: payload.organizationName,
+    teamContext: payload.teamContext ?? existing?.teamContext,
     abbreviation: existing?.abbreviation ?? buildTeamAbbreviation(teamName),
   });
 
