@@ -2947,14 +2947,17 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
     return;
   }
 
-  // Strip the stored operatorToken from the server-side object before sending
+  // Strip the stored operatorToken from the server-side object before sending.
+  // Only deliver the token to callers that present a valid API key or bearer token —
+  // this prevents token harvesting by anyone who observes a connection code.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { operatorToken, ...publicSetup } = setup;
+  const isAuthenticated = hasValidApiKeyRequest(req) || Boolean((req as ScopedRequest).authContext);
   res.json({
     connectionId,
     setup: publicSetup,
     teams: getRosterTeamsByScope({ schoolId }),
-    operatorToken,
+    operatorToken: isAuthenticated ? operatorToken : undefined,
   });
 });
 
@@ -2976,7 +2979,7 @@ app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (r
       subject: `operator:${connectionId}`,
       email: `operator-${connectionId.toLowerCase()}@system.bta`,
       schoolId,
-      role: "analyst",
+      role: "operator",
       expiresInHours: 24 * 90, // 90 days
     })
     ?? undefined;
