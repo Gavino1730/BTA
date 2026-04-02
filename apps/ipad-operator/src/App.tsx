@@ -4368,7 +4368,7 @@ export function App() {
             return (<>
               {trackTimeouts && (
                 <>
-                  <div className="shot-timeout-title">Record Timeout {inOvertimeNow ? "(OT — decrements count)" : "(Regulation — decrements count)"}</div>
+                  <div className="shot-timeout-title">Record Timeout</div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
                     <div className="shot-timeout-counts">{myName}: {myTO.short} short · {myTO.full} full left</div>
                     <div className="timeout-btn-row">
@@ -4665,7 +4665,9 @@ export function App() {
               </div>
             </>
           )}
-          {trackPossession && <div className="possession-row">
+          {trackPossession && <div>
+            <div className="shot-timeout-title" style={{ marginBottom: "0.3rem" }}>Possession</div>
+            <div className="possession-row">
             <button
               className={`possession-btn possession-btn-home ${possessionTeamId === homeTeamId ? "active" : ""}`}
               onClick={() => setPossession("home")}
@@ -4728,7 +4730,11 @@ export function App() {
                             <span className="roster-player-num">#{p.number}</span>
                             <span className="roster-player-info">
                               <span className="roster-player-name">{p.name}</span>
-                              {pTotals[p.id] && <span className="roster-player-stats">{pTotals[p.id].points}pts</span>}
+                              <span className="roster-player-stats">
+                                {pTotals[p.id]?.points ?? 0}pts
+                                {" · "}
+                                {pTotals[p.id]?.fouls ?? 0}f
+                              </span>
                             </span>
                             {pTotals[p.id]?.fouls ? (
                               <span className={`roster-foul-badge${pTotals[p.id].fouls >= 5 ? " foul-badge-out" : pTotals[p.id].fouls >= 4 ? " foul-badge-warn" : ""}`}>
@@ -4767,7 +4773,12 @@ export function App() {
                           <span className="roster-player-num">#{p.number}</span>
                           <span className="roster-player-info">
                             <span className="roster-player-name">{p.name}</span>
-                            {pTotals[p.id] && <span className="roster-player-stats">{pTotals[p.id].points}pts</span>}
+                            {pTotals[p.id] && (
+                              <span className="roster-player-stats">
+                                {pTotals[p.id].points}pts
+                                {pTotals[p.id].fouls > 0 && ` · ${pTotals[p.id].fouls}f`}
+                              </span>
+                            )}
                           </span>
                           <button
                             className="roster-sub-btn"
@@ -4789,9 +4800,6 @@ export function App() {
       </div>
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
-        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
-          End Game
-        </button>
         <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">
           Undo
           {pendingEvents.length > 0 && <span className="nav-pending-badge">{pendingEvents.length}</span>}
@@ -4808,10 +4816,10 @@ export function App() {
           }}>
           Summary
         </button>
-        <a className="live-nav-btn live-nav-link live-nav-btn-secondary" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard | ${gameId}`}>
-          Dashboard
-        </a>
         <button className="live-nav-btn live-nav-btn-secondary" onClick={() => navigateView("settings")} title="Settings">Settings</button>
+        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
+          End Game
+        </button>
       </div>
     </div>
   );

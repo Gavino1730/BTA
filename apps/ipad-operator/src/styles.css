@@ -75,10 +75,10 @@ html, body {
 .shot-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 0.6rem;
   flex: 1;
   min-height: 0;
-  align-content: center;
+  align-content: start;
   justify-items: center;
 }
 
@@ -97,21 +97,22 @@ html, body {
 .shot-timeout-cell {
   width: 100%;
   max-width: 12rem;
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 10px;
+  border: none;
+  border-left: 3px solid rgba(255,255,255,0.14);
+  border-radius: 0 8px 8px 0;
   background: rgba(255,255,255,0.04);
-  padding: 0.42rem 0.46rem;
+  padding: 0.42rem 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.32rem;
+  gap: 0.36rem;
 }
 
 .shot-timeout-cell-home {
-  border-color: var(--team-home-color);
+  border-left-color: var(--team-home-color);
 }
 
 .shot-timeout-cell-away {
-  border-color: var(--team-away-color);
+  border-left-color: var(--team-away-color);
 }
 
 .shot-timeout-counts {
@@ -123,18 +124,18 @@ html, body {
 
 .shot-grid-team-label {
   width: 100%;
-  text-align: center;
+  text-align: left;
   font-size: 0.74rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0.2rem 0.35rem;
-  border-radius: 8px;
-  border: 1px solid rgba(232,234,240,0.18);
-  background: rgba(255,255,255,0.04);
+  padding: 0.15rem 0.25rem;
+  border-radius: 0;
+  border: none;
+  background: transparent;
 }
 
 .shot-grid-team-label-home {
@@ -151,33 +152,40 @@ html, body {
 
 /* My-team label: spans full grid row */
 .shot-grid-team-label-my {
-  color: rgba(232,234,240,0.92);
-  border-color: rgba(232,234,240,0.28);
-  background: rgba(255,255,255,0.06);
-  margin-top: 0.15rem;
+  color: rgba(232,234,240,0.95);
+  border: none;
+  background: transparent;
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+  padding-left: 0.25rem;
+  text-align: left;
 }
 
-/* Opponent label: spans full grid row, subdued */
+/* Opponent label: clearly separated section */
 .shot-grid-team-label-opp {
-  color: rgba(232,234,240,0.55);
-  border-color: rgba(232,234,240,0.15);
-  background: rgba(255,255,255,0.02);
-  font-size: 0.68rem;
-  margin-top: 0.3rem;
+  color: rgba(232,234,240,0.62);
+  border: none;
+  background: transparent;
+  font-size: 0.7rem;
+  margin-top: 0.5rem;
+  padding-left: 0.25rem;
+  padding-top: 0.6rem;
+  text-align: left;
+  border-top: 1px solid rgba(255,255,255,0.1);
 }
 
 /* ---- Shot action buttons (MAKE / MISS pairs) ---- */
 .shot-btn {
   width: 100%;
-  min-height: 56px;
-  border-radius: 10px;
-  border: 2px solid transparent;
+  min-height: 72px;
+  border-radius: 12px;
+  border: none;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.18rem;
+  gap: 0.22rem;
   font-family: inherit;
   transition: opacity 0.1s, filter 0.1s;
   touch-action: manipulation;
@@ -185,84 +193,75 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
 }
-.shot-btn:active { opacity: 0.6; }
+.shot-btn:active { opacity: 0.55; }
 
 .shot-btn-pts {
-  font-size: 1.05rem;
+  font-size: 1.35rem;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.03em;
 }
 
 .shot-btn-result {
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 /* MAKE = green */
 .shot-btn-make {
-  background: rgba(16, 185, 129, 0.18);
-  border-color: rgba(16, 185, 129, 0.55);
+  background: rgba(16, 185, 129, 0.26);
   color: #6ee7b7;
 }
-.shot-btn-make:hover { filter: brightness(1.12); }
+.shot-btn-make:active { background: rgba(16, 185, 129, 0.38); }
 
 /* MISS = red */
 .shot-btn-miss {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.22);
   color: #fca5a5;
 }
-.shot-btn-miss:hover { filter: brightness(1.12); }
+.shot-btn-miss:active { background: rgba(239, 68, 68, 0.34); }
 
 /* 3PT variant — slightly different tint to distinguish */
 .shot-btn-three.shot-btn-make {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.26);
   color: #93c5fd;
 }
 .shot-btn-three.shot-btn-miss {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.22);
   color: #fcd34d;
 }
 
-/* FT variants */
+/* FT variants — slightly smaller since less frequent */
 .shot-btn-ft-make {
-  background: rgba(16, 185, 129, 0.11);
-  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.18);
   color: #a7f3d0;
+  min-height: 60px;
 }
-.shot-btn-ft-make:hover { filter: brightness(1.1); }
 .shot-btn-ft-miss {
-  background: rgba(239, 68, 68, 0.09);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.16);
   color: #fecaca;
+  min-height: 60px;
 }
-.shot-btn-ft-miss:hover { filter: brightness(1.1); }
 
 /* Opponent score buttons — full size, visually distinct (subdued) */
 .shot-btn-opp-make {
-  background: rgba(148, 163, 184, 0.07);
-  border-color: rgba(148, 163, 184, 0.32);
-  color: rgba(232, 234, 240, 0.62);
+  background: rgba(100, 116, 139, 0.14);
+  color: rgba(232, 234, 240, 0.68);
+  min-height: 60px;
 }
-.shot-btn-opp-make:hover { filter: brightness(1.12); }
 .shot-btn-opp-three {
-  background: rgba(148, 163, 184, 0.05);
-  border-color: rgba(148, 163, 184, 0.26);
-  color: rgba(232, 234, 240, 0.55);
+  background: rgba(100, 116, 139, 0.11);
+  color: rgba(232, 234, 240, 0.62);
+  min-height: 60px;
 }
 .shot-btn-opp-ft {
-  background: rgba(148, 163, 184, 0.04);
-  border-color: rgba(148, 163, 184, 0.2);
-  color: rgba(232, 234, 240, 0.5);
-  min-height: 44px;
+  background: rgba(100, 116, 139, 0.09);
+  color: rgba(232, 234, 240, 0.56);
+  min-height: 52px;
 }
-.shot-btn-opp-ft:hover { filter: brightness(1.1); }
 
 .left-panel .circle {
   width: 100%;
@@ -630,26 +629,25 @@ html, body {
   gap: 0.35rem;
 }
 .timeout-btn {
-  min-height: 28px;
-  border-radius: 7px;
-  border: 1px solid rgba(255,255,255,0.2);
-  background: rgba(255,255,255,0.06);
+  min-height: 40px;
+  border-radius: 9px;
+  border: none;
+  background: rgba(255,255,255,0.08);
   color: rgba(232,234,240,0.88);
-  font-size: 0.66rem;
-  font-weight: 700;
+  font-size: 0.72rem;
+  font-weight: 800;
   cursor: pointer;
 }
 .timeout-btn-full {
-  border-color: rgba(79,140,255,0.5);
+  background: rgba(79,140,255,0.2);
   color: #93c5fd;
 }
 .timeout-btn-short {
-  border-color: rgba(16,185,129,0.55);
-  background: rgba(16,185,129,0.14);
+  background: rgba(16,185,129,0.2);
   color: #6ee7b7;
 }
 .timeout-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 .team-lbl { font-size: 1rem; font-weight: 600; }
@@ -1207,11 +1205,12 @@ html, body {
   bottom: 0;
   z-index: 120;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.55rem;
+  /* Undo is the frequent action (wider, left). End Game is danger (wider, right). Middle 2 are small. */
+  grid-template-columns: 1.4fr 0.8fr 0.8fr 1.4fr;
+  gap: 0.5rem;
   padding: 0.65rem 1rem calc(0.65rem + env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(13, 16, 42, 0.35), rgba(11, 13, 34, 0.94));
-  border-top: 1px solid rgba(255,255,255,0.14);
+  background: rgba(11, 13, 34, 0.96);
+  border-top: 1px solid rgba(255,255,255,0.1);
   backdrop-filter: blur(6px);
 }
 
@@ -4119,8 +4118,10 @@ html, body {
 }
 
 .roster-player-stats {
-  font-size: 0.65rem;
-  color: rgba(232,234,240,0.5);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(232,234,240,0.78);
+  letter-spacing: 0.01em;
 }
 
 .roster-sub-btn {

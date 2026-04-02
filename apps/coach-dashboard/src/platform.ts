@@ -60,6 +60,35 @@ export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 export const AUTH_SESSION_KEY = "bta.coach.authSession";
 export const SCHOOL_ID: string = resolveActiveSchoolId();
 
+const AUTH_COOKIE_NAME = "bta_coach_auth";
+const AUTH_COOKIE_DAYS = 90;
+
+function writeAuthCookie(value: string): void {
+  const expires = new Date();
+  expires.setDate(expires.getDate() + AUTH_COOKIE_DAYS);
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(value)}; expires=${expires.toUTCString()}; path=/; SameSite=Strict${secure}`;
+}
+
+function readAuthCookieRaw(): string | null {
+  const prefix = `${AUTH_COOKIE_NAME}=`;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      try {
+        return decodeURIComponent(trimmed.slice(prefix.length));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function clearAuthCookie(): void {
+  document.cookie = `${AUTH_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict`;
+}
+
 export interface StoredAuthSession {
   token: string;
   email?: string;
@@ -83,25 +112,44 @@ export function readStoredAuthSession(): StoredAuthSession | null {
     return null;
   }
 
+  // Primary: try localStorage first
   try {
     const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
-    if (!raw) {
-      return null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredAuthSession;
+      if (typeof parsed?.token === "string" && parsed.token.trim()) {
+        return {
+          ...parsed,
+          token: parsed.token.trim(),
+          schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
+        };
+      }
     }
-
-    const parsed = JSON.parse(raw) as StoredAuthSession;
-    if (typeof parsed?.token !== "string" || !parsed.token.trim()) {
-      return null;
-    }
-
-    return {
-      ...parsed,
-      token: parsed.token.trim(),
-      schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
-    };
   } catch {
-    return null;
+    // fall through to cookie fallback
   }
+
+  // Fallback: try cookie. iOS WebKit can clear localStorage for home screen
+  // web apps during suspend/eviction; cookies with explicit expiry survive longer.
+  try {
+    const raw = readAuthCookieRaw();
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredAuthSession;
+      if (typeof parsed?.token === "string" && parsed.token.trim()) {
+        // Restore localStorage from the cookie so subsequent reads are fast.
+        try { window.localStorage.setItem(AUTH_SESSION_KEY, raw); } catch { /* ignore */ }
+        return {
+          ...parsed,
+          token: parsed.token.trim(),
+          schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
+        };
+      }
+    }
+  } catch {
+    // cookie unreadable
+  }
+
+  return null;
 }
 
 export function storeAuthSession(session: StoredAuthSession | null): void {
@@ -111,14 +159,18 @@ export function storeAuthSession(session: StoredAuthSession | null): void {
 
   if (!session?.token?.trim()) {
     window.localStorage.removeItem(AUTH_SESSION_KEY);
+    clearAuthCookie();
     return;
   }
 
-  window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+  const serialized = JSON.stringify({
     ...session,
     token: session.token.trim(),
     schoolId: normalizeSchoolId(session.schoolId) || undefined,
-  }));
+  });
+
+  window.localStorage.setItem(AUTH_SESSION_KEY, serialized);
+  writeAuthCookie(serialized);
 }
 
 export function clearAuthSession(): void {
@@ -126,6 +178,7 @@ export function clearAuthSession(): void {
     return;
   }
   window.localStorage.removeItem(AUTH_SESSION_KEY);
+  clearAuthCookie();
 }
 
 export function apiKeyHeader(json = false): Record<string, string> {
