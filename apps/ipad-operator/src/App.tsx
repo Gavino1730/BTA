@@ -1294,7 +1294,13 @@ export function App() {
     });
     
     socket.on("error", (error: unknown) => {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "message" in error
+          ? String((error as Record<string, unknown>).message)
+          : typeof error === "object" && error !== null && "error" in error
+            ? String((error as Record<string, unknown>).error)
+            : String(error);
       showInlineNotice(`Server error: ${msg}`, "error");
     });
 

@@ -1320,7 +1320,7 @@ function buildPlayerAnalysisPayload(schoolId: string, playerName: string): unkno
 // ---------------------------------------------------------------------------
 // Optional API-key auth. Set BTA_API_KEY env var to enable.
 // ---------------------------------------------------------------------------
-const API_KEY = process.env.BTA_API_KEY;
+const API_KEY = process.env.BTA_API_KEY?.trim() || undefined;
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
