@@ -1606,6 +1606,24 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       .join(" ");
   }
 
+  function formatInsightAge(createdAtIso: string): string {
+    const createdMs = Date.parse(createdAtIso);
+    if (!Number.isFinite(createdMs)) return "just now";
+
+    const diffSec = Math.max(0, Math.floor((Date.now() - createdMs) / 1000));
+    if (diffSec < 45) return "just now";
+    if (diffSec < 90) return "1m ago";
+
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+
+    const diffDay = Math.floor(diffHr / 24);
+    return `${diffDay}d ago`;
+  }
+
   function getRuleInsightImportanceClass(insight: Insight): string {
     if (insight.priority === "urgent") {
       return "insight-item-rule-urgent";
@@ -2715,7 +2733,10 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                   <article key={insight.id} className="insight-item insight-item-ai">
                     <div className="insight-title-row">
                       <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                      <span className="insight-badge insight-badge-ai">AI</span>
+                      <div className="insight-title-meta">
+                        <span className="insight-badge insight-badge-ai">AI</span>
+                        <span className="insight-age">{formatInsightAge(insight.createdAtIso)}</span>
+                      </div>
                     </div>
                     <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
                     <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
@@ -2746,9 +2767,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                   >
                     <div className="insight-title-row">
                       <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                      <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
-                        RULE
-                      </span>
+                      <div className="insight-title-meta">
+                        <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
+                          RULE
+                        </span>
+                        <span className="insight-age">{formatInsightAge(insight.createdAtIso)}</span>
+                      </div>
                     </div>
                     <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
                     <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
@@ -2772,9 +2796,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                   >
                     <div className="insight-title-row">
                       <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                      <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
-                        RULE
-                      </span>
+                      <div className="insight-title-meta">
+                        <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
+                          RULE
+                        </span>
+                        <span className="insight-age">{formatInsightAge(insight.createdAtIso)}</span>
+                      </div>
                     </div>
                     <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
                     <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>

@@ -318,4 +318,84 @@ describe("insight engine", () => {
 
     expect(insights.some((i) => i.type === "leverage")).toBe(true);
   });
+
+  it("emits timeout_suggestion when timeout budget drops below 2 in Q4", () => {
+    const BASE = createInitialGameState("game-timeout-budget", "home", "away", "Away", "away");
+
+    const events: GameEvent[] = [
+      {
+        id: "tb-pad-1",
+        schoolId: "test-school",
+        gameId: "game-timeout-budget",
+        sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q4" as const,
+        clockSecondsRemaining: 95,
+        teamId: "away",
+        operatorId: "op-1",
+        type: "shot_attempt" as const,
+        playerId: "a1",
+        made: true,
+        points: 2 as const,
+        zone: "paint" as const,
+      },
+      {
+        id: "tb-timeout-1",
+        schoolId: "test-school",
+        gameId: "game-timeout-budget",
+        sequence: 2,
+        timestampIso: "2026-03-18T20:00:05.000Z",
+        period: "Q4" as const,
+        clockSecondsRemaining: 92,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "timeout" as const,
+        timeoutType: "full" as const,
+      },
+      {
+        id: "tb-timeout-2",
+        schoolId: "test-school",
+        gameId: "game-timeout-budget",
+        sequence: 3,
+        timestampIso: "2026-03-18T20:00:10.000Z",
+        period: "Q4" as const,
+        clockSecondsRemaining: 89,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "timeout" as const,
+        timeoutType: "full" as const,
+      },
+      {
+        id: "tb-timeout-3",
+        schoolId: "test-school",
+        gameId: "game-timeout-budget",
+        sequence: 4,
+        timestampIso: "2026-03-18T20:00:15.000Z",
+        period: "Q4" as const,
+        clockSecondsRemaining: 86,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "timeout" as const,
+        timeoutType: "short" as const,
+      },
+      {
+        id: "tb-timeout-4",
+        schoolId: "test-school",
+        gameId: "game-timeout-budget",
+        sequence: 5,
+        timestampIso: "2026-03-18T20:00:20.000Z",
+        period: "Q4" as const,
+        clockSecondsRemaining: 84,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "timeout" as const,
+        timeoutType: "short" as const,
+      },
+    ];
+
+    const state = replayEvents(BASE, events);
+    const insights = generateInsights({ state, latestEvent: events[4] });
+
+    expect(insights.some((i) => i.id.includes("timeout-budget") && i.type === "timeout_suggestion")).toBe(true);
+  });
 });

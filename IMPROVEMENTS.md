@@ -13,12 +13,14 @@ Last updated: April 2, 2026.
 - **Rule 13 — PPP Efficiency Gap**: Alert when opponent PPP exceeds ours by ≥0.25 after both teams have ≥15 possessions (priority: important)
 - **Rule 14 — Period-End Urgency**: Alert once when clock enters ≤18s window in Q1/Q2/Q3 (priority: info)
 - **Rule 15 — Opponent FT Bombardment**: Alert when opponent draws 6+ FT trips in recent 10 events (priority: important)
+- **Rule 16 — Timeout Budget Awareness**: In Q4/OT, when our timeout count drops below 2 and game is within reach, emit a timeout conservation alert (priority: important)
 - New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`
 
 ### Coach Dashboard (apps/coach-dashboard)
 - Labels registered for all 4 new insight types
 - `depth_warning` added to the Action Items panel (requires immediate response)
 - Live scoreboard now shows **PPP** (points per possession, after ≥5 possessions) and **FT Rate** (FTA/FGA) instead of the less-actionable POSS and SUBS columns
+- Insights now show relative age (for example, `2m ago`) using each insight's `createdAtIso`
 
 ### Realtime API (services/realtime-api)
 - GPT refresh throttled: every **8 events** (was 3) / **45 seconds** (was 20). Rules engine covers moment-to-moment; GPT reserved for synthesis. Both still env-overridable via `BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS` and `BTA_LIVE_INSIGHT_MIN_INTERVAL_MS`.
@@ -54,16 +56,6 @@ Last updated: April 2, 2026.
 **What's needed**: Game state needs to record when each lineup combination started and what the score was. Currently substitution events exist but differential per lineup isn't computed.
 **Use case**: "Your starting lineup is +12 but your second unit is -8 — the gap is real."
 **Files**: `packages/game-state/src/index.ts`, coach dashboard.
-
-### 11. Timeout Budget Awareness
-**What**: Currently timeouts-left is shown on the scoreboard. Missing: urgency scaling. With 2 timeouts left in Q4 down 6, one should be automatically flagged as "save it."
-**Fix**: Add a timeout conservation rule to the insight engine that fires when timeouts fall below 2 in Q4/OT with the game within reach.
-**Files**: `services/insight-engine/src/index.ts`.
-
-### 12. Coach Dashboard — Insight Age Display
-**What**: Insights show the message but not when they were generated. An insight about a scoring drought from 3 minutes ago may no longer be relevant.
-**Fix**: Show relative time (`2m ago`) next to each insight. The `createdAtIso` field is already on every `LiveInsight`.
-**Files**: `apps/coach-dashboard/src/App.tsx` — insight card render.
 
 ---
 
