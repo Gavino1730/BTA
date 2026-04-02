@@ -316,66 +316,69 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
       const clutchPrevClock = clutchPrev ? getClockSeconds(clutchPrev) : Infinity;
       const clutchPrevPeriod = clutchPrev?.period ?? "";
       const justEnteredWindow = clutchPrevPeriod !== period || clutchPrevClock > 120;
-      if (!justEnteredWindow) return insights;
-
-      const scores = Object.entries(state.scoreByTeam);
-      const [teamA, scoreA] = scores[0] ?? ["", 0];
-      const [teamB, scoreB] = scores[1] ?? ["", 0];
-      const ourScore = ourTeamId ? (state.scoreByTeam[ourTeamId] ?? 0) : null;
-      const theirTeamId = teamA === ourTeamId ? teamB : teamA;
-      const theirScore = ourTeamId ? (state.scoreByTeam[theirTeamId] ?? 0) : null;
-      const margin = ourScore != null && theirScore != null ? ourScore - theirScore : null;
-
-      let message = "";
-      let explanation = "";
-
-      if (margin != null) {
-        const abs = Math.abs(margin);
-        const clockStr = clockSec >= 60
-          ? `${Math.floor(clockSec / 60)}:${String(clockSec % 60).padStart(2, "0")}`
-          : `${clockSec}s`;
-
-        if (margin === 0) {
-          message = `Tied with ${clockStr} left — next score wins it`;
-          explanation = clockSec <= 30
-            ? "Timeout use: if you have one left, use it now to set up the last possession. Foul if they get the ball first."
-            : "Protect the ball and get a quality shot attempt. Limit turnovers at all costs.";
-        } else if (margin > 0 && abs <= 3) {
-          message = `Up ${abs} with ${clockStr} — protect the lead`;
-          explanation = abs === 1
-            ? "If possible, foul is not beneficial yet. Force a tough shot and secure the rebound."
-            : "Make them score twice. Foul if the shot clock is emptying; avoid giving up 3-point looks.";
-        } else if (margin < 0 && abs <= 6) {
-          message = `Down ${abs} with ${clockStr} — need a stop then score`;
-          explanation = abs <= 2
-            ? "One possession. Get a stop and push pace; consider a quick timeout to draw up a set play."
-            : `Down ${abs} with ${clockStr}. Foul quickly to extend the game, then execute a 3-point play or get two quick stops.`;
-        } else if (margin < 0 && abs > 6 && clockSec <= 60) {
-          message = `Down ${abs} with ${clockStr} — foul immediately`;
-          explanation = "Must foul to stop the clock and force free throws. Don't waste seconds.";
-        }
+      if (!justEnteredWindow) {
+        // Skip clutch alert for repeated events in-window, but continue evaluating other rules.
       } else {
-        // No "our team" context available
-        if (Math.abs((scoreA as number) - (scoreB as number)) <= 3) {
-          const aScore = scoreA as number;
-          const bScore = scoreB as number;
-          message = `One-possession game with ${clockSec}s left`;
-          explanation = `${aScore} – ${bScore}. Next turnover or foul shift could decide this game.`;
-        }
-      }
 
-      if (message) {
-        insights.push({
-          id: `${latestEvent.id}-clutch-${period}`,
-          gameId: latestEvent.gameId,
-          type: "timeout_suggestion",
-          priority: "urgent",
-          createdAtIso: now,
-          confidence: "high",
-          message,
-          explanation,
-          relatedTeamId: ourTeamId ?? latestEvent.teamId
-        });
+        const scores = Object.entries(state.scoreByTeam);
+        const [teamA, scoreA] = scores[0] ?? ["", 0];
+        const [teamB, scoreB] = scores[1] ?? ["", 0];
+        const ourScore = ourTeamId ? (state.scoreByTeam[ourTeamId] ?? 0) : null;
+        const theirTeamId = teamA === ourTeamId ? teamB : teamA;
+        const theirScore = ourTeamId ? (state.scoreByTeam[theirTeamId] ?? 0) : null;
+        const margin = ourScore != null && theirScore != null ? ourScore - theirScore : null;
+
+        let message = "";
+        let explanation = "";
+
+        if (margin != null) {
+          const abs = Math.abs(margin);
+          const clockStr = clockSec >= 60
+            ? `${Math.floor(clockSec / 60)}:${String(clockSec % 60).padStart(2, "0")}`
+            : `${clockSec}s`;
+
+          if (margin === 0) {
+            message = `Tied with ${clockStr} left — next score wins it`;
+            explanation = clockSec <= 30
+              ? "Timeout use: if you have one left, use it now to set up the last possession. Foul if they get the ball first."
+              : "Protect the ball and get a quality shot attempt. Limit turnovers at all costs.";
+          } else if (margin > 0 && abs <= 3) {
+            message = `Up ${abs} with ${clockStr} — protect the lead`;
+            explanation = abs === 1
+              ? "If possible, foul is not beneficial yet. Force a tough shot and secure the rebound."
+              : "Make them score twice. Foul if the shot clock is emptying; avoid giving up 3-point looks.";
+          } else if (margin < 0 && abs <= 6) {
+            message = `Down ${abs} with ${clockStr} — need a stop then score`;
+            explanation = abs <= 2
+              ? "One possession. Get a stop and push pace; consider a quick timeout to draw up a set play."
+              : `Down ${abs} with ${clockStr}. Foul quickly to extend the game, then execute a 3-point play or get two quick stops.`;
+          } else if (margin < 0 && abs > 6 && clockSec <= 60) {
+            message = `Down ${abs} with ${clockStr} — foul immediately`;
+            explanation = "Must foul to stop the clock and force free throws. Don't waste seconds.";
+          }
+        } else {
+          // No "our team" context available
+          if (Math.abs((scoreA as number) - (scoreB as number)) <= 3) {
+            const aScore = scoreA as number;
+            const bScore = scoreB as number;
+            message = `One-possession game with ${clockSec}s left`;
+            explanation = `${aScore} – ${bScore}. Next turnover or foul shift could decide this game.`;
+          }
+        }
+
+        if (message) {
+          insights.push({
+            id: `${latestEvent.id}-clutch-${period}`,
+            gameId: latestEvent.gameId,
+            type: "timeout_suggestion",
+            priority: "urgent",
+            createdAtIso: now,
+            confidence: "high",
+            message,
+            explanation,
+            relatedTeamId: ourTeamId ?? latestEvent.teamId
+          });
+        }
       }
     }
   }
@@ -755,6 +758,37 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         explanation: "We are sending them to the line repeatedly. Tighten defensive positioning, avoid reaching, and emphasize legal contests. Free throws are the most efficient points they can score.",
         relatedTeamId: state.opponentTeamId
       });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 16. Timeout budget awareness — in Q4/OT, low timeout reserves
+  //     should trigger urgency when game is still within reach.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && latestEvent.type === "timeout" && latestEvent.teamId === ourTeamId) {
+    const isLateGame = period === "Q4" || isOvertimePeriod(period);
+    if (isLateGame && state.opponentTeamId) {
+      const TOTAL_TIMEOUTS = 5;
+      const used = state.timeoutsByTeam[ourTeamId] ?? 0;
+      const left = Math.max(0, TOTAL_TIMEOUTS - used);
+      const ourScore = state.scoreByTeam[ourTeamId] ?? 0;
+      const oppScore = state.scoreByTeam[state.opponentTeamId] ?? 0;
+      const margin = ourScore - oppScore;
+      const withinReach = margin >= -8;
+
+      if (left < 2 && withinReach) {
+        insights.push({
+          id: `${latestEvent.id}-timeout-budget`,
+          gameId: latestEvent.gameId,
+          type: "timeout_suggestion",
+          priority: "important",
+          createdAtIso: now,
+          confidence: "high",
+          message: `Timeout budget low: ${left} left in ${period}`,
+          explanation: "Late game with limited timeouts. Save remaining stoppages for must-have possessions and defensive matchup control.",
+          relatedTeamId: ourTeamId
+        });
+      }
     }
   }
 
