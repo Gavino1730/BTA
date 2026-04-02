@@ -244,18 +244,25 @@ html, body {
 }
 .shot-btn-ft-miss:hover { filter: brightness(1.1); }
 
-/* Opponent compact buttons */
-.shot-btn-opp {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: rgba(232, 234, 240, 0.6);
-  min-height: 36px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  border-radius: 8px;
+/* Opponent score buttons — full size, visually distinct (subdued) */
+.shot-btn-opp-make {
+  background: rgba(148, 163, 184, 0.07);
+  border-color: rgba(148, 163, 184, 0.32);
+  color: rgba(232, 234, 240, 0.62);
 }
-.shot-btn-opp:hover { filter: brightness(1.1); }
-.shot-btn-opp .shot-btn-pts { font-size: 0.72rem; }
+.shot-btn-opp-make:hover { filter: brightness(1.12); }
+.shot-btn-opp-three {
+  background: rgba(148, 163, 184, 0.05);
+  border-color: rgba(148, 163, 184, 0.26);
+  color: rgba(232, 234, 240, 0.55);
+}
+.shot-btn-opp-ft {
+  background: rgba(148, 163, 184, 0.04);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: rgba(232, 234, 240, 0.5);
+  min-height: 44px;
+}
+.shot-btn-opp-ft:hover { filter: brightness(1.1); }
 
 .left-panel .circle {
   width: 100%;
@@ -1271,15 +1278,39 @@ html, body {
   background: rgba(95, 26, 41, 0.7);
 }
 
-/* Undo button — always visible, slightly warm tint for quick muscle-memory */
+/* Undo + End Game are primary live actions — bolder than secondary nav */
+.live-nav-btn-end,
 .live-nav-btn-undo {
-  border-color: rgba(245,158,11,0.65);
+  min-height: 52px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+/* Undo button — warm tint for quick muscle-memory */
+.live-nav-btn-undo {
+  border-color: rgba(245,158,11,0.75);
   color: #fcd34d;
+  background: rgba(90,60,10,0.35);
 }
 .live-nav-btn-undo:hover {
   border-color: #f59e0b;
   color: #fef3c7;
-  background: rgba(90, 60, 10, 0.5);
+  background: rgba(90, 60, 10, 0.6);
+}
+
+/* Secondary nav — quiet, non-distracting during live game */
+.live-nav-btn-secondary {
+  border-color: rgba(232,234,240,0.18);
+  background: rgba(20, 22, 43, 0.45);
+  color: rgba(232,234,240,0.38);
+  font-size: 0.7rem;
+  font-weight: 600;
+  min-height: 36px;
+}
+.live-nav-btn-secondary:hover {
+  border-color: rgba(232,234,240,0.35);
+  color: rgba(232,234,240,0.65);
+  background: rgba(41, 43, 103, 0.5);
 }
 .tt-btn {
   flex: 1;
@@ -4017,14 +4048,13 @@ html, body {
 
 .roster-player {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 0.65rem;
+  flex-direction: column;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 8px;
   min-height: 40px;
   transition: all 0.12s;
+  overflow: hidden;
 }
 
 .roster-player.on-court {
@@ -4033,7 +4063,16 @@ html, body {
 }
 
 .roster-player.bench {
-  opacity: 0.7;
+  opacity: 0.75;
+}
+
+/* Bench players still use row layout with padding */
+.roster-player.bench {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.65rem;
 }
 
 .roster-player-num {
@@ -4088,6 +4127,118 @@ html, body {
 .roster-sub-btn:hover {
   background: rgba(248,113,113,0.2);
   border-color: rgba(248,113,113,0.4);
+}
+
+/* Roster: player-first tap-to-expand workflow */
+.roster-player-tap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-height: 40px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.45rem 0.65rem;
+  font-family: inherit;
+  width: 100%;
+}
+.roster-player-active {
+  background: rgba(79,140,255,0.14) !important;
+  border-color: rgba(79,140,255,0.45) !important;
+}
+.roster-foul-badge {
+  flex-shrink: 0;
+  font-size: 0.64rem;
+  font-weight: 800;
+  padding: 0.1rem 0.32rem;
+  border-radius: 999px;
+  border: 1px solid rgba(232,234,240,0.22);
+  color: rgba(232,234,240,0.65);
+  background: rgba(255,255,255,0.06);
+}
+.foul-badge-warn {
+  border-color: rgba(251,191,36,0.55);
+  color: #fbbf24;
+  background: rgba(251,191,36,0.1);
+}
+.foul-badge-out {
+  border-color: rgba(248,113,113,0.55);
+  color: #f87171;
+  background: rgba(248,113,113,0.1);
+}
+/* Inline quick-action strip that expands below a tapped player */
+.player-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.4rem 0.5rem 0.35rem;
+  border-top: 1px solid rgba(79,140,255,0.2);
+  background: rgba(79,140,255,0.05);
+}
+.pqa-btn {
+  min-height: 36px;
+  padding: 0 0.42rem;
+  border-radius: 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border: 1.5px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: rgba(232,234,240,0.82);
+  cursor: pointer;
+  flex: 1 1 calc(33% - 0.3rem);
+  touch-action: manipulation;
+  font-family: inherit;
+}
+.pqa-btn:active { opacity: 0.65; }
+.pqa-make.pqa-2pt { border-color: rgba(16,185,129,0.55); color: #6ee7b7; background: rgba(16,185,129,0.1); }
+.pqa-miss.pqa-2pt { border-color: rgba(239,68,68,0.4);  color: #fca5a5; background: rgba(239,68,68,0.08); }
+.pqa-make.pqa-3pt { border-color: rgba(59,130,246,0.55); color: #93c5fd; background: rgba(59,130,246,0.1); }
+.pqa-miss.pqa-3pt { border-color: rgba(245,158,11,0.4); color: #fcd34d; background: rgba(245,158,11,0.08); }
+.pqa-ft   { border-color: rgba(16,185,129,0.35);  color: #a7f3d0; }
+.pqa-reb  { border-color: rgba(79,140,255,0.5);   color: #93c5fd; }
+.pqa-foul { border-color: rgba(245,158,11,0.65);  color: #fcd34d; background: rgba(245,158,11,0.1); }
+.pqa-to   { border-color: rgba(239,68,68,0.5);    color: #fca5a5; background: rgba(239,68,68,0.08); }
+.pqa-stl  { border-color: rgba(34,197,94,0.55);   color: #86efac; }
+.pqa-asst { border-color: rgba(168,85,247,0.55);  color: #d8b4fe; }
+.pqa-blk  { border-color: rgba(251,146,60,0.55);  color: #fdba74; }
+.pqa-sub  { border-color: rgba(248,113,113,0.4);  color: #fca5a5; }
+
+/* Right panel Players/Stats toggle row */
+.right-panel-toggle-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Clock settings collapse */
+.clock-admin-row {
+  margin-top: 0.3rem;
+}
+.clock-admin-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: rgba(232,234,240,0.28);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.18rem 0;
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+}
+.clock-admin-toggle:hover { color: rgba(232,234,240,0.52); }
+.clock-admin-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
 }
 
 

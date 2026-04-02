@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 import { getPeriodDurationSeconds, normalizeTeamColor, type GameEvent, type Period } from "@bta/shared-schema";
-import type { PlayerStats, TeamStats } from "@bta/game-state";
+import type { PlayerStats, TeamStats, LineupUnitStats } from "@bta/game-state";
+import { aggregateLineupStats, computeLineupSegments } from "@bta/game-state";
 import { io } from "socket.io-client";
 import {
   formatBonusIndicator,
@@ -27,6 +28,7 @@ interface GameState {
   timeoutsByTeam: Record<string, number>;
   teamFoulsByPeriod: Record<string, Record<string, number>>;
   events: GameEvent[];
+  startingLineupByTeam?: Record<string, string[]>;
 }
 
 interface BoxScoreTeamTotals {
@@ -1294,11 +1296,26 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             ? state.awayTeamId
             : "away");
 
+    // When the live game state unambiguously places myTeamId on the opposite side
+    // from what vcSide says (e.g. the operator started the game with sides flipped),
+    // use the state-confirmed side for ordering so VC always appears at index 0.
+    // This prevents OES from getting the "YOUR TEAM" badge when the game was
+    // set up with VC as away but vcSide still says "home".
+    const vcIsConfirmedAway =
+      Boolean(setupNames.myTeamId) &&
+      Boolean(state?.awayTeamId) &&
+      setupNames.myTeamId === state.awayTeamId;
+    const vcIsConfirmedHome =
+      Boolean(setupNames.myTeamId) &&
+      Boolean(state?.homeTeamId) &&
+      setupNames.myTeamId === state.homeTeamId;
+    const effectiveVcSide = vcIsConfirmedAway ? "away" : vcIsConfirmedHome ? "home" : setupNames.vcSide;
+
     // Always put our team (vc side) at index 0 so it renders on the left.
-    const preferred = (setupNames.vcSide === "away" ? [awaySlot, homeSlot] : [homeSlot, awaySlot])
+    const preferred = (effectiveVcSide === "away" ? [awaySlot, homeSlot] : [homeSlot, awaySlot])
       .filter((teamId): teamId is string => Boolean(teamId));
     return [...new Set([...preferred, ...Object.keys(aggregatedTeams)])];
-  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.vcSide, state?.awayTeamId, state?.homeTeamId]);
+  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.vcSide, setupNames.myTeamId, state?.awayTeamId, state?.homeTeamId]);
 
   const rosterLabels = useMemo(() => {
     const teamNameById: Record<string, string> = {};
@@ -1387,7 +1404,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
       if (setupNames.myTeamName && setupNames.myTeamName !== opponentName) return setupNames.myTeamName;
       if (rosterLabel) return rosterLabel;
-      if (setupNames.myTeamName) return setupNames.myTeamName;
+      // Do not fall back to myTeamName when it equals opponentName — that would show
+      // two cards with the same label.  Instead use the canonical-ID fallback below.
       const fallback = canonicalId.replace(/^team[-_]/i, "");
       return toTitleCase(fallback);
     }
@@ -1561,6 +1579,10 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       run_detection: "Run Alert",
       turnover_pressure: "Turnover Pressure",
       shot_profile: "Shot Profile",
+      scoring_drought: "Scoring Drought",
+      depth_warning: "Depth Warning",
+      efficiency: "Efficiency",
+      leverage: "Game Leverage",
     };
     if (labels[type]) return labels[type];
 
@@ -1662,6 +1684,23 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
 
     return setupNames.vcSide === "away" ? canonicalSideIds.awayId : canonicalSideIds.homeId;
   }, [canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.myTeamId, setupNames.vcSide, state?.activeLineupsByTeam]);
+
+  /** Lineup unit +/- — null when not enough data to compute (no starting lineup and no subs). */
+  const lineupUnitStats = useMemo((): LineupUnitStats[] | null => {
+    if (!coachedTeamId || !state?.events?.length) return null;
+    const oppId = state?.opponentTeamId
+      ?? (coachedTeamId === canonicalSideIds.homeId ? canonicalSideIds.awayId : canonicalSideIds.homeId);
+    // Resolve starting lineup, accounting for possible raw key variants
+    let startingLineup: string[] = state?.startingLineupByTeam?.[coachedTeamId] ?? [];
+    if (startingLineup.length === 0) {
+      const rawKey = Object.keys(state?.startingLineupByTeam ?? {}).find(k => canonicalTeamId(k) === coachedTeamId);
+      if (rawKey) startingLineup = state.startingLineupByTeam![rawKey] ?? [];
+    }
+    const hasSubs = state.events.some(e => e.type === 'substitution' && canonicalTeamId(e.teamId) === coachedTeamId);
+    if (startingLineup.length === 0 && !hasSubs) return null;
+    const segments = computeLineupSegments(state.events, coachedTeamId, oppId, startingLineup);
+    return aggregateLineupStats(segments);
+  }, [coachedTeamId, canonicalSideIds.awayId, canonicalSideIds.homeId, state?.events, state?.opponentTeamId, state?.startingLineupByTeam]);
 
   const rotationContext = useMemo(() => {
     if (!coachedTeamId) {
@@ -2213,6 +2252,10 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             const ftAtt = td?.teamStats.shooting.ftAttempts ?? 0;
             const fgPct = fgAtt > 0 ? Math.round((fgMade / fgAtt) * 100) : null;
             const ftPct = ftAtt > 0 ? Math.round((ftMade / ftAtt) * 100) : null;
+            const score = td?.score ?? 0;
+            const possessions = td?.possessions ?? 0;
+            const ppp = possessions >= 5 ? (score / possessions).toFixed(2) : null;
+            const ftRate = fgAtt > 0 ? Math.round((ftAtt / fgAtt) * 100) : null;
             const totalFouls = td?.teamStats.fouls ?? 0;
             const periodFouls = td?.periodFouls ?? 0;
             const timeoutsUsed = td?.timeoutsUsed ?? 0;
@@ -2298,13 +2341,15 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                     <span className="sb-stat-label">TO</span>
                     <span className="sb-stat-value">{td?.teamStats.turnovers ?? 0}</span>
                   </div>
-                  <div className="sb-stat-cell">
-                    <span className="sb-stat-label">POSS</span>
-                    <span className="sb-stat-value">{td?.possessions ?? 0}</span>
+                  <div className="sb-stat-cell" title="Points per possession">
+                    <span className="sb-stat-label">PPP</span>
+                    <span className="sb-stat-value">{ppp ?? "—"}</span>
+                    <span className="sb-stat-pct">{possessions} poss</span>
                   </div>
-                  <div className="sb-stat-cell">
-                    <span className="sb-stat-label">SUBS</span>
-                    <span className="sb-stat-value">{td?.teamStats.substitutions ?? 0}</span>
+                  <div className="sb-stat-cell" title="Free throw attempts per field goal attempt">
+                    <span className="sb-stat-label">FT Rate</span>
+                    <span className="sb-stat-value">{ftRate !== null ? `${ftRate}%` : "—"}</span>
+                    <span className="sb-stat-pct">{ftAtt} FTA</span>
                   </div>
                 </div>
 
@@ -2591,6 +2636,39 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
         })}
       </section>
 
+      {lineupUnitStats && lineupUnitStats.length > 0 && (
+        <section className="card">
+          <h2>Lineup +/-</h2>
+          <p className="insight-context-note" style={{ marginBottom: "0.75rem" }}>
+            Points scored for / against while each 5-man unit was on the floor.
+          </p>
+          <div className="lineup-unit-list">
+            {lineupUnitStats.map((unit) => {
+              const pmClass = unit.plusMinus > 0 ? "lineup-pm-pos" : unit.plusMinus < 0 ? "lineup-pm-neg" : "lineup-pm-zero";
+              return (
+                <div key={unit.lineupKey} className="lineup-unit-row">
+                  <div className="lineup-unit-players">
+                    {unit.playerIds.map((pid) => (
+                      <span key={pid} className="lineup-unit-chip">
+                        {displayPlayerName(coachedTeamId, pid)}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="lineup-unit-scores">
+                    <span className="lineup-unit-score-for">{unit.pointsFor}</span>
+                    <span className="lineup-unit-score-sep">–</span>
+                    <span className="lineup-unit-score-against">{unit.pointsAgainst}</span>
+                    <span className={`lineup-unit-pm ${pmClass}`}>
+                      {unit.plusMinus > 0 ? `+${unit.plusMinus}` : unit.plusMinus}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <h2>Live Insights</h2>
         {!hasGameStarted ? (
@@ -2632,17 +2710,17 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           </>
         ) : null}
 
-        {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
+        {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness", "depth_warning"].includes(i.type)).length > 0 ? (
           <>
             <h3 className="insight-subhead insight-subhead-urgent">
               <span>Urgent Coaching Calls</span>
               <span className="insight-count-badge insight-count-badge-urgent">
-                {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length}
+                {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness", "depth_warning"].includes(i.type)).length}
               </span>
             </h3>
             <div className="insight-list-stack">
               {rulesInsights
-                .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type))
+                .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness", "depth_warning"].includes(i.type))
                 .map((insight) => (
                   <article
                     key={insight.id}

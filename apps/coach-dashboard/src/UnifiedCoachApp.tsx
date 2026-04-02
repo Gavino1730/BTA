@@ -286,20 +286,19 @@ export function UnifiedCoachApp() {
               aria-label="Open help and tutorial"
               className="coach-nav-help-button"
             >?</button>
-            <div className={`connection-pill ${connectionInfo.deviceConnected ? "online" : "offline"}`} style={{ flexShrink: 0 }}>
+            <div
+              className={`connection-pill ${connectionInfo.deviceConnected ? "online" : "offline"}`}
+              style={{ flexShrink: 0 }}
+              title={`Operator pairing code: ${connectionInfo.connectionId}`}
+            >
+              <span className="connection-pill-dot" aria-hidden="true" />
               <span className="connection-pill-status">
-                {connectionInfo.deviceConnected ? "Operator live" : connectionInfo.serverConnected ? "Waiting" : "Offline"}
+                {connectionInfo.deviceConnected ? "Live" : connectionInfo.serverConnected ? "Waiting" : "Offline"}
               </span>
-              <label className="connection-pill-editor" title="Operator pairing code">
-                <span className="connection-pill-label">Code</span>
-                <input
-                  className="connection-pill-input"
-                  value={connectionInfo.connectionId}
-                  readOnly
-                  placeholder="6-digit code"
-                  aria-label="Connection code"
-                />
-              </label>
+              <span className="connection-pill-sep" aria-hidden="true">·</span>
+              <span className="connection-pill-code" aria-label={`Code ${connectionInfo.connectionId}`}>
+                {connectionInfo.connectionId}
+              </span>
             </div>
           </div>
         </div>

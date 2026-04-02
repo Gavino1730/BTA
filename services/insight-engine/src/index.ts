@@ -14,7 +14,11 @@ export type InsightType =
   | "hot_hand"
   | "team_foul_warning"
   | "ot_awareness"
-  | "pre_game";
+  | "pre_game"
+  | "scoring_drought"
+  | "depth_warning"
+  | "efficiency"
+  | "leverage";
 
 export interface LiveInsight {
   id: string;
@@ -538,6 +542,158 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
           relatedPlayerId: playerId
         });
       }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 11. Scoring drought — our team has gone cold from the field
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId) {
+    const DROUGHT_WINDOW = 6;
+    const recentOurShots = allEvents
+      .filter((e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+        e.type === "shot_attempt" && e.teamId === ourTeamId
+      )
+      .slice(-DROUGHT_WINDOW);
+
+    if (recentOurShots.length >= DROUGHT_WINDOW && recentOurShots.every((s) => !s.made)) {
+      const ourLabel = resolveTeamLabel(state, ourTeamId);
+      insights.push({
+        id: `${latestEvent.id}-drought`,
+        gameId: latestEvent.gameId,
+        type: "scoring_drought",
+        priority: "important",
+        createdAtIso: now,
+        confidence: "high",
+        message: `❄️ ${ourLabel} scoreless on last ${DROUGHT_WINDOW} field goal attempts`,
+        explanation: "Offense has gone cold. Try a set play for a rim attack, move the ball inside, or call a timeout to reset the half-court offense.",
+        relatedTeamId: ourTeamId
+      });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 12. Depth warning — multiple active players in foul trouble
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId) {
+    const DEPTH_FOUL_THRESHOLD = 3;
+    const ourLineupForDepth = state.activeLineupsByTeam[ourTeamId] ?? [];
+    const foulRiskInLineup = ourLineupForDepth.filter(
+      (pid) => (state.playerFouls[pid] ?? 0) >= DEPTH_FOUL_THRESHOLD
+    );
+
+    if (foulRiskInLineup.length >= 2) {
+      const teamLabel = resolveTeamLabel(state, ourTeamId);
+      const foulCounts = foulRiskInLineup
+        .slice(0, 3)
+        .map((pid) => {
+          const label = resolvePlayerLabel(pid, teamLabel, context);
+          const fouls = state.playerFouls[pid] ?? 0;
+          return `${label} (${fouls})`;
+        })
+        .join(", ");
+      insights.push({
+        id: `${latestEvent.id}-depth`,
+        gameId: latestEvent.gameId,
+        type: "depth_warning",
+        priority: "important",
+        createdAtIso: now,
+        confidence: "high",
+        message: `⚠️ ${foulRiskInLineup.length} players on court with 3+ fouls: ${foulCounts}`,
+        explanation: `Rotation depth is at risk. With ${foulRiskInLineup.length} players in foul trouble simultaneously, one whistle forces a disruptive sub. Consider rotating at least one of them now while it's your decision, not the referee's.`,
+        relatedTeamId: ourTeamId
+      });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 13. Possession efficiency gap — opponent converting possessions
+  //     significantly better than our team (PPP divergence)
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && state.opponentTeamId) {
+    const MIN_POSSESSIONS = 15;
+    const EFFICIENCY_GAP = 0.25;
+    const ourPossessions = state.possessionsByTeam[ourTeamId] ?? 0;
+    const oppPossessions = state.possessionsByTeam[state.opponentTeamId] ?? 0;
+    const ourPoints = state.scoreByTeam[ourTeamId] ?? 0;
+    const oppPoints = state.scoreByTeam[state.opponentTeamId] ?? 0;
+
+    if (ourPossessions >= MIN_POSSESSIONS && oppPossessions >= MIN_POSSESSIONS) {
+      const ourPPP = ourPoints / ourPossessions;
+      const oppPPP = oppPoints / oppPossessions;
+      const gap = oppPPP - ourPPP;
+
+      if (gap >= EFFICIENCY_GAP) {
+        const oppLabel = resolveTeamLabel(state, state.opponentTeamId);
+        const ourLabel = resolveTeamLabel(state, ourTeamId);
+        insights.push({
+          id: `${latestEvent.id}-efficiency`,
+          gameId: latestEvent.gameId,
+          type: "efficiency",
+          priority: "important",
+          createdAtIso: now,
+          confidence: "medium",
+          message: `Efficiency gap: ${oppLabel} at ${oppPPP.toFixed(2)} PPP vs ${ourLabel} at ${ourPPP.toFixed(2)} PPP`,
+          explanation: `${oppLabel} is getting significantly more value per possession. Prioritize higher-percentage looks — more rim attacks, fewer contested threes — and limit their transition opportunities.`,
+          relatedTeamId: ourTeamId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 14. Period-end urgency — last possession of Q1/Q2/Q3
+  //     (Q4/OT late-clock is handled by the clutch rule above)
+  // ──────────────────────────────────────────────────────────────────
+  if (clockEnabled) {
+    const clockSec = getClockSeconds(latestEvent);
+    const isRegularPeriodNotFinal = period === "Q1" || period === "Q2" || period === "Q3";
+    if (isRegularPeriodNotFinal && clockSec > 0 && clockSec <= 18) {
+      const periodDurationSec = 480; // NFHS: 8-min quarters
+      // Only emit once per period-end window: check if previous event was also in this window
+      // to avoid repeated alerts on consecutive events in garbage time. Use a simple guard:
+      // only alert when the clock just entered the window (previous clock > 18 or not in same period).
+      const prevEvent = allEvents.at(-2);
+      const prevClock = prevEvent ? getClockSeconds(prevEvent) : Infinity;
+      const prevPeriod = prevEvent?.period ?? "";
+      if (prevPeriod !== period || prevClock > 18) {
+        insights.push({
+          id: `${latestEvent.id}-period-end-${period}`,
+          gameId: latestEvent.gameId,
+          type: "leverage",
+          priority: "info",
+          createdAtIso: now,
+          confidence: "high",
+          message: `Last possession of ${period} — get a quality look`,
+          explanation: "Last few seconds of the period. Use remaining clock for a high-percentage shot. Communicate the play and avoid a rushed, low-quality attempt.",
+          relatedTeamId: ourTeamId ?? latestEvent.teamId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 15. Opponent drawing fouls at high rate — we are fouling too much
+  // ──────────────────────────────────────────────────────────────────
+  if (state.opponentTeamId) {
+    const OPP_FT_THRESHOLD = 6;
+    const recentOppFTs = recentEvents.filter(
+      (e): e is Extract<GameEvent, { type: "free_throw_attempt" }> =>
+        e.type === "free_throw_attempt" && e.teamId === state.opponentTeamId && e.attemptNumber === 1
+    );
+    if (recentOppFTs.length >= OPP_FT_THRESHOLD) {
+      const oppLabel = resolveTeamLabel(state, state.opponentTeamId);
+      insights.push({
+        id: `${latestEvent.id}-foul-rate`,
+        gameId: latestEvent.gameId,
+        type: "team_foul_warning",
+        priority: "important",
+        createdAtIso: now,
+        confidence: "high",
+        message: `${oppLabel} drawing fouls at will — ${recentOppFTs.length} FT trips in recent events`,
+        explanation: "We are sending them to the line repeatedly. Tighten defensive positioning, avoid reaching, and emphasize legal contests. Free throws are the most efficient points they can score.",
+        relatedTeamId: state.opponentTeamId
+      });
     }
   }
 

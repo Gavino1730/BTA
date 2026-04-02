@@ -445,8 +445,8 @@ const OPENAI_API_URL = process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/
 const LIVE_AI_MODEL = process.env.BTA_LIVE_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const LIVE_AI_TIMEOUT_MS = readEnvNumber("BTA_LIVE_INSIGHT_TIMEOUT_MS", 12000);
 const LIVE_AI_MIN_EVENTS = readEnvNumber("BTA_LIVE_INSIGHT_MIN_EVENTS", 4);
-const LIVE_AI_REFRESH_EVERY_EVENTS = readEnvNumber("BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS", 3);
-const LIVE_AI_MIN_INTERVAL_MS = readEnvNumber("BTA_LIVE_INSIGHT_MIN_INTERVAL_MS", 20000);
+const LIVE_AI_REFRESH_EVERY_EVENTS = readEnvNumber("BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS", 8);
+const LIVE_AI_MIN_INTERVAL_MS = readEnvNumber("BTA_LIVE_INSIGHT_MIN_INTERVAL_MS", 45000);
 const LIVE_AI_RECENT_EVENT_WINDOW = readEnvNumber("BTA_LIVE_INSIGHT_RECENT_EVENT_WINDOW", 12);
 const STATS_DASHBOARD_BASE = (process.env.STATS_DASHBOARD_BASE ?? "http://localhost:4000").replace(/\/+$/, "");
 const HISTORICAL_CONTEXT_TTL_MS = readEnvNumber("BTA_HISTORICAL_CONTEXT_TTL_MS", 60000);
@@ -1979,6 +1979,8 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
           initialState.activeLineupsByTeam[teamId] = lineup.map(String).filter(Boolean);
         }
       }
+      // Expose on state so downstream consumers can use it without re-querying
+      initialState.startingLineupByTeam = session.startingLineupByTeam;
     }
 
     const restoredSession: GameSession = {
@@ -2404,6 +2406,8 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
 
       state.activeLineupsByTeam[teamId] = seededLineup;
     }
+    // Expose starting lineup on the state so it's included in socket fanout
+    state.startingLineupByTeam = input.startingLineupByTeam;
   }
 
   sessions.set(buildGameSessionKey(input.gameId, schoolId), {

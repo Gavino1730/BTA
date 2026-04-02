@@ -1036,6 +1036,9 @@ export function App() {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [pendingEvents, setPendingEvents] = useState<GameEvent[]>(() => loadPending(loadAppData().gameSetup.gameId));
   const [submittedEvents, setSubmittedEvents] = useState<GameEvent[]>([]);
+  // Guards: prevent concurrent flush calls and back off after server-side failures
+  const isFlushingRef = useRef(false);
+  const flushBackoffUntilRef = useRef(0);
 
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
@@ -1092,7 +1095,9 @@ export function App() {
   const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
 
   // ---- In-game roster state ----
-  const [showRosterPanel, setShowRosterPanel] = useState(false);
+  const [showRosterPanel, setShowRosterPanel] = useState(true);
+  const [activeRosterPlayerId, setActiveRosterPlayerId] = useState<string | null>(null);
+  const [showClockAdmin, setShowClockAdmin] = useState(false);
 
   // Ref for auto-save interval - always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
@@ -1452,23 +1457,54 @@ export function App() {
   }
 
   async function flushQueue() {
+    // Bail out if another flush is already running or we're in a server-error backoff window
+    if (isFlushingRef.current) return;
+    if (Date.now() < flushBackoffUntilRef.current) return;
     if (!navigator.onLine || pendingEvents.length === 0) return;
+    isFlushingRef.current = true;
     let successCount = 0;
-    for (const evt of pendingEvents) {
-      const ok = await submitEvent(evt);
-      if (ok) successCount++;
-      // Continue trying remaining events even if one fails
+    let serverErrorCount = 0;
+    try {
+      for (const evt of pendingEvents) {
+        const ok = await submitEvent(evt);
+        if (ok) {
+          successCount++;
+        } else {
+          // Count failures that were not pure network errors (submitEvent always catches those)
+          // A false return from a non-network path means a server-side rejection
+          serverErrorCount++;
+        }
+        // Continue trying remaining events even if one fails
+      }
+    } finally {
+      isFlushingRef.current = false;
+    }
+    if (serverErrorCount > 0 && successCount === 0) {
+      // All attempts failed with a server error — back off 30 s before next automatic retry
+      flushBackoffUntilRef.current = Date.now() + 30_000;
     }
     if (successCount > 0) {
+      flushBackoffUntilRef.current = 0; // clear any prior backoff on partial success
       try {
         const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
       } catch { /* empty */ }
-        showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
+      showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
     }
   }
 
   useEffect(() => { if (online) void flushQueue(); }, [online]);
+
+  // Periodic flush: if events are still pending and we appear online, retry every 15s.
+  // Covers the case where navigator.onLine never re-fired (common on iOS with spotty wifi).
+  // isFlushingRef and flushBackoffUntilRef prevent concurrent or rapid hammering.
+  useEffect(() => {
+    if (gamePhase !== "live") return;
+    const interval = setInterval(() => {
+      if (navigator.onLine && pendingEvents.length > 0 && !isFlushingRef.current && Date.now() >= flushBackoffUntilRef.current) void flushQueue();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [gamePhase, pendingEvents.length]);
 
   // Persist pre-game notes
   useEffect(() => {
@@ -2915,6 +2951,55 @@ export function App() {
     setClockInput((current) => formatClockFromSeconds(clockToSec(current) + deltaSeconds));
   }
 
+  /** Player-first quick shot from the roster panel — skips the player-picker modal. */
+  function handlePlayerQuickShot(player: Player, points: 2 | 3, made: boolean) {
+    setActiveRosterPlayerId(null);
+    const teamId = resolveTeamId(vcSideSetup);
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "shot_attempt",
+      playerId: player.id,
+      made,
+      points,
+      zone: points === 3 ? "above_break_three" : "paint",
+    } as GameEvent);
+    if (made) {
+      const oppTeamId = resolveTeamId(vcSideSetup === "home" ? "away" : "home");
+      autoEmitPossession(oppTeamId);
+      setChainPrompt({ kind: "after-made-shot", forTeam: vcSideSetup, points, scorerPlayerId: player.id });
+    } else {
+      setChainPrompt({ kind: "after-missed-shot", forTeam: vcSideSetup });
+    }
+  }
+
+  /** Player-first quick stat from the roster panel — posts simple stats directly, opens modal for assist. */
+  function handlePlayerQuickStat(player: Player, stat: "foul" | "def_reb" | "off_reb" | "turnover" | "steal" | "block" | "assist") {
+    const teamId = resolveTeamId(vcSideSetup);
+    setActiveRosterPlayerId(null);
+    const b = base(sequence);
+    if (stat === "assist") {
+      setModal({ kind: "assist2", teamId: vcSideSetup, assistPlayerId: player.id });
+      return;
+    }
+    if (stat === "steal") {
+      void postEvent({ ...b, teamId, type: "steal", playerId: player.id } as GameEvent);
+      const otherTeamId = resolveTeamId(vcSideSetup === "home" ? "away" : "home");
+      if (isOpponentStatEnabled("turnover")) {
+        void postEvent({ ...base(sequence + 1), teamId: otherTeamId, type: "turnover", playerId: otherTeamId, turnoverType: "bad_pass" } as GameEvent);
+      }
+      autoEmitPossession(teamId);
+      return;
+    }
+    let event: GameEvent | null = null;
+    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId: player.id, foulType: "personal"  } as GameEvent;
+    if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId: player.id, offensive: false      } as GameEvent;
+    if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId: player.id, offensive: true       } as GameEvent;
+    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId: player.id, turnoverType: "bad_pass" } as GameEvent;
+    if (stat === "block")    event = { ...b, teamId, type: "block",    playerId: player.id                        } as GameEvent;
+    if (event) void postEvent(event);
+  }
+
   function resetClockForPeriod() {
     setClockRunning(false);
     setClockInput(getPeriodDefaultClock(period));
@@ -4282,19 +4367,19 @@ export function App() {
             return (<>
               {trackTimeouts && (
                 <>
-                  <div className="shot-timeout-title">Timeouts {inOvertimeNow ? "(OT)" : "(Regulation)"}</div>
+                  <div className="shot-timeout-title">Record Timeout {inOvertimeNow ? "(OT — decrements count)" : "(Regulation — decrements count)"}</div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
-                    <div className="shot-timeout-counts">30s: {myTO.short} | 60s: {myTO.full}</div>
+                    <div className="shot-timeout-counts">{myName}: {myTO.short} short · {myTO.full} full left</div>
                     <div className="timeout-btn-row">
-                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>30s</button>
-                      <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>60s</button>
+                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>Use 30s</button>
+                      <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>Use 60s</button>
                     </div>
                   </div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${opponentSide}`}>
-                    <div className="shot-timeout-counts">30s: {oppTO.short} | 60s: {oppTO.full}</div>
+                    <div className="shot-timeout-counts">{oppName}: {oppTO.short} short · {oppTO.full} full left</div>
                     <div className="timeout-btn-row">
-                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>30s</button>
-                      <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>60s</button>
+                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>Use 30s</button>
+                      <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>Use 60s</button>
                     </div>
                   </div>
                 </>
@@ -4321,14 +4406,20 @@ export function App() {
                 <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MISS</span>
               </button>
 
-              {/* Opponent — compact row, only if tracking */}
+              {/* Opponent — full-size row, same speed as own-team controls */}
               {isOpponentStatEnabled("points") && (<>
                 <div className="shot-grid-team-label shot-grid-team-label-opp" style={{ gridColumn: "1 / -1" }} title={`Opponent: ${oppName}`}>{oppName}</div>
-                <button className="shot-btn shot-btn-opp" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>OPP 2</button>
-                <button className="shot-btn shot-btn-opp" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>OPP 3</button>
+                <button className="shot-btn shot-btn-opp-make" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>
+                  <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">OPP</span>
+                </button>
+                <button className="shot-btn shot-btn-opp-make shot-btn-opp-three" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>
+                  <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">OPP</span>
+                </button>
               </>)}
               {isOpponentStatEnabled("free_throws") && (
-                <button className="shot-btn shot-btn-opp" style={{ gridColumn: "1 / -1" }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>OPP FT</button>
+                <button className="shot-btn shot-btn-opp-ft" style={{ gridColumn: "1 / -1" }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>
+                  <span className="shot-btn-pts">FT</span><span className="shot-btn-result">OPP</span>
+                </button>
               )}
             </>);
           })()}
@@ -4486,18 +4577,6 @@ export function App() {
           </button>
         </div>
         {trackClock && <div className="clock-row">
-          <div className="clock-tools-row clock-tools-row-compact">
-            <button
-              className={`clock-tool-btn clock-btn-visibility${(appData.gameSetup.clockVisible ?? true) ? " active" : ""}`}
-              onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
-              {(appData.gameSetup.clockVisible ?? true) ? "Hide Clock" : "Show Clock"}
-            </button>
-            <button
-              className={`clock-tool-btn clock-btn-enabled${(appData.gameSetup.clockEnabled ?? true) ? " active" : ""}`}
-              onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
-              {(appData.gameSetup.clockEnabled ?? true) ? "Disable Clock" : "Enable Clock"}
-            </button>
-          </div>
           {(appData.gameSetup.clockVisible ?? true) && (
             <>
               <button
@@ -4564,6 +4643,25 @@ export function App() {
                 <button className="clock-tool-btn clock-btn-minus" onClick={() => adjustClock(-1)} disabled={appData.gameSetup.clockEnabled === false}>-1s</button>
                 <button className="clock-tool-btn clock-btn-plus" onClick={() => adjustClock(1)} disabled={appData.gameSetup.clockEnabled === false}>+1s</button>
               </div>
+              <div className="clock-admin-row">
+                <button className="clock-admin-toggle" onClick={() => setShowClockAdmin(v => !v)}>
+                  {showClockAdmin ? "▲ Clock Settings" : "▼ Clock Settings"}
+                </button>
+                {showClockAdmin && (
+                  <div className="clock-admin-controls">
+                    <button
+                      className={`clock-tool-btn clock-btn-visibility${(appData.gameSetup.clockVisible ?? true) ? " active" : ""}`}
+                      onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
+                      {(appData.gameSetup.clockVisible ?? true) ? "Hide Clock" : "Show Clock"}
+                    </button>
+                    <button
+                      className={`clock-tool-btn clock-btn-enabled${(appData.gameSetup.clockEnabled ?? true) ? " active" : ""}`}
+                      onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
+                      {(appData.gameSetup.clockEnabled ?? true) ? "Disable Clock" : "Enable Clock"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           )}
           {trackPossession && <div className="possession-row">
@@ -4583,14 +4681,20 @@ export function App() {
         </div>}
       </div>
 
-      {/* RIGHT: Stats */}
+      {/* RIGHT: Players + Stats */}
       <div className="panel right-panel">
-        <div style={{ marginBottom: "0.5rem", display: "flex", gap: "0.3rem", justifyContent: "center" }}>
+        <div className="right-panel-toggle-row">
           <button
             className={showRosterPanel ? "toggle-btn active" : "toggle-btn"}
-            onClick={() => setShowRosterPanel(!showRosterPanel)}
-            title="Toggle roster view">
-            Roster
+            onClick={() => { setShowRosterPanel(true); setActiveRosterPlayerId(null); }}
+            title="Player-first actions">
+            Players
+          </button>
+          <button
+            className={!showRosterPanel ? "toggle-btn active" : "toggle-btn"}
+            onClick={() => { setShowRosterPanel(false); setActiveRosterPlayerId(null); }}
+            title="Quick stat circles">
+            Stats
           </button>
         </div>
         {!showRosterPanel ? (
@@ -4612,25 +4716,46 @@ export function App() {
               return (
                 <>
                   <div className="roster-section">
-                    <h4 className="roster-section-title">On Court</h4>
+                    <h4 className="roster-section-title">On Court — tap player to act</h4>
                     <div className="roster-list">
                       {lineup.onCourt.map(p => (
-                        <div key={p.id} className="roster-player on-court">
-                          <span className="roster-player-num">#{p.number}</span>
-                          <span className="roster-player-info">
-                            <span className="roster-player-name">{p.name}</span>
-                            {pTotals[p.id] && (
-                              <span className="roster-player-stats">{pTotals[p.id].points}pts</span>
-                            )}
-                          </span>
+                        <div key={p.id} className={`roster-player on-court${activeRosterPlayerId === p.id ? " roster-player-active" : ""}`}>
                           <button
-                            className="roster-sub-btn"
-                            onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id })}
-                            title="Sub out">
-                            X
+                            className="roster-player-tap"
+                            onClick={() => setActiveRosterPlayerId(activeRosterPlayerId === p.id ? null : p.id)}
+                          >
+                            <span className="roster-player-num">#{p.number}</span>
+                            <span className="roster-player-info">
+                              <span className="roster-player-name">{p.name}</span>
+                              {pTotals[p.id] && <span className="roster-player-stats">{pTotals[p.id].points}pts</span>}
+                            </span>
+                            {pTotals[p.id]?.fouls ? (
+                              <span className={`roster-foul-badge${pTotals[p.id].fouls >= 5 ? " foul-badge-out" : pTotals[p.id].fouls >= 4 ? " foul-badge-warn" : ""}`}>
+                                {pTotals[p.id].fouls}f
+                              </span>
+                            ) : null}
                           </button>
+                          {activeRosterPlayerId === p.id && (
+                            <div className="player-quick-actions">
+                              <button className="pqa-btn pqa-make pqa-2pt" onClick={() => handlePlayerQuickShot(p, 2, true)}>2PT ✓</button>
+                              <button className="pqa-btn pqa-miss pqa-2pt" onClick={() => handlePlayerQuickShot(p, 2, false)}>2PT ✗</button>
+                              <button className="pqa-btn pqa-make pqa-3pt" onClick={() => handlePlayerQuickShot(p, 3, true)}>3PT ✓</button>
+                              <button className="pqa-btn pqa-miss pqa-3pt" onClick={() => handlePlayerQuickShot(p, 3, false)}>3PT ✗</button>
+                              <button className="pqa-btn pqa-ft" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true }); }}>FT</button>
+                              <button className="pqa-btn pqa-reb" onClick={() => handlePlayerQuickStat(p, "def_reb")}>REB</button>
+                              <button className="pqa-btn pqa-foul" onClick={() => handlePlayerQuickStat(p, "foul")}>FOUL</button>
+                              <button className="pqa-btn pqa-to" onClick={() => handlePlayerQuickStat(p, "turnover")}>TO</button>
+                              <button className="pqa-btn pqa-stl" onClick={() => handlePlayerQuickStat(p, "steal")}>STL</button>
+                              <button className="pqa-btn pqa-asst" onClick={() => handlePlayerQuickStat(p, "assist")}>ASST</button>
+                              <button className="pqa-btn pqa-blk" onClick={() => handlePlayerQuickStat(p, "block")}>BLK</button>
+                              <button className="pqa-btn pqa-sub" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id }); }}>SUB</button>
+                            </div>
+                          )}
                         </div>
                       ))}
+                      {lineup.onCourt.length === 0 && (
+                        <p className="roster-empty-hint">No players on court. Set starting lineup in Setup.</p>
+                      )}
                     </div>
                   </div>
                   <div className="roster-section">
@@ -4641,9 +4766,7 @@ export function App() {
                           <span className="roster-player-num">#{p.number}</span>
                           <span className="roster-player-info">
                             <span className="roster-player-name">{p.name}</span>
-                            {pTotals[p.id] && (
-                              <span className="roster-player-stats">{pTotals[p.id].points}pts</span>
-                            )}
+                            {pTotals[p.id] && <span className="roster-player-stats">{pTotals[p.id].points}pts</span>}
                           </span>
                           <button
                             className="roster-sub-btn"
@@ -4652,9 +4775,7 @@ export function App() {
                                 setModal({ kind: "sub1", teamId: vcSideSetup });
                               }
                             }}
-                            title="Sub in">
-                            +
-                          </button>
+                            title="Sub in">+</button>
                         </div>
                       ))}
                     </div>
@@ -4667,10 +4788,12 @@ export function App() {
       </div>
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
-        <button className="live-nav-btn" onClick={() => navigateView("settings")} title="Settings">Menu Settings</button>
+        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
+          End Game
+        </button>
         <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">Undo</button>
         <button
-          className="live-nav-btn"
+          className="live-nav-btn live-nav-btn-secondary"
           title="Game summary"
           onClick={() => {
             setShowGameSummary(true);
@@ -4681,12 +4804,10 @@ export function App() {
           }}>
           Summary
         </button>
-        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard | ${gameId}`}>
+        <a className="live-nav-btn live-nav-link live-nav-btn-secondary" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard | ${gameId}`}>
           Dashboard
         </a>
-        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
-          End Game
-        </button>
+        <button className="live-nav-btn live-nav-btn-secondary" onClick={() => navigateView("settings")} title="Settings">Settings</button>
       </div>
     </div>
   );

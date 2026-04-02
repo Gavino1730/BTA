@@ -87,4 +87,235 @@ describe("insight engine", () => {
       )
     ).toBe(false);
   });
+
+  it("emits scoring_drought after 6 consecutive missed field goals", () => {
+    // Use opponentTeamId so ourTeamId resolves to "home"
+    const BASE = createInitialGameState("game-drought", "home", "away", "Away", "away");
+
+    const missEvents: GameEvent[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `miss-${i + 1}`,
+      schoolId: "test-school",
+      gameId: "game-drought",
+      sequence: i + 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - i,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: `h${i + 1}`,
+      made: false,
+      points: 2 as const,
+      zone: "midrange" as const,
+    }));
+
+    const state = replayEvents(BASE, missEvents);
+    const insights = generateInsights({ state, latestEvent: missEvents[5] });
+
+    expect(insights.some((i) => i.type === "scoring_drought")).toBe(true);
+  });
+
+  it("does NOT emit scoring_drought if the team hit a field goal in the last 6 attempts", () => {
+    const BASE = createInitialGameState("game-no-drought", "home", "away", "Away", "away");
+
+    const events: GameEvent[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `shot-${i + 1}`,
+      schoolId: "test-school",
+      gameId: "game-no-drought",
+      sequence: i + 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - i,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: i === 0, // first shot is made
+      points: 2 as const,
+      zone: "rim" as const,
+    }));
+
+    const state = replayEvents(BASE, events);
+    const insights = generateInsights({ state, latestEvent: events[5] });
+
+    expect(insights.some((i) => i.type === "scoring_drought")).toBe(false);
+  });
+
+  it("emits depth_warning when 2 or more active players have 3+ fouls", () => {
+    const BASE = createInitialGameState("game-depth", "home", "away", "Away", "away");
+
+    // Sub in two home players first
+    const subEvents: GameEvent[] = [
+      {
+        id: "sub-1",
+        schoolId: "test-school",
+        gameId: "game-depth",
+        sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q1" as const,
+        clockSecondsRemaining: 480,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "substitution" as const,
+        playerOutId: "nobody",
+        playerInId: "h1",
+      },
+      {
+        id: "sub-2",
+        schoolId: "test-school",
+        gameId: "game-depth",
+        sequence: 2,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q1" as const,
+        clockSecondsRemaining: 479,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "substitution" as const,
+        playerOutId: "nobody2",
+        playerInId: "h2",
+      },
+    ];
+
+    // Give h1 and h2 each 3 fouls
+    const foulEvents: GameEvent[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `depth-foul-${i + 1}`,
+      schoolId: "test-school",
+      gameId: "game-depth",
+      sequence: i + 3,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - i,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "foul" as const,
+      playerId: i < 3 ? "h1" : "h2",
+      foulType: "personal" as const,
+    }));
+
+    const state = replayEvents(BASE, [...subEvents, ...foulEvents]);
+    const insights = generateInsights({ state, latestEvent: foulEvents[5] });
+
+    expect(insights.some((i) => i.type === "depth_warning")).toBe(true);
+  });
+
+  it("emits efficiency insight when opponent PPP exceeds ours by 0.25+", () => {
+    // home = ourTeam, away = opponent
+    const BASE = createInitialGameState("game-eff", "home", "away", "Away", "away");
+
+    // Build 15 possessions for each team using possession_start events
+    const possEvents: GameEvent[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `poss-${i + 1}`,
+      schoolId: "test-school",
+      gameId: "game-eff",
+      sequence: i + 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - i,
+      teamId: i % 2 === 0 ? "home" : "away",
+      operatorId: "op-1",
+      type: "possession_start" as const,
+      possessedByTeamId: i % 2 === 0 ? "home" : "away",
+    }));
+
+    // Give opponent (away) two 3-pointers (6 pts / 15 poss = 0.4 PPP), home 0 pts (0.0 PPP), gap = 0.4
+    const scoreEvents: GameEvent[] = [
+      {
+        id: "opp-score-1",
+        schoolId: "test-school",
+        gameId: "game-eff",
+        sequence: 31,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q2" as const,
+        clockSecondsRemaining: 300,
+        teamId: "away",
+        operatorId: "op-1",
+        type: "shot_attempt" as const,
+        playerId: "a1",
+        made: true,
+        points: 3 as const,
+        zone: "above_break_three" as const,
+      },
+      {
+        id: "opp-score-2",
+        schoolId: "test-school",
+        gameId: "game-eff",
+        sequence: 32,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q2" as const,
+        clockSecondsRemaining: 290,
+        teamId: "away",
+        operatorId: "op-1",
+        type: "shot_attempt" as const,
+        playerId: "a1",
+        made: true,
+        points: 3 as const,
+        zone: "above_break_three" as const,
+      },
+      {
+        id: "home-score-1",
+        schoolId: "test-school",
+        gameId: "game-eff",
+        sequence: 33,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q2" as const,
+        clockSecondsRemaining: 280,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "shot_attempt" as const,
+        playerId: "h1",
+        made: false,
+        points: 2 as const,
+        zone: "midrange" as const,
+      },
+    ];
+
+    const state = replayEvents(BASE, [...possEvents, ...scoreEvents]);
+    const insights = generateInsights({ state, latestEvent: scoreEvents[2] });
+
+    expect(insights.some((i) => i.type === "efficiency")).toBe(true);
+  });
+
+  it("emits leverage insight in final 18 seconds of Q1", () => {
+    const BASE = createInitialGameState("game-lev", "home", "away", "Away", "away");
+
+    // Padding events so isPreGameState guard is bypassed (score > 0 or events >= 5)
+    const padEvents: GameEvent[] = Array.from({ length: 4 }, (_, i) => ({
+      id: `pad-lev-${i + 1}`,
+      schoolId: "test-school",
+      gameId: "game-lev",
+      sequence: i + 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1" as const,
+      clockSecondsRemaining: 400 - i,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: false,
+      points: 2 as const,
+      zone: "midrange" as const,
+    }));
+
+    const finalEvent: GameEvent = {
+      id: "lev-event",
+      schoolId: "test-school",
+      gameId: "game-lev",
+      sequence: 5,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1" as const,
+      clockSecondsRemaining: 12,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: false,
+      points: 2 as const,
+      zone: "midrange" as const,
+    };
+
+    const state = replayEvents(BASE, [...padEvents, finalEvent]);
+    const insights = generateInsights({ state, latestEvent: finalEvent });
+
+    expect(insights.some((i) => i.type === "leverage")).toBe(true);
+  });
 });
