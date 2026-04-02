@@ -4681,6 +4681,7 @@ export function App() {
               Away: {awayTeamName}
             </button>
           </div>
+          </div>}
         </div>}
       </div>
 
