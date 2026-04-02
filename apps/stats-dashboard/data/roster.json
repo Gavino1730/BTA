@@ -1,90 +1,171 @@
 {
   "team": "Valley Catholic",
   "season": "2026",
-  "teamColor": "",
+  "teamColor": "#1a1a2e",
   "coachStyle": "",
   "playingStyle": "",
   "teamContext": "",
-  "customPrompt": "",
   "focusInsights": [],
+  "customPrompt": "",
   "roster": [
     {
       "name": "Cooper Bonnett",
       "number": 1,
       "position": "G",
-      "grade": "12"
+      "role": "",
+      "height": "",
+      "grade": "12",
+      "notes": ""
     },
     {
       "name": "Alex Post",
       "number": 2,
       "position": "G",
-      "grade": "11"
+      "role": "",
+      "height": "",
+      "grade": "11",
+      "notes": ""
     },
     {
       "name": "Gavin Galan",
       "number": 3,
       "position": "F",
-      "grade": "12"
+      "role": "",
+      "height": "",
+      "grade": "12",
+      "notes": ""
     },
     {
-      "name": "Kye Fixter",
+      "name": "Stephen Curry",
       "number": 4,
-      "position": "F",
-      "grade": "11"
+      "position": "PG",
+      "role": "",
+      "height": "6'2\"",
+      "grade": "Pro",
+      "notes": ""
     },
     {
       "name": "Marcos Mueller",
       "number": 5,
       "position": "G",
-      "grade": "12"
+      "role": "",
+      "height": "",
+      "grade": "12",
+      "notes": ""
     },
     {
-      "name": "Matthew Gunther",
+      "number": 6,
+      "name": "LeBron James",
+      "position": "SF",
+      "height": "6'9\"",
+      "grade": "Pro"
+    },
+    {
+      "number": 7,
+      "name": "Kevin Durant",
+      "position": "SF",
+      "height": "6'10\"",
+      "grade": "Pro"
+    },
+    {
+      "number": 8,
+      "name": "Kobe Bryant",
+      "position": "SG",
+      "height": "6'6\"",
+      "grade": "Pro"
+    },
+    {
+      "number": 9,
+      "name": "Michael Jordan",
+      "position": "SG",
+      "height": "6'6\"",
+      "grade": "Pro"
+    },
+    {
+      "name": "Magic Johnson",
       "number": 10,
-      "position": "G",
-      "grade": "12"
+      "position": "PG",
+      "role": "",
+      "height": "6'9\"",
+      "grade": "Pro",
+      "notes": ""
     },
     {
-      "name": "Tyler Eddy",
+      "name": "Kyrie Irving",
       "number": 11,
-      "position": "G",
-      "grade": "10"
+      "position": "PG",
+      "role": "",
+      "height": "6'2\"",
+      "grade": "Pro",
+      "notes": ""
     },
     {
-      "name": "Elijah Schaal",
+      "number": 13,
+      "name": "Anthony Davis",
+      "position": "PF",
+      "height": "6'10\"",
+      "grade": "Pro"
+    },
+    {
+      "name": "Carmelo Anthony",
       "number": 15,
-      "position": "G",
-      "grade": "12"
+      "position": "PF",
+      "role": "",
+      "height": "6'7\"",
+      "grade": "Pro",
+      "notes": ""
     },
     {
       "name": "Hank Lomber",
       "number": 20,
       "position": "F",
-      "grade": "11"
+      "role": "",
+      "height": "",
+      "grade": "11",
+      "notes": ""
     },
     {
       "name": "Sam Robbins",
       "number": 22,
       "position": "F",
-      "grade": "10"
+      "role": "",
+      "height": "",
+      "grade": "10",
+      "notes": ""
     },
     {
       "name": "Garrett Frank",
       "number": 23,
       "position": "G",
-      "grade": "11"
+      "role": "",
+      "height": "",
+      "grade": "11",
+      "notes": ""
     },
     {
       "name": "Michael Mehta",
       "number": 24,
       "position": "G",
-      "grade": "12"
+      "role": "",
+      "height": "",
+      "grade": "12",
+      "notes": ""
+    },
+    {
+      "number": 34,
+      "name": "Shaquille O'Neal",
+      "position": "C",
+      "height": "7'1\"",
+      "grade": "Pro"
     },
     {
       "name": "Liam Plep",
       "number": 44,
       "position": "C",
-      "grade": "12"
+      "role": "",
+      "height": "",
+      "grade": "12",
+      "notes": ""
     }
   ]
 }
