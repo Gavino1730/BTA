@@ -475,8 +475,8 @@ describe("store", () => {
       const firstRefresh = await refreshGameAiInsights("game-ai-force");
       const forcedRefresh = await refreshGameAiInsights("game-ai-force", { force: true });
 
-      expect(firstRefresh?.some((insight) => insight.message === "First bench call")).toBe(true);
-      expect(forcedRefresh?.some((insight) => insight.message === "Second bench call")).toBe(true);
+      expect(firstRefresh?.some((insight) => insight.message === "[AI] First bench call")).toBe(true);
+      expect(forcedRefresh?.some((insight) => insight.message === "[AI] Second bench call")).toBe(true);
       expect(global.fetch).toHaveBeenCalledTimes(2);
     } finally {
       if (originalApiKey === undefined) {

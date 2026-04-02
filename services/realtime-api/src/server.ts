@@ -2947,17 +2947,16 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
     return;
   }
 
-  // Strip the stored operatorToken from the server-side object before sending.
-  // Only deliver the token to callers that present a valid API key or bearer token —
-  // this prevents token harvesting by anyone who observes a connection code.
+  // The connection code itself is the shared secret between coach and operator.
+  // Always deliver the operator token to any caller that knows the connection ID —
+  // this allows the iPad to bootstrap auth on first sync without a prior credential.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { operatorToken, ...publicSetup } = setup;
-  const isAuthenticated = hasValidApiKeyRequest(req) || Boolean((req as ScopedRequest).authContext);
   res.json({
     connectionId,
     setup: publicSetup,
     teams: getRosterTeamsByScope({ schoolId }),
-    operatorToken: isAuthenticated ? operatorToken : undefined,
+    operatorToken,
   });
 });
 

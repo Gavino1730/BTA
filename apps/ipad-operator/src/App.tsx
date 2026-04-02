@@ -269,8 +269,8 @@ function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse
       opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
       vcSide: nextSide,
       dashboardUrl: snapshot.setup?.dashboardUrl?.trim() || current.gameSetup.dashboardUrl,
-      homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor, current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR),
-      awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor, current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR),
+      homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor) ?? current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR,
+      awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor) ?? current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR,
       startingLineup: safeStartingLineup,
       // Auto-receive auth token from the server — no manual API key entry needed
       apiKey: snapshot.operatorToken ?? current.gameSetup.apiKey,
@@ -2446,6 +2446,7 @@ export function App() {
   function base(seq: number) {
     return {
       id: uid(),
+      schoolId: appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID,
       gameId,
       sequence: seq,
       timestampIso: new Date().toISOString(),
@@ -3880,8 +3881,8 @@ export function App() {
       myTeamName: myTeam?.name,
       opponentName: appData.gameSetup.opponent,
       vcSide: appData.gameSetup.vcSide,
-      homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
-      awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
+      homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
+      awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
     });
     return (
       <div className="postgame-screen">
@@ -4036,8 +4037,8 @@ export function App() {
     myTeamName: myTeam?.name,
     opponentName: appData.gameSetup.opponent,
     vcSide: appData.gameSetup.vcSide,
-    homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
-    awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
+    homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
+    awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
   });
 
   return (
@@ -4791,7 +4792,10 @@ export function App() {
         <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
           End Game
         </button>
-        <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">Undo</button>
+        <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">
+          Undo
+          {pendingEvents.length > 0 && <span className="nav-pending-badge">{pendingEvents.length}</span>}
+        </button>
         <button
           className="live-nav-btn live-nav-btn-secondary"
           title="Game summary"
@@ -4845,8 +4849,8 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
   const [gsOpponentTrackStats, setGsOpponentTrackStats] = useState<OpponentTrackStat[]>(
     normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats)
   );
-  const [gsHomeTeamColor, setGsHomeTeamColor] = useState(normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR));
-  const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR));
+  const [gsHomeTeamColor, setGsHomeTeamColor] = useState(normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR);
+  const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR);
   const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
 
   const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
@@ -4868,7 +4872,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
       return { ...gameSetup, myTeamId };
     }
 
-    const normalizedColor = normalizeTeamColor(selectedTeam.teamColor, DEFAULT_HOME_TEAM_COLOR);
+    const normalizedColor = normalizeTeamColor(selectedTeam.teamColor) ?? DEFAULT_HOME_TEAM_COLOR;
     return gameSetup.vcSide === "home"
       ? { ...gameSetup, myTeamId, homeTeamColor: normalizedColor }
       : { ...gameSetup, myTeamId, awayTeamColor: normalizedColor };
@@ -4906,8 +4910,8 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
           trackPossession: gsTrackPossession,
           trackTimeouts: gsTrackTimeouts,
           opponentTrackStats: normalizeOpponentTrackStats(gsOpponentTrackStats),
-          homeTeamColor: normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR),
-          awayTeamColor: normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
+          homeTeamColor: normalizeTeamColor(gsHomeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
+          awayTeamColor: normalizeTeamColor(gsAwayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
           statsGameId: appData.gameSetup.statsGameId,
           startingLineup: appData.gameSetup.startingLineup,
         },
@@ -4974,7 +4978,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
             {appData.teams.map(t => {
               const isSelected = gsMyTeamId === t.id;
               const displayColor = t.teamColor ?? DEFAULT_HOME_TEAM_COLOR;
-              const normalizedColor = normalizeTeamColor(displayColor, DEFAULT_HOME_TEAM_COLOR);
+              const normalizedColor = normalizeTeamColor(displayColor) ?? DEFAULT_HOME_TEAM_COLOR;
               return (
                 <button key={t.id}
                   className="team-pick-btn"
@@ -4985,7 +4989,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
                   onClick={() => {
                     setGsMyTeamId(t.id);
                     if (t.teamColor) {
-                      const nextColor = normalizeTeamColor(t.teamColor, DEFAULT_HOME_TEAM_COLOR);
+                      const nextColor = normalizeTeamColor(t.teamColor) ?? DEFAULT_HOME_TEAM_COLOR;
                       if (gsVcSide === "home") {
                         setGsHomeTeamColor(nextColor);
                       } else {
@@ -5044,8 +5048,8 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
                 })}
               </div>
               {gsVcSide === "home"
-                ? <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsAwayTeamColor} onChange={e => setGsAwayTeamColor(normalizeTeamColor(e.target.value, DEFAULT_AWAY_TEAM_COLOR))} />
-                : <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
+                ? <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsAwayTeamColor} onChange={e => setGsAwayTeamColor(normalizeTeamColor(e.target.value) ?? DEFAULT_AWAY_TEAM_COLOR)} />
+                : <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value) ?? DEFAULT_HOME_TEAM_COLOR)} />
               }
             </div>
           </div>

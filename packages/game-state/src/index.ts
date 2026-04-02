@@ -10,6 +10,8 @@ export const BONUS_FOUL_THRESHOLD = 5;
 export interface TeamShootingStats {
   fgAttempts: number;  // field goal attempts (2pt + 3pt only)
   fgMade: number;
+  fgAttempts3: number; // 3-point attempts (subset of fgAttempts)
+  fgMade3: number;     // 3-point makes (subset of fgMade)
   ftAttempts: number;  // free throw attempts
   ftMade: number;
   points: number;
@@ -115,6 +117,8 @@ const emptyTeamStats = (): TeamStats => ({
   shooting: {
     fgAttempts: 0,
     fgMade: 0,
+    fgAttempts3: 0,
+    fgMade3: 0,
     ftAttempts: 0,
     ftMade: 0,
     points: 0
@@ -289,12 +293,18 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
       const playerStats = ensurePlayerStats(state, event.teamId, event.playerId);
       teamStats.shooting.fgAttempts += 1;
       playerStats.fgAttempts += 1;
+      if (event.points === 3) {
+        teamStats.shooting.fgAttempts3 += 1;
+      }
       if (event.made) {
         teamStats.shooting.fgMade += 1;
         teamStats.shooting.points += event.points;
         state.scoreByTeam[event.teamId] += event.points;
         playerStats.fgMade += 1;
         playerStats.points += event.points;
+        if (event.points === 3) {
+          teamStats.shooting.fgMade3 += 1;
+        }
       }
       break;
     }

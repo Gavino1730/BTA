@@ -56,6 +56,8 @@ function emptyTeamStats(): TeamStats {
     shooting: {
       fgAttempts: 0,
       fgMade: 0,
+      fgAttempts3: 0,
+      fgMade3: 0,
       ftAttempts: 0,
       ftMade: 0,
       points: 0,
@@ -75,6 +77,8 @@ function mergeTeamStats(target: TeamStats, source?: TeamStats): TeamStats {
 
   target.shooting.fgAttempts += source.shooting.fgAttempts;
   target.shooting.fgMade += source.shooting.fgMade;
+  target.shooting.fgAttempts3 += source.shooting.fgAttempts3;
+  target.shooting.fgMade3 += source.shooting.fgMade3;
   target.shooting.ftAttempts += source.shooting.ftAttempts;
   target.shooting.ftMade += source.shooting.ftMade;
   target.shooting.points += source.shooting.points;
@@ -2248,10 +2252,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             const td = aggregatedTeams[teamId] ?? aggregatedTeams[canonicalTeamId(teamId)];
             const fgMade = td?.teamStats.shooting.fgMade ?? 0;
             const fgAtt = td?.teamStats.shooting.fgAttempts ?? 0;
+            const fgMade3 = td?.teamStats.shooting.fgMade3 ?? 0;
+            const fgAtt3 = td?.teamStats.shooting.fgAttempts3 ?? 0;
             const ftMade = td?.teamStats.shooting.ftMade ?? 0;
             const ftAtt = td?.teamStats.shooting.ftAttempts ?? 0;
             const fgPct = fgAtt > 0 ? Math.round((fgMade / fgAtt) * 100) : null;
             const ftPct = ftAtt > 0 ? Math.round((ftMade / ftAtt) * 100) : null;
+            const efgPct = fgAtt > 0 ? Math.round(((fgMade + 0.5 * fgMade3) / fgAtt) * 100) : null;
             const score = td?.score ?? 0;
             const possessions = td?.possessions ?? 0;
             const ppp = possessions >= 5 ? (score / possessions).toFixed(2) : null;
@@ -2326,6 +2333,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                     <span className="sb-stat-label">FG</span>
                     <span className="sb-stat-value">{fgMade}/{fgAtt}</span>
                     {fgPct !== null && <span className="sb-stat-pct">{fgPct}%</span>}
+                  </div>
+                  <div className="sb-stat-cell" title="Effective field goal % — weights 3-pointers: (FGM + 0.5×3PM) / FGA">
+                    <span className="sb-stat-label">eFG%</span>
+                    <span className="sb-stat-value">{efgPct !== null ? `${efgPct}%` : "—"}</span>
+                    <span className="sb-stat-pct">{fgMade3}/{fgAtt3} 3PT</span>
                   </div>
                   <div className="sb-stat-cell">
                     <span className="sb-stat-label">FT</span>

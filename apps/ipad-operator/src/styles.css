@@ -1298,6 +1298,24 @@ html, body {
   background: rgba(90, 60, 10, 0.6);
 }
 
+/* Pending-events count badge inside Undo button */
+.nav-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: #f97316;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 /* Secondary nav — quiet, non-distracting during live game */
 .live-nav-btn-secondary {
   border-color: rgba(232,234,240,0.18);

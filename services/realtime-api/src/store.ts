@@ -1735,10 +1735,18 @@ function parseAiInsightResponse(content: string, session: GameSession, latestEve
         return null;
       }
 
+      // Length guard: discard suspiciously short (<10 chars) or bloated (>300 chars) messages
+      if (message.length < 10 || message.length > 300) {
+        return null;
+      }
+
       const relatedTeamId = typeof raw.relatedTeamId === "string" && validTeams.has(raw.relatedTeamId)
         ? raw.relatedTeamId
         : undefined;
       const confidence = raw.confidence === "high" ? "high" : "medium";
+
+      // Prefix so coaches can identify model-generated advice on the dashboard
+      const labeledMessage = `[AI] ${message}`;
 
       return {
         id: `ai-${latestEvent.id}-${index}`,
@@ -1747,7 +1755,7 @@ function parseAiInsightResponse(content: string, session: GameSession, latestEve
         priority: "important",
         createdAtIso,
         confidence,
-        message,
+        message: labeledMessage,
         explanation,
         relatedTeamId
       };
