@@ -32,48 +32,12 @@ Last updated: April 2, 2026.
 - **UNDO button pending-event badge**: orange pill badge on the Undo nav button shows exact count of unsynced events (`pendingEvents.length`). Operator always knows their queue depth at a glance. (`apps/ipad-operator/src/App.tsx`, `styles.css`)
 - **Live eFG% on scoreboard**: added `fgMade3`/`fgAttempts3` to `TeamShootingStats` in `game-state`; populated in `shot_attempt` handler when `event.points === 3`; coach dashboard scoreboard now shows eFG% cell `(FGM + 0.5×3PM) / FGA` alongside 3PT breakdown.
 - **GPT output validation**: length guard (10–300 chars) discards malformed/bloated GPT messages; all AI coaching insights prefixed with `[AI]` so coaches can distinguish model-generated advice from rules-engine alerts.
-
----
-
-## � High Priority — Do Next
-
-### 1. Operator — Optimistic Local State
-**What**: When an event is submitted, the operator UI waits for the server round-trip before showing feedback. On flaky gym WiFi this feels broken.
-**Why it matters**: The operator thinks their tap didn't register and taps again → duplicate events.
-**Fix**: Apply the event to local display state immediately on tap, then reconcile with server response. If submission fails, the event drops into the pending queue (already does this) but the local display should still show it.
-**Files**: `apps/ipad-operator/src/App.tsx` — `submitEvent()` and display state.
-
----
-
-## 🟡 Medium Priority
-
-### 4. Smarter Run Detection (Rule 8 replacement)
-**What**: Current run detection fires on 8 points in the last 10 events — this conflates opponent runs with our own scoring. It also doesn't track who ended the run.
-**Better version**: Separate "opponent on a run" vs "we're on a run." Track the last N points scored by *each* team independently (not just events). Alert specifically: "Opponent 8-0 run since Q2 4:30 — call timeout" vs "We've scored 10 straight — keep momentum."
-**Files**: `services/insight-engine/src/index.ts` — Rule 8.
-
-### 5. Clutch Rule Improvement (existing Rule 6)
-**What**: The current clutch/late-game rule fires in Q4/OT when the game is within a certain margin with little time left.
-**Problem**: It fires repeatedly on every event in that window, not just when entering it.
-**Fix**: Add the same "window entry" guard used in Rule 14 — only fire when clock first crosses into the threshold, not on every subsequent event.
-**Files**: `services/insight-engine/src/index.ts` — clutch rule section.        
-
-### 6. Sub Suggestion Intelligence
-**What**: The current sub suggestion rule fires based on minutes/foul counts but doesn't know who's on the bench or whether a reasonable sub actually exists.   
-**Better version**: Before suggesting "consider subbing X," check that `activeLineupsByTeam[ourTeamId]` contains the player AND that there's at least one bench player available (i.e., someone on the roster not in the active lineup). If the bench is empty, suggest a timeout instead.
-**Files**: `services/insight-engine/src/index.ts` — sub_suggestion rule.        
-
-### 7. Historical Context TTL
-**What**: `HISTORICAL_CONTEXT_TTL_MS` defaults to some interval. The historical context (season trends, opponent history) that gets prepended to GPT prompts can go stale mid-game.
-**Fix**: Refresh historical context at period transitions, not just on a time interval. Listen for `period_transition` events as a trigger.
-**Files**: `services/realtime-api/src/store.ts` — `refreshGameAiInsights()` call site.
-
-### 8. Possession Tracking Accuracy
-**What**: `possessionsByTeam` only increments on explicit `possession_start` events. Operators frequently forget to log these — they focus on scoring events.   
-**Impact**: PPP and efficiency gap rules become unreliable or never fire.       
-**Fix (option A)**: Auto-infer possession changes from scoring events and rebounds. When a `shot_attempt` with `made: true` is logged, the opposing team logically starts a possession. Back-fill `possessionsByTeam` from the event log during `replayEvents`.
-**Fix (option B)**: On the operator side, auto-trigger a `possession_start` when certain events are logged (made basket → other team gets ball).
-**Files**: `packages/game-state/src/index.ts`, possibly `apps/ipad-operator/src/App.tsx`.
+- **Optimistic Local State**: `postEvent` adds events to `pendingEvents` immediately on tap; display state (scores, feed) derives from both `submittedEvents` and `pendingEvents` so UI updates instantly without waiting for the server round-trip.
+- **Smarter Run Detection (Rule 7)**: Replaced "last 10 events" sliding window with `computeUninterruptedRun` — walks backwards through scoring events counting consecutive unanswered points. Alerts are now "opponent 8-0 run (started Q2) — call timeout" and "we're on a 10-0 run — keep the pressure on."
+- **Clutch Rule Entry Guard (Rule 5)**: Alert fires only once when clock first crosses below 120s in Q4/OT, not on every subsequent event in the window.
+- **Sub Suggestion Intelligence (Rule 9)**: When bench is empty and a player has 4 fouls (not fouled out), suggests a timeout for scheme adjustment instead of an impossible sub.
+- **Possession Inference (Rule 13 + scoreboard)**: Rule 13 and the coach dashboard PPP column both fall back to inferred possessions (FGA + turnovers) when no explicit `possession_start` events exist.
+- **Historical Context TTL at Period Transitions**: `refreshGameAiInsights` and `requestAiChatResponse` force a historical context refresh on `period_transition` events in addition to the time-based TTL.
 
 ---
 

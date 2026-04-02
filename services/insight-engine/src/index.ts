@@ -126,6 +126,36 @@ function getClockSeconds(event: GameEvent): number {
   return event.clockSecondsRemaining ?? 0;
 }
 
+/**
+ * Walk backwards through scoring events, counting consecutive points by `runTeamId`
+ * without `stopTeamId` having scored. Returns total run points and the period where
+ * the run started (earliest scoring event in the uninterrupted streak).
+ */
+function computeUninterruptedRun(
+  events: GameEvent[],
+  runTeamId: string,
+  stopTeamId: string
+): { points: number; startPeriod?: string } {
+  let points = 0;
+  let startPeriod: string | undefined;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    const isScoringEvent =
+      (e.type === "shot_attempt" && (e as Extract<GameEvent, { type: "shot_attempt" }>).made) ||
+      (e.type === "free_throw_attempt" && (e as Extract<GameEvent, { type: "free_throw_attempt" }>).made);
+    if (!isScoringEvent) continue;
+    if (e.teamId === stopTeamId) break; // other team scored — run is over
+    if (e.teamId === runTeamId) {
+      const pts = e.type === "shot_attempt"
+        ? (e as Extract<GameEvent, { type: "shot_attempt" }>).points
+        : 1;
+      points += pts;
+      startPeriod = e.period; // keep overwriting; last assignment = earliest event in run
+    }
+  }
+  return { points, startPeriod };
+}
+
 export function generateInsights(context: InsightContext): LiveInsight[] {
   const insights: LiveInsight[] = [];
   const { state, latestEvent } = context;
@@ -281,6 +311,13 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
     const isQ4OrOT = period === "Q4" || isOvertimePeriod(period);
 
     if (isQ4OrOT && clockSec <= 120 && clockSec > 0) {
+      // Only fire once when clock first enters the ≤120s window, not on every subsequent event
+      const clutchPrev = allEvents.at(-2);
+      const clutchPrevClock = clutchPrev ? getClockSeconds(clutchPrev) : Infinity;
+      const clutchPrevPeriod = clutchPrev?.period ?? "";
+      const justEnteredWindow = clutchPrevPeriod !== period || clutchPrevClock > 120;
+      if (!justEnteredWindow) return insights;
+
       const scores = Object.entries(state.scoreByTeam);
       const [teamA, scoreA] = scores[0] ?? ["", 0];
       const [teamB, scoreB] = scores[1] ?? ["", 0];
@@ -329,7 +366,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
 
       if (message) {
         insights.push({
-          id: `${latestEvent.id}-clutch-${period}-${clockSec}`,
+          id: `${latestEvent.id}-clutch-${period}`,
           gameId: latestEvent.gameId,
           type: "timeout_suggestion",
           priority: "urgent",
@@ -366,17 +403,17 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // 7. Opponent run detection — alert so our team can respond
+  // 7. Run detection — uninterrupted consecutive scoring
+  //    Walks backwards through ALL events; counts each team's streak
+  //    of unanswered points since the other team last scored.
   // ──────────────────────────────────────────────────────────────────
   const opponentTeamId = state.opponentTeamId;
-  if (opponentTeamId) {
-    const recentOppMade = recentEvents.filter(
-      (event): event is Extract<GameEvent, { type: "shot_attempt" }> =>
-        event.type === "shot_attempt" && event.teamId === opponentTeamId && event.made
-    );
-    const oppRunPoints = recentOppMade.reduce((sum, event) => sum + event.points, 0);
+  if (opponentTeamId && ourTeamId) {
+    const { points: oppRunPoints, startPeriod: oppRunPeriod } =
+      computeUninterruptedRun(allEvents, opponentTeamId, ourTeamId);
     if (oppRunPoints >= 8) {
       const oppLabel = resolveTeamLabel(state, opponentTeamId);
+      const periodNote = oppRunPeriod && oppRunPeriod !== period ? ` (started ${oppRunPeriod})` : "";
       insights.push({
         id: `${latestEvent.id}-opp-run`,
         gameId: latestEvent.gameId,
@@ -384,22 +421,17 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         priority: "urgent",
         createdAtIso: now,
         confidence: "high",
-        message: `⚠️ ${oppLabel} on an ${oppRunPoints}-pt run — consider a timeout`,
-        explanation: "Opponent momentum is building. A timeout can reset their rhythm, tighten your defense, and give your bench a breather.",
+        message: `⚠️ ${oppLabel} on a ${oppRunPoints}-0 run${periodNote} — consider a timeout`,
+        explanation: "Opponent has scored every basket since our last field goal. A timeout resets their rhythm, tightens your defense, and breaks their momentum.",
         relatedTeamId: opponentTeamId
       });
     }
-  }
 
-  // Our team run detection (positive momentum context)
-  if (ourTeamId) {
-    const recentOurMade = recentEvents.filter(
-      (event): event is Extract<GameEvent, { type: "shot_attempt" }> =>
-        event.type === "shot_attempt" && event.teamId === ourTeamId && event.made
-    );
-    const ourRunPoints = recentOurMade.reduce((sum, event) => sum + event.points, 0);
+    const { points: ourRunPoints, startPeriod: ourRunPeriod } =
+      computeUninterruptedRun(allEvents, ourTeamId, opponentTeamId);
     if (ourRunPoints >= 8) {
       const ourLabel = resolveTeamLabel(state, ourTeamId);
+      const periodNote = ourRunPeriod && ourRunPeriod !== period ? ` (started ${ourRunPeriod})` : "";
       insights.push({
         id: `${latestEvent.id}-our-run`,
         gameId: latestEvent.gameId,
@@ -407,13 +439,13 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         priority: "info",
         createdAtIso: now,
         confidence: "high",
-        message: `${ourLabel} on a ${ourRunPoints}-pt run — keep the pressure on`,
-        explanation: "Momentum is with us. Maintain pace and avoid empty possessions — don't let the opponent call timeout to reset.",
+        message: `${ourLabel} on a ${ourRunPoints}-0 run${periodNote} — keep the pressure on`,
+        explanation: "We've scored every basket since their last field goal. Maintain pace and avoid empty possessions — don't let them call timeout to reset.",
         relatedTeamId: ourTeamId
       });
     }
-  } else {
-    // No "our team" context — fall back to both teams
+  } else if (!ourTeamId && !opponentTeamId) {
+    // Neither team is identified — fall back to event's team using recent window
     const recentMade = recentEvents.filter(
       (event): event is Extract<GameEvent, { type: "shot_attempt" }> =>
         event.type === "shot_attempt" && event.teamId === latestEvent.teamId && event.made
@@ -477,30 +509,52 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
 
   // ──────────────────────────────────────────────────────────────────
   // 9. Sub suggestion — player with 4 fouls still on court
+  //    If no bench player is available, suggest a timeout instead.
   // ──────────────────────────────────────────────────────────────────
   if (ourTeamId) {
     const ourLineup = state.activeLineupsByTeam[ourTeamId] ?? [];
+    const activePlayerSet = new Set(ourLineup);
+    // Only flag bench-empty when a roster is provided; assume bench exists otherwise
+    const hasBenchPlayer = context.rosterPlayers
+      ? context.rosterPlayers.some((p) => !activePlayerSet.has(p.id))
+      : true;
     for (const playerId of ourLineup) {
       const fouls = state.playerFouls[playerId] ?? 0;
       if (fouls >= 4) {
         const playerLabel = resolvePlayerLabel(playerId, resolveTeamLabel(state, ourTeamId), context);
         const isFouledOut = fouls >= 5;
-        insights.push({
-          id: `${latestEvent.id}-sub-${playerId}`,
-          gameId: latestEvent.gameId,
-          type: "sub_suggestion",
-          priority: isFouledOut ? "urgent" : "important",
-          createdAtIso: now,
-          confidence: "high",
-          message: isFouledOut
-            ? `Lineup correction: remove ${playerLabel} (${fouls} fouls, FOULED OUT)`
-            : `Sub suggestion: rest ${playerLabel} (${fouls} fouls, foul-out risk)` ,
-          explanation: isFouledOut
-            ? `${playerLabel} has fouled out and cannot stay on court. Replace immediately.`
-            : `${playerLabel} is one foul from fouling out. Sit them now to protect roster depth for late-game situations.`,
-          relatedTeamId: ourTeamId,
-          relatedPlayerId: playerId
-        });
+        if (!hasBenchPlayer && !isFouledOut) {
+          // Can't sub — suggest a timeout to manage foul exposure through scheme
+          insights.push({
+            id: `${latestEvent.id}-sub-${playerId}`,
+            gameId: latestEvent.gameId,
+            type: "timeout_suggestion",
+            priority: "important",
+            createdAtIso: now,
+            confidence: "high",
+            message: `Timeout: manage ${playerLabel} foul risk (${fouls} fouls, no bench depth)`,
+            explanation: `${playerLabel} has ${fouls} fouls and is one foul from fouling out, but no bench players are available. Call a timeout to build a scheme that limits their foul exposure.`,
+            relatedTeamId: ourTeamId,
+            relatedPlayerId: playerId
+          });
+        } else {
+          insights.push({
+            id: `${latestEvent.id}-sub-${playerId}`,
+            gameId: latestEvent.gameId,
+            type: "sub_suggestion",
+            priority: isFouledOut ? "urgent" : "important",
+            createdAtIso: now,
+            confidence: "high",
+            message: isFouledOut
+              ? `Lineup correction: remove ${playerLabel} (${fouls} fouls, FOULED OUT)`
+              : `Sub suggestion: rest ${playerLabel} (${fouls} fouls, foul-out risk)`,
+            explanation: isFouledOut
+              ? `${playerLabel} has fouled out and cannot stay on court. Replace immediately.`
+              : `${playerLabel} is one foul from fouling out. Sit them now to protect roster depth for late-game situations.`,
+            relatedTeamId: ourTeamId,
+            relatedPlayerId: playerId
+          });
+        }
       }
     }
   }
@@ -613,8 +667,15 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   if (ourTeamId && state.opponentTeamId) {
     const MIN_POSSESSIONS = 15;
     const EFFICIENCY_GAP = 0.25;
-    const ourPossessions = state.possessionsByTeam[ourTeamId] ?? 0;
-    const oppPossessions = state.possessionsByTeam[state.opponentTeamId] ?? 0;
+    // Use explicit possession tracking when available; infer from FGA + turnovers otherwise
+    // so this rule fires even when operators don't log possession_start events.
+    const inferPossessions = (teamId: string): number =>
+      allEvents.filter((e) => e.type === "shot_attempt" && e.teamId === teamId).length
+      + allEvents.filter((e) => e.type === "turnover" && e.teamId === teamId).length;
+    const explicitOurPoss = state.possessionsByTeam[ourTeamId] ?? 0;
+    const explicitOppPoss = state.possessionsByTeam[state.opponentTeamId] ?? 0;
+    const ourPossessions = explicitOurPoss > 0 ? explicitOurPoss : inferPossessions(ourTeamId);
+    const oppPossessions = explicitOppPoss > 0 ? explicitOppPoss : inferPossessions(state.opponentTeamId);
     const ourPoints = state.scoreByTeam[ourTeamId] ?? 0;
     const oppPoints = state.scoreByTeam[state.opponentTeamId] ?? 0;
 

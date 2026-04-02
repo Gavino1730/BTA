@@ -1271,7 +1271,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       const target = ensureTeam(teamId);
       target.score += state?.scoreByTeam?.[rawTeamId] ?? 0;
       target.bonus = target.bonus || (state?.bonusByTeam?.[rawTeamId] ?? false);
-      target.possessions += state?.possessionsByTeam?.[rawTeamId] ?? 0;
+      // Fall back to inferred possessions (FGA + turnovers) when operators don't log possession_start
+      const explicitPoss = state?.possessionsByTeam?.[rawTeamId] ?? 0;
+      const inferredPoss = explicitPoss > 0
+        ? 0
+        : (state?.teamStats?.[rawTeamId]?.shooting?.fgAttempts ?? 0)
+          + (state?.teamStats?.[rawTeamId]?.turnovers ?? 0);
+      target.possessions += explicitPoss + inferredPoss;
       target.activeLineup = [...new Set([
         ...target.activeLineup,
         ...(state?.activeLineupsByTeam?.[rawTeamId] ?? []),
