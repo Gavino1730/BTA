@@ -111,6 +111,8 @@ export function AiInsightsPage() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [chatSuggestions, setChatSuggestions] = useState<string[]>([]);
   const [liveContext, setLiveContext] = useState<LiveContextPayload | null>(null);
+  const [preGameNotes, setPreGameNotes] = useState("");
+  const [preGameNotesSaving, setPreGameNotesSaving] = useState(false);
   const [status, setStatus] = useState("Loading AI insights...");
   const [chatLoading, setChatLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -157,7 +159,16 @@ export function AiInsightsPage() {
           if (!selectedPlayer && nextPlayers.length > 0) {
             setSelectedPlayer(playerDisplayLabel(nextPlayers[0]));
           }
-          if (live) setLiveContext(live);
+          if (live) {
+            setLiveContext(live);
+            if (live.sessionId) {
+              // Fetch current pre-game notes for the live game
+              fetch(`${apiBase}/api/games/${encodeURIComponent(live.sessionId)}/ai-context`, { headers: apiKeyHeader() })
+                .then((r) => r.ok ? r.json() as Promise<{ preGameNotes?: string }> : null)
+                .then((ctx) => { if (ctx?.preGameNotes) setPreGameNotes(ctx.preGameNotes); })
+                .catch(() => {});
+            }
+          }
           setStatus("Ready.");
         }
       } catch {
@@ -314,6 +325,39 @@ export function AiInsightsPage() {
               {(liveContext.liveInsights ?? []).slice(0, 3).map((msg, i) => (
                 <div key={i} className="ai-live-insight-item">{msg}</div>
               ))}
+            </div>
+          )}
+          {liveContext.sessionId && (
+            <div className="ai-live-pregame-notes">
+              <label className="ai-live-notes-label" htmlFor="ai-live-notes-input">Match Notes (visible to AI)</label>
+              <div className="ai-live-notes-row">
+                <textarea
+                  id="ai-live-notes-input"
+                  className="ai-live-notes-textarea"
+                  value={preGameNotes}
+                  onChange={(e) => setPreGameNotes(e.target.value)}
+                  placeholder="Opponent tendencies, team mindset, key matchups..."
+                  rows={2}
+                />
+                <button
+                  type="button"
+                  className="ai-live-notes-save-btn"
+                  disabled={preGameNotesSaving}
+                  onClick={() => {
+                    if (!liveContext.sessionId) return;
+                    setPreGameNotesSaving(true);
+                    fetch(`${apiBase}/api/games/${encodeURIComponent(liveContext.sessionId)}/ai-context`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+                      body: JSON.stringify({ preGameNotes: preGameNotes.trim() || "" }),
+                    })
+                      .catch(() => {})
+                      .finally(() => setPreGameNotesSaving(false));
+                  }}
+                >
+                  {preGameNotesSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
             </div>
           )}
         </section>

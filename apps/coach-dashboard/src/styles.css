@@ -106,6 +106,16 @@
 /* ---- Reset ---- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ---- iPad / Touch globals ---- */
+button, a, [role="button"], .shell-nav-link, select, input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button, [role="button"], .shell-nav-link {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 :root {
   --bg:         #0b1226;
   --surface:    #122347;
@@ -129,7 +139,7 @@
 body {
   margin: 0;
   background: var(--bg);
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* ---- Page / Layout ---- */
@@ -137,6 +147,9 @@ body {
   max-width: 1100px;
   margin: 0 auto;
   padding: 1.25rem;
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
 }
 
 /* ---- Header ---- */
@@ -180,7 +193,7 @@ body {
   border-radius: 10px;
   color: var(--text);
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 
 .header input:focus {
@@ -217,7 +230,7 @@ body {
 }
 
 .shell-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at top left, rgba(79,140,255,0.18), transparent 28%),
     linear-gradient(180deg, #081224 0%, #0b1226 100%);
@@ -226,7 +239,9 @@ body {
 .shell-nav {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 1.4rem 1.25rem 0;
+  padding: calc(1.4rem + env(safe-area-inset-top)) 1.25rem 0;
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -257,7 +272,7 @@ body {
   border: 1px solid rgba(255,255,255,0.1);
   background: rgba(255,255,255,0.04);
   color: var(--text);
-  min-height: 42px;
+  min-height: 44px;
   padding: 0.65rem 0.95rem;
   border-radius: 999px;
   cursor: pointer;
@@ -3720,6 +3735,58 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   left: 0;
   color: rgba(59,130,246,0.7);
 }
+
+.ai-live-pregame-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.ai-live-notes-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.ai-live-notes-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.ai-live-notes-textarea {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.84rem;
+  padding: 0.4rem 0.6rem;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.4;
+  outline: none;
+}
+
+.ai-live-notes-textarea:focus { border-color: rgba(59,130,246,0.4); }
+
+.ai-live-notes-save-btn {
+  padding: 0.38rem 0.9rem;
+  background: rgba(59,130,246,0.15);
+  border: 1px solid rgba(59,130,246,0.35);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-live-notes-save-btn:hover { background: rgba(59,130,246,0.25); }
+.ai-live-notes-save-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Chat */
 .ai-chat-history {

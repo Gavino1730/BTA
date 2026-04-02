@@ -276,6 +276,11 @@ describe("unified stats endpoints", () => {
       })
     });
 
+    await fetch(`${API_BASE}/api/games/stats-game/submit`, {
+      method: "POST",
+      headers: { "x-school-id": "stats-school" }
+    });
+
     const [seasonRes, playersRes, liveContextRes] = await Promise.all([
       fetch(`${API_BASE}/api/season-stats`, { headers: { "x-school-id": "stats-school" } }),
       fetch(`${API_BASE}/api/players`, { headers: { "x-school-id": "stats-school" } }),
@@ -578,6 +583,11 @@ describe("unified stats endpoints", () => {
       })
     });
 
+    await fetch(`${API_BASE}/api/games/101/submit`, {
+      method: "POST",
+      headers: { "x-school-id": "games-compat" }
+    });
+
     const updateRes = await fetch(`${API_BASE}/api/games/101`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "x-school-id": "games-compat" },
@@ -678,6 +688,11 @@ describe("unified stats endpoints", () => {
         points: 3,
         zone: "above_break_three"
       })
+    });
+
+    await fetch(`${API_BASE}/api/games/301/submit`, {
+      method: "POST",
+      headers: { "x-school-id": "ai-compat" }
     });
 
     const [teamSummaryRes, playerInsightsRes, gameAnalysisRes, chatRes] = await Promise.all([

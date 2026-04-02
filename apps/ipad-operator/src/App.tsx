@@ -856,6 +856,20 @@ interface ConfirmDialogState {
   resolve: (value: boolean) => void;
 }
 
+function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsView: SettingsView } {
+  const h = hash.replace(/^#\/?/, "");
+  if (h === "settings/game-setup") return { view: "settings", settingsView: "game-setup" };
+  if (h === "settings/ipad-tips") return { view: "settings", settingsView: "ipad-tips" };
+  if (h.startsWith("settings")) return { view: "settings", settingsView: "menu" };
+  return { view: "game", settingsView: "menu" };
+}
+
+function viewToHash(v: "game" | "settings", sv: SettingsView): string {
+  if (v === "settings" && sv !== "menu") return `#settings/${sv}`;
+  if (v === "settings") return "#settings";
+  return "#game";
+}
+
 export function App() {
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
@@ -975,15 +989,28 @@ export function App() {
   }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, appData.gameSetup.schoolId]);
 
   // ---- Navigation state ----
-  const [view, setView] = useState<"game" | "settings">("game");
-  const [settingsView, setSettingsView] = useState<SettingsView>("menu");
+  const [view, setView] = useState<"game" | "settings">(() => parseViewFromHash(window.location.hash).view);
+  const [settingsView, setSettingsView] = useState<SettingsView>(() => parseViewFromHash(window.location.hash).settingsView);
   const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips"]);
 
-  useEffect(() => {
-    if (!operatorAllowedSettingsViews.has(settingsView)) {
-      setSettingsView("menu");
+  function navigateView(nextView: "game" | "settings", nextSettingsView: SettingsView = "menu") {
+    const hash = viewToHash(nextView, nextSettingsView);
+    if (window.location.hash !== hash) {
+      window.location.hash = hash;
     }
-  }, [settingsView]);
+    setView(nextView);
+    setSettingsView(nextSettingsView);
+  }
+
+  useEffect(() => {
+    function handleHashChange() {
+      const { view: v, settingsView: sv } = parseViewFromHash(window.location.hash);
+      setView(v);
+      setSettingsView(sv);
+    }
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   // ---- Game session state ----
   const gameId = appData.gameSetup.gameId;
@@ -1002,6 +1029,7 @@ export function App() {
   const [summaryClockPadOpen, setSummaryClockPadOpen] = useState(false);
   const [summaryClockPadDigits, setSummaryClockPadDigits] = useState("");
   const [gameMoment, setGameMoment] = useState<string>("");
+  const [preGameNotes, setPreGameNotes] = useState<string>(() => localStorage.getItem("operator-console:pregame-notes") ?? "");
   const [modal, setModal] = useState<Modal | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('ipo:tutorial-complete'));
   const [overtimeCount, setOvertimeCount] = useState(0);
@@ -1379,7 +1407,6 @@ export function App() {
       }
       setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
       setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
-      showInlineNotice("Saved stat", "success", 1500);
       return true;
     } catch (err) {
       const errorMsg = "Network error. Event queued offline - will sync when reconnected.";
@@ -1411,6 +1438,41 @@ export function App() {
 
   useEffect(() => { if (online) void flushQueue(); }, [online]);
 
+  // Persist pre-game notes
+  useEffect(() => {
+    localStorage.setItem("operator-console:pregame-notes", preGameNotes);
+  }, [preGameNotes]);
+
+  // Keep screen awake during a live game
+  useEffect(() => {
+    if (gamePhase !== "live") return;
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    async function acquire() {
+      try {
+        lock = await (navigator as Navigator & { wakeLock: { request(type: string): Promise<WakeLockSentinel> } }).wakeLock.request("screen");
+      } catch { /* device may not support it */ }
+    }
+    void acquire();
+    function reacquire() { if (document.visibilityState === "visible") void acquire(); }
+    document.addEventListener("visibilitychange", reacquire);
+    return () => {
+      document.removeEventListener("visibilitychange", reacquire);
+      lock?.release().catch(() => {});
+    };
+  }, [gamePhase]);
+
+  // Warn before leaving with unsubmitted events
+  useEffect(() => {
+    if (gamePhase !== "live") return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (pendingEvents.length === 0) return;
+      e.preventDefault();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [gamePhase, pendingEvents.length]);
+
   useEffect(() => {
     if (gamePhase !== "live" || !gameId) {
       return;
@@ -1419,6 +1481,7 @@ export function App() {
     const payload = {
       ...buildAiContextFromSetup(appData.gameSetup),
       gameMoment: gameMoment || undefined,
+      preGameNotes: preGameNotes.trim() || undefined,
     };
     void fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/ai-context`, {
       method: "PUT",
@@ -1436,6 +1499,7 @@ export function App() {
     gameId,
     gamePhase,
     gameMoment,
+    preGameNotes,
   ]);
 
   useEffect(() => {
@@ -1469,6 +1533,8 @@ export function App() {
     saveSeq(gameId, next);
     // Optimistic update: add to pending immediately so score updates instantly
     setPendingEvents(cur => [...cur, event].sort((a, b) => a.sequence - b.sequence));
+    // Haptic confirmation on supported devices
+    try { navigator.vibrate?.(30); } catch { /* not supported */ }
     // Then submit in background
     await submitEvent(event);
   }
@@ -1539,7 +1605,10 @@ export function App() {
           opponentName: latestOpponent,
           opponentTeamId: latestOpponentTeamId,
           startingLineupByTeam,
-          aiContext: buildAiContextFromSetup(latest.gameSetup),
+          aiContext: {
+            ...buildAiContextFromSetup(latest.gameSetup),
+            preGameNotes: preGameNotes.trim() || undefined,
+          },
         }),
       });
 
@@ -1602,7 +1671,7 @@ export function App() {
     if (!ok) return;
 
     setSubmitStatus("idle");
-    setSubmitMessage("Review game details, then tap Re-save Stats only if you use a separate legacy export endpoint.");
+    setSubmitMessage("Review game details, then tap Submit Game to publish stats to the dashboard.");
     persistPhase("post-game");
   }
 
@@ -2234,9 +2303,23 @@ export function App() {
     });
     if (!ok) return;
 
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:4000";
+    // Delete from the realtime API
+    const apiUrl = appData.gameSetup.apiUrl?.trim();
+    if (apiUrl && gameId) {
+      try {
+        await fetch(`${apiUrl}/api/games/${encodeURIComponent(gameId)}`, {
+          method: "DELETE",
+          headers: apiKeyHeader(appData.gameSetup),
+        });
+      } catch {
+        // Keep discarding locally even if API cleanup fails.
+      }
+    }
+
+    // Also delete from legacy stats export if a stats game ID was assigned
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim();
     const savedStatsGameId = appData.gameSetup.statsGameId;
-    if (savedStatsGameId != null) {
+    if (dashboardUrl && savedStatsGameId != null) {
       try {
         await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
           method: "DELETE",
@@ -2263,9 +2346,30 @@ export function App() {
     persistPhase("pre-game");
   }
 
-  // Auto-save every 3 minutes - interval reads from ref so no deps needed
+  async function submitGameToRealtimeApi(): Promise<boolean> {
+    const apiUrl = appData.gameSetup.apiUrl?.trim();
+    if (!apiUrl || !gameId) return true; // Nothing to do without API config
+    try {
+      const res = await fetch(`${apiUrl}/api/games/${encodeURIComponent(gameId)}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+      });
+      if (!res.ok && res.status !== 404) {
+        // 404 is OK - game may have been discarded already
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Auto-save interval is disabled - games are only published to the stats
+  // dashboard when the operator explicitly taps "Submit Game" on the
+  // post-game screen.  The ref and ctx are kept so legacy export (if
+  // configured) can still be triggered manually.
   useEffect(() => {
-    const id = setInterval(() => autoSaveCtx.current.run(), 3 * 60 * 1000);
+    const id = setInterval(() => { /* auto-save disabled */ }, 3 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -3237,7 +3341,7 @@ export function App() {
   // ================================================================
   if (view === "settings") {
     if (settingsView === "ipad-tips") {
-      return <IpadTipsPage onBack={() => setSettingsView("menu")} />;
+      return <IpadTipsPage onBack={() => navigateView("settings", "menu")} />;
     }
 
     const safeSettingsView: SettingsView = operatorAllowedSettingsViews.has(settingsView)
@@ -3248,12 +3352,12 @@ export function App() {
       appData={appData}
       settingsView={safeSettingsView}
       onPersist={persistData}
-      onNav={(nextView) => setSettingsView(operatorAllowedSettingsViews.has(nextView) ? nextView : "menu")}
-      onBack={() => setView("game")}
+      onNav={(nextView) => navigateView("settings", operatorAllowedSettingsViews.has(nextView) ? nextView : "menu")}
+      onBack={() => navigateView("game")}
       onStartGame={async () => {
         const reset = await endAndResetGame();
         if (reset) {
-          setView("game");
+          navigateView("game");
         }
       }}
     />;
@@ -3492,6 +3596,18 @@ export function App() {
             </div>
           )}
 
+          <div className="pregame-meta-row pregame-meta-row-full">
+            <label className="pregame-meta-label" htmlFor="pregame-notes-input">Match Notes (visible to AI)</label>
+            <textarea
+              id="pregame-notes-input"
+              className="pregame-notes-input"
+              value={preGameNotes}
+              onChange={e => setPreGameNotes(e.target.value)}
+              placeholder="Opponent tendencies, team mindset, key matchups — shared with AI throughout the game"
+              rows={3}
+            />
+          </div>
+
           <button
             className="pregame-start-btn"
             disabled={!canStart}
@@ -3505,7 +3621,7 @@ export function App() {
           <div className="pregame-settings-callout">
             <button
               className="pregame-settings-link"
-              onClick={() => { setSettingsView("game-setup"); setView("settings"); }}>
+              onClick={() => navigateView("settings", "game-setup")}>
               Open Game Settings
             </button>
             <p className="pregame-settings-hint">Team/Opponent required. API and Dashboard URLs are critical for live sync and final save.</p>
@@ -3613,17 +3729,32 @@ export function App() {
 
           <button
             className="postgame-retry-btn"
-            onClick={() => {
+            onClick={async () => {
               const edits = applyPostGameEdits();
-              void submitToDashboard({
+              setSubmitStatus("pending");
+              setSubmitMessage("Submitting game to dashboard...");
+              const apiOk = await submitGameToRealtimeApi();
+              // Also run legacy export if configured
+              const legacyOk = await submitToDashboard({
                 opponent: edits.opponent,
                 date: edits.date,
                 homeScore: editedHomeScore,
                 awayScore: editedAwayScore,
               });
+              if (apiOk) {
+                setSubmitStatus("success");
+                setSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
+                setTimeout(() => {
+                  setSubmitStatus("idle");
+                  setSubmitMessage("Game has been submitted to the dashboard.");
+                }, 4000);
+              } else if (!legacyOk) {
+                setSubmitStatus("error");
+                setSubmitMessage("Submit failed. Check your connection and try again.");
+              }
             }}
             disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Saving..." : "Re-save Stats"}
+            {submitStatus === "pending" ? "Submitting..." : "Submit Game"}
           </button>
 
           <button
@@ -4361,7 +4492,7 @@ export function App() {
       </div>
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
-        <button className="live-nav-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">Menu Settings</button>
+        <button className="live-nav-btn" onClick={() => navigateView("settings")} title="Settings">Menu Settings</button>
         <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">Undo</button>
         <button
           className="live-nav-btn"

@@ -23,6 +23,7 @@ import {
   type RosterTeam,
   createGame,
   deleteGame,
+  submitGame,
   deleteEvent,
   getGameAiContext,
   getGameAiPromptPreview,
@@ -476,9 +477,12 @@ function buildRosterPlayer(input: Record<string, unknown>, teamId: string, exist
     name,
     position: sanitizeTextField(input.position ?? existingPlayer?.position, 24),
     height: sanitizeTextField(input.height ?? existingPlayer?.height, 32) || undefined,
+    weight: sanitizeTextField(input.weight ?? existingPlayer?.weight, 32) || undefined,
     grade: sanitizeTextField(input.grade ?? existingPlayer?.grade, 16) || undefined,
     role: sanitizeTextField(input.role ?? existingPlayer?.role, 80) || undefined,
-    notes: sanitizeTextField(input.notes ?? existingPlayer?.notes, 240) || undefined
+    notes: sanitizeTextField(input.notes ?? existingPlayer?.notes, 240) || undefined,
+    email: sanitizeTextField(input.email ?? existingPlayer?.email, 200) || undefined,
+    phone: sanitizeTextField(input.phone ?? existingPlayer?.phone, 30) || undefined,
   };
 }
 
@@ -2647,6 +2651,19 @@ app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => 
 
   emitToGameRooms(schoolId, gameId, "game:deleted", { gameId });
   res.json({ message: "Game deleted successfully", gameId });
+});
+
+app.post("/api/games/:gameId/submit", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const gameId = String(req.params.gameId);
+  const ok = submitGame(gameId, { schoolId });
+  if (!ok) {
+    res.status(404).json({ error: "Game not found" });
+    return;
+  }
+
+  emitToGameRooms(schoolId, gameId, "game:submitted", { gameId });
+  res.json({ message: "Game submitted successfully", gameId });
 });
 
 app.post("/api/reset", (req, res) => {

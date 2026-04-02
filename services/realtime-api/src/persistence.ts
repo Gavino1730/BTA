@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import type { GameEvent } from "@bta/shared-schema";
-import type { CoachAiSettings, GameAiContext, RosterTeam } from "./store.js";
+import type { CoachAiSettings, GameAiContext, LocalAuthAccount, OrganizationMember, OrganizationProfile, RosterTeam } from "./store.js";
 
 export interface PersistedGameSessionRecord {
   schoolId: string;
@@ -17,6 +17,12 @@ export interface PersistedGameSessionRecord {
   events: GameEvent[];
 }
 
+export interface OrgDataResult {
+  profiles: Record<string, OrganizationProfile>;
+  members: Record<string, OrganizationMember[]>;
+  localAuth: Record<string, LocalAuthAccount[]>;
+}
+
 export interface PersistenceProvider {
   readonly kind: "postgres";
   load(): Promise<unknown | null>;
@@ -27,6 +33,10 @@ export interface PersistenceProvider {
   replaceRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): Promise<void>;
   clearAllRosterTeams(): Promise<void>;
   pruneStaleGames(retentionDays: number): Promise<number>;
+  loadOrgData(): Promise<OrgDataResult>;
+  replaceOrgProfileForSchool(schoolId: string, profile: OrganizationProfile | null): Promise<void>;
+  replaceOrgMembersForSchool(schoolId: string, members: OrganizationMember[]): Promise<void>;
+  replaceLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuthAccount[]): Promise<void>;
   close?(): Promise<void>;
 }
 
@@ -76,6 +86,9 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
   const schoolsTableName = `${tableName}_schools`;
   const gamesTableName = `${tableName}_games`;
   const eventsTableName = `${tableName}_events`;
+  const orgProfilesTableName = `${tableName}_org_profiles`;
+  const orgMembersTableName = `${tableName}_org_members`;
+  const localAuthTableName = `${tableName}_local_auth`;
   const pool = new Pool({ connectionString: options.connectionString });
   let schemaReady = false;
 
@@ -123,6 +136,9 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS team_context TEXT`);
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS custom_prompt TEXT`);
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS focus_insights JSONB`);
+    await pool.query(`ALTER TABLE ${playersTableName} ADD COLUMN IF NOT EXISTS weight TEXT`);
+    await pool.query(`ALTER TABLE ${playersTableName} ADD COLUMN IF NOT EXISTS email TEXT`);
+    await pool.query(`ALTER TABLE ${playersTableName} ADD COLUMN IF NOT EXISTS phone TEXT`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ${playersTableName} (
@@ -133,9 +149,12 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         name TEXT NOT NULL,
         position TEXT NOT NULL,
         height TEXT,
+        weight TEXT,
         grade TEXT,
         role TEXT,
         notes TEXT,
+        email TEXT,
+        phone TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (school_id, id),
@@ -205,14 +224,75 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       $$;
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${orgProfilesTableName} (
+        school_id TEXT PRIMARY KEY REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        organization_name TEXT NOT NULL DEFAULT '',
+        organization_slug TEXT,
+        coach_name TEXT NOT NULL DEFAULT '',
+        coach_email TEXT NOT NULL DEFAULT '',
+        team_name TEXT,
+        season TEXT,
+        completed_at_iso TEXT,
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${orgMembersTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        member_id TEXT NOT NULL,
+        organization_id TEXT NOT NULL DEFAULT '',
+        auth_subject TEXT,
+        full_name TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'coach',
+        status TEXT NOT NULL DEFAULT 'invited',
+        invited_at_iso TEXT,
+        joined_at_iso TEXT,
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, member_id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${localAuthTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        account_id TEXT NOT NULL,
+        organization_id TEXT,
+        email TEXT NOT NULL,
+        full_name TEXT NOT NULL DEFAULT '',
+        password_hash TEXT NOT NULL DEFAULT '',
+        password_salt TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT 'owner',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        last_login_at_iso TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, account_id),
+        UNIQUE (school_id, email)
+      )
+    `);
+
     await pool.query(`ALTER TABLE ${teamsTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${playersTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${gamesTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${eventsTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${orgProfilesTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${orgMembersTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${localAuthTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${teamsTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${playersTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${gamesTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${eventsTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${orgProfilesTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${orgMembersTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${localAuthTableName} FORCE ROW LEVEL SECURITY`);
 
     await pool.query(`
       DO $$
@@ -267,6 +347,51 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${eventsTableName}' AND policyname = '${eventsTableName}_school_policy'
         ) THEN
           CREATE POLICY ${eventsTableName}_school_policy ON ${eventsTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${orgProfilesTableName}' AND policyname = '${orgProfilesTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${orgProfilesTableName}_school_policy ON ${orgProfilesTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${orgMembersTableName}' AND policyname = '${orgMembersTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${orgMembersTableName}_school_policy ON ${orgMembersTableName}
+            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
+            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${localAuthTableName}' AND policyname = '${localAuthTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${localAuthTableName}_school_policy ON ${localAuthTableName}
             USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
             WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
         END IF;
@@ -483,9 +608,12 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         player_name: string | null;
         player_position: string | null;
         player_height: string | null;
+        player_weight: string | null;
         player_grade: string | null;
         player_role: string | null;
         player_notes: string | null;
+        player_email: string | null;
+        player_phone: string | null;
       }>(
         `
           SELECT
@@ -505,9 +633,12 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
             p.name AS player_name,
             p.position AS player_position,
             p.height AS player_height,
+            p.weight AS player_weight,
             p.grade AS player_grade,
             p.role AS player_role,
-            p.notes AS player_notes
+            p.notes AS player_notes,
+            p.email AS player_email,
+            p.phone AS player_phone
           FROM ${teamsTableName} t
           LEFT JOIN ${playersTableName} p
             ON p.school_id = t.school_id
@@ -552,9 +683,12 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
             name: row.player_name,
             position: row.player_position,
             height: row.player_height ?? undefined,
+            weight: row.player_weight ?? undefined,
             grade: row.player_grade ?? undefined,
             role: row.player_role ?? undefined,
-            notes: row.player_notes ?? undefined
+            notes: row.player_notes ?? undefined,
+            email: row.player_email ?? undefined,
+            phone: row.player_phone ?? undefined,
           });
         }
       }
@@ -599,9 +733,9 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
             await client.query(
               `
                 INSERT INTO ${playersTableName} (
-                  school_id, team_id, id, number, name, position, height, grade, role, notes, updated_at
+                  school_id, team_id, id, number, name, position, height, weight, grade, role, notes, email, phone, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
               `,
               [
                 normalizedSchoolId,
@@ -611,9 +745,12 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
                 player.name,
                 player.position,
                 player.height ?? null,
+                player.weight ?? null,
                 player.grade ?? null,
                 player.role ?? null,
-                player.notes ?? null
+                player.notes ?? null,
+                player.email ?? null,
+                player.phone ?? null,
               ]
             );
           }
@@ -661,6 +798,235 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       );
 
       return Number(result.rows[0]?.game_count ?? "0");
+    },
+    async loadOrgData(): Promise<OrgDataResult> {
+      await ensureSchema();
+      await setTenantContext(pool, "*");
+
+      const [profileRows, memberRows, authRows] = await Promise.all([
+        pool.query<{
+          school_id: string;
+          organization_name: string;
+          organization_slug: string | null;
+          coach_name: string;
+          coach_email: string;
+          team_name: string | null;
+          season: string | null;
+          completed_at_iso: string | null;
+          created_at_iso: string;
+          updated_at_iso: string;
+        }>(`SELECT * FROM ${orgProfilesTableName} ORDER BY school_id`),
+        pool.query<{
+          school_id: string;
+          member_id: string;
+          organization_id: string;
+          auth_subject: string | null;
+          full_name: string;
+          email: string;
+          role: string;
+          status: string;
+          invited_at_iso: string | null;
+          joined_at_iso: string | null;
+          created_at_iso: string;
+          updated_at_iso: string;
+        }>(`SELECT * FROM ${orgMembersTableName} ORDER BY school_id, email`),
+        pool.query<{
+          school_id: string;
+          account_id: string;
+          organization_id: string | null;
+          email: string;
+          full_name: string;
+          password_hash: string;
+          password_salt: string;
+          role: string;
+          status: string;
+          created_at_iso: string;
+          updated_at_iso: string;
+          last_login_at_iso: string | null;
+        }>(`SELECT * FROM ${localAuthTableName} ORDER BY school_id, email`)
+      ]);
+
+      const profiles: Record<string, OrganizationProfile> = {};
+      for (const row of profileRows.rows) {
+        profiles[row.school_id] = {
+          organizationName: row.organization_name,
+          organizationSlug: row.organization_slug ?? undefined,
+          coachName: row.coach_name,
+          coachEmail: row.coach_email,
+          teamName: row.team_name ?? undefined,
+          season: row.season ?? undefined,
+          completedAtIso: row.completed_at_iso ?? undefined,
+          createdAtIso: row.created_at_iso,
+          updatedAtIso: row.updated_at_iso,
+        };
+      }
+
+      const members: Record<string, OrganizationMember[]> = {};
+      for (const row of memberRows.rows) {
+        if (!members[row.school_id]) {
+          members[row.school_id] = [];
+        }
+        members[row.school_id].push({
+          schoolId: row.school_id,
+          memberId: row.member_id,
+          organizationId: row.organization_id,
+          authSubject: row.auth_subject ?? undefined,
+          fullName: row.full_name,
+          email: row.email,
+          role: row.role as OrganizationMember["role"],
+          status: row.status as OrganizationMember["status"],
+          invitedAtIso: row.invited_at_iso ?? undefined,
+          joinedAtIso: row.joined_at_iso ?? undefined,
+          createdAtIso: row.created_at_iso,
+          updatedAtIso: row.updated_at_iso,
+        });
+      }
+
+      const localAuth: Record<string, LocalAuthAccount[]> = {};
+      for (const row of authRows.rows) {
+        if (!localAuth[row.school_id]) {
+          localAuth[row.school_id] = [];
+        }
+        localAuth[row.school_id].push({
+          schoolId: row.school_id,
+          accountId: row.account_id,
+          organizationId: row.organization_id ?? undefined,
+          email: row.email,
+          fullName: row.full_name,
+          passwordHash: row.password_hash,
+          passwordSalt: row.password_salt,
+          role: row.role as LocalAuthAccount["role"],
+          status: row.status as LocalAuthAccount["status"],
+          createdAtIso: row.created_at_iso,
+          updatedAtIso: row.updated_at_iso,
+          lastLoginAtIso: row.last_login_at_iso ?? undefined,
+        });
+      }
+
+      return { profiles, members, localAuth };
+    },
+    async replaceOrgProfileForSchool(schoolId: string, profile: OrganizationProfile | null): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      await setTenantContext(pool, normalizedSchoolId);
+      if (!profile) {
+        await pool.query(`DELETE FROM ${orgProfilesTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        return;
+      }
+      await ensureSchool(pool, normalizedSchoolId);
+      await pool.query(
+        `
+          INSERT INTO ${orgProfilesTableName} (
+            school_id, organization_name, organization_slug, coach_name, coach_email,
+            team_name, season, completed_at_iso, created_at_iso, updated_at_iso, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          ON CONFLICT (school_id) DO UPDATE SET
+            organization_name = EXCLUDED.organization_name,
+            organization_slug = EXCLUDED.organization_slug,
+            coach_name = EXCLUDED.coach_name,
+            coach_email = EXCLUDED.coach_email,
+            team_name = EXCLUDED.team_name,
+            season = EXCLUDED.season,
+            completed_at_iso = EXCLUDED.completed_at_iso,
+            updated_at_iso = EXCLUDED.updated_at_iso,
+            updated_at = NOW()
+        `,
+        [
+          normalizedSchoolId,
+          profile.organizationName,
+          profile.organizationSlug ?? null,
+          profile.coachName,
+          profile.coachEmail,
+          profile.teamName ?? null,
+          profile.season ?? null,
+          profile.completedAtIso ?? null,
+          profile.createdAtIso,
+          profile.updatedAtIso,
+        ]
+      );
+    },
+    async replaceOrgMembersForSchool(schoolId: string, members: OrganizationMember[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${orgMembersTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const member of members) {
+          await client.query(
+            `
+              INSERT INTO ${orgMembersTableName} (
+                school_id, member_id, organization_id, auth_subject, full_name, email,
+                role, status, invited_at_iso, joined_at_iso, created_at_iso, updated_at_iso, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+            `,
+            [
+              normalizedSchoolId,
+              member.memberId,
+              member.organizationId,
+              member.authSubject ?? null,
+              member.fullName,
+              member.email,
+              member.role,
+              member.status,
+              member.invitedAtIso ?? null,
+              member.joinedAtIso ?? null,
+              member.createdAtIso,
+              member.updatedAtIso,
+            ]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async replaceLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuthAccount[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${localAuthTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const account of accounts) {
+          await client.query(
+            `
+              INSERT INTO ${localAuthTableName} (
+                school_id, account_id, organization_id, email, full_name,
+                password_hash, password_salt, role, status,
+                created_at_iso, updated_at_iso, last_login_at_iso, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+            `,
+            [
+              normalizedSchoolId,
+              account.accountId,
+              account.organizationId ?? null,
+              account.email,
+              account.fullName,
+              account.passwordHash,
+              account.passwordSalt,
+              account.role,
+              account.status,
+              account.createdAtIso,
+              account.updatedAtIso,
+              account.lastLoginAtIso ?? null,
+            ]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
     },
     async close(): Promise<void> {
       await pool.end();

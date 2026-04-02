@@ -197,9 +197,12 @@ export interface RosterPlayer {
   name: string;
   position: string;
   height?: string;
+  weight?: string;        // e.g. "185 lbs"
   grade?: string;
   role?: string;
   notes?: string;
+  email?: string;         // player email for login
+  phone?: string;         // player phone number
 }
 
 export interface RosterTeam {

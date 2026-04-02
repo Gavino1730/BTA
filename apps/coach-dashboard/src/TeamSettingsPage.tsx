@@ -48,17 +48,19 @@ interface OnboardingAccountResponse {
 }
 
 // UI-facing roles (admin = owner, operator = analyst on the API side)
-type AppMemberRole = "admin" | "coach" | "operator";
+type AppMemberRole = "admin" | "coach" | "operator" | "player";
 
 function roleFromApi(apiRole: string): AppMemberRole {
   if (apiRole === "owner") return "admin";
   if (apiRole === "analyst") return "operator";
+  if (apiRole === "player") return "player";
   return "coach";
 }
 
 function roleToApi(appRole: AppMemberRole): string {
   if (appRole === "admin") return "owner";
   if (appRole === "operator") return "analyst";
+  if (appRole === "player") return "player";
   return "coach";
 }
 
@@ -80,8 +82,12 @@ interface RosterPlayerDto {
   number?: string | number;
   position?: string;
   grade?: string;
+  height?: string;
+  weight?: string;
   role?: string;
   notes?: string;
+  email?: string;
+  phone?: string;
 }
 
 interface RosterEditRow {
@@ -90,8 +96,12 @@ interface RosterEditRow {
   number: string;
   position: string;
   grade: string;
+  height: string;
+  weight: string;
   role: string;
   notes: string;
+  email: string;
+  phone: string;
   isNew?: boolean;
   showExpanded?: boolean;
 }
@@ -157,8 +167,13 @@ export function TeamSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
-  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; role: string; notes: string }>({ name: "", number: "", position: "", grade: "", role: "", notes: "" });
-  const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">("pairing");
+  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
+  const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
+    const saved = localStorage.getItem("coach:settings-section");
+    if (saved === "pairing" || saved === "roster" || saved === "profile" || saved === "ai" || saved === "members") return saved;
+    return "pairing";
+  });
+  const [copyConfirmed, setCopyConfirmed] = useState(false);
   const [playingStyle, setPlayingStyle] = useState("");
   const [teamContext, setTeamContext] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -230,8 +245,12 @@ export function TeamSettingsPage() {
                     number: String(p.number ?? ""),
                     position: p.position ?? "",
                     grade: p.grade ?? "",
+                    height: p.height ?? "",
+                    weight: p.weight ?? "",
                     role: p.role ?? "",
                     notes: p.notes ?? "",
+                    email: p.email ?? "",
+                    phone: p.phone ?? "",
                   }))
                 : []
             );
@@ -475,8 +494,12 @@ export function TeamSettingsPage() {
           number: newPlayer.number.trim() || undefined,
           position: newPlayer.position.trim() || undefined,
           grade: newPlayer.grade.trim() || undefined,
+          height: newPlayer.height.trim() || undefined,
+          weight: newPlayer.weight.trim() || undefined,
           role: newPlayer.role.trim() || undefined,
           notes: newPlayer.notes.trim() || undefined,
+          email: newPlayer.email.trim() || undefined,
+          phone: newPlayer.phone.trim() || undefined,
         }),
       });
 
@@ -486,9 +509,9 @@ export function TeamSettingsPage() {
 
       setRoster((current) => [
         ...current,
-        { key: `new-${Date.now()}`, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim() },
+        { key: `new-${Date.now()}`, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim() },
       ]);
-      setNewPlayer({ name: "", number: "", position: "", grade: "", role: "", notes: "" });
+      setNewPlayer({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
       setStatus(`${name} added to roster.`);
     } catch {
       setStatus("Could not add player.");
@@ -512,8 +535,12 @@ export function TeamSettingsPage() {
           number: row.number.trim() || undefined,
           position: row.position.trim() || undefined,
           grade: row.grade.trim() || undefined,
+          height: row.height?.trim() || undefined,
+          weight: row.weight?.trim() || undefined,
           role: row.role?.trim() || undefined,
           notes: row.notes?.trim() || undefined,
+          email: row.email?.trim() || undefined,
+          phone: row.phone?.trim() || undefined,
         }),
       });
 
@@ -583,7 +610,7 @@ export function TeamSettingsPage() {
             key={section.key}
             type="button"
             className={`settings-tab-btn${activeSection === section.key ? " settings-tab-btn-active" : ""}`}
-            onClick={() => setActiveSection(section.key)}
+            onClick={() => { setActiveSection(section.key); localStorage.setItem("coach:settings-section", section.key); }}
           >
             {section.label}
           </button>
@@ -599,8 +626,13 @@ export function TeamSettingsPage() {
               <p className="settings-section-desc">Link the score operator iPad to this dashboard using the 6-digit code below.</p>
             </div>
             <div className="settings-header-actions">
-              <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionCode)}>
-                Copy Code
+              <button type="button" className="shell-nav-link" onClick={() => {
+                void navigator.clipboard?.writeText(connectionCode).then(() => {
+                  setCopyConfirmed(true);
+                  setTimeout(() => setCopyConfirmed(false), 2000);
+                });
+              }}>
+                {copyConfirmed ? "Copied!" : "Copy Code"}
               </button>
               <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionCode(generateConnectionCode())}>
                 New Code
@@ -676,6 +708,44 @@ export function TeamSettingsPage() {
                   {row.showExpanded && (
                     <div className="settings-roster-row-expanded">
                       <label className="stats-filter-field">
+                        <span>Height</span>
+                        <input
+                          className="settings-roster-input"
+                          value={row.height ?? ""}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, height: e.target.value } : r))}
+                          placeholder='e.g. 6&apos;2"'
+                        />
+                      </label>
+                      <label className="stats-filter-field">
+                        <span>Weight</span>
+                        <input
+                          className="settings-roster-input"
+                          value={row.weight ?? ""}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, weight: e.target.value } : r))}
+                          placeholder="e.g. 185 lbs"
+                        />
+                      </label>
+                      <label className="stats-filter-field">
+                        <span>Email</span>
+                        <input
+                          className="settings-roster-input"
+                          type="email"
+                          value={row.email ?? ""}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, email: e.target.value } : r))}
+                          placeholder="player@school.edu"
+                        />
+                      </label>
+                      <label className="stats-filter-field">
+                        <span>Phone</span>
+                        <input
+                          className="settings-roster-input"
+                          type="tel"
+                          value={row.phone ?? ""}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, phone: e.target.value } : r))}
+                          placeholder="503-555-0100"
+                        />
+                      </label>
+                      <label className="stats-filter-field">
                         <span>Role / Description <span className="settings-hint">(used by AI — e.g. "Primary ball handler, shoots 3s")</span></span>
                         <input
                           className="settings-roster-input"
@@ -719,6 +789,22 @@ export function TeamSettingsPage() {
               <label className="stats-filter-field">
                 <span>Grade</span>
                 <input value={newPlayer.grade} onChange={(e) => setNewPlayer((cur) => ({ ...cur, grade: e.target.value }))} placeholder="11" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Height</span>
+                <input value={newPlayer.height} onChange={(e) => setNewPlayer((cur) => ({ ...cur, height: e.target.value }))} placeholder='6&apos;2"' />
+              </label>
+              <label className="stats-filter-field">
+                <span>Weight</span>
+                <input value={newPlayer.weight} onChange={(e) => setNewPlayer((cur) => ({ ...cur, weight: e.target.value }))} placeholder="185 lbs" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Email</span>
+                <input type="email" value={newPlayer.email} onChange={(e) => setNewPlayer((cur) => ({ ...cur, email: e.target.value }))} placeholder="player@school.edu" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Phone</span>
+                <input type="tel" value={newPlayer.phone} onChange={(e) => setNewPlayer((cur) => ({ ...cur, phone: e.target.value }))} placeholder="503-555-0100" />
               </label>
               <label className="stats-filter-field">
                 <span>Role / Description</span>
@@ -902,6 +988,7 @@ export function TeamSettingsPage() {
                       <option value="admin">Admin</option>
                       <option value="coach">Coach</option>
                       <option value="operator">Operator</option>
+                      <option value="player">Player</option>
                     </select>
                     <span className={`settings-status-badge settings-status-${member.status}`}>{member.status}</span>
                     {currentMember?.role === "admin" && (
@@ -937,6 +1024,7 @@ export function TeamSettingsPage() {
                   <option value="admin">Admin</option>
                   <option value="coach">Coach</option>
                   <option value="operator">Operator</option>
+                  <option value="player">Player</option>
                 </select>
               </label>
             </div>

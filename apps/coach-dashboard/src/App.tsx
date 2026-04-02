@@ -447,7 +447,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
-  const [activePage, setActivePage] = useState<"live" | "ai">("live");
+  const [activePage, setActivePage] = useState<"live" | "ai">(() => (sessionStorage.getItem("coach:live-tab") as "live" | "ai" | null) ?? "live");
   const [aiSettings, setAiSettings] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
   const [aiSettingsStatus, setAiSettingsStatus] = useState("No saved settings for this game yet.");
@@ -1118,7 +1118,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       setAiChatSuggestions(payload.suggestions);
       setAiChatStatus(payload.usedHistoricalContext
         ? "Answered with live game state plus historical team and player context."
-        : "Answered with current live game context.");
+        : "Answered with live game context only — season stats unavailable.");
     } catch {
       setAiChatStatus("AI chat request failed. Realtime API may be unavailable.");
     } finally {
@@ -2031,8 +2031,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       {showTutorial && <TutorialOverlay onDismiss={() => onDismissTutorial?.()} />}
       <div className="page">
         <div className="live-subnav">
-          <button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Scoreboard</button>
-          <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
+          <button className={activePage === "live" ? "nav-active" : ""} onClick={() => { setActivePage("live"); sessionStorage.setItem("coach:live-tab", "live"); }}>Scoreboard</button>
+          <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => { setActivePage("ai"); sessionStorage.setItem("coach:live-tab", "ai"); }}>AI Insights</button>
         </div>
       {!gameId && (
         <div className="idle-screen">
@@ -2042,6 +2042,24 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             {serverConnected ? "Waiting for the operator to start a game..." : "Not connected to server"}
           </p>
         </div>
+      )}
+      {!gameId && activePage === "live" && (
+        <section className="card settings-section-card">
+          <div className="stats-page-card-head">
+            <div>
+              <h3>Live Pairing</h3>
+              <p className="settings-section-desc">Link the score operator iPad to this dashboard using the 6-digit code below.</p>
+            </div>
+            <div className="settings-header-actions">
+              <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionId)}>Copy Code</button>
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionId(generateConnectionId())}>New Code</button>
+            </div>
+          </div>
+          <div className="settings-pairing-display">
+            <span className="settings-pairing-code">{connectionId}</span>
+            <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
+          </div>
+        </section>
       )}
       {gameId && activePage === "live" && <>
       <section className="card">
@@ -2730,8 +2748,15 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           <section className="card ai-signal-card-wrap">
             <h2>Historical Context</h2>
             <p className="text-muted">{promptPreviewStatus}</p>
+            {historicalPromptContext && historicalPromptContext.toLowerCase().includes("unavailable") && (
+              <p className="text-muted" style={{ color: "var(--color-warning, #d97706)", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
+                ⚠ Season stats unavailable — AI insights rely on live game data only.
+              </p>
+            )}
             <div className="ai-history-context">
-              {historicalPromptContext || "Historical team and player context will appear here after the AI context refreshes."}
+              {historicalPromptContext && !historicalPromptContext.toLowerCase().includes("unavailable")
+                ? historicalPromptContext
+                : "Historical team and player context will appear here after the AI context refreshes."}
             </div>
           </section>
         </div>
