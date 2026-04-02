@@ -2525,14 +2525,6 @@ body {
   margin: 0.2rem 0 0;
 }
 
-.settings-section-label {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  margin: 0;
-}
-
 /* AI Context two-column textarea grid */
 .settings-ai-grid {
   display: grid;
@@ -3335,6 +3327,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   top: 0;
   z-index: 100;
   padding: 0.65rem 0;
+  padding-top: calc(0.65rem + env(safe-area-inset-top));
   background: linear-gradient(180deg, rgba(10,22,48,0.98), rgba(12,31,66,0.94));
   border-bottom: 1px solid rgba(79,140,255,0.22);
   box-shadow: 0 12px 30px rgba(5,10,25,0.35);
@@ -3522,6 +3515,86 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
   .coach-nav-email-pill {
     max-width: 100%;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* iPad: 2-row header — logo+actions on row 1, scrollable nav links on row 2 */
+  .coach-nav-container {
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 0 max(1rem, env(safe-area-inset-left));
+    align-items: center;
+  }
+
+  .coach-nav-logo {
+    order: 1;
+    flex: 0 0 auto;
+  }
+
+  .coach-nav-actions {
+    order: 2;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    margin-left: 0;
+    padding: 0.2rem 0;
+    gap: 0.35rem;
+    overflow: hidden;
+  }
+
+  /* Horizontally scrollable nav pill row */
+  .coach-nav-links {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0.45rem 0 0.5rem;
+    gap: 0.25rem;
+    border-top: 1px solid rgba(79,140,255,0.12);
+    margin-top: 0.3rem;
+    justify-content: flex-start;
+  }
+
+  .coach-nav-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .coach-nav-links button {
+    min-height: 44px;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    padding: 0.5rem 1rem;
+  }
+
+  /* Hide email to save row-1 space on tablet */
+  .coach-nav-email-pill {
+    display: none;
+  }
+
+  .coach-nav-ext-link,
+  .coach-nav-help-button {
+    min-height: 40px;
+    font-size: 0.8rem;
+    padding: 0.4rem 0.7rem;
+    flex-shrink: 0;
+  }
+
+  .coach-nav-help-button {
+    width: 40px;
+    padding: 0;
+  }
+
+  .coach-nav-actions .connection-pill {
+    min-height: 36px;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .coach-nav-actions .connection-pill-input {
+    width: min(9rem, 28vw);
   }
 }
 

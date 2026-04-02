@@ -4442,3 +4442,116 @@ html, body {
   }
 }
 
+/* ================================================================
+   POSSESSION CHAIN PROMPT
+   Contextual sticky strip that appears after key events (shot, TO, etc.)
+   to suggest the next logical action — eliminates the need to hunt for buttons.
+   ================================================================ */
+
+.chain-prompt {
+  position: fixed;
+  bottom: 3.6rem; /* just above the live-bottom-nav */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem 0.6rem 1.1rem;
+  background: rgba(28, 27, 60, 0.97);
+  border: 1px solid rgba(120, 120, 200, 0.35);
+  border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.55);
+  max-width: min(96vw, 580px);
+  width: max-content;
+  backdrop-filter: blur(6px);
+  animation: chain-slide-up 0.18s ease-out;
+}
+
+@keyframes chain-slide-up {
+  from { opacity: 0; transform: translateX(-50%) translateY(14px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);    }
+}
+
+.chain-prompt-label {
+  font-size: 0.82rem;
+  color: rgba(232, 234, 240, 0.75);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chain-prompt-made {
+  font-weight: 700;
+  color: #22c55e;
+}
+
+.chain-prompt-actions {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.chain-btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(120, 120, 200, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, box-shadow 0.12s;
+  min-width: 56px;
+  text-align: center;
+}
+
+.chain-btn:active {
+  background: rgba(255,255,255,0.14);
+}
+
+.chain-btn-primary {
+  /* color and border-color set inline per team */
+  background: transparent;
+}
+
+.chain-btn-primary:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.chain-btn-secondary {
+  /* color and border-color set inline per team */
+  background: transparent;
+}
+
+.chain-btn-secondary:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.chain-btn-skip {
+  color: rgba(232, 234, 240, 0.45);
+  border-color: rgba(120, 120, 200, 0.2);
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.chain-btn-skip:hover {
+  color: rgba(232, 234, 240, 0.7);
+  background: rgba(255,255,255,0.05);
+}
+
+@media (max-width: 480px) {
+  .chain-prompt {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    width: calc(100vw - 1.5rem);
+    bottom: 3.4rem;
+  }
+  .chain-prompt-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
