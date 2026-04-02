@@ -316,6 +316,7 @@ function extractHistoricalContextFromPrompt(prompt: string): string {
 // Roster Builder
 // Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
+const ACTIVE_GAME_KEY = "coach-active-game-id";
 
 
 export interface RosterPlayer {
@@ -448,8 +449,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   }, [connectionId]);
   const [gameId, setGameId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("gameId") ?? "";
+    try {
+      return params.get("gameId") ?? localStorage.getItem(ACTIVE_GAME_KEY) ?? "";
+    } catch {
+      return params.get("gameId") ?? "";
+    }
   });
+  const gameIdRef = useRef(gameId);
 
   const [newGameOpponent, setNewGameOpponent] = useState("");
   const [newGameMyTeamId, setNewGameMyTeamId] = useState("");
@@ -500,6 +506,19 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   useEffect(() => {
     onConnectionChange?.({ deviceConnected, serverConnected, connectionId, operatorConsoleUrl });
   }, [deviceConnected, serverConnected, connectionId, operatorConsoleUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    gameIdRef.current = gameId;
+    try {
+      if (gameId) {
+        localStorage.setItem(ACTIVE_GAME_KEY, gameId);
+      } else {
+        localStorage.removeItem(ACTIVE_GAME_KEY);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, [gameId]);
 
   useEffect(() => {
     try {
@@ -779,7 +798,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     // quickly if the operator console reconnects after a temporary network interruption.
     let pollInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
       if (socket.connected) {
-        socket.emit("join:coach", { connectionId });
+        socket.emit("join:coach", { connectionId, gameId: gameIdRef.current });
       }
     }, 5000);
 
@@ -792,17 +811,22 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
 
     socket.on("connect", () => {
       setServerConnected(true);
-      socket.emit("join:coach", { connectionId });
+      const recoveredGameId = gameIdRef.current;
+      socket.emit("join:coach", { connectionId, gameId: recoveredGameId });
+      if (recoveredGameId) {
+        socket.emit("join:game", recoveredGameId);
+      }
     });
 
     socket.on("disconnect", () => {
       setServerConnected(false);
       setDeviceConnected(false);
       setState(null);
-      setGameId("");
+      // Do not clear gameId — it is persisted to localStorage so the active
+      // game can be recovered when the socket or page reconnects.
     });
 
-    socket.emit("join:coach", { connectionId });
+    socket.emit("join:coach", { connectionId, gameId: gameIdRef.current });
 
     function handlePresence(status: PresenceStatus) {
       if (!status) {

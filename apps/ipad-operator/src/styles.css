@@ -41,6 +41,7 @@ html, body {
   display: grid;
   grid-template-columns: 1fr 1.35fr 1fr;
   height: 100dvh;
+  padding-top: calc(env(safe-area-inset-top) + 0.5rem);
   padding-bottom: calc(var(--live-bottom-nav-h) + env(safe-area-inset-bottom));
 }
 

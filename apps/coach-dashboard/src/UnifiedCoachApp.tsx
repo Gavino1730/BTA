@@ -124,6 +124,20 @@ export function UnifiedCoachApp() {
   }, [isAuthenticated, requiresSetup, route]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    if (route !== "marketing" && route !== "login") {
+      return;
+    }
+
+    const targetPath = requiresSetup ? "/setup" : "/live";
+    window.history.replaceState({}, "", targetPath);
+    setRoute(resolveCoachRoute(targetPath));
+  }, [isAuthenticated, requiresSetup, route]);
+
+  useEffect(() => {
     function handlePopState() {
       const canonicalPath = canonicalizeCoachPath(window.location.pathname);
       if (canonicalPath !== window.location.pathname) {
@@ -212,7 +226,6 @@ export function UnifiedCoachApp() {
 
   const isLive = route === "live";
   const operatorConsoleUrl = connectionInfo.operatorConsoleUrl || buildOperatorConsoleUrl(connectionInfo.connectionId);
-  const currentAuthSession = readStoredAuthSession();
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
     return (
@@ -248,11 +261,6 @@ export function UnifiedCoachApp() {
             <a href={operatorConsoleUrl} className="coach-nav-ext-link">
               Score Operator
             </a>
-            {currentAuthSession?.email && (
-              <span className="coach-nav-ext-link coach-nav-email-pill" title={currentAuthSession.email}>
-                {currentAuthSession.email}
-              </span>
-            )}
             <button
               type="button"
               className="coach-nav-ext-link"
