@@ -3475,12 +3475,19 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !socket.data.authContext) {
+    const socketApiKey = typeof socket.handshake.auth?.apiKey === "string"
+      ? socket.handshake.auth.apiKey
+      : typeof socket.handshake.headers["x-api-key"] === "string"
+        ? socket.handshake.headers["x-api-key"]
+        : undefined;
+    const hasValidKey = Boolean(API_KEY && socketApiKey === API_KEY);
+
+    if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !socket.data.authContext && !hasValidKey) {
       socket.emit("error", { error: "operator registration requires bearer auth" });
       return;
     }
 
-    if (isJwtAuthEnabled()) {
+    if (isJwtAuthEnabled() && !hasValidKey) {
       const role = socket.data.authContext?.role?.trim().toLowerCase();
       if (!hasWriteRole(role)) {
         socket.emit("error", { error: "insufficient role for operator registration" });
