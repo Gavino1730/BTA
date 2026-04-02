@@ -83,7 +83,9 @@ const TEAM_COLOR_OPTIONS = [
   "#14b8a6",
 ] as const;
 
-/** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
+/** Returns auth headers when a key is configured.
+ *  - Local auth tokens (bta.*) are sent as `Authorization: Bearer`.
+ *  - Plain API keys are sent as `x-api-key`. */
 function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<string, string> {
   const headers: Record<string, string> = {};
   const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
@@ -91,7 +93,11 @@ function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<str
     headers["x-school-id"] = schoolId;
   }
   if (setup.apiKey) {
-    headers["x-api-key"] = setup.apiKey;
+    if (setup.apiKey.startsWith("bta.")) {
+      headers["Authorization"] = `Bearer ${setup.apiKey}`;
+    } else {
+      headers["x-api-key"] = setup.apiKey;
+    }
   }
   return headers;
 }
@@ -1256,10 +1262,16 @@ export function App() {
       ? { [trackedTeamId]: startingLineup }
       : undefined;
     const payload = { connectionId, gameId, startingLineupByTeam };
+    const socketAuth: Record<string, string> = { schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID };
+    if (appData.gameSetup.apiKey) {
+      if (appData.gameSetup.apiKey.startsWith("bta.")) {
+        socketAuth.token = appData.gameSetup.apiKey;
+      } else {
+        socketAuth.apiKey = appData.gameSetup.apiKey;
+      }
+    }
     const socket = io(appData.gameSetup.apiUrl, {
-      auth: appData.gameSetup.apiKey
-        ? { apiKey: appData.gameSetup.apiKey, schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID }
-        : { schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID },
+      auth: socketAuth,
       extraHeaders: apiKeyHeader(appData.gameSetup)
     });
 
@@ -4729,7 +4741,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
 
         <section className="settings-section">
           <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret. Leave blank during local development.</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>API key or login token from the coach dashboard. Leave blank during local development.</p>
           <input
             type="password"
             placeholder="Leave blank to disable auth"

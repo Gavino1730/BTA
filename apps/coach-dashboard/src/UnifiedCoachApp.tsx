@@ -71,17 +71,26 @@ export function UnifiedCoachApp() {
 
         const sessionPayload = sessionResponse.ok
           ? await sessionResponse.json() as { authenticated?: boolean }
-          : { authenticated: false };
+          : null;
         const onboardingPayload = onboardingResponse.ok
           ? await onboardingResponse.json() as { completed?: boolean }
           : { completed: false };
 
-        if (!sessionPayload.authenticated) {
+        // Only clear the stored session when the server explicitly confirms the
+        // token is invalid (200 OK + authenticated: false).  Non-OK responses
+        // (server errors, network not yet ready after iPad wakeup) should keep
+        // the stored session so the user isn't forced to log in again.
+        if (sessionPayload !== null && !sessionPayload.authenticated) {
           clearAuthSession();
         }
 
         if (!cancelled) {
-          const authenticated = Boolean(sessionPayload.authenticated);
+          // If the server returned a non-OK response (sessionPayload is null),
+          // fall back to the stored session token so the user stays logged in.
+          const storedSession = sessionPayload === null ? readStoredAuthSession() : null;
+          const authenticated = sessionPayload !== null
+            ? Boolean(sessionPayload.authenticated)
+            : Boolean(storedSession?.token);
           setIsAuthenticated(authenticated);
           setRequiresSetup(!authenticated || !Boolean(onboardingPayload.completed));
         }
