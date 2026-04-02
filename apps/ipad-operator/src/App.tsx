@@ -1579,23 +1579,24 @@ export function App() {
     const last = !lastSubmitted ? lastPending
       : !lastPending ? lastSubmitted
       : lastPending.sequence > lastSubmitted.sequence ? lastPending : lastSubmitted;
-    if (!last) return;
+    if (!last) {
+      showInlineNotice("Nothing to undo.", "info", 2000);
+      return;
+    }
 
-    const ok = await requestConfirm({
-      title: "Undo last event?",
-      message: "This removes the most recent event from the game log.",
-      confirmLabel: "Undo Event",
-      tone: "danger",
-    });
-    if (!ok) return;
-
-    // Remove from pending queue first
+    // Remove from pending queue immediately — no confirmation needed
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     // If it is already submitted to the API, delete it there
     if (submittedEvents.some(e => e.id === last.id)) {
       const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
-      if (res.ok) setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
+      if (res.ok) {
+        setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
+      } else {
+        showInlineNotice("Could not remove event from server. It may sync on reconnect.", "warning", 4000);
+      }
     }
+    try { navigator.vibrate?.(20); } catch { /* not supported */ }
+    showInlineNotice("Last event undone.", "success", 2500);
   }
 
   async function startGame(newGameId?: string) {
@@ -4274,9 +4275,6 @@ export function App() {
       <div className="panel left-panel">
         <div className="shot-grid">
           {(() => {
-            // Always render user's team on the left, opponent on the right
-            const myColor   = vcSideSetup === "home" ? "teal" : "red";
-            const oppColor  = vcSideSetup === "home" ? "red"  : "teal";
             const myName    = vcSideSetup === "home" ? homeTeamName : awayTeamName;
             const oppName   = vcSideSetup === "home" ? awayTeamName : homeTeamName;
             const myTO      = timeoutRemaining[vcSideSetup];
@@ -4301,14 +4299,37 @@ export function App() {
                   </div>
                 </>
               )}
-              <div className={`shot-grid-team-label shot-grid-team-label-${vcSideSetup}`} title={`Buttons for ${myName}`}>{myName}</div>
-              <div className={`shot-grid-team-label shot-grid-team-label-${opponentSide}`} title={`Buttons for ${oppName}`}>{oppName}</div>
-              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "shot", teamId: vcSideSetup,   points: 2, made: true })}>2pt</button>
-              {isOpponentStatEnabled("points")       && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "shot", teamId: opponentSide,   points: 2, made: true })}>2pt</button>}
-              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "shot", teamId: vcSideSetup,   points: 3, made: true })}>3pt</button>
-              {isOpponentStatEnabled("points")       && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "shot", teamId: opponentSide,   points: 3, made: true })}>3pt</button>}
-              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup,   made: true })}>ft</button>
-              {isOpponentStatEnabled("free_throws")  && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide,   made: true })}>ft</button>}
+
+              {/* My team — full make/miss row per shot type */}
+              <div className="shot-grid-team-label shot-grid-team-label-my" style={{ gridColumn: "1 / -1" }} title={`Scoring for ${myName}`}>{myName}</div>
+              <button className="shot-btn shot-btn-make" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>
+                <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MAKE</span>
+              </button>
+              <button className="shot-btn shot-btn-miss" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: false })}>
+                <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MISS</span>
+              </button>
+              <button className="shot-btn shot-btn-make shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>
+                <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MAKE</span>
+              </button>
+              <button className="shot-btn shot-btn-miss shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: false })}>
+                <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MISS</span>
+              </button>
+              <button className="shot-btn shot-btn-ft-make" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>
+                <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MAKE</span>
+              </button>
+              <button className="shot-btn shot-btn-ft-miss" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: false })}>
+                <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MISS</span>
+              </button>
+
+              {/* Opponent — compact row, only if tracking */}
+              {isOpponentStatEnabled("points") && (<>
+                <div className="shot-grid-team-label shot-grid-team-label-opp" style={{ gridColumn: "1 / -1" }} title={`Opponent: ${oppName}`}>{oppName}</div>
+                <button className="shot-btn shot-btn-opp" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>OPP 2</button>
+                <button className="shot-btn shot-btn-opp" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>OPP 3</button>
+              </>)}
+              {isOpponentStatEnabled("free_throws") && (
+                <button className="shot-btn shot-btn-opp" style={{ gridColumn: "1 / -1" }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>OPP FT</button>
+              )}
             </>);
           })()}
         </div>
@@ -4576,12 +4597,12 @@ export function App() {
           <div className="stat-grid">
             <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: vcSideSetup })}><span className="rebound-main">DEF</span><br/><span className="sub-lbl">reb</span></button>
             <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: vcSideSetup })}><span className="rebound-main">OFF</span><br/><span className="sub-lbl">reb</span></button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
+            <button className="circle stat-foul" onClick={() => setModal({ kind: "stat", stat: "foul", teamId: vcSideSetup })}>foul</button>
+            <button className="circle stat-to" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: vcSideSetup })}>stl</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
             <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "foul",   teamId: vcSideSetup })}>foul</button>
           </div>
         ) : (
           <div className="roster-panel">
@@ -4647,7 +4668,7 @@ export function App() {
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
         <button className="live-nav-btn" onClick={() => navigateView("settings")} title="Settings">Menu Settings</button>
-        <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">Undo</button>
+        <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">Undo</button>
         <button
           className="live-nav-btn"
           title="Game summary"

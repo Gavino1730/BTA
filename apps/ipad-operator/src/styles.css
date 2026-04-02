@@ -124,7 +124,7 @@ html, body {
 .shot-grid-team-label {
   width: 100%;
   text-align: center;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -148,6 +148,114 @@ html, body {
   border-color: var(--team-away-color);
   background: rgba(255,255,255,0.06);
 }
+
+/* My-team label: spans full grid row */
+.shot-grid-team-label-my {
+  color: rgba(232,234,240,0.92);
+  border-color: rgba(232,234,240,0.28);
+  background: rgba(255,255,255,0.06);
+  margin-top: 0.15rem;
+}
+
+/* Opponent label: spans full grid row, subdued */
+.shot-grid-team-label-opp {
+  color: rgba(232,234,240,0.55);
+  border-color: rgba(232,234,240,0.15);
+  background: rgba(255,255,255,0.02);
+  font-size: 0.68rem;
+  margin-top: 0.3rem;
+}
+
+/* ---- Shot action buttons (MAKE / MISS pairs) ---- */
+.shot-btn {
+  width: 100%;
+  min-height: 56px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  font-family: inherit;
+  transition: opacity 0.1s, filter 0.1s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.shot-btn:active { opacity: 0.6; }
+
+.shot-btn-pts {
+  font-size: 1.05rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
+.shot-btn-result {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+/* MAKE = green */
+.shot-btn-make {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #6ee7b7;
+}
+.shot-btn-make:hover { filter: brightness(1.12); }
+
+/* MISS = red */
+.shot-btn-miss {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+.shot-btn-miss:hover { filter: brightness(1.12); }
+
+/* 3PT variant — slightly different tint to distinguish */
+.shot-btn-three.shot-btn-make {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #93c5fd;
+}
+.shot-btn-three.shot-btn-miss {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fcd34d;
+}
+
+/* FT variants */
+.shot-btn-ft-make {
+  background: rgba(16, 185, 129, 0.11);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #a7f3d0;
+}
+.shot-btn-ft-make:hover { filter: brightness(1.1); }
+.shot-btn-ft-miss {
+  background: rgba(239, 68, 68, 0.09);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+}
+.shot-btn-ft-miss:hover { filter: brightness(1.1); }
+
+/* Opponent compact buttons */
+.shot-btn-opp {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(232, 234, 240, 0.6);
+  min-height: 36px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 8px;
+}
+.shot-btn-opp:hover { filter: brightness(1.1); }
+.shot-btn-opp .shot-btn-pts { font-size: 0.72rem; }
 
 .left-panel .circle {
   width: 100%;
@@ -182,6 +290,12 @@ html, body {
 .circle.white:hover { background: rgba(232,234,240,0.07); }
 .circle.red-out   { border-color: #f87171; color: #f87171; }
 .circle.red-out:hover { background: rgba(248,113,113,0.12); }
+/* Foul = amber — visually distinct, high priority */
+.circle.stat-foul { border-color: #f59e0b; color: #fcd34d; border-width: 2.5px; }
+.circle.stat-foul:hover { background: rgba(245,158,11,0.12); }
+/* Turnover = orange-red */
+.circle.stat-to   { border-color: #ef4444; color: #fca5a5; }
+.circle.stat-to:hover { background: rgba(239,68,68,0.1); }
 
 .sub-lbl {
   font-size: 0.6rem;
@@ -1051,13 +1165,14 @@ html, body {
 .right-panel .circle {
   width: 96%;
   max-width: 140px;
-  font-size: 0.98rem;
+  font-size: 1.05rem;
+  font-weight: 800;
   border-width: 2px;
   margin-inline: auto;
 }
 
 .right-panel .sub-lbl {
-  font-size: 0.56rem;
+  font-size: 0.58rem;
 }
 
 .rebound-main {
@@ -1154,6 +1269,17 @@ html, body {
   border-color: #f87171;
   color: #fecaca;
   background: rgba(95, 26, 41, 0.7);
+}
+
+/* Undo button — always visible, slightly warm tint for quick muscle-memory */
+.live-nav-btn-undo {
+  border-color: rgba(245,158,11,0.65);
+  color: #fcd34d;
+}
+.live-nav-btn-undo:hover {
+  border-color: #f59e0b;
+  color: #fef3c7;
+  background: rgba(90, 60, 10, 0.5);
 }
 .tt-btn {
   flex: 1;
