@@ -1776,6 +1776,7 @@ interface OperatorLinkSetup {
   awayTeamColor?: string;
   dashboardUrl?: string;
   updatedAtIso: string;
+  operatorToken?: string;
 }
 
 const operatorLinkByConnectionId = new Map<string, OperatorLinkSetup>();
@@ -2932,7 +2933,7 @@ app.put("/config/roster-teams", requireApiKey, requireWriteRole, (req, res) => {
   res.json({ teams: saved });
 });
 
-app.get("/api/operator-links/:connectionId", requireApiKey, (req, res) => {
+app.get("/api/operator-links/:connectionId", (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const connectionId = normalizeConnectionKey(req.params.connectionId);
   if (!connectionId) {
@@ -2946,10 +2947,14 @@ app.get("/api/operator-links/:connectionId", requireApiKey, (req, res) => {
     return;
   }
 
+  // Strip the stored operatorToken from the server-side object before sending
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { operatorToken, ...publicSetup } = setup;
   res.json({
     connectionId,
-    setup,
+    setup: publicSetup,
     teams: getRosterTeamsByScope({ schoolId }),
+    operatorToken,
   });
 });
 
@@ -2962,6 +2967,20 @@ app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (r
   }
 
   const payload = (req.body ?? {}) as Record<string, unknown>;
+
+  // Re-use an existing operator token for this connection so the iPad doesn't
+  // need to re-save it every time the coach publishes an update.
+  const existing = operatorLinkByConnectionId.get(operatorLinkKey(schoolId, connectionId));
+  const operatorToken = existing?.operatorToken
+    ?? issueLocalAuthToken({
+      subject: `operator:${connectionId}`,
+      email: `operator-${connectionId.toLowerCase()}@system.bta`,
+      schoolId,
+      role: "analyst",
+      expiresInHours: 24 * 90, // 90 days
+    })
+    ?? undefined;
+
   const setup: OperatorLinkSetup = {
     gameId: sanitizeTextField(payload.gameId, 120) || undefined,
     myTeamId: sanitizeTextField(payload.myTeamId, 120) || undefined,
@@ -2972,18 +2991,21 @@ app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (r
     awayTeamColor: normalizeTeamColor(payload.awayTeamColor),
     dashboardUrl: sanitizeTextField(payload.dashboardUrl, 320) || undefined,
     updatedAtIso: new Date().toISOString(),
+    operatorToken,
   };
 
   operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
 
+  // Strip token from the socket broadcast — only deliver it via the authenticated GET
+  const { operatorToken: _tok, ...publicSetup } = setup;
   const response = {
     connectionId,
-    setup,
+    setup: publicSetup,
     teams: getRosterTeamsByScope({ schoolId }),
   };
 
   io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
-  res.json(response);
+  res.json({ ...response, operatorToken });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

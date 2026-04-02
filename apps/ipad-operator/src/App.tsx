@@ -225,6 +225,7 @@ export interface AppData {
 
 interface OperatorLinkResponse {
   connectionId: string;
+  operatorToken?: string;
   setup?: {
     gameId?: string;
     myTeamId?: string;
@@ -271,6 +272,8 @@ function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse
       homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor, current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR),
       awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor, current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR),
       startingLineup: safeStartingLineup,
+      // Auto-receive auth token from the server — no manual API key entry needed
+      apiKey: snapshot.operatorToken ?? current.gameSetup.apiKey,
     },
   };
 }
@@ -824,7 +827,16 @@ type Modal =
   | { kind: "assistEdit"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string; editContext: EventEditContext }
   | { kind: "timeoutEdit"; teamId: TeamSide; timeoutType: "full" | "short"; editContext: EventEditContext }
   | { kind: "possessionEdit"; teamId: TeamSide; editContext: EventEditContext }
-  | { kind: "periodTransitionEdit"; newPeriod: string; editContext: EventEditContext };
+  | { kind: "periodTransitionEdit"; newPeriod: string; editContext: EventEditContext }
+  // Chain-assist: passer picker after a made basket was already logged
+  | { kind: "chain-assist"; teamId: TeamSide; scorerPlayerId: string };
+
+// Contextual chain prompt that appears after key events to suggest the next action.
+type ChainPrompt =
+  | { kind: "after-made-shot"; forTeam: TeamSide; points: 2 | 3; scorerPlayerId: string }
+  | { kind: "after-missed-shot"; forTeam: TeamSide }
+  | { kind: "after-turnover"; fromTeam: TeamSide }
+  | { kind: "after-ft-miss"; forTeam: TeamSide };
 
 interface EventEditContext {
   eventId: string;
@@ -1037,6 +1049,8 @@ export function App() {
   const [gameMoment, setGameMoment] = useState<string>("");
   const [preGameNotes, setPreGameNotes] = useState<string>(() => localStorage.getItem("operator-console:pregame-notes") ?? "");
   const [modal, setModal] = useState<Modal | null>(null);
+  const [chainPrompt, setChainPrompt] = useState<ChainPrompt | null>(null);
+  const chainTimerRef = useRef<number | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('ipo:tutorial-complete'));
   const [overtimeCount, setOvertimeCount] = useState(0);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -2602,8 +2616,40 @@ export function App() {
     );
   }
 
+  // Auto-dismiss chain prompt after 12 seconds
+  useEffect(() => {
+    if (chainTimerRef.current != null) {
+      window.clearTimeout(chainTimerRef.current);
+      chainTimerRef.current = null;
+    }
+    if (chainPrompt) {
+      chainTimerRef.current = window.setTimeout(() => {
+        setChainPrompt(null);
+        chainTimerRef.current = null;
+      }, 12000);
+    }
+    return () => {
+      if (chainTimerRef.current != null) {
+        window.clearTimeout(chainTimerRef.current);
+      }
+    };
+  }, [chainPrompt]);
+
   // ---- Modal helpers ----
   function closeModal() { setModal(null); }
+  function dismissChain() { setChainPrompt(null); }
+
+  /** Silently emit a possession_start event if possession would actually change. */
+  function autoEmitPossession(teamId: string) {
+    if (possessionTeamId === teamId) return;
+    setPossessionOverrideTeamId(teamId);
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "possession_start",
+      possessedByTeamId: teamId,
+    });
+  }
 
   function confirmShot(playerId: string) {
     if (!modal || modal.kind !== "shot") return;
@@ -2623,16 +2669,31 @@ export function App() {
       } as GameEvent, modal.editContext);
       return;
     }
+    const shotTeam = modal.teamId;
+    const shotMade = modal.made;
+    const shotPoints = modal.points;
     void postEvent({
       ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
+      teamId: resolveTeamId(shotTeam),
       type: "shot_attempt",
       playerId,
-      made: modal.made,
-      points: modal.points,
-      zone: modal.points === 3 ? "above_break_three" : "paint",
+      made: shotMade,
+      points: shotPoints,
+      zone: shotPoints === 3 ? "above_break_three" : "paint",
     } as GameEvent);
     closeModal();
+    // Chain: auto-possession + contextual next prompt
+    if (shotMade) {
+      // Ball changes hands — auto-give possession to opponent
+      const oppTeamId = resolveTeamId(shotTeam === "home" ? "away" : "home");
+      autoEmitPossession(oppTeamId);
+      // Only prompt for assist on our tracked team's scored baskets
+      if (shotTeam === vcSideSetup) {
+        setChainPrompt({ kind: "after-made-shot", forTeam: shotTeam, points: shotPoints, scorerPlayerId: playerId });
+      }
+    } else {
+      setChainPrompt({ kind: "after-missed-shot", forTeam: shotTeam });
+    }
   }
 
   function confirmFreeThrow(playerId: string) {
@@ -2653,16 +2714,25 @@ export function App() {
       } as GameEvent, modal.editContext);
       return;
     }
+    const ftTeam = modal.teamId;
+    const ftMade = modal.made;
     void postEvent({
       ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
+      teamId: resolveTeamId(ftTeam),
       type: "free_throw_attempt",
       playerId,
-      made: modal.made,
+      made: ftMade,
       attemptNumber: 1,
       totalAttempts: 1,
     } as GameEvent);
     closeModal();
+    // Chain: if made, give possession to opponent; if missed, prompt for rebound
+    if (ftMade) {
+      const oppTeamId = resolveTeamId(ftTeam === "home" ? "away" : "home");
+      autoEmitPossession(oppTeamId);
+    } else {
+      setChainPrompt({ kind: "after-ft-miss", forTeam: ftTeam });
+    }
   }
 
   function confirmStat(playerId: string) {
@@ -2706,7 +2776,8 @@ export function App() {
         };
         void postEvent(turnoverEvent);
       }
-
+      // Auto-set possession to the stealing team
+      autoEmitPossession(teamId);
       closeModal();
       return;
     }
@@ -2727,6 +2798,20 @@ export function App() {
       return;
     }
     if (event) void postEvent(event as GameEvent);
+    // Chain: auto-possession after rebounding or turnovers
+    if (!modal.editContext) {
+      if (stat === "def_reb") {
+        // Defensive rebound → rebounding team gets possession
+        autoEmitPossession(teamId);
+      } else if (stat === "off_reb") {
+        // Offensive rebound → same team keeps possession
+        autoEmitPossession(teamId);
+      } else if (stat === "turnover") {
+        // Turnover → other team gets possession, prompt for steal
+        autoEmitPossession(otherTeamId);
+        setChainPrompt({ kind: "after-turnover", fromTeam: modal.teamId });
+      }
+    }
     closeModal();
   }
 
@@ -3079,6 +3164,52 @@ export function App() {
       );
     }
 
+    if (modal.kind === "chain-assist") {
+      const allTeamPlayers = teamPlayers(modal.teamId);
+      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
+      // Exclude the scorer from the passer list
+      const passers = lineup.onCourt.filter(p => p.id !== modal.scorerPlayerId);
+      const scorer = allTeamPlayers.find(p => p.id === modal.scorerPlayerId);
+      const teamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Assist – who passed to {scorer ? `#${scorer.number} ${scorer.name}` : "scorer"}?</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
+            </div>
+            <div className="player-list">
+              {passers.length === 0 && <p className="no-players">No other players on court</p>}
+              {passers.map(p => (
+                <button key={p.id} className="player-row" onClick={() => {
+                  void postEvent({
+                    ...base(sequence),
+                    teamId: resolveTeamId(modal.teamId),
+                    type: "assist",
+                    playerId: p.id,
+                    scorerPlayerId: modal.scorerPlayerId,
+                  } as GameEvent);
+                  closeModal();
+                }}>
+                  <span className="pnum">#{p.number}</span>
+                  <span className="pname">{p.name}</span>
+                  {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].ast > 0 ? `${pTotals[p.id].ast} ast` : ""}</span> : null}
+                </button>
+              ))}
+            </div>
+            <div style={{ padding: "0.5rem 1.2rem 1rem" }}>
+              <button
+                style={{ width: "100%", padding: "0.8rem", borderRadius: "0.5rem", background: "transparent", border: `1px solid ${teamColor}40`, color: "rgba(232,234,240,0.6)", cursor: "pointer", fontSize: "0.9rem" }}
+                onClick={closeModal}
+              >
+                No assist – unassisted basket
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (modal.kind === "sub1") {
       const players = teamPlayers(modal.teamId);
       const currentLineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], players);
@@ -3278,6 +3409,103 @@ export function App() {
                 Save Period
               </button>
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  }
+
+  function renderChainPrompt() {
+    if (!chainPrompt) return null;
+    const myTeamName = vcSideSetup === "home" ? homeTeamName : awayTeamName;
+    const oppTeamName = vcSideSetup === "home" ? awayTeamName : homeTeamName;
+    const myTeamColor = vcSideSetup === "home" ? homeTeamColor : awayTeamColor;
+    const oppTeamColor = vcSideSetup === "home" ? awayTeamColor : homeTeamColor;
+
+    if (chainPrompt.kind === "after-made-shot") {
+      const teamName = chainPrompt.forTeam === vcSideSetup ? myTeamName : oppTeamName;
+      const teamColor = chainPrompt.forTeam === vcSideSetup ? myTeamColor : oppTeamColor;
+      return (
+        <div className="chain-prompt">
+          <span className="chain-prompt-label">
+            {teamName} <span className="chain-prompt-made">+{chainPrompt.points}</span> · Add assist?
+          </span>
+          <div className="chain-prompt-actions">
+            <button
+              className="chain-btn chain-btn-primary"
+              style={{ borderColor: teamColor, color: teamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                setModal({ kind: "chain-assist", teamId: chainPrompt.forTeam, scorerPlayerId: chainPrompt.scorerPlayerId });
+              }}
+            >
+              Assist
+            </button>
+            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (chainPrompt.kind === "after-missed-shot" || chainPrompt.kind === "after-ft-miss") {
+      const isMy = chainPrompt.forTeam === vcSideSetup;
+      const label = chainPrompt.kind === "after-ft-miss" ? "FT miss · Rebound?" : "Miss · Rebound?";
+      return (
+        <div className="chain-prompt">
+          <span className="chain-prompt-label">{label}</span>
+          <div className="chain-prompt-actions">
+            <button
+              className="chain-btn chain-btn-primary"
+              style={{ borderColor: myTeamColor, color: myTeamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                // Off reb if the shooting team is my team, def reb if opponent missed
+                const rebStat = isMy ? "off_reb" : "def_reb";
+                setModal({ kind: "stat", stat: rebStat, teamId: vcSideSetup });
+              }}
+            >
+              {myTeamName} Reb
+            </button>
+            <button
+              className="chain-btn chain-btn-secondary"
+              style={{ borderColor: oppTeamColor, color: oppTeamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                // Def reb for opponent if shooting team is my team, off reb if opponent missed
+                const rebStat = isMy ? "def_reb" : "off_reb";
+                setModal({ kind: "stat", stat: rebStat, teamId: opponentSide });
+              }}
+            >
+              {oppTeamName} Reb
+            </button>
+            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (chainPrompt.kind === "after-turnover") {
+      // fromTeam turned it over, the OTHER team now has possession — prompt for steal
+      const stealTeamSide: TeamSide = chainPrompt.fromTeam === "home" ? "away" : "home";
+      const stealTeamName = stealTeamSide === vcSideSetup ? myTeamName : oppTeamName;
+      const stealTeamColor = stealTeamSide === vcSideSetup ? myTeamColor : oppTeamColor;
+      return (
+        <div className="chain-prompt">
+          <span className="chain-prompt-label">Turnover · Was it a steal?</span>
+          <div className="chain-prompt-actions">
+            <button
+              className="chain-btn chain-btn-primary"
+              style={{ borderColor: stealTeamColor, color: stealTeamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                setModal({ kind: "stat", stat: "steal", teamId: stealTeamSide });
+              }}
+            >
+              Steal – {stealTeamName}
+            </button>
+            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
           </div>
         </div>
       );
@@ -3740,6 +3968,7 @@ export function App() {
       {renderAlertBanner()}
       {renderConfirmDialog()}
       {renderModal()}
+      {!modal && renderChainPrompt()}
       {showGameSummary && (
         <div className="modal-overlay" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>
           <div className="modal summary-modal" onClick={(e) => e.stopPropagation()}>
