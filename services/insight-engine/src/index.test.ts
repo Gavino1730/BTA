@@ -9,6 +9,7 @@ describe("insight engine", () => {
     // h1 gets 3 personal fouls; two padding fouls on the away team precede them.
     const paddingFouls: GameEvent[] = [1, 2].map((sequence) => ({
       id: `pad-foul-${sequence}`,
+      schoolId: "test-school",
       gameId: "game-1",
       sequence,
       timestampIso: "2026-03-18T20:00:00.000Z",
@@ -23,6 +24,7 @@ describe("insight engine", () => {
 
     const foulEvents: GameEvent[] = [3, 4, 5].map((sequence) => ({
       id: `foul-${sequence}`,
+      schoolId: "test-school",
       gameId: "game-1",
       sequence,
       timestampIso: "2026-03-18T20:00:00.000Z",
@@ -46,6 +48,7 @@ describe("insight engine", () => {
   it("uses explicit fouled-out wording at 5 fouls", () => {
     const paddingFouls: GameEvent[] = [1, 2].map((sequence) => ({
       id: `pad-fo-${sequence}`,
+      schoolId: "test-school",
       gameId: "game-fo",
       sequence,
       timestampIso: "2026-03-18T20:00:00.000Z",
@@ -60,6 +63,7 @@ describe("insight engine", () => {
 
     const foulEvents: GameEvent[] = [3, 4, 5, 6, 7].map((sequence) => ({
       id: `fo-${sequence}`,
+      schoolId: "test-school",
       gameId: "game-fo",
       sequence,
       timestampIso: "2026-03-18T20:00:00.000Z",

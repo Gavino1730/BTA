@@ -6,8 +6,10 @@
   "types": "dist/server.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
-    "dev": "tsx watch src/server.ts"
+    "start": "node dist/server.js",
+    "test": "vitest run --sequence.concurrent false",
+    "dev": "tsx watch src/server.ts",
+    "validate:env": "tsx src/validate-env.ts"
   },
   "dependencies": {
     "@bta/game-state": "0.1.0",
@@ -15,10 +17,14 @@
     "@bta/shared-schema": "0.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "jose": "^6.0.11",
+    "pg": "^8.13.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21"
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.11.10",
+    "socket.io-client": "^4.8.1"
   }
 }

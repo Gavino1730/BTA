@@ -8,7 +8,7 @@ const TIPS = [
       'Open this app in Safari on your iPad.',
       'Tap the Share button (box with arrow) in the toolbar.',
       'Scroll down and tap "Add to Home Screen".',
-      'Name it "Bench IQ" and tap Add.',
+      'Choose any label you want and tap Add.',
     ],
     note: 'Launching from the home screen icon hides the browser chrome for a full-screen experience.',
   },

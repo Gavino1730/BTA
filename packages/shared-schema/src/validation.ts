@@ -13,6 +13,7 @@ const periodSchema = z.string().regex(/^(Q[1-4]|OT\d+)$/, "Period must be Q1, Q2
 
 const baseSchema = z.object({
   id: z.string().min(1),
+  schoolId: z.string().min(1),
   gameId: z.string().min(1),
   sequence: z.number().int().min(1),
   timestampIso: z.string().datetime(),

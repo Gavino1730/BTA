@@ -41,11 +41,11 @@ Write-Host "  │  SERVICE ENDPOINTS                                  │" -Fore
 Write-Host "  ├─────────────────────────────────────────────────────┤" -ForegroundColor DarkGray
 
 foreach ($ip in $ips) {
-  Write-Host "  │  Realtime API   http://${ip}:4000                  " -ForegroundColor Green -NoNewline
+  Write-Host "  │  Realtime API    http://${ip}:4000                 " -ForegroundColor Green -NoNewline
   Write-Host "│" -ForegroundColor DarkGray
   Write-Host "  │  Coach Dashboard http://${ip}:5173                 " -ForegroundColor Yellow -NoNewline
   Write-Host "│" -ForegroundColor DarkGray
-  Write-Host "  │  Stats Dashboard http://${ip}:5000                 " -ForegroundColor Blue -NoNewline
+  Write-Host "  │  Operator Console http://${ip}:5174                " -ForegroundColor Blue -NoNewline
   Write-Host "│" -ForegroundColor DarkGray
   Write-Host "  │                                                     │" -ForegroundColor DarkGray
 }
@@ -75,27 +75,6 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   Write-Host "  ✗  node not found. Install Node.js 20+." -ForegroundColor Red; exit 1
 }
 Write-Host "  ✓  node $(node --version)" -ForegroundColor Green
-
-# Python
-$pythonCmd = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } else { "python" }
-if (-not (Get-Command $pythonCmd -ErrorAction SilentlyContinue)) {
-  Write-Host "  ✗  python not found." -ForegroundColor Red; exit 1
-}
-Write-Host "  ✓  python $(&$pythonCmd --version)" -ForegroundColor Green
-
-# Stats dashboard venv
-$venvPython = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
-if (-not (Test-Path $venvPython)) {
-  Write-Host "  ⚠   Stats dashboard venv not found. Running: npm run stats:install" -ForegroundColor DarkYellow
-  & npm run stats:install
-}
-
-# Data directory
-$dataDir = Join-Path $PSScriptRoot "..\apps\stats-dashboard\data"
-if (-not (Test-Path $dataDir)) {
-  New-Item -ItemType Directory -Path $dataDir | Out-Null
-  Write-Host "  ✓  Created data/ directory" -ForegroundColor Green
-}
 
 Write-Host ""
 Write-Host "  Starting all apps/services with concurrently..." -ForegroundColor Cyan

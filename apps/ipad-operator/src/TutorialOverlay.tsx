@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 const STEPS = [
   {
-    title: 'Welcome to Bench IQ Operator',
+    title: 'Welcome',
     body: 'This app is your live stat-entry hub during games. You\'ll log every play in real time, and the coach dashboard updates instantly.',
     icon: '🏀',
   },
@@ -23,7 +23,7 @@ const STEPS = [
   },
   {
     title: 'Post-Game',
-    body: 'After the final buzzer, tap End Game to close the period and lock the score. Stats are sent to the Stats Dashboard for full analysis.',
+    body: 'After the final buzzer, tap End Game to close the period and lock the score. Your stats stay available in the coach dashboard for post-game analysis.',
     icon: '🏁',
   },
   {

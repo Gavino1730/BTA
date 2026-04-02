@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
-import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent } from "@bta/shared-schema";
+import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent, type RosterTeam } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
   addPlayerViaRealtime,
@@ -15,12 +15,40 @@ import {
 } from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
-const DEFAULT_API = import.meta.env.VITE_API ?? `http://${defaultHost}:4000`;
-const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? `http://${defaultHost}:5173`;
-const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? `http://${defaultHost}:5000`;
+const defaultOrigin = window.location.origin || `http://${defaultHost}`;
+
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
+
+function resolveDefaultAppBase(hostname: string, origin: string, port: number): string {
+  if (isLocalNetworkHost(hostname)) {
+    return `http://${hostname}:${port}`;
+  }
+
+  return origin.replace(/\/+$/, "") || `https://${hostname}`;
+}
+
+function resolveDefaultSchoolId(hostname: string): string {
+  return isLocalNetworkHost(hostname) ? "default" : "";
+}
+
+const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
+const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
+const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? resolveDefaultSchoolId(defaultHost)).toString().trim();
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
-const DEVICE_ID_KEY = "operator-device-id";
 const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
 const DEFAULT_AWAY_TEAM_COLOR = "#f87171";
 const OPPONENT_TRACK_STAT_OPTIONS = [
@@ -55,14 +83,38 @@ const TEAM_COLOR_OPTIONS = [
   "#14b8a6",
 ] as const;
 
-/** Returns `{ "x-api-key": key }` when a key is configured, otherwise `{}`. */
-function apiKeyHeader(setup: { apiKey?: string }): Record<string, string> {
-  return setup.apiKey ? { "x-api-key": setup.apiKey } : {};
+/** Returns auth headers when a key is configured.
+ *  - Local auth tokens (bta.*) are sent as `Authorization: Bearer`.
+ *  - Plain API keys are sent as `x-api-key`. */
+function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+  if (schoolId) {
+    headers["x-school-id"] = schoolId;
+  }
+  if (setup.apiKey) {
+    if (setup.apiKey.startsWith("bta.")) {
+      headers["Authorization"] = `Bearer ${setup.apiKey}`;
+    } else {
+      headers["x-api-key"] = setup.apiKey;
+    }
+  }
+  return headers;
 }
 /** Returns RequestInit for a plain GET request, adding the API key header when configured. */
-function apiHeaders(setup: { apiKey?: string }): RequestInit {
-  const h = apiKeyHeader(setup);
-  return Object.keys(h).length ? { headers: h } : {};
+function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
+  return { headers: apiKeyHeader(setup) };
+}
+
+function normalizeUrlBase(url: string | undefined): string {
+  return (url ?? "").trim().replace(/\/+$/, "");
+}
+
+function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
+  const apiBase = normalizeUrlBase(setup.apiUrl);
+  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
+  if (!dashboardBase) return false;
+  return dashboardBase !== apiBase;
 }
 
 function buildAiContextFromSetup(setup: GameSetup): {
@@ -83,18 +135,25 @@ function buildAiContextFromSetup(setup: GameSetup): {
 
 function buildCoachViewUrl(
   gameId: string,
-  deviceId: string,
   setup: {
+    connectionId?: string;
     myTeamId?: string;
     myTeamName?: string;
     opponentName?: string;
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
+    schoolId?: string;
   }
 ): string {
   const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
-  const params = new URLSearchParams({ deviceId: normalizeDeviceId(deviceId) });
+  const params = new URLSearchParams();
+  const normalizedConnectionId = normalizeConnectionId(setup.connectionId);
+  const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+  if (normalizedConnectionId) {
+    params.set("connectionId", normalizedConnectionId);
+  }
+  if (schoolId) params.set("schoolId", schoolId);
   if (gameId) params.set("gameId", gameId);
   if (setup.myTeamId) params.set("myTeamId", setup.myTeamId);
   if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);
@@ -105,31 +164,16 @@ function buildCoachViewUrl(
   return `${base}/?${params.toString()}`;
 }
 
-function normalizeDeviceId(value: string | null | undefined): string {
-  const normalized = (value ?? "")
+function normalizeConnectionId(value: string | null | undefined): string {
+  return (value ?? "")
+    .trim()
     .toLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/[^a-z0-9_-]/g, "");
-  return normalized || "device1";
-}
-
-function getDefaultDeviceId(): string {
-  try {
-    const existing = localStorage.getItem(DEVICE_ID_KEY);
-    if (existing?.trim()) {
-      return normalizeDeviceId(existing);
-    }
-
-    const next = "device1";
-    localStorage.setItem(DEVICE_ID_KEY, next);
-    return next;
-  } catch {
-    return "device1";
-  }
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 40);
 }
 
 type TeamSide = "home" | "away";
-type SettingsView = "menu" | "teams" | "team-edit" | "game-setup" | "ai-settings" | "ipad-tips";
+type SettingsView = "menu" | "game-setup" | "ipad-tips";
 
 export interface Player {
   id: string;
@@ -150,10 +194,11 @@ export interface Team {
 
 export interface GameSetup {
   gameId: string;
-  deviceId: string;
+  connectionId?: string;
   myTeamId: string;      // the team you are tracking
   apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
   apiKey?: string;       // shared secret sent as x-api-key header
+  schoolId?: string;
   opponent: string;
   vcSide: "home" | "away";
   dashboardUrl: string;
@@ -178,13 +223,68 @@ export interface AppData {
   gameSetup: GameSetup;
 }
 
+interface OperatorLinkResponse {
+  connectionId: string;
+  operatorToken?: string;
+  setup?: {
+    gameId?: string;
+    myTeamId?: string;
+    myTeamName?: string;
+    opponentName?: string;
+    vcSide?: "home" | "away";
+    homeTeamColor?: string;
+    awayTeamColor?: string;
+    dashboardUrl?: string;
+    updatedAtIso?: string;
+  } | null;
+  teams?: RosterTeam[];
+}
+
+const DEFAULT_CONNECTION_SYNC_STATUS = "Paste the coach connection code to sync roster, team setup, and keep a local backup on this iPad.";
+
+function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse): AppData {
+  const convertedTeams = Array.isArray(snapshot.teams)
+    ? snapshot.teams.map(convertRosterTeamToAppTeam)
+    : current.teams;
+  const nextSide = snapshot.setup?.vcSide === "away"
+    ? "away"
+    : snapshot.setup?.vcSide === "home"
+      ? "home"
+      : (current.gameSetup.vcSide ?? "home");
+  const nextTeamId = snapshot.setup?.myTeamId?.trim() || current.gameSetup.myTeamId || convertedTeams[0]?.id || "";
+  const selectedTeam = convertedTeams.find((team) => team.id === nextTeamId);
+  const allowedPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
+  const safeStartingLineup = Array.isArray(current.gameSetup.startingLineup)
+    ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
+    : [];
+
+  return {
+    ...current,
+    teams: convertedTeams,
+    gameSetup: {
+      ...current.gameSetup,
+      connectionId: normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId) || undefined,
+      gameId: snapshot.setup?.gameId?.trim() || current.gameSetup.gameId,
+      myTeamId: nextTeamId,
+      opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
+      vcSide: nextSide,
+      dashboardUrl: snapshot.setup?.dashboardUrl?.trim() || current.gameSetup.dashboardUrl,
+      homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor, current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR),
+      awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor, current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR),
+      startingLineup: safeStartingLineup,
+      // Auto-receive auth token from the server — no manual API key entry needed
+      apiKey: snapshot.operatorToken ?? current.gameSetup.apiKey,
+    },
+  };
+}
+
 const DEFAULT_DATA: AppData = {
   teams: [],
   gameSetup: {
     gameId: "game-1",
-    deviceId: getDefaultDeviceId(),
     myTeamId: "",
     apiUrl: DEFAULT_API,
+    schoolId: DEFAULT_SCHOOL_ID,
     opponent: "",
     vcSide: "home",
     dashboardUrl: DEFAULT_STATS_DASHBOARD,
@@ -243,20 +343,21 @@ function isValidApiUrl(url: string): boolean {
 }
 
 function loadAppData(): AppData {
-  // Check URL params first — a QR-code scan may carry config overrides.
+  // Check URL params first - a QR-code scan may carry config overrides.
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
   
-  // Validate API URL from QR code — only allow whitelisted or same-origin URLs
+  // Validate API URL from QR code - only allow whitelisted or same-origin URLs
   const qrApiUrl = qp.get("apiUrl");
   if (qrApiUrl && isValidApiUrl(qrApiUrl)) {
     urlSetup.apiUrl = qrApiUrl;
   }
   
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
+  if (qp.get("schoolId"))    urlSetup.schoolId    = qp.get("schoolId")!;
   if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
-  if (qp.get("deviceId"))    urlSetup.deviceId    = normalizeDeviceId(qp.get("deviceId"));
+  if (qp.get("connectionId")) urlSetup.connectionId = normalizeConnectionId(qp.get("connectionId"));
   if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;
   if (qp.get("vcSide") === "home" || qp.get("vcSide") === "away") urlSetup.vcSide = qp.get("vcSide") as "home" | "away";
   if (qp.get("clockVisible") === "1" || qp.get("clockVisible") === "0") urlSetup.clockVisible = qp.get("clockVisible") === "1";
@@ -279,8 +380,9 @@ function loadAppData(): AppData {
         const legacyId = side === "home" ? (gs as GameSetup).homeTeamId : (gs as GameSetup).awayTeamId;
         if (legacyId) gs.myTeamId = legacyId;
       }
-      gs.deviceId = normalizeDeviceId(gs.deviceId);
+      gs.connectionId = normalizeConnectionId(gs.connectionId);
       gs.trackClock = gs.trackClock ?? true;
+      gs.schoolId = gs.schoolId?.trim() || DEFAULT_SCHOOL_ID;
       gs.trackPossession = gs.trackPossession ?? true;
       gs.trackTimeouts = gs.trackTimeouts ?? true;
       gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
@@ -316,7 +418,7 @@ function clockToSec(clock: string): number {
   return m * 60 + s;
 }
 
-// Parse raw numpad string (digits + optional single dot for tenths) → formatted clock string
+// Parse raw numpad string (digits + optional single dot for tenths) -> formatted clock string
 function formatClockFromPadInput(raw: string): string {
   if (!raw) return "0:00";
   const dotIdx = raw.indexOf(".");
@@ -617,7 +719,7 @@ function playerNameFromId(playerId: string | undefined, players: Player[]): stri
   return match?.name ?? playerId;
 }
 
-// ---- Dashboard stats helpers (Stats dashboard integration) ----
+// ---- Dashboard stats helpers (legacy export + summaries) ----
 
 function abbreviateName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
@@ -725,7 +827,16 @@ type Modal =
   | { kind: "assistEdit"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string; editContext: EventEditContext }
   | { kind: "timeoutEdit"; teamId: TeamSide; timeoutType: "full" | "short"; editContext: EventEditContext }
   | { kind: "possessionEdit"; teamId: TeamSide; editContext: EventEditContext }
-  | { kind: "periodTransitionEdit"; newPeriod: string; editContext: EventEditContext };
+  | { kind: "periodTransitionEdit"; newPeriod: string; editContext: EventEditContext }
+  // Chain-assist: passer picker after a made basket was already logged
+  | { kind: "chain-assist"; teamId: TeamSide; scorerPlayerId: string };
+
+// Contextual chain prompt that appears after key events to suggest the next action.
+type ChainPrompt =
+  | { kind: "after-made-shot"; forTeam: TeamSide; points: 2 | 3; scorerPlayerId: string }
+  | { kind: "after-missed-shot"; forTeam: TeamSide }
+  | { kind: "after-turnover"; fromTeam: TeamSide }
+  | { kind: "after-ft-miss"; forTeam: TeamSide };
 
 interface EventEditContext {
   eventId: string;
@@ -763,6 +874,20 @@ interface ConfirmDialogState {
   resolve: (value: boolean) => void;
 }
 
+function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsView: SettingsView } {
+  const h = hash.replace(/^#\/?/, "");
+  if (h === "settings/game-setup") return { view: "settings", settingsView: "game-setup" };
+  if (h === "settings/ipad-tips") return { view: "settings", settingsView: "ipad-tips" };
+  if (h.startsWith("settings")) return { view: "settings", settingsView: "menu" };
+  return { view: "game", settingsView: "menu" };
+}
+
+function viewToHash(v: "game" | "settings", sv: SettingsView): string {
+  if (v === "settings" && sv !== "menu") return `#settings/${sv}`;
+  if (v === "settings") return "#settings";
+  return "#game";
+}
+
 export function App() {
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
@@ -772,13 +897,65 @@ export function App() {
     saveAppData(next);
   }
 
+  async function syncFromCoachCode(connectionCode = appData.gameSetup.connectionId, options?: { silent?: boolean }): Promise<boolean> {
+    const normalizedConnectionId = normalizeConnectionId(connectionCode);
+    if (!normalizedConnectionId) {
+      setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
+      return false;
+    }
+
+    setConnectionSyncStatus(`Syncing ${normalizedConnectionId} from the coach dashboard...`);
+
+    try {
+      const response = await fetch(
+        `${appData.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(normalizedConnectionId)}`,
+        apiHeaders(appData.gameSetup),
+      );
+
+      if (response.status === 404) {
+        setConnectionSyncStatus("Code saved locally. Waiting for the coach dashboard to publish the linked team and roster.");
+        if (!options?.silent) {
+          showInlineNotice("That code is saved on this iPad. Open the coach dashboard live page or try Sync again in a moment.", "warning", 5000);
+        }
+        return false;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Sync failed (${response.status})`);
+      }
+
+      const payload = await response.json() as OperatorLinkResponse;
+      let syncedTeamName = "team";
+
+      setAppData((current) => {
+        const next = mergeCoachLinkSnapshot(current, payload);
+        syncedTeamName = next.teams.find((team) => team.id === next.gameSetup.myTeamId)?.name ?? payload.setup?.myTeamName?.trim() ?? "team";
+        saveAppData(next);
+        return next;
+      });
+
+      setConnectionSyncStatus(`Synced ${syncedTeamName} roster and game setup. This iPad will keep the latest copy saved locally if it disconnects.`);
+      if (!options?.silent) {
+        showInlineNotice(`Synced ${syncedTeamName} from the coach dashboard.`, "success", 2500);
+      }
+      return true;
+    } catch {
+      setConnectionSyncStatus("Coach sync is temporarily offline. The last synced roster and lineup stay saved locally on this iPad.");
+      if (!options?.silent) {
+        showInlineNotice("Could not reach the coach session right now. Your last synced data is still saved locally.", "warning", 6000);
+      }
+      return false;
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
     async function syncTeamsFromRealtime() {
       const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
       const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
-      const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
+      const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+      const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
       const converted = remoteTeams.map(convertRosterTeamToAppTeam);
 
       if (!active || converted.length === 0) {
@@ -812,10 +989,46 @@ export function App() {
     appData,
   ]);
 
+  useEffect(() => {
+    const normalizedConnectionId = normalizeConnectionId(appData.gameSetup.connectionId);
+    if (!normalizedConnectionId) {
+      setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
+      return;
+    }
+
+    void syncFromCoachCode(normalizedConnectionId, { silent: true });
+    const intervalId = window.setInterval(() => {
+      void syncFromCoachCode(normalizedConnectionId, { silent: true });
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, appData.gameSetup.schoolId]);
+
   // ---- Navigation state ----
-  const [view, setView] = useState<"game" | "settings">("game");
-  const [settingsView, setSettingsView] = useState<SettingsView>("menu");
-  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [view, setView] = useState<"game" | "settings">(() => parseViewFromHash(window.location.hash).view);
+  const [settingsView, setSettingsView] = useState<SettingsView>(() => parseViewFromHash(window.location.hash).settingsView);
+  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips"]);
+
+  function navigateView(nextView: "game" | "settings", nextSettingsView: SettingsView = "menu") {
+    const hash = viewToHash(nextView, nextSettingsView);
+    if (window.location.hash !== hash) {
+      window.location.hash = hash;
+    }
+    setView(nextView);
+    setSettingsView(nextSettingsView);
+  }
+
+  useEffect(() => {
+    function handleHashChange() {
+      const { view: v, settingsView: sv } = parseViewFromHash(window.location.hash);
+      setView(v);
+      setSettingsView(sv);
+    }
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   // ---- Game session state ----
   const gameId = appData.gameSetup.gameId;
@@ -834,7 +1047,10 @@ export function App() {
   const [summaryClockPadOpen, setSummaryClockPadOpen] = useState(false);
   const [summaryClockPadDigits, setSummaryClockPadDigits] = useState("");
   const [gameMoment, setGameMoment] = useState<string>("");
+  const [preGameNotes, setPreGameNotes] = useState<string>(() => localStorage.getItem("operator-console:pregame-notes") ?? "");
   const [modal, setModal] = useState<Modal | null>(null);
+  const [chainPrompt, setChainPrompt] = useState<ChainPrompt | null>(null);
+  const chainTimerRef = useRef<number | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem('ipo:tutorial-complete'));
   const [overtimeCount, setOvertimeCount] = useState(0);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -871,21 +1087,14 @@ export function App() {
     return loadPending(loadAppData().gameSetup.gameId).length > 0 ? "live" : "pre-game";
   });
 
-  // ---- Pre-game setup state ----
-  const [preGameDeviceId, setPreGameDeviceId] = useState(normalizeDeviceId(appData.gameSetup.deviceId));
-
-  // Keep pre-game device ID input in sync when it is changed via Settings > Game Setup
-  useEffect(() => {
-    setPreGameDeviceId(normalizeDeviceId(appData.gameSetup.deviceId));
-  }, [appData.gameSetup.deviceId]);
-
   const [showLineupSetup, setShowLineupSetup] = useState(false);
   const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
+  const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
 
   // ---- In-game roster state ----
   const [showRosterPanel, setShowRosterPanel] = useState(false);
 
-  // Ref for auto-save interval — always holds the latest values without re-registering the interval
+  // Ref for auto-save interval - always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
   // Helper to generate team ID from name
@@ -1053,7 +1262,10 @@ export function App() {
       return;
     }
 
-    const deviceId = normalizeDeviceId(appData.gameSetup.deviceId);
+    const connectionId = normalizeConnectionId(appData.gameSetup.connectionId);
+    if (!connectionId) {
+      return;
+    }
     const startingLineup = Array.isArray(appData.gameSetup.startingLineup)
       ? [...new Set(appData.gameSetup.startingLineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5)
       : [];
@@ -1063,9 +1275,18 @@ export function App() {
     const startingLineupByTeam = startingLineup.length > 0
       ? { [trackedTeamId]: startingLineup }
       : undefined;
-    const payload = { deviceId, gameId, startingLineupByTeam };
+    const payload = { connectionId, gameId, startingLineupByTeam };
+    const socketAuth: Record<string, string> = { schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID };
+    if (appData.gameSetup.apiKey) {
+      if (appData.gameSetup.apiKey.startsWith("bta.")) {
+        socketAuth.token = appData.gameSetup.apiKey;
+      } else {
+        socketAuth.apiKey = appData.gameSetup.apiKey;
+      }
+    }
     const socket = io(appData.gameSetup.apiUrl, {
-      auth: appData.gameSetup.apiKey ? { apiKey: appData.gameSetup.apiKey } : {}
+      auth: socketAuth,
+      extraHeaders: apiKeyHeader(appData.gameSetup)
     });
 
     const register = () => {
@@ -1087,7 +1308,13 @@ export function App() {
     });
     
     socket.on("error", (error: unknown) => {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "message" in error
+          ? String((error as Record<string, unknown>).message)
+          : typeof error === "object" && error !== null && "error" in error
+            ? String((error as Record<string, unknown>).error)
+            : String(error);
       showInlineNotice(`Server error: ${msg}`, "error");
     });
 
@@ -1108,6 +1335,46 @@ export function App() {
       }
     });
 
+    socket.on("operator:link:updated", (payload: unknown) => {
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+      const snapshot = payload as OperatorLinkResponse;
+      if (normalizeConnectionId(snapshot.connectionId) !== connectionId) {
+        return;
+      }
+
+      setAppData((current) => {
+        const next = mergeCoachLinkSnapshot(current, snapshot);
+        saveAppData(next);
+        return next;
+      });
+      setConnectionSyncStatus("Coach updates received. The latest team and roster info are saved locally on this iPad.");
+    });
+
+    socket.on("roster:teams", (payload: unknown) => {
+      if (!Array.isArray(payload)) {
+        return;
+      }
+
+      const nextTeams = (payload as RosterTeam[]).map(convertRosterTeamToAppTeam);
+      setAppData((current) => {
+        const hasSelectedTeam = nextTeams.some((team) => team.id === current.gameSetup.myTeamId);
+        const nextMyTeamId = hasSelectedTeam ? current.gameSetup.myTeamId : (nextTeams[0]?.id ?? "");
+        const allowedPlayerIds = new Set((nextTeams.find((team) => team.id === nextMyTeamId)?.players ?? []).map((player) => player.id));
+        const startingLineup = Array.isArray(current.gameSetup.startingLineup)
+          ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
+          : [];
+        const next = {
+          ...current,
+          teams: nextTeams,
+          gameSetup: { ...current.gameSetup, myTeamId: nextMyTeamId, startingLineup },
+        };
+        saveAppData(next);
+        return next;
+      });
+    });
+
     register();
 
     const heartbeat = setInterval(() => {
@@ -1123,9 +1390,11 @@ export function App() {
       socket.off("disconnect");
       socket.off("error");
       socket.off("game:insights");
+      socket.off("operator:link:updated");
+      socket.off("roster:teams");
       socket.disconnect();
     };
-  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.deviceId, gameId, gamePhase]);
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, gameId, gamePhase]);
 
   useEffect(() => {
     const localPending = loadPending(gameId).map(normalizeEventTeamId);
@@ -1134,9 +1403,9 @@ export function App() {
     setSequence(localSeq);
     async function hydrate() {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
+        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (!res.ok) {
-          // Don't wipe submitted events on error — keep local state
+          // Don't wipe submitted events on error - keep local state
           return;
         }
         const events = ((await res.json()) as GameEvent[]).map(normalizeEventTeamId);
@@ -1146,7 +1415,7 @@ export function App() {
         setSequence(next);
         saveSeq(gameId, next);
       } catch {
-        // Hydration failed (offline) — keep local pending queue intact
+        // Hydration failed (offline) - keep local pending queue intact
       }
     }
     void hydrate();
@@ -1158,7 +1427,7 @@ export function App() {
   async function submitEvent(event: GameEvent): Promise<boolean> {
     const normalizedEvent = normalizeEventTeamId(event);
     try {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, {
+      const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(normalizedEvent),
@@ -1170,10 +1439,9 @@ export function App() {
       }
       setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
       setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
-      showInlineNotice("✓ Stat saved", "success", 1500);
       return true;
     } catch (err) {
-      const errorMsg = `Network error. Event queued offline — will sync when reconnected.`;
+      const errorMsg = "Network error. Event queued offline - will sync when reconnected.";
       showInlineNotice(errorMsg, "warning", 10000);
       setPendingEvents(cur => {
         if (cur.some(p => p.id === normalizedEvent.id)) return cur;
@@ -1193,14 +1461,49 @@ export function App() {
     }
     if (successCount > 0) {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events`, apiHeaders(appData.gameSetup));
+        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
         if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
       } catch { /* empty */ }
-        showInlineNotice(`✓ ${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
+        showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
     }
   }
 
   useEffect(() => { if (online) void flushQueue(); }, [online]);
+
+  // Persist pre-game notes
+  useEffect(() => {
+    localStorage.setItem("operator-console:pregame-notes", preGameNotes);
+  }, [preGameNotes]);
+
+  // Keep screen awake during a live game
+  useEffect(() => {
+    if (gamePhase !== "live") return;
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    async function acquire() {
+      try {
+        lock = await (navigator as Navigator & { wakeLock: { request(type: string): Promise<WakeLockSentinel> } }).wakeLock.request("screen");
+      } catch { /* device may not support it */ }
+    }
+    void acquire();
+    function reacquire() { if (document.visibilityState === "visible") void acquire(); }
+    document.addEventListener("visibilitychange", reacquire);
+    return () => {
+      document.removeEventListener("visibilitychange", reacquire);
+      lock?.release().catch(() => {});
+    };
+  }, [gamePhase]);
+
+  // Warn before leaving with unsubmitted events
+  useEffect(() => {
+    if (gamePhase !== "live") return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (pendingEvents.length === 0) return;
+      e.preventDefault();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [gamePhase, pendingEvents.length]);
 
   useEffect(() => {
     if (gamePhase !== "live" || !gameId) {
@@ -1210,8 +1513,9 @@ export function App() {
     const payload = {
       ...buildAiContextFromSetup(appData.gameSetup),
       gameMoment: gameMoment || undefined,
+      preGameNotes: preGameNotes.trim() || undefined,
     };
-    void fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/ai-context`, {
+    void fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/ai-context`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
       body: JSON.stringify(payload),
@@ -1227,6 +1531,7 @@ export function App() {
     gameId,
     gamePhase,
     gameMoment,
+    preGameNotes,
   ]);
 
   useEffect(() => {
@@ -1260,6 +1565,8 @@ export function App() {
     saveSeq(gameId, next);
     // Optimistic update: add to pending immediately so score updates instantly
     setPendingEvents(cur => [...cur, event].sort((a, b) => a.sequence - b.sequence));
+    // Haptic confirmation on supported devices
+    try { navigator.vibrate?.(30); } catch { /* not supported */ }
     // Then submit in background
     await submitEvent(event);
   }
@@ -1272,27 +1579,28 @@ export function App() {
     const last = !lastSubmitted ? lastPending
       : !lastPending ? lastSubmitted
       : lastPending.sequence > lastSubmitted.sequence ? lastPending : lastSubmitted;
-    if (!last) return;
+    if (!last) {
+      showInlineNotice("Nothing to undo.", "info", 2000);
+      return;
+    }
 
-    const ok = await requestConfirm({
-      title: "Undo last event?",
-      message: "This removes the most recent event from the game log.",
-      confirmLabel: "Undo Event",
-      tone: "danger",
-    });
-    if (!ok) return;
-
-    // Remove from pending queue first
+    // Remove from pending queue immediately — no confirmation needed
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     // If it is already submitted to the API, delete it there
     if (submittedEvents.some(e => e.id === last.id)) {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
-      if (res.ok) setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
+      const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
+      if (res.ok) {
+        setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
+      } else {
+        showInlineNotice("Could not remove event from server. It may sync on reconnect.", "warning", 4000);
+      }
     }
+    try { navigator.vibrate?.(20); } catch { /* not supported */ }
+    showInlineNotice("Last event undone.", "success", 2500);
   }
 
   async function startGame(newGameId?: string) {
-    // Read fresh settings from localStorage — saveGameSetup writes there synchronously
+    // Read fresh settings from localStorage - saveGameSetup writes there synchronously
     // before this async function resolves, so we always get the latest values.
     const latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
@@ -1320,7 +1628,7 @@ export function App() {
       : undefined;
 
     try {
-      const res = await fetch(`${latest.gameSetup.apiUrl}/games`, {
+      const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
         body: JSON.stringify({
@@ -1330,7 +1638,10 @@ export function App() {
           opponentName: latestOpponent,
           opponentTeamId: latestOpponentTeamId,
           startingLineupByTeam,
-          aiContext: buildAiContextFromSetup(latest.gameSetup),
+          aiContext: {
+            ...buildAiContextFromSetup(latest.gameSetup),
+            preGameNotes: preGameNotes.trim() || undefined,
+          },
         }),
       });
 
@@ -1382,7 +1693,7 @@ export function App() {
     return true;
   }
 
-  /** End game from the live view — opens post-game review screen without auto-submitting. */
+  /** End game from the live view - opens post-game review screen without auto-submitting. */
   async function endGame() {
     const ok = await requestConfirm({
       title: "End game now?",
@@ -1393,11 +1704,11 @@ export function App() {
     if (!ok) return;
 
     setSubmitStatus("idle");
-    setSubmitMessage("Review game details, then tap Re-save Stats to publish to the dashboard.");
+    setSubmitMessage("Review game details, then tap Submit Game to publish stats to the dashboard.");
     persistPhase("post-game");
   }
 
-  /** Prepare a fresh game after viewing post-game screen — returns to pre-game setup. */
+  /** Prepare a fresh game after viewing post-game screen - returns to pre-game setup. */
   function handleNewGame() {
     const latest = loadAppData();
     const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
@@ -1413,7 +1724,7 @@ export function App() {
     saveSeq(newId, 1);
     setGameDate(new Date().toISOString().slice(0, 10));
     setSubmitStatus("idle");
-    setSubmitMessage("Ready to save final stats to the dashboard.");
+    setSubmitMessage("Ready to publish final stats.");
     persistPhase("pre-game");
   }
 
@@ -1421,7 +1732,7 @@ export function App() {
     const vcSide = appData.gameSetup.vcSide ?? "home";
     const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
     const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:4000";
 
     if (!opponent) {
       const message = "Enter the opponent name in Game Setup before submitting.";
@@ -1436,6 +1747,16 @@ export function App() {
       setSubmitMessage(message);
       showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
       return false;
+    }
+
+    if (!isLegacyStatsExportConfigured(appData.gameSetup)) {
+      setSubmitStatus("success");
+      setSubmitMessage("Live stats are already available in the coach dashboard.");
+      setTimeout(() => {
+        setSubmitStatus("idle");
+        setSubmitMessage("Ready to publish final stats.");
+      }, 4000);
+      return true;
     }
 
     setSubmitStatus("pending");
@@ -1458,7 +1779,7 @@ export function App() {
     const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
     const teamStats = computeTeamStats(allEventObjs, vcTeamId);
 
-    // Full roster for the dashboard to upsert — keyed by jersey number so it
+    // Full roster for the dashboard to upsert - keyed by jersey number so it
     // correctly updates existing players instead of creating abbreviated duplicates.
     const rosterPayload = vcTeam.players.map(p => ({
       number: parseInt(p.number, 10) || 0,
@@ -1502,7 +1823,7 @@ export function App() {
         setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
         setTimeout(() => {
           setSubmitStatus("idle");
-          setSubmitMessage("Ready to save final stats to the dashboard.");
+          setSubmitMessage("Ready to publish final stats.");
         }, 4000);
         return true;
       } else {
@@ -1510,7 +1831,7 @@ export function App() {
         console.error("Dashboard ingest error:", errorMessage);
         setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
         showInlineNotice(
-          `Could not save final stats to the Stats dashboard. ${errorMessage} Check Settings > Game Setup > Stats Dashboard URL and make sure the dashboard is running.`,
+          `Could not save final stats to the legacy stats export endpoint. ${errorMessage} Check Settings > Game Setup > Legacy Stats Export URL and make sure that service is running.`,
           "error"
         );
         setSubmitStatus("error");
@@ -1520,7 +1841,7 @@ export function App() {
       console.error("Could not reach Stats dashboard:", err);
       setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
       showInlineNotice(
-        `Could not reach the Stats dashboard at ${dashboardUrl}. Start the Stats Dashboard service or update Settings > Game Setup > Stats Dashboard URL, then retry.`,
+        `Could not reach the legacy stats export endpoint at ${dashboardUrl}. Start that service or update Settings > Game Setup > Legacy Stats Export URL, then retry.`,
         "error"
       );
       setSubmitStatus("error");
@@ -1785,7 +2106,7 @@ export function App() {
     const failedDeletes: string[] = [];
     for (const event of submittedToRemove) {
       try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${event.id}`, {
+        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${event.id}`, {
           method: "DELETE",
           headers: apiKeyHeader(appData.gameSetup),
         });
@@ -1840,7 +2161,7 @@ export function App() {
 
     setSummaryAiLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/games/${gameId}/insights`, {
+      const res = await fetch(`${apiUrl}/api/games/${gameId}/insights`, {
         method: "GET",
         headers: { ...apiKeyHeader(appData.gameSetup) },
       });
@@ -1862,7 +2183,7 @@ export function App() {
         .map((insight) => {
           const base = insight.message?.trim() || insight.explanation?.trim() || "No insight text available.";
           const why = insight.explanation?.trim() || "";
-          const compact = why && !base.includes(why) ? `${base} — ${why}` : base;
+          const compact = why && !base.includes(why) ? `${base} - ${why}` : base;
           return compact;
         });
 
@@ -1889,7 +2210,7 @@ export function App() {
 
     setSummaryPlayerAiLoading(true);
     try {
-      const res = await fetch(`${apiUrl}/games/${gameId}/insights`, {
+      const res = await fetch(`${apiUrl}/api/games/${gameId}/insights`, {
         method: "GET",
         headers: { ...apiKeyHeader(appData.gameSetup) },
       });
@@ -2015,11 +2336,25 @@ export function App() {
     });
     if (!ok) return;
 
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
-    const savedStatsGameId = appData.gameSetup.statsGameId;
-    if (savedStatsGameId != null) {
+    // Delete from the realtime API
+    const apiUrl = appData.gameSetup.apiUrl?.trim();
+    if (apiUrl && gameId) {
       try {
-        await fetch(`${dashboardUrl}/api/game/${savedStatsGameId}`, {
+        await fetch(`${apiUrl}/api/games/${encodeURIComponent(gameId)}`, {
+          method: "DELETE",
+          headers: apiKeyHeader(appData.gameSetup),
+        });
+      } catch {
+        // Keep discarding locally even if API cleanup fails.
+      }
+    }
+
+    // Also delete from legacy stats export if a stats game ID was assigned
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim();
+    const savedStatsGameId = appData.gameSetup.statsGameId;
+    if (dashboardUrl && savedStatsGameId != null) {
+      try {
+        await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
           method: "DELETE",
           headers: apiKeyHeader(appData.gameSetup),
         });
@@ -2044,9 +2379,30 @@ export function App() {
     persistPhase("pre-game");
   }
 
-  // Auto-save every 3 minutes — interval reads from ref so no deps needed
+  async function submitGameToRealtimeApi(): Promise<boolean> {
+    const apiUrl = appData.gameSetup.apiUrl?.trim();
+    if (!apiUrl || !gameId) return true; // Nothing to do without API config
+    try {
+      const res = await fetch(`${apiUrl}/api/games/${encodeURIComponent(gameId)}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+      });
+      if (!res.ok && res.status !== 404) {
+        // 404 is OK - game may have been discarded already
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Auto-save interval is disabled - games are only published to the stats
+  // dashboard when the operator explicitly taps "Submit Game" on the
+  // post-game screen.  The ref and ctx are kept so legacy export (if
+  // configured) can still be triggered manually.
   useEffect(() => {
-    const id = setInterval(() => autoSaveCtx.current.run(), 3 * 60 * 1000);
+    const id = setInterval(() => { /* auto-save disabled */ }, 3 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -2148,7 +2504,7 @@ export function App() {
     }
 
     try {
-      const response = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${editContext.eventId}`, {
+      const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(normalizedEvent),
@@ -2187,7 +2543,7 @@ export function App() {
     }
 
     try {
-      const response = await fetch(`${appData.gameSetup.apiUrl}/games/${gameId}/events/${target.event.id}`, {
+      const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
         method: "DELETE",
         headers: apiKeyHeader(appData.gameSetup),
       });
@@ -2261,8 +2617,40 @@ export function App() {
     );
   }
 
+  // Auto-dismiss chain prompt after 12 seconds
+  useEffect(() => {
+    if (chainTimerRef.current != null) {
+      window.clearTimeout(chainTimerRef.current);
+      chainTimerRef.current = null;
+    }
+    if (chainPrompt) {
+      chainTimerRef.current = window.setTimeout(() => {
+        setChainPrompt(null);
+        chainTimerRef.current = null;
+      }, 12000);
+    }
+    return () => {
+      if (chainTimerRef.current != null) {
+        window.clearTimeout(chainTimerRef.current);
+      }
+    };
+  }, [chainPrompt]);
+
   // ---- Modal helpers ----
   function closeModal() { setModal(null); }
+  function dismissChain() { setChainPrompt(null); }
+
+  /** Silently emit a possession_start event if possession would actually change. */
+  function autoEmitPossession(teamId: string) {
+    if (possessionTeamId === teamId) return;
+    setPossessionOverrideTeamId(teamId);
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "possession_start",
+      possessedByTeamId: teamId,
+    });
+  }
 
   function confirmShot(playerId: string) {
     if (!modal || modal.kind !== "shot") return;
@@ -2282,16 +2670,31 @@ export function App() {
       } as GameEvent, modal.editContext);
       return;
     }
+    const shotTeam = modal.teamId;
+    const shotMade = modal.made;
+    const shotPoints = modal.points;
     void postEvent({
       ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
+      teamId: resolveTeamId(shotTeam),
       type: "shot_attempt",
       playerId,
-      made: modal.made,
-      points: modal.points,
-      zone: modal.points === 3 ? "above_break_three" : "paint",
+      made: shotMade,
+      points: shotPoints,
+      zone: shotPoints === 3 ? "above_break_three" : "paint",
     } as GameEvent);
     closeModal();
+    // Chain: auto-possession + contextual next prompt
+    if (shotMade) {
+      // Ball changes hands — auto-give possession to opponent
+      const oppTeamId = resolveTeamId(shotTeam === "home" ? "away" : "home");
+      autoEmitPossession(oppTeamId);
+      // Only prompt for assist on our tracked team's scored baskets
+      if (shotTeam === vcSideSetup) {
+        setChainPrompt({ kind: "after-made-shot", forTeam: shotTeam, points: shotPoints, scorerPlayerId: playerId });
+      }
+    } else {
+      setChainPrompt({ kind: "after-missed-shot", forTeam: shotTeam });
+    }
   }
 
   function confirmFreeThrow(playerId: string) {
@@ -2312,16 +2715,25 @@ export function App() {
       } as GameEvent, modal.editContext);
       return;
     }
+    const ftTeam = modal.teamId;
+    const ftMade = modal.made;
     void postEvent({
       ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
+      teamId: resolveTeamId(ftTeam),
       type: "free_throw_attempt",
       playerId,
-      made: modal.made,
+      made: ftMade,
       attemptNumber: 1,
       totalAttempts: 1,
     } as GameEvent);
     closeModal();
+    // Chain: if made, give possession to opponent; if missed, prompt for rebound
+    if (ftMade) {
+      const oppTeamId = resolveTeamId(ftTeam === "home" ? "away" : "home");
+      autoEmitPossession(oppTeamId);
+    } else {
+      setChainPrompt({ kind: "after-ft-miss", forTeam: ftTeam });
+    }
   }
 
   function confirmStat(playerId: string) {
@@ -2365,7 +2777,8 @@ export function App() {
         };
         void postEvent(turnoverEvent);
       }
-
+      // Auto-set possession to the stealing team
+      autoEmitPossession(teamId);
       closeModal();
       return;
     }
@@ -2386,6 +2799,20 @@ export function App() {
       return;
     }
     if (event) void postEvent(event as GameEvent);
+    // Chain: auto-possession after rebounding or turnovers
+    if (!modal.editContext) {
+      if (stat === "def_reb") {
+        // Defensive rebound → rebounding team gets possession
+        autoEmitPossession(teamId);
+      } else if (stat === "off_reb") {
+        // Offensive rebound → same team keeps possession
+        autoEmitPossession(teamId);
+      } else if (stat === "turnover") {
+        // Turnover → other team gets possession, prompt for steal
+        autoEmitPossession(otherTeamId);
+        setChainPrompt({ kind: "after-turnover", fromTeam: modal.teamId });
+      }
+    }
     closeModal();
   }
 
@@ -2506,14 +2933,14 @@ export function App() {
       const allowTeamOnlyForOpponent = modal.teamId === opponentSide && allTeamPlayers.length === 0;
       const selectedTeamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
       const modalTitle = modal.editContext
-        ? `Edit ${modal.kind === "shot" ? `${modal.points}pt` : "FT"} — ${tLabel(modal.teamId)}`
-        : `${modal.kind === "shot" ? `${modal.points}pt` : "FT"} — ${tLabel(modal.teamId)}`;
+        ? `Edit ${modal.kind === "shot" ? `${modal.points}pt` : "FT"} - ${tLabel(modal.teamId)}`
+        : `${modal.kind === "shot" ? `${modal.points}pt` : "FT"} - ${tLabel(modal.teamId)}`;
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">{modalTitle}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="made-miss-row">
@@ -2553,7 +2980,7 @@ export function App() {
     if (modal.kind === "stat") {
       const statLabels: Record<string, string> = {
         def_reb: "Def Rebound", off_reb: "Off Rebound", turnover: "Turnover",
-        steal: "Steal", assist: "Assist — pick passer", block: "Block", foul: "Foul",
+        steal: "Steal", assist: "Assist - pick passer", block: "Block", foul: "Foul",
       };
       const trackedSide = vcSideSetup;
       const allowOpponentForStat = isOpponentStatEnabled(modal.stat as OpponentTrackStat);
@@ -2587,7 +3014,7 @@ export function App() {
                   >{vcSideSetup === "home" ? awayTeamName : homeTeamName}</button>
                 </div>
               </div>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
@@ -2634,8 +3061,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Edit Assist — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">Edit Assist - {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="modal-subtitle">Select the passer, then the scorer.</div>
@@ -2694,8 +3121,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Assist — pick scorer</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">Assist - pick scorer</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             <div className="player-list">
               {players.length === 0 && <p className="no-players">No players on court yet</p>}
@@ -2720,8 +3147,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">Assist — pick points</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">Assist - pick points</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             <div className="modal-subtitle">
               {passer ? `Passer: #${passer.number} ${passer.name}` : "Passer selected"}
@@ -2732,6 +3159,52 @@ export function App() {
             <div className="event-pills" style={{ marginTop: 12, display: "flex", gap: "1.5rem", justifyContent: "center" }}>
               <button className="circle teal" style={{ width: 120, height: 120, fontSize: "1.6rem" }} onClick={() => { void confirmAssistPoints(2); }}>2pt</button>
               <button className="circle teal" style={{ width: 120, height: 120, fontSize: "1.6rem" }} onClick={() => { void confirmAssistPoints(3); }}>3pt</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "chain-assist") {
+      const allTeamPlayers = teamPlayers(modal.teamId);
+      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
+      // Exclude the scorer from the passer list
+      const passers = lineup.onCourt.filter(p => p.id !== modal.scorerPlayerId);
+      const scorer = allTeamPlayers.find(p => p.id === modal.scorerPlayerId);
+      const teamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Assist – who passed to {scorer ? `#${scorer.number} ${scorer.name}` : "scorer"}?</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
+            </div>
+            <div className="player-list">
+              {passers.length === 0 && <p className="no-players">No other players on court</p>}
+              {passers.map(p => (
+                <button key={p.id} className="player-row" onClick={() => {
+                  void postEvent({
+                    ...base(sequence),
+                    teamId: resolveTeamId(modal.teamId),
+                    type: "assist",
+                    playerId: p.id,
+                    scorerPlayerId: modal.scorerPlayerId,
+                  } as GameEvent);
+                  closeModal();
+                }}>
+                  <span className="pnum">#{p.number}</span>
+                  <span className="pname">{p.name}</span>
+                  {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].ast > 0 ? `${pTotals[p.id].ast} ast` : ""}</span> : null}
+                </button>
+              ))}
+            </div>
+            <div style={{ padding: "0.5rem 1.2rem 1rem" }}>
+              <button
+                style={{ width: "100%", padding: "0.8rem", borderRadius: "0.5rem", background: "transparent", border: `1px solid ${teamColor}40`, color: "rgba(232,234,240,0.6)", cursor: "pointer", fontSize: "0.9rem" }}
+                onClick={closeModal}
+              >
+                No assist – unassisted basket
+              </button>
             </div>
           </div>
         </div>
@@ -2749,8 +3222,8 @@ export function App() {
           <div className="modal-overlay" onClick={closeModal}>
             <div className="modal" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} → {players.find(p => p.id === modal.playerOutId)?.name} — {tLabel(modal.teamId)}</span>
-                <button className="modal-close" onClick={closeModal}>✕</button>
+                <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} for {players.find(p => p.id === modal.playerOutId)?.name} - {tLabel(modal.teamId)}</span>
+                <button className="modal-close" onClick={closeModal}>X</button>
               </div>
               {renderEditDeleteAction(modal.editContext ?? null)}
               <div className="player-list">
@@ -2771,8 +3244,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.editContext ? "Edit Sub Out" : "Sub Out"} — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">{modal.editContext ? "Edit Sub Out" : "Sub Out"} - {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
@@ -2801,8 +3274,8 @@ export function App() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} - {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
             <div className="player-list">
@@ -2824,7 +3297,7 @@ export function App() {
           <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Edit Timeout</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="confirm-message">Update the team and timeout length for this stoppage.</div>
@@ -2863,7 +3336,7 @@ export function App() {
           <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Edit Possession</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="confirm-message">Choose which team should own this possession event.</div>
@@ -2906,7 +3379,7 @@ export function App() {
           <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <span className="modal-title">Edit Period Start</span>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext)}
             <div className="confirm-message">Pick the period that should start at this point in the feed.</div>
@@ -2937,6 +3410,103 @@ export function App() {
                 Save Period
               </button>
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  }
+
+  function renderChainPrompt() {
+    if (!chainPrompt) return null;
+    const myTeamName = vcSideSetup === "home" ? homeTeamName : awayTeamName;
+    const oppTeamName = vcSideSetup === "home" ? awayTeamName : homeTeamName;
+    const myTeamColor = vcSideSetup === "home" ? homeTeamColor : awayTeamColor;
+    const oppTeamColor = vcSideSetup === "home" ? awayTeamColor : homeTeamColor;
+
+    if (chainPrompt.kind === "after-made-shot") {
+      const teamName = chainPrompt.forTeam === vcSideSetup ? myTeamName : oppTeamName;
+      const teamColor = chainPrompt.forTeam === vcSideSetup ? myTeamColor : oppTeamColor;
+      return (
+        <div className="chain-prompt">
+          <span className="chain-prompt-label">
+            {teamName} <span className="chain-prompt-made">+{chainPrompt.points}</span> · Add assist?
+          </span>
+          <div className="chain-prompt-actions">
+            <button
+              className="chain-btn chain-btn-primary"
+              style={{ borderColor: teamColor, color: teamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                setModal({ kind: "chain-assist", teamId: chainPrompt.forTeam, scorerPlayerId: chainPrompt.scorerPlayerId });
+              }}
+            >
+              Assist
+            </button>
+            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (chainPrompt.kind === "after-missed-shot" || chainPrompt.kind === "after-ft-miss") {
+      const isMy = chainPrompt.forTeam === vcSideSetup;
+      const label = chainPrompt.kind === "after-ft-miss" ? "FT miss · Rebound?" : "Miss · Rebound?";
+      return (
+        <div className="chain-prompt">
+          <span className="chain-prompt-label">{label}</span>
+          <div className="chain-prompt-actions">
+            <button
+              className="chain-btn chain-btn-primary"
+              style={{ borderColor: myTeamColor, color: myTeamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                // Off reb if the shooting team is my team, def reb if opponent missed
+                const rebStat = isMy ? "off_reb" : "def_reb";
+                setModal({ kind: "stat", stat: rebStat, teamId: vcSideSetup });
+              }}
+            >
+              {myTeamName} Reb
+            </button>
+            <button
+              className="chain-btn chain-btn-secondary"
+              style={{ borderColor: oppTeamColor, color: oppTeamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                // Def reb for opponent if shooting team is my team, off reb if opponent missed
+                const rebStat = isMy ? "def_reb" : "off_reb";
+                setModal({ kind: "stat", stat: rebStat, teamId: opponentSide });
+              }}
+            >
+              {oppTeamName} Reb
+            </button>
+            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (chainPrompt.kind === "after-turnover") {
+      // fromTeam turned it over, the OTHER team now has possession — prompt for steal
+      const stealTeamSide: TeamSide = chainPrompt.fromTeam === "home" ? "away" : "home";
+      const stealTeamName = stealTeamSide === vcSideSetup ? myTeamName : oppTeamName;
+      const stealTeamColor = stealTeamSide === vcSideSetup ? myTeamColor : oppTeamColor;
+      return (
+        <div className="chain-prompt">
+          <span className="chain-prompt-label">Turnover · Was it a steal?</span>
+          <div className="chain-prompt-actions">
+            <button
+              className="chain-btn chain-btn-primary"
+              style={{ borderColor: stealTeamColor, color: stealTeamColor }}
+              onClick={() => {
+                setChainPrompt(null);
+                setModal({ kind: "stat", stat: "steal", teamId: stealTeamSide });
+              }}
+            >
+              Steal – {stealTeamName}
+            </button>
+            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
           </div>
         </div>
       );
@@ -2982,7 +3552,7 @@ export function App() {
           onClick={() => setDismissedAlertIds((prev) => new Set([...prev, top.id]))}
           aria-label="Dismiss alert"
         >
-          ✕
+          X
         </button>
       </div>
     );
@@ -3018,20 +3588,23 @@ export function App() {
   // ================================================================
   if (view === "settings") {
     if (settingsView === "ipad-tips") {
-      return <IpadTipsPage onBack={() => setSettingsView("menu")} />;
+      return <IpadTipsPage onBack={() => navigateView("settings", "menu")} />;
     }
+
+    const safeSettingsView: SettingsView = operatorAllowedSettingsViews.has(settingsView)
+      ? settingsView
+      : "menu";
+
     return <SettingsScreen
       appData={appData}
-      settingsView={settingsView}
-      editingTeamId={editingTeamId}
+      settingsView={safeSettingsView}
       onPersist={persistData}
-      onNav={setSettingsView}
-      onEditTeam={setEditingTeamId}
-      onBack={() => setView("game")}
+      onNav={(nextView) => navigateView("settings", operatorAllowedSettingsViews.has(nextView) ? nextView : "menu")}
+      onBack={() => navigateView("game")}
       onStartGame={async () => {
         const reset = await endAndResetGame();
         if (reset) {
-          setView("game");
+          navigateView("game");
         }
       }}
     />;
@@ -3045,7 +3618,8 @@ export function App() {
   if (gamePhase === "pre-game") {
     const savedLineup = appData.gameSetup.startingLineup ?? [];
     const lineupIsSet = savedLineup.length > 0;
-    const canStart = !!appData.gameSetup.myTeamId && !!appData.gameSetup.opponent?.trim() && lineupIsSet;
+    const hasConnectionId = !!normalizeConnectionId(appData.gameSetup.connectionId);
+    const canStart = hasConnectionId && !!appData.gameSetup.myTeamId;
     const myTeamDisplay = myTeam?.name ?? null;
 
     const handleStarterToggle = (playerId: string) => {
@@ -3060,34 +3634,14 @@ export function App() {
     };
 
     const handleSaveLineup = () => {
-      const normalizedDeviceId = normalizeDeviceId(preGameDeviceId);
-      setPreGameDeviceId(normalizedDeviceId);
       persistData({
         ...appData,
         gameSetup: {
           ...appData.gameSetup,
-          deviceId: normalizedDeviceId,
           startingLineup: Array.from(selectedStarters),
         },
       });
-      localStorage.setItem(DEVICE_ID_KEY, normalizedDeviceId);
       setShowLineupSetup(false);
-    };
-
-    const persistPreGameDeviceId = () => {
-      const normalizedDeviceId = normalizeDeviceId(preGameDeviceId);
-      if (normalizedDeviceId === appData.gameSetup.deviceId && normalizedDeviceId === preGameDeviceId) {
-        return;
-      }
-      setPreGameDeviceId(normalizedDeviceId);
-      persistData({
-        ...appData,
-        gameSetup: {
-          ...appData.gameSetup,
-          deviceId: normalizedDeviceId,
-        },
-      });
-      localStorage.setItem(DEVICE_ID_KEY, normalizedDeviceId);
     };
 
     return (
@@ -3101,41 +3655,40 @@ export function App() {
           </div>
 
           <div className="pregame-device-id">
-            <label className="pregame-device-label">Device ID</label>
-            <span className="pregame-device-value">{preGameDeviceId}</span>
+            <div className="pregame-device-field">
+              <label className="pregame-device-label">Connection Code</label>
+              <input
+                className="pregame-device-input"
+                value={appData.gameSetup.connectionId ?? ""}
+                onChange={(event) => {
+                  const nextConnectionId = normalizeConnectionId(event.target.value);
+                  setConnectionSyncStatus(nextConnectionId
+                    ? `Connection code ${nextConnectionId} saved locally. Syncing coach setup...`
+                    : DEFAULT_CONNECTION_SYNC_STATUS);
+                  persistData({
+                    ...appData,
+                    gameSetup: {
+                      ...appData.gameSetup,
+                      connectionId: nextConnectionId || undefined,
+                    },
+                  });
+                }}
+                placeholder="Enter 6-digit coach code"
+                aria-label="Connection code"
+              />
+            </div>
             <button
               type="button"
               className="pregame-device-copy-btn"
               onClick={() => {
-                const url = buildCoachViewUrl(appData.gameSetup.gameId, preGameDeviceId, {
-                  myTeamId: appData.gameSetup.myTeamId,
-                  myTeamName: myTeam?.name,
-                  opponentName: appData.gameSetup.opponent,
-                  vcSide: appData.gameSetup.vcSide,
-                  homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor, DEFAULT_HOME_TEAM_COLOR),
-                  awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
-                });
-                const copyFallback = () => {
-                  const ta = document.createElement("textarea");
-                  ta.value = url;
-                  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
-                  document.body.appendChild(ta);
-                  ta.focus();
-                  ta.select();
-                  document.execCommand("copy");
-                  document.body.removeChild(ta);
-                };
-                if (navigator.clipboard) {
-                  navigator.clipboard.writeText(url).catch(copyFallback);
-                } else {
-                  copyFallback();
-                }
+                void syncFromCoachCode(undefined, { silent: false });
               }}
-              title="Copy coach dashboard link to clipboard"
+              title="Pull roster and game setup from the coach dashboard"
             >
-              Copy Coach Link
+              Sync Now
             </button>
           </div>
+          <p className="pregame-settings-hint">{connectionSyncStatus}</p>
 
           <div className="pregame-matchup">
             <div className="pregame-team my-team">
@@ -3143,140 +3696,67 @@ export function App() {
             </div>
             <div className="pregame-vs">vs</div>
             <div className="pregame-team opp-team">
-              <input
-                className="pregame-opp-input"
-                placeholder="Opponent name"
-                value={appData.gameSetup.opponent ?? ""}
-                onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
-              />
+              {opponentName
+                ? <span>{opponentName}</span>
+                : <span className="pregame-no-team">Opponent TBD</span>}
             </div>
           </div>
 
-          <div className="pregame-meta">
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Date</span>
-              <input
-                type="date"
-                className="pregame-date-inp"
-                value={gameDate}
-                onChange={e => setGameDate(e.target.value)}
-              />
-            </div>
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Side</span>
-              <div className="pregame-side-toggle">
-                <button
-                  className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
-                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
-                  Home
-                </button>
-                <button
-                  className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
-                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
-                  Away
-                </button>
-              </div>
-            </div>
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Colors</span>
-              <div className="team-color-rows">
-                {(() => {
-                  const myColorKey = vcSideSetup === "home" ? "homeTeamColor" : "awayTeamColor";
-                  const oppColorKey = vcSideSetup === "home" ? "awayTeamColor" : "homeTeamColor";
-                  const myEffectiveColor = myTeam?.teamColor
-                    ? normalizeTeamColor(myTeam.teamColor, DEFAULT_HOME_TEAM_COLOR)
-                    : (vcSideSetup === "home" ? homeTeamColor : awayTeamColor);
-                  const oppEffectiveColor = vcSideSetup === "home" ? awayTeamColor : homeTeamColor;
-                  const myLabel = myTeam?.name ?? "My Team";
-                  const oppLabel = opponentName || "Opponent";
-                  return (<>
-                    <div className="team-color-row">
-                      <span className="team-color-label">{oppLabel}</span>
-                      <div className="team-color-swatches">
-                        {TEAM_COLOR_OPTIONS.map((color) => (
-                          <button
-                            key={`pregame-opp-${color}`}
-                            type="button"
-                            className={`team-color-swatch${oppEffectiveColor === color ? " selected" : ""}`}
-                            style={{ background: color }}
-                            onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, [oppColorKey]: color } })}
-                            title={`Opponent color ${color}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </>);
-                })()}
-              </div>
-            </div>
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Clock</span>
-              <div className="pregame-side-toggle">
-                <button
-                  className={`tt-btn${(appData.gameSetup.clockEnabled ?? true) ? " tt-teal" : ""}`}
-                  onClick={() => {
-                    const next = !(appData.gameSetup.clockEnabled ?? true);
-                    persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: next, clockVisible: next } });
-                  }}>
-                  {(appData.gameSetup.clockEnabled ?? true) ? "Enabled" : "Disabled"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {!appData.gameSetup.myTeamId && (
-            <p className="pregame-error">⚠ No team selected — go to Settings to choose your team.</p>
+          {!hasConnectionId && (
+            <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
           )}
-          {!appData.gameSetup.opponent?.trim() && appData.gameSetup.myTeamId && (
-            <p className="pregame-error">⚠ Enter the opponent name above to continue.</p>
-          )}
-          {appData.gameSetup.myTeamId && appData.gameSetup.opponent?.trim() && !lineupIsSet && (
-            <p className="pregame-error">⚠ Set the starting lineup below before starting the game.</p>
+          {hasConnectionId && !appData.gameSetup.myTeamId && (
+            <p className="pregame-error">Tap Sync Now to pull team and game setup from the coach dashboard.</p>
           )}
 
-          {myTeam && (
+          {myTeam && !showLineupSetup && (
             <button
-              className={`pregame-lineup-btn${lineupIsSet && !showLineupSetup ? " lineup-is-set" : ""}${!lineupIsSet && !showLineupSetup ? " lineup-required" : ""}`}
+              className={`pregame-lineup-btn${lineupIsSet ? " lineup-is-set" : ""}${!lineupIsSet ? " lineup-required" : ""}`}
               onClick={() => {
-                setShowLineupSetup((current) => {
-                  const next = !current;
-                  if (next) {
-                    // Preload from saved lineup so edits show current state
-                    setSelectedStarters(new Set(savedLineup));
-                  }
-                  return next;
-                });
+                setSelectedStarters(new Set(savedLineup));
+                setShowLineupSetup(true);
               }}>
-              {showLineupSetup
-                ? "✕ Cancel"
-                : lineupIsSet
-                  ? `✓ Starting Lineup Set (${savedLineup.length}/5) — Edit`
-                  : "⚠ Set Starting Lineup (Required)"}
+              {lineupIsSet
+                ? `Edit Starting Lineup (${savedLineup.length}/5)`
+                : "Set Starting Lineup"}
             </button>
           )}
 
           {showLineupSetup && myTeam && (
             <div className="pregame-lineup-setup">
-              <h3 className="lineup-setup-title">Select Starting Lineup</h3>
+              <div className="lineup-setup-head">
+                <div>
+                  <h3 className="lineup-setup-title">Select Starting Lineup</h3>
+                  <p className="lineup-setup-subtitle">Choose 5 players to begin the game.</p>
+                </div>
+                <button
+                  type="button"
+                  className="lineup-cancel-btn"
+                  onClick={() => setShowLineupSetup(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="lineup-setup-status">{selectedStarters.size}/5 selected</div>
               <div className="lineup-player-grid">
                 {myTeam.players.map(p => (
                   <button
                     key={p.id}
                     className={`lineup-player-btn${selectedStarters.has(p.id) ? " lineup-player-selected" : ""}`}
-                      onClick={() => handleStarterToggle(p.id)}
-                      disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
+                    onClick={() => handleStarterToggle(p.id)}
+                    disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
                     <span className="lineup-player-num">#{p.number}</span>
                     <span className="lineup-player-name">{p.name}</span>
-                    {selectedStarters.has(p.id) && <span className="lineup-player-badge">☆</span>}
+                    {selectedStarters.has(p.id) && <span className="lineup-player-badge">*</span>}
                   </button>
                 ))}
               </div>
-              <div className="lineup-setup-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                <button className="lineup-save-btn" onClick={handleSaveLineup}>
-                  Set Lineup ({selectedStarters.size}/5)
-                </button>
+              <div className="lineup-setup-actions">
                 <button className="lineup-clear-btn" onClick={() => setSelectedStarters(new Set())}>
-                  Clear All
+                  Clear
+                </button>
+                <button className="lineup-save-btn" onClick={handleSaveLineup}>
+                  Save Lineup ({selectedStarters.size}/5)
                 </button>
               </div>
             </div>
@@ -3286,20 +3766,19 @@ export function App() {
             className="pregame-start-btn"
             disabled={!canStart}
             onClick={async () => {
-              persistPreGameDeviceId();
               const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
               await startGame(newId);
             }}>
-            ▶ Start Game
+            Start Game
           </button>
 
           <div className="pregame-settings-callout">
             <button
               className="pregame-settings-link"
-              onClick={() => { setSettingsView("game-setup"); setView("settings"); }}>
-              ⚙ Open Game Settings
+              onClick={() => navigateView("settings", "game-setup")}>
+              Open Advanced Settings
             </button>
-            <p className="pregame-settings-hint">Team/Opponent required. API and Dashboard URLs are critical for live sync and final save.</p>
+            <p className="pregame-settings-hint">API URL, clock, and opponent tracking options.</p>
           </div>
         </div>
       </div>
@@ -3310,7 +3789,8 @@ export function App() {
   if (gamePhase === "post-game") {
     const editedHomeScore = parseScoreInput(postGameHomeScoreInput, scores.home);
     const editedAwayScore = parseScoreInput(postGameAwayScoreInput, scores.away);
-    const coachUrl = buildCoachViewUrl(gameId, appData.gameSetup.deviceId, {
+    const coachUrl = buildCoachViewUrl(gameId, {
+      connectionId: appData.gameSetup.connectionId,
       myTeamId: appData.gameSetup.myTeamId,
       myTeamName: myTeam?.name,
       opponentName: appData.gameSetup.opponent,
@@ -3368,7 +3848,7 @@ export function App() {
                 onChange={e => setPostGameHomeScoreInput(e.target.value.replace(/[^0-9]/g, ""))}
               />
             </div>
-            <div className="postgame-score-sep">–</div>
+            <div className="postgame-score-sep">-</div>
             <div className="postgame-score-team">
               <span className="postgame-score-name">{awayTeamName}</span>
               <input
@@ -3398,22 +3878,37 @@ export function App() {
             href={coachUrl}
             target="_blank"
             rel="noreferrer">
-            📺 Open Dashboard
+            Open Dashboard
           </a>
 
           <button
             className="postgame-retry-btn"
-            onClick={() => {
+            onClick={async () => {
               const edits = applyPostGameEdits();
-              void submitToDashboard({
+              setSubmitStatus("pending");
+              setSubmitMessage("Submitting game to dashboard...");
+              const apiOk = await submitGameToRealtimeApi();
+              // Also run legacy export if configured
+              const legacyOk = await submitToDashboard({
                 opponent: edits.opponent,
                 date: edits.date,
                 homeScore: editedHomeScore,
                 awayScore: editedAwayScore,
               });
+              if (apiOk) {
+                setSubmitStatus("success");
+                setSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
+                setTimeout(() => {
+                  setSubmitStatus("idle");
+                  setSubmitMessage("Game has been submitted to the dashboard.");
+                }, 4000);
+              } else if (!legacyOk) {
+                setSubmitStatus("error");
+                setSubmitMessage("Submit failed. Check your connection and try again.");
+              }
             }}
             disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Saving…" : "↑ Re-save Stats"}
+            {submitStatus === "pending" ? "Submitting..." : "Submit Game"}
           </button>
 
           <button
@@ -3436,7 +3931,7 @@ export function App() {
           </button>
 
           <button className="postgame-new-btn" onClick={handleNewGame}>
-            ▶ Start New Game
+            Start New Game
           </button>
         </div>
       </div>
@@ -3450,7 +3945,8 @@ export function App() {
     "Q4",
     ...Array.from({ length: overtimeCount }, (_, index) => `OT${index + 1}`),
   ];
-  const liveCoachUrl = buildCoachViewUrl(gameId, appData.gameSetup.deviceId, {
+  const liveCoachUrl = buildCoachViewUrl(gameId, {
+    connectionId: appData.gameSetup.connectionId,
     myTeamId: appData.gameSetup.myTeamId,
     myTeamName: myTeam?.name,
     opponentName: appData.gameSetup.opponent,
@@ -3473,6 +3969,7 @@ export function App() {
       {renderAlertBanner()}
       {renderConfirmDialog()}
       {renderModal()}
+      {!modal && renderChainPrompt()}
       {showGameSummary && (
         <div className="modal-overlay" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>
           <div className="modal summary-modal" onClick={(e) => e.stopPropagation()}>
@@ -3506,12 +4003,12 @@ export function App() {
                         <div className="clock-numpad" onClick={e => e.stopPropagation()}>
                           <div className="clock-numpad-preview">{formatClockFromPadInput(summaryClockPadDigits)}</div>
                           <div className="clock-numpad-grid">
-                            {([1,2,3,4,5,6,7,8,9,".",0,"⌫"] as (number|string)[]).map((k, i) => (
+                            {([1,2,3,4,5,6,7,8,9,".",0,"DEL"] as (number|string)[]).map((k, i) => (
                               <button
                                 key={i}
                                 className="clock-numpad-key"
                                 onClick={() => {
-                                  if (k === "⌫") {
+                                  if (k === "DEL") {
                                     setSummaryClockPadDigits(d => d.slice(0, -1));
                                   } else if (k === ".") {
                                     setSummaryClockPadDigits(d => d.includes(".") ? d : d + ".");
@@ -3546,7 +4043,7 @@ export function App() {
                       onChange={e => setGameMoment(e.target.value)}
                       style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
                     >
-                      <option value="" style={{ background: "#302f68" }}>—</option>
+                      <option value="" style={{ background: "#302f68" }}>-</option>
                       {getGameMomentOptions().map(opt => (
                         <option key={opt.value} value={opt.value} style={{ background: "#302f68" }}>{opt.label}</option>
                       ))}
@@ -3580,7 +4077,7 @@ export function App() {
                   </div>
                 </div>
               </div>
-              <button className="modal-close" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>✕</button>
+              <button className="modal-close" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>X</button>
             </div>
 
             {/* Tab bar */}
@@ -3597,11 +4094,11 @@ export function App() {
                     void fetchPlayerAiInsights();
                   }
                 }}
-              >Players{foulAlerts.length > 0 ? ` ⚠ ${foulAlerts.length}` : ""}</button>
+              >Players{foulAlerts.length > 0 ? ` ! ${foulAlerts.length}` : ""}</button>
             </div>
 
             <div className="summary-body">
-              {/* ── TEAMS TAB ── */}
+              {/* Teams tab */}
               {summaryTab === "teams" && (<>
                 <div className="summary-stats-grid">
                   {(() => {
@@ -3626,7 +4123,7 @@ export function App() {
 
                 <div className="summary-highlights">
                   <h3>AI Insights</h3>
-                  {summaryAiLoading && <p className="summary-ai-status">Generating insights…</p>}
+                  {summaryAiLoading && <p className="summary-ai-status">Generating insights...</p>}
                   <div className="summary-ai-sections">
                     {!summaryAiLoading && activeSummaryInsights.length === 0 && (
                       <p className="summary-ai-status">No insights yet. Capture a few more possessions.</p>
@@ -3641,12 +4138,12 @@ export function App() {
                     <button
                       className="summary-ai-refresh-btn"
                       onClick={() => { setSummaryAiInsights(null); void fetchOpenAiSummaryInsights(); }}
-                    >↻ Refresh</button>
+                    >Refresh</button>
                   )}
                 </div>
               </>)}
 
-              {/* ── PLAYERS TAB ── */}
+              {/* Players tab */}
               {summaryTab === "players" && (<>
                 {/* Period filter pills */}
                 <div className="summary-period-filter">
@@ -3669,7 +4166,7 @@ export function App() {
                   ))}
                 </div>
                 {trackedPlayers.length === 0 ? (
-                  <p className="summary-no-players">No tracked players — add a roster to see individual stats.</p>
+                  <p className="summary-no-players">No tracked players - add a roster to see individual stats.</p>
                 ) : (
                   <div className="summary-player-list">
                     {/* header row */}
@@ -3714,7 +4211,7 @@ export function App() {
                             <span className="spr-name">
                               {p.number != null ? <span className="spr-num">#{p.number}</span> : null}
                               {p.name}
-                              {isTopScorer && <span className="spr-badge spr-badge-pts">🏆</span>}
+                              {isTopScorer && <span className="spr-badge spr-badge-pts">Top</span>}
                               {fouls >= 5 && <span className="spr-badge spr-badge-out">OUT</span>}
                             </span>
                             <span className="spr-stat spr-pts">{pts}</span>
@@ -3737,13 +4234,13 @@ export function App() {
                 {/* Player-focused AI suggestions */}
                 <div className="summary-highlights">
                   <h3>Player Suggestions</h3>
-                  {summaryPlayerAiLoading && <p className="summary-ai-status">Generating player insights…</p>}
+                  {summaryPlayerAiLoading && <p className="summary-ai-status">Generating player insights...</p>}
                   {!summaryPlayerAiLoading && trackedPlayers.length === 0 && (
                     <p className="summary-ai-status">Add a roster to get player-specific suggestions.</p>
                   )}
                   <div className="summary-ai-sections">
                     {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (summaryPlayerAiInsights ?? []).length === 0 && (
-                      <p className="summary-ai-status">No suggestions yet — capture more possessions or check your connection.</p>
+                      <p className="summary-ai-status">No suggestions yet - capture more possessions or check your connection.</p>
                     )}
                     {(summaryPlayerAiInsights ?? []).map((insight, index) => (
                       <div key={index} className="insight-section">
@@ -3755,7 +4252,7 @@ export function App() {
                     <button
                       className="summary-ai-refresh-btn"
                       onClick={() => { setSummaryPlayerAiInsights(null); void fetchPlayerAiInsights(); }}
-                    >↻ Refresh</button>
+                    >Refresh</button>
                   )}
                 </div>
               </>)}
@@ -3765,12 +4262,12 @@ export function App() {
       )}
       {!online && (
         <div className="offline-badge">
-          OFFLINE{pendingEvents.length > 0 ? ` · ${pendingEvents.length} unsaved` : ""}
+          OFFLINE{pendingEvents.length > 0 ? ` | ${pendingEvents.length} unsaved` : ""}
         </div>
       )}
       {pendingEvents.length > 0 && online && (
         <button className="offline-badge pending-badge" onClick={() => void flushQueue()}>
-          {pendingEvents.length} pending ↑
+          {pendingEvents.length} pending upload
         </button>
       )}
 
@@ -3778,9 +4275,6 @@ export function App() {
       <div className="panel left-panel">
         <div className="shot-grid">
           {(() => {
-            // Always render user's team on the left, opponent on the right
-            const myColor   = vcSideSetup === "home" ? "teal" : "red";
-            const oppColor  = vcSideSetup === "home" ? "red"  : "teal";
             const myName    = vcSideSetup === "home" ? homeTeamName : awayTeamName;
             const oppName   = vcSideSetup === "home" ? awayTeamName : homeTeamName;
             const myTO      = timeoutRemaining[vcSideSetup];
@@ -3790,14 +4284,14 @@ export function App() {
                 <>
                   <div className="shot-timeout-title">Timeouts {inOvertimeNow ? "(OT)" : "(Regulation)"}</div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
-                    <div className="shot-timeout-counts">30s: {myTO.short} · 60s: {myTO.full}</div>
+                    <div className="shot-timeout-counts">30s: {myTO.short} | 60s: {myTO.full}</div>
                     <div className="timeout-btn-row">
                       <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>30s</button>
                       <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>60s</button>
                     </div>
                   </div>
                   <div className={`shot-timeout-cell shot-timeout-cell-${opponentSide}`}>
-                    <div className="shot-timeout-counts">30s: {oppTO.short} · 60s: {oppTO.full}</div>
+                    <div className="shot-timeout-counts">30s: {oppTO.short} | 60s: {oppTO.full}</div>
                     <div className="timeout-btn-row">
                       <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>30s</button>
                       <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>60s</button>
@@ -3805,14 +4299,37 @@ export function App() {
                   </div>
                 </>
               )}
-              <div className={`shot-grid-team-label shot-grid-team-label-${vcSideSetup}`} title={`Buttons for ${myName}`}>{myName}</div>
-              <div className={`shot-grid-team-label shot-grid-team-label-${opponentSide}`} title={`Buttons for ${oppName}`}>{oppName}</div>
-              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "shot", teamId: vcSideSetup,   points: 2, made: true })}>2pt</button>
-              {isOpponentStatEnabled("points")       && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "shot", teamId: opponentSide,   points: 2, made: true })}>2pt</button>}
-              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "shot", teamId: vcSideSetup,   points: 3, made: true })}>3pt</button>
-              {isOpponentStatEnabled("points")       && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "shot", teamId: opponentSide,   points: 3, made: true })}>3pt</button>}
-              <button className={`circle ${myColor}`}  onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup,   made: true })}>ft</button>
-              {isOpponentStatEnabled("free_throws")  && <button className={`circle ${oppColor}`} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide,   made: true })}>ft</button>}
+
+              {/* My team — full make/miss row per shot type */}
+              <div className="shot-grid-team-label shot-grid-team-label-my" style={{ gridColumn: "1 / -1" }} title={`Scoring for ${myName}`}>{myName}</div>
+              <button className="shot-btn shot-btn-make" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>
+                <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MAKE</span>
+              </button>
+              <button className="shot-btn shot-btn-miss" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: false })}>
+                <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MISS</span>
+              </button>
+              <button className="shot-btn shot-btn-make shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>
+                <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MAKE</span>
+              </button>
+              <button className="shot-btn shot-btn-miss shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: false })}>
+                <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MISS</span>
+              </button>
+              <button className="shot-btn shot-btn-ft-make" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>
+                <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MAKE</span>
+              </button>
+              <button className="shot-btn shot-btn-ft-miss" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: false })}>
+                <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MISS</span>
+              </button>
+
+              {/* Opponent — compact row, only if tracking */}
+              {isOpponentStatEnabled("points") && (<>
+                <div className="shot-grid-team-label shot-grid-team-label-opp" style={{ gridColumn: "1 / -1" }} title={`Opponent: ${oppName}`}>{oppName}</div>
+                <button className="shot-btn shot-btn-opp" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>OPP 2</button>
+                <button className="shot-btn shot-btn-opp" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>OPP 3</button>
+              </>)}
+              {isOpponentStatEnabled("free_throws") && (
+                <button className="shot-btn shot-btn-opp" style={{ gridColumn: "1 / -1" }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>OPP FT</button>
+              )}
             </>);
           })()}
         </div>
@@ -3822,11 +4339,11 @@ export function App() {
       <div className="panel center-panel">
         <div className="scoreboard">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.4rem" }}>
-            {appData.gameSetup.deviceId && (
-              <div className="score-device-id" style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.4rem" }} title="Operator device identifier">
-                <span>Device ID: {appData.gameSetup.deviceId}</span>
-                <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline — events queued locally"}>
-                  ●
+            {appData.gameSetup.connectionId && (
+              <div className="score-device-id" style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.4rem" }} title="Operator connection status">
+                <span>{`Connection: ${appData.gameSetup.connectionId}`}</span>
+                <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline - events queued locally"}>
+                  *
                 </span>
               </div>
             )}
@@ -3874,7 +4391,7 @@ export function App() {
           <div className="foul-alerts">
             {foulAlerts.map(p => (
               <div key={p.id} className={`foul-alert ${(pTotals[p.id]?.fouls ?? 0) >= 5 ? "foul-out-alert" : "foul-warn-alert"}`}>
-                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "🚫" : "⚠️"} #{p.number} {p.name} — {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
+                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "OUT" : "WARN"} #{p.number} {p.name} - {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
               </div>
             ))}
           </div>
@@ -3922,7 +4439,7 @@ export function App() {
                       void deleteEventRecord({ event, pending });
                     }}
                   >
-                    ↶
+                    Undo
                   </button>
                 )}
               </div>
@@ -3955,7 +4472,7 @@ export function App() {
                       void deleteOvertimePeriod(lbl);
                     }}
                   >
-                    ×
+                    x
                   </button>
                 )}
               </div>
@@ -3998,12 +4515,12 @@ export function App() {
                   <div className="clock-numpad" onClick={e => e.stopPropagation()}>
                     <div className="clock-numpad-preview">{formatClockFromPadInput(clockPadDigits)}</div>
                     <div className="clock-numpad-grid">
-                      {([1,2,3,4,5,6,7,8,9,".",0,"⌫"] as (number|string)[]).map((k, i) => (
+                      {([1,2,3,4,5,6,7,8,9,".",0,"DEL"] as (number|string)[]).map((k, i) => (
                         <button
                           key={i}
                           className="clock-numpad-key"
                           onClick={() => {
-                            if (k === "⌫") {
+                            if (k === "DEL") {
                               setClockPadDigits(d => d.slice(0, -1));
                             } else if (k === ".") {
                               // only allow one dot, only when no minutes typed (sub-minute)
@@ -4054,13 +4571,13 @@ export function App() {
               className={`possession-btn possession-btn-home ${possessionTeamId === homeTeamId ? "active" : ""}`}
               onClick={() => setPossession("home")}
               title={`Set possession: ${homeTeamName}`}>
-              ◂ {homeTeamName}
+              Home: {homeTeamName}
             </button>
             <button
               className={`possession-btn possession-btn-away ${possessionTeamId === awayTeamId ? "active" : ""}`}
               onClick={() => setPossession("away")}
               title={`Set possession: ${awayTeamName}`}>
-              {awayTeamName} ▸
+              Away: {awayTeamName}
             </button>
           </div>}
         </div>}
@@ -4080,12 +4597,12 @@ export function App() {
           <div className="stat-grid">
             <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: vcSideSetup })}><span className="rebound-main">DEF</span><br/><span className="sub-lbl">reb</span></button>
             <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: vcSideSetup })}><span className="rebound-main">OFF</span><br/><span className="sub-lbl">reb</span></button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
+            <button className="circle stat-foul" onClick={() => setModal({ kind: "stat", stat: "foul", teamId: vcSideSetup })}>foul</button>
+            <button className="circle stat-to" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: vcSideSetup })}>stl</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
             <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "foul",   teamId: vcSideSetup })}>foul</button>
           </div>
         ) : (
           <div className="roster-panel">
@@ -4110,7 +4627,7 @@ export function App() {
                             className="roster-sub-btn"
                             onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id })}
                             title="Sub out">
-                            ✕
+                            X
                           </button>
                         </div>
                       ))}
@@ -4150,8 +4667,8 @@ export function App() {
       </div>
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
-        <button className="live-nav-btn" onClick={() => { setSettingsView("menu"); setView("settings"); }} title="Settings">☰ Settings</button>
-        <button className="live-nav-btn" onClick={() => void undoLast()} title="Undo last event">↩ Undo</button>
+        <button className="live-nav-btn" onClick={() => navigateView("settings")} title="Settings">Menu Settings</button>
+        <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">Undo</button>
         <button
           className="live-nav-btn"
           title="Game summary"
@@ -4164,11 +4681,11 @@ export function App() {
           }}>
           Summary
         </button>
-        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard · ${gameId}`}>
+        <a className="live-nav-btn live-nav-link" href={liveCoachUrl} target="_blank" rel="noreferrer" title={`Open Dashboard | ${gameId}`}>
           Dashboard
         </a>
         <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
-          🛑 End Game
+          End Game
         </button>
       </div>
     </div>
@@ -4181,64 +4698,24 @@ export function App() {
 interface SettingsScreenProps {
   appData: AppData;
   settingsView: SettingsView;
-  editingTeamId: string | null;
   onPersist: (d: AppData) => void;
   onNav: (v: SettingsView) => void;
-  onEditTeam: (id: string | null) => void;
   onBack: () => void;
   onStartGame: () => void | Promise<void>;
 }
 
 const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];
 
-// ---- AI Coach Settings (shared with coach dashboard) ----
-type CoachInsightFocus =
-  | "timeouts"
-  | "substitutions"
-  | "foul_management"
-  | "momentum"
-  | "shot_selection"
-  | "ball_security"
-  | "hot_hand"
-  | "defense";
-
-interface CoachAiSettings {
-  playingStyle: string;
-  teamContext: string;
-  customPrompt: string;
-  focusInsights: CoachInsightFocus[];
-}
-
-const AI_FOCUS_OPTIONS: Array<{ id: CoachInsightFocus; label: string }> = [
-  { id: "timeouts", label: "Timeout management" },
-  { id: "substitutions", label: "Substitutions" },
-  { id: "foul_management", label: "Foul management" },
-  { id: "momentum", label: "Momentum swings" },
-  { id: "shot_selection", label: "Shot selection" },
-  { id: "ball_security", label: "Ball security" },
-  { id: "hot_hand", label: "Hot hand usage" },
-  { id: "defense", label: "Defensive calls" },
-];
-
-function defaultCoachAiSettings(): CoachAiSettings {
-  return {
-    playingStyle: "",
-    teamContext: "",
-    customPrompt: "",
-    focusInsights: AI_FOCUS_OPTIONS.map(o => o.id),
-  };
-}
-
-function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav, onEditTeam, onBack, onStartGame }: SettingsScreenProps) {
+function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onStartGame }: SettingsScreenProps) {
   // ---- Game setup local state ----
   const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
-  const [gsDeviceId, setGsDeviceId] = useState(normalizeDeviceId(appData.gameSetup.deviceId || getDefaultDeviceId()));
+  const [gsConnectionId, setGsConnectionId] = useState(normalizeConnectionId(appData.gameSetup.connectionId));
   const [gsMyTeamId, setGsMyTeamId] = useState(appData.gameSetup.myTeamId);
   const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
-  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:5000");
+  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:4000");
   const [gsClockVisible, setGsClockVisible] = useState(appData.gameSetup.clockVisible ?? true);
   const [gsClockEnabled, setGsClockEnabled] = useState(appData.gameSetup.clockEnabled ?? true);
   const [gsTrackClock, setGsTrackClock] = useState(appData.gameSetup.trackClock ?? true);
@@ -4251,71 +4728,6 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor, DEFAULT_AWAY_TEAM_COLOR));
   const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
 
-  // ---- AI Coach Settings ----
-  const [aiDraft, setAiDraft] = useState<CoachAiSettings>(defaultCoachAiSettings);
-  const [aiStatus, setAiStatus] = useState("Connect to a live game to load AI settings.");
-
-  useEffect(() => {
-    if (settingsView !== "ai-settings") return;
-    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
-    const gameId = appData.gameSetup.gameId?.trim();
-    if (!gameId) { setAiStatus("No game ID set — save Game Setup first."); return; }
-    void (async () => {
-      try {
-        const response = await fetch(`${apiUrl}/games/${gameId}/ai-settings`, {
-          headers: apiKeyHeader(appData.gameSetup),
-        });
-        if (!response.ok) {
-          // Seed defaults from stats dashboard if realtime API has nothing yet
-          const dashUrl = (appData.gameSetup.dashboardUrl?.trim()) || "http://localhost:5000";
-          try {
-            const seed = await fetch(`${dashUrl}/api/ai-settings`);
-            if (seed.ok) {
-              const defaults = (await seed.json()) as CoachAiSettings | null;
-              setAiDraft(defaults ?? defaultCoachAiSettings());
-              setAiStatus("Loaded team defaults from stats dashboard.");
-              return;
-            }
-          } catch { /* ignore */ }
-          setAiStatus("Using defaults. Save to apply custom AI settings for this game.");
-          return;
-        }
-        const payload = (await response.json()) as CoachAiSettings | null;
-        setAiDraft(payload ?? defaultCoachAiSettings());
-        setAiStatus("AI settings loaded for this game.");
-      } catch {
-        setAiStatus("Could not reach the realtime API. Defaults shown.");
-      }
-    })();
-  }, [settingsView]);
-
-  async function saveAiSettings() {
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const gameId = gsGameId.trim();
-    if (!gameId) { setAiStatus("No game ID set — save Game Setup first."); return; }
-    setAiStatus("Saving…");
-    try {
-      const response = await fetch(`${apiUrl}/games/${gameId}/ai-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(aiDraft),
-      });
-      if (!response.ok) { setAiStatus(`Save failed (${response.status}).`); return; }
-      setAiStatus("AI settings saved and applied to live coaching insights.");
-    } catch {
-      setAiStatus("Save failed: could not reach realtime API.");
-    }
-  }
-
-  function toggleAiFocus(id: CoachInsightFocus) {
-    setAiDraft(cur => {
-      if (cur.focusInsights.includes(id)) {
-        const next = cur.focusInsights.filter(f => f !== id);
-        return { ...cur, focusInsights: next.length > 0 ? next : cur.focusInsights };
-      }
-      return { ...cur, focusInsights: [...cur.focusInsights, id] };
-    });
-  }
   const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
   const gsOpponentName = gsOpponent.trim() || "Opponent";
   const gsHomeSideLabel = gsVcSide === "home"
@@ -4324,37 +4736,6 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   const gsAwaySideLabel = gsVcSide === "away"
     ? `${gsMyTeamName} (away)`
     : `${gsOpponentName} (away)`;
-
-  // ---- New team form ----
-  const [newTeamName, setNewTeamName] = useState("");
-  const [newTeamAbbr, setNewTeamAbbr] = useState("");
-  const [newTeamColor, setNewTeamColor] = useState(DEFAULT_HOME_TEAM_COLOR);
-
-  // ---- Editing team local state ----
-  const editingTeam = appData.teams.find(t => t.id === editingTeamId) ?? null;
-  const [etName, setEtName] = useState(editingTeam?.name ?? "");
-  const [etAbbr, setEtAbbr] = useState(editingTeam?.abbreviation ?? "");
-  const [etColor, setEtColor] = useState(normalizeTeamColor(editingTeam?.teamColor, DEFAULT_HOME_TEAM_COLOR));
-  const [pNum, setPNum] = useState("");
-  const [pName, setPName] = useState("");
-  const [pPos, setPPos] = useState("");
-  const [pHt, setPHt] = useState("");
-  const [pGrade, setPGrade] = useState("");
-  // editing existing player
-  const [editPlayerId, setEditPlayerId] = useState<string | null>(null);
-  const [epNum, setEpNum] = useState("");
-  const [epName, setEpName] = useState("");
-  const [epPos, setEpPos] = useState("");
-  const [epHt, setEpHt] = useState("");
-  const [epGrade, setEpGrade] = useState("");
-
-  // sync local state when editingTeam changes
-  useEffect(() => {
-    setEtName(editingTeam?.name ?? "");
-    setEtAbbr(editingTeam?.abbreviation ?? "");
-    setEtColor(normalizeTeamColor(editingTeam?.teamColor, DEFAULT_HOME_TEAM_COLOR));
-    setEditPlayerId(null);
-  }, [editingTeamId]);
 
   function applyTrackedTeamColor(
     gameSetup: GameSetup,
@@ -4372,193 +4753,10 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
       : { ...gameSetup, myTeamId, awayTeamColor: normalizedColor };
   }
 
-  async function syncRosterToStatsDashboard(teams: Team[]) {
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:5000";
-    const preferredTeamId = appData.gameSetup.myTeamId;
-    try {
-      await fetch(`${dashboardUrl}/api/roster-sync`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify({ teams, preferredTeamId }),
-      });
-    } catch {
-      // Keep realtime sync as source-of-truth; stats sync is best effort.
-    }
-  }
-
-  async function syncRosterFromBackend() {
-    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
-    const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    if (teams.length === 0) return;
-
-    if (JSON.stringify(teams) !== JSON.stringify(appData.teams)) {
-      const hasSelectedTeam = teams.some((team) => team.id === appData.gameSetup.myTeamId);
-      const myTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (teams[0]?.id ?? "");
-      onPersist({
-        ...appData,
-        teams,
-        gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, myTeamId),
-      });
-    }
-  }
-
-  // ---- Team CRUD ----
-  async function createTeam() {
-    if (!newTeamName.trim()) return;
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const apiKey = gsApiKey.trim() || undefined;
-    const abbreviation = newTeamAbbr.trim() || newTeamName.slice(0, 3).toUpperCase();
-    const created = await createTeamViaRealtime(
-      apiUrl,
-      newTeamName.trim(),
-      abbreviation,
-      normalizeTeamColor(newTeamColor, DEFAULT_HOME_TEAM_COLOR),
-      apiKey,
-    );
-    if (!created) {
-      return;
-    }
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    onPersist({
-      ...appData,
-      teams,
-      gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, appData.gameSetup.myTeamId),
-    });
-    await syncRosterToStatsDashboard(teams);
-
-    setNewTeamName("");
-    setNewTeamAbbr("");
-    setNewTeamColor(DEFAULT_HOME_TEAM_COLOR);
-  }
-
-  async function deleteTeam(id: string) {
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const apiKey = gsApiKey.trim() || undefined;
-    const removed = await deleteTeamViaRealtime(apiUrl, id, apiKey);
-    if (!removed) {
-      return;
-    }
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    const hasSelectedTeam = teams.some((team) => team.id === appData.gameSetup.myTeamId);
-    const myTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (teams[0]?.id ?? "");
-    onPersist({
-      ...appData,
-      teams,
-      gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, myTeamId),
-    });
-    await syncRosterToStatsDashboard(teams);
-  }
-
-  async function saveTeamInfo() {
-    if (!editingTeam || !etName.trim()) return;
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const apiKey = gsApiKey.trim() || undefined;
-    const updated = await updateTeamViaRealtime(
-      apiUrl,
-      editingTeam.id,
-      etName.trim(),
-      etAbbr.trim() || etName.slice(0, 3).toUpperCase(),
-      normalizeTeamColor(etColor, DEFAULT_HOME_TEAM_COLOR),
-      apiKey,
-    );
-    if (!updated) {
-      return;
-    }
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    onPersist({
-      ...appData,
-      teams,
-      gameSetup: applyTrackedTeamColor(appData.gameSetup, teams, appData.gameSetup.myTeamId),
-    });
-    await syncRosterToStatsDashboard(teams);
-  }
-
-  // ---- Player CRUD ----
-  async function addPlayer() {
-    if (!editingTeam || !pNum.trim() || !pName.trim()) return;
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const apiKey = gsApiKey.trim() || undefined;
-    const created = await addPlayerViaRealtime(apiUrl, editingTeam.id, {
-      id: uid(),
-      number: pNum.trim(),
-      name: pName.trim(),
-      position: pPos,
-      height: pHt.trim() || undefined,
-      grade: pGrade.trim() || undefined,
-    }, apiKey);
-    if (!created) {
-      return;
-    }
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    onPersist({ ...appData, teams });
-    await syncRosterToStatsDashboard(teams);
-
-    setPNum(""); setPName(""); setPPos(""); setPHt(""); setPGrade("");
-  }
-
-  async function removePlayer(playerId: string) {
-    if (!editingTeam) return;
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const apiKey = gsApiKey.trim() || undefined;
-    const removed = await deletePlayerViaRealtime(apiUrl, editingTeam.id, playerId, apiKey);
-    if (!removed) {
-      return;
-    }
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    onPersist({ ...appData, teams });
-    await syncRosterToStatsDashboard(teams);
-  }
-
-  function startEditPlayer(p: Player) {
-    setEditPlayerId(p.id);
-    setEpNum(p.number);
-    setEpName(p.name);
-    setEpPos(p.position);
-    setEpHt(p.height ?? "");
-    setEpGrade(p.grade ?? "");
-  }
-
-  async function saveEditPlayer() {
-    if (!editingTeam || !editPlayerId || !epNum.trim() || !epName.trim()) return;
-    const apiUrl = gsApiUrl.trim() || DEFAULT_API;
-    const apiKey = gsApiKey.trim() || undefined;
-    const updated = await updatePlayerViaRealtime(apiUrl, editingTeam.id, editPlayerId, {
-      number: epNum.trim(),
-      name: epName.trim(),
-      position: epPos,
-      height: epHt.trim() || undefined,
-      grade: epGrade.trim() || undefined,
-    }, apiKey);
-    if (!updated) {
-      return;
-    }
-
-    const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey);
-    const teams = remoteTeams.map(convertRosterTeamToAppTeam);
-    onPersist({ ...appData, teams });
-    await syncRosterToStatsDashboard(teams);
-
-    setEditPlayerId(null);
-  }
-
-  // ---- Game setup ----
   function toggleOpponentTrackStat(stat: OpponentTrackStat) {
     setGsOpponentTrackStats((current) => {
       if (current.includes(stat)) {
-        const next = current.filter((s) => s !== stat);
+        const next = current.filter((item) => item !== stat);
         return next.length > 0 ? next : current;
       }
       return [...current, stat];
@@ -4566,160 +4764,36 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   }
 
   function saveGameSetup() {
-    const normalizedDeviceId = normalizeDeviceId(gsDeviceId || appData.gameSetup.deviceId || "device1");
-    setGsDeviceId(normalizedDeviceId);
-    localStorage.setItem(DEVICE_ID_KEY, normalizedDeviceId);
+    const normalizedConnectionId = normalizeConnectionId(gsConnectionId || appData.gameSetup.connectionId);
+    setGsConnectionId(normalizedConnectionId);
     onPersist({
       ...appData,
-      gameSetup: {
-        gameId: gsGameId.trim() || "game-1",
-        deviceId: normalizedDeviceId,
-        myTeamId: gsMyTeamId,
-        apiUrl: gsApiUrl.trim() || DEFAULT_API,
-        apiKey: gsApiKey.trim() || undefined,
-        opponent: gsOpponent.trim(),
-        vcSide: gsVcSide,
-        dashboardUrl: gsDashboardUrl.trim() || "http://localhost:5000",
-        clockVisible: gsClockVisible,
-        clockEnabled: gsClockEnabled,
-        trackClock: gsTrackClock,
-        trackPossession: gsTrackPossession,
-        trackTimeouts: gsTrackTimeouts,
-        opponentTrackStats: normalizeOpponentTrackStats(gsOpponentTrackStats),
-        homeTeamColor: normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR),
-        awayTeamColor: normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
-        statsGameId: appData.gameSetup.statsGameId,
-        startingLineup: appData.gameSetup.startingLineup,
-      },
+      gameSetup: applyTrackedTeamColor(
+        {
+          gameId: gsGameId.trim() || "game-1",
+          connectionId: normalizedConnectionId || undefined,
+          myTeamId: gsMyTeamId,
+          apiUrl: gsApiUrl.trim() || DEFAULT_API,
+          apiKey: gsApiKey.trim() || undefined,
+          schoolId: appData.gameSetup.schoolId,
+          opponent: gsOpponent.trim(),
+          vcSide: gsVcSide,
+          dashboardUrl: gsDashboardUrl.trim() || "http://localhost:4000",
+          clockVisible: gsClockVisible,
+          clockEnabled: gsClockEnabled,
+          trackClock: gsTrackClock,
+          trackPossession: gsTrackPossession,
+          trackTimeouts: gsTrackTimeouts,
+          opponentTrackStats: normalizeOpponentTrackStats(gsOpponentTrackStats),
+          homeTeamColor: normalizeTeamColor(gsHomeTeamColor, DEFAULT_HOME_TEAM_COLOR),
+          awayTeamColor: normalizeTeamColor(gsAwayTeamColor, DEFAULT_AWAY_TEAM_COLOR),
+          statsGameId: appData.gameSetup.statsGameId,
+          startingLineup: appData.gameSetup.startingLineup,
+        },
+        appData.teams,
+        gsMyTeamId,
+      ),
     });
-  }
-
-  // ================================================================
-  //  RENDER: Teams list
-  // ================================================================
-  
-  // Sync roster from backend when viewing teams to detect deletions from other apps
-  useEffect(() => {
-    if (settingsView === "teams" || settingsView === "team-edit") {
-      void syncRosterFromBackend();
-    }
-  }, [settingsView]);
-  
-  if (settingsView === "teams") {
-    return (
-      <div className="settings-page">
-        <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
-          <h2>Teams</h2>
-          <div style={{ width: 64 }} />
-        </header>
-
-        {/* Create new team */}
-        <section className="settings-section">
-          <h3>New Team</h3>
-          <div className="add-player-row">
-            <input className="abbr-inp" placeholder="ABV" value={newTeamAbbr} onChange={e => setNewTeamAbbr(e.target.value)} maxLength={4} />
-            <input placeholder="Team name" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} onKeyDown={e => e.key === "Enter" && createTeam()} />
-            <input className="team-color-input" type="color" aria-label="New team color" value={newTeamColor} onChange={e => setNewTeamColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
-            <button className="add-btn" onClick={createTeam}>Add</button>
-          </div>
-        </section>
-
-        {/* Teams list */}
-        <section className="settings-section">
-          <h3>All Teams ({appData.teams.length})</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams yet. Add one above.</p>}
-          {appData.teams.map(team => (
-            <div key={team.id} className="team-list-row">
-              <div className="team-list-info">
-                <span className="team-abbr-badge" style={{ borderColor: team.teamColor ?? "rgba(79,140,255,0.3)", color: team.teamColor ?? "#4f8cff" }}>{team.abbreviation}</span>
-                <span className="team-list-color" style={{ background: normalizeTeamColor(team.teamColor, DEFAULT_HOME_TEAM_COLOR) }} aria-hidden="true" />
-                <span className="team-list-name">{team.name}</span>
-                <span className="team-list-count">{team.players.length} players</span>
-              </div>
-              <div className="team-list-actions">
-                <button className="edit-btn" onClick={() => { onEditTeam(team.id); onNav("team-edit"); }}>Roster</button>
-                <button className="rm-btn" onClick={() => deleteTeam(team.id)}>✕</button>
-              </div>
-            </div>
-          ))}
-        </section>
-      </div>
-    );
-  }
-
-  // ================================================================
-  //  RENDER: Team roster editor
-  // ================================================================
-  if (settingsView === "team-edit" && editingTeam) {
-    return (
-      <div className="settings-page">
-        <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("teams")}>← Teams</button>
-          <h2>{editingTeam.name}</h2>
-          <div style={{ width: 64 }} />
-        </header>
-
-        {/* Team info */}
-        <section className="settings-section">
-          <h3>Team Info</h3>
-          <div className="add-player-row">
-            <input className="abbr-inp" placeholder="ABV" value={etAbbr} onChange={e => setEtAbbr(e.target.value)} maxLength={4} />
-            <input placeholder="Team name" value={etName} onChange={e => setEtName(e.target.value)} />
-            <input className="team-color-input" type="color" aria-label="Team color" value={etColor} onChange={e => setEtColor(normalizeTeamColor(e.target.value, DEFAULT_HOME_TEAM_COLOR))} />
-            <button className="add-btn" onClick={saveTeamInfo}>Save</button>
-          </div>
-        </section>
-
-        {/* Add player */}
-        <section className="settings-section">
-          <h3>Add Player</h3>
-          <div className="add-player-row">
-            <input className="num-inp" placeholder="#" value={pNum} onChange={e => setPNum(e.target.value)} />
-            <input placeholder="Name" value={pName} onChange={e => setPName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPlayer()} style={{ flex: 2 }} />
-            <input className="pos-select" placeholder="Pos" value={pPos} onChange={e => setPPos(e.target.value)} />
-            <input className="ht-inp" placeholder='Ht' value={pHt} onChange={e => setPHt(e.target.value)} style={{ width: 52 }} />
-            <input className="grade-inp" placeholder='Gr' value={pGrade} onChange={e => setPGrade(e.target.value)} style={{ width: 36 }} />
-            <button className="add-btn" onClick={addPlayer}>Add</button>
-          </div>
-        </section>
-
-        {/* Roster */}
-        <section className="settings-section">
-          <h3>Roster ({editingTeam.players.length})</h3>
-          {editingTeam.players.length === 0 && <p className="dim-text">No players yet.</p>}
-          {editingTeam.players.map(p => (
-            editPlayerId === p.id
-              ? (
-                <div key={p.id} className="player-edit-row">
-                  <input className="num-inp" value={epNum} onChange={e => setEpNum(e.target.value)} />
-                  <input value={epName} onChange={e => setEpName(e.target.value)} style={{ flex: 2 }} />
-                  <input className="pos-select" placeholder="Pos" value={epPos} onChange={e => setEpPos(e.target.value)} />
-                  <input className="ht-inp" placeholder='Ht' value={epHt} onChange={e => setEpHt(e.target.value)} style={{ width: 52 }} />
-                  <input className="grade-inp" placeholder='Gr' value={epGrade} onChange={e => setEpGrade(e.target.value)} style={{ width: 36 }} />
-                  <button className="add-btn" onClick={saveEditPlayer}>Save</button>
-                  <button className="rm-btn" onClick={() => setEditPlayerId(null)}>✕</button>
-                </div>
-              )
-              : (
-                <div key={p.id} className="roster-row">
-                  <div className="roster-info">
-                    <span className="r-num">#{p.number}</span>
-                    <span className="r-name">{p.name}</span>
-                    {p.position && <span className="r-pos">{p.position}</span>}
-                    {p.height && <span className="r-ht">{p.height}</span>}
-                    {p.grade && <span className="r-grade">Gr.{p.grade}</span>}
-                  </div>
-                  <div className="roster-actions">
-                    <button className="edit-btn" onClick={() => startEditPlayer(p)}>Edit</button>
-                    <button className="rm-btn" onClick={() => removePlayer(p.id)}>✕</button>
-                  </div>
-                </div>
-              )
-          ))}
-        </section>
-      </div>
-    );
   }
 
   // ================================================================
@@ -4729,28 +4803,52 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
     const setupErrors: string[] = [];
     if (!gsMyTeamId) setupErrors.push("Select your team");
     if (!gsOpponent.trim()) setupErrors.push("Enter the opponent name");
+    const trackingBadges = [
+      gsTrackClock ? "Clock" : null,
+      gsTrackPossession ? "Possession" : null,
+      gsTrackTimeouts ? "Timeouts" : null,
+    ].filter(Boolean);
+
     return (
       <div className="settings-page">
         <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
+          <button className="back-btn" onClick={() => onNav("menu")}>{"<- Back"}</button>
           <h2>Game Setup</h2>
           <button className="save-btn" onClick={() => { saveGameSetup(); onNav("menu"); }}>Save</button>
         </header>
 
-        <section className="settings-section">
-          <h3>Game ID</h3>
-          <input value={gsGameId} onChange={e => setGsGameId(e.target.value)} placeholder="game-1" />
+        <section className="settings-section settings-hero-section">
+          <div className="settings-overview">
+            <div className="settings-overview-copy">
+              <h3>Current setup</h3>
+              <div className="settings-overview-title">{gsMyTeamName} vs {gsOpponentName}</div>
+              <p className="dim-text">
+                {gsVcSide === "home" ? "VC is home" : "VC is away"} • Game ID {gsGameId.trim() || "game-1"}
+              </p>
+            </div>
+            <div className="settings-overview-meta">
+              <span className="settings-badge">{gsConnectionId ? `Linked • ${gsConnectionId}` : "Not linked yet"}</span>
+              <span className="settings-badge">{trackingBadges.length > 0 ? trackingBadges.join(" • ") : "Manual stats only"}</span>
+            </div>
+          </div>
         </section>
 
-        <section className="settings-section">
-          <h3>Device ID</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Coach dashboard follows this device and only shows live when it is online.</p>
-          <input value={gsDeviceId} onChange={e => setGsDeviceId(e.target.value)} placeholder="device1" />
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Game ID</h3>
+            <input value={gsGameId} onChange={e => setGsGameId(e.target.value)} placeholder="game-1" />
+          </section>
+
+          <section className="settings-section">
+            <h3>Connection Code</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code to link roster and matchup sync.</p>
+            <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="482913" />
+          </section>
+        </div>
 
         <section className="settings-section">
           <h3>Your Team</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams yet — create one in Teams first.</p>}
+          {appData.teams.length === 0 && <p className="dim-text">No teams are available yet. Complete team setup from the coach workspace.</p>}
           <div className="team-picker">
             {appData.teams.map(t => {
               const isSelected = gsMyTeamId === t.id;
@@ -4766,15 +4864,15 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
                   onClick={() => {
                     setGsMyTeamId(t.id);
                     if (t.teamColor) {
-                      const normalizedColor = normalizeTeamColor(t.teamColor, DEFAULT_HOME_TEAM_COLOR);
+                      const nextColor = normalizeTeamColor(t.teamColor, DEFAULT_HOME_TEAM_COLOR);
                       if (gsVcSide === "home") {
-                        setGsHomeTeamColor(normalizedColor);
+                        setGsHomeTeamColor(nextColor);
                       } else {
-                        setGsAwayTeamColor(normalizedColor);
+                        setGsAwayTeamColor(nextColor);
                       }
                     }
                   }}>
-                  <span className="tp-abbr" style={{ borderColor: normalizedColor ?? "rgba(79,140,255,0.3)", color: normalizedColor ?? "#4f8cff" }}>{t.abbreviation}</span>
+                  <span className="tp-abbr" style={{ borderColor: normalizedColor, color: normalizedColor }}>{t.abbreviation}</span>
                   <span className="tp-name">{t.name}</span>
                   <span className="tp-count">{t.players.length}p</span>
                 </button>
@@ -4783,23 +4881,25 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           </div>
         </section>
 
-        <section className="settings-section">
-          <h3>Opponent Name</h3>
-          <input
-            placeholder="e.g. Knappa"
-            value={gsOpponent}
-            onChange={e => setGsOpponent(e.target.value)}
-          />
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Opponent Name</h3>
+            <input
+              placeholder="e.g. Knappa"
+              value={gsOpponent}
+              onChange={e => setGsOpponent(e.target.value)}
+            />
+          </section>
 
-        <section className="settings-section">
-          <h3>Your Side</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
-            <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
-          </div>
-        </section>
+          <section className="settings-section">
+            <h3>Your Side</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
+            <div className="team-toggle">
+              <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
+              <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
+            </div>
+          </section>
+        </div>
 
         <section className="settings-section">
           <h3>Opponent Color</h3>
@@ -4846,44 +4946,58 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
           </div>
         </section>
 
-        <section className="settings-section">
-          <h3>Tracking Toggles</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Choose what the operator tracks during the game.</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsTrackTimeouts ? " tt-teal" : ""}`} onClick={() => setGsTrackTimeouts(!gsTrackTimeouts)}>
-              Timeouts {gsTrackTimeouts ? "On" : "Off"}
-            </button>
-            <button className={`tt-btn${gsTrackPossession ? " tt-teal" : ""}`} onClick={() => setGsTrackPossession(!gsTrackPossession)}>
-              Possession {gsTrackPossession ? "On" : "Off"}
-            </button>
-            <button className={`tt-btn${gsTrackClock ? " tt-teal" : ""}`} onClick={() => setGsTrackClock(!gsTrackClock)}>
-              Game Clock {gsTrackClock ? "Tracked" : "Off"}
-            </button>
-          </div>
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Tracking Toggles</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Choose what the operator tracks during the game.</p>
+            <div className="team-toggle">
+              <button className={`tt-btn${gsTrackTimeouts ? " tt-teal" : ""}`} onClick={() => setGsTrackTimeouts(!gsTrackTimeouts)}>
+                Timeouts {gsTrackTimeouts ? "On" : "Off"}
+              </button>
+              <button className={`tt-btn${gsTrackPossession ? " tt-teal" : ""}`} onClick={() => setGsTrackPossession(!gsTrackPossession)}>
+                Possession {gsTrackPossession ? "On" : "Off"}
+              </button>
+              <button className={`tt-btn${gsTrackClock ? " tt-teal" : ""}`} onClick={() => setGsTrackClock(!gsTrackClock)}>
+                Game Clock {gsTrackClock ? "Tracked" : "Off"}
+              </button>
+            </div>
+          </section>
 
-        <section className="settings-section">
-          <h3>Clock Panel</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>These only affect the operator screen controls when game clock tracking is on.</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsClockVisible ? " tt-teal" : ""}`} onClick={() => setGsClockVisible(!gsClockVisible)}>{gsClockVisible ? "Panel Visible" : "Panel Hidden"}</button>
-            <button className={`tt-btn${gsClockEnabled ? " tt-teal" : ""}`} onClick={() => setGsClockEnabled(!gsClockEnabled)}>{gsClockEnabled ? "Controls Unlocked" : "Controls Locked"}</button>
-          </div>
-        </section>
+          <section className="settings-section">
+            <h3>Clock Panel</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>These only affect the operator screen controls when game clock tracking is on.</p>
+            <div className="team-toggle">
+              <button className={`tt-btn${gsClockVisible ? " tt-teal" : ""}`} onClick={() => setGsClockVisible(!gsClockVisible)}>{gsClockVisible ? "Panel Visible" : "Panel Hidden"}</button>
+              <button className={`tt-btn${gsClockEnabled ? " tt-teal" : ""}`} onClick={() => setGsClockEnabled(!gsClockEnabled)}>{gsClockEnabled ? "Controls Unlocked" : "Controls Locked"}</button>
+            </div>
+          </section>
+        </div>
 
-        <section className="settings-section">
-          <h3>Realtime API URL</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Node API server — use laptop's local IP on game day (e.g. http://192.168.1.5:4000)</p>
-          <input
-            placeholder={DEFAULT_API}
-            value={gsApiUrl}
-            onChange={e => setGsApiUrl(e.target.value)}
-          />
-        </section>
+        <div className="settings-grid-2">
+          <section className="settings-section">
+            <h3>Realtime API URL</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Use the laptop's local IP on game day (example: http://192.168.1.5:4000).</p>
+            <input
+              placeholder={DEFAULT_API}
+              value={gsApiUrl}
+              onChange={e => setGsApiUrl(e.target.value)}
+            />
+          </section>
+
+          <section className="settings-section">
+            <h3>Legacy Stats Export URL</h3>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Optional separate post-game export endpoint. If you only use the coach dashboard, leave this on the same host as the Realtime API.</p>
+            <input
+              placeholder="http://localhost:4000"
+              value={gsDashboardUrl}
+              onChange={e => setGsDashboardUrl(e.target.value)}
+            />
+          </section>
+        </div>
 
         <section className="settings-section">
           <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Optional shared secret (set the API key env var on the server). Leave blank in development.</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>API key or login token from the coach dashboard. Leave blank during local development.</p>
           <input
             type="password"
             placeholder="Leave blank to disable auth"
@@ -4893,107 +5007,21 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
         </section>
 
         <section className="settings-section">
-          <h3>Stats Dashboard URL</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>URL of the Stats Flask app (for sending game data)</p>
-          <input
-            placeholder="http://localhost:5000"
-            value={gsDashboardUrl}
-            onChange={e => setGsDashboardUrl(e.target.value)}
-          />
-        </section>
-
-        <section className="settings-section">
           {setupErrors.length > 0 && (
             <ul className="setup-errors">
               {setupErrors.map(err => <li key={err}>{err}</li>)}
             </ul>
           )}
-          <button
-            className="save-btn"
-            disabled={setupErrors.length > 0}
-            onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onNav("menu"); } }}>
-            Save
-          </button>
-        </section>
-
-      </div>
-    );
-  }
-
-  // ================================================================
-  //  RENDER: AI Coach Settings
-  // ================================================================
-  if (settingsView === "ai-settings") {
-    return (
-      <div className="settings-page">
-        <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>← Back</button>
-          <h2>AI Coach Settings</h2>
-          <button className="save-btn" onClick={() => void saveAiSettings()}>Save</button>
-        </header>
-
-        <section className="settings-section">
-          <p className="dim-text">{aiStatus}</p>
-        </section>
-
-        <section className="settings-section">
-          <h3>Team Playing Style</h3>
-          <p className="dim-text" style={{ marginBottom: 6 }}>How your team plays — pace, philosophy, offensive tendencies.</p>
-          <textarea
-            className="settings-textarea"
-            value={aiDraft.playingStyle}
-            onChange={e => setAiDraft(cur => ({ ...cur, playingStyle: e.target.value }))}
-            placeholder="Example: We play fast in transition, pressure passing lanes, and prioritize paint touches."
-            rows={3}
-          />
-        </section>
-
-        <section className="settings-section">
-          <h3>Team Notes &amp; Context</h3>
-          <p className="dim-text" style={{ marginBottom: 6 }}>Player limits, matchup concerns, foul trouble thresholds, depth chart notes.</p>
-          <textarea
-            className="settings-textarea"
-            value={aiDraft.teamContext}
-            onChange={e => setAiDraft(cur => ({ ...cur, teamContext: e.target.value }))}
-            placeholder="Anything a coach wants AI to remember: player limits, matchup concerns, depth, who can handle pressure, etc."
-            rows={3}
-          />
-        </section>
-
-        <section className="settings-section">
-          <h3>Custom Prompt Instruction</h3>
-          <p className="dim-text" style={{ marginBottom: 6 }}>Override or extend how AI formats its output or sets priorities.</p>
-          <textarea
-            className="settings-textarea"
-            value={aiDraft.customPrompt}
-            onChange={e => setAiDraft(cur => ({ ...cur, customPrompt: e.target.value }))}
-            placeholder="Custom instruction for AI output style or priorities."
-            rows={3}
-          />
-        </section>
-
-        <section className="settings-section">
-          <h3>Focus Insight Types</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Choose which coaching areas get priority in live AI suggestions.</p>
-          <div className="settings-chip-grid">
-            {AI_FOCUS_OPTIONS.map(opt => {
-              const active = aiDraft.focusInsights.includes(opt.id);
-              return (
-                <button
-                  key={opt.id}
-                  className={`settings-chip ${active ? "settings-chip-active" : "settings-chip-inactive"}`}
-                  onClick={() => toggleAiFocus(opt.id)}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
+          <div className="settings-actions">
+            <button
+              className="save-btn"
+              disabled={setupErrors.length > 0}
+              onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onNav("menu"); } }}>
+              Save Game Setup
+            </button>
           </div>
         </section>
 
-        <section className="settings-section">
-          <button className="start-btn" onClick={() => void saveAiSettings()}>Save AI Settings</button>
-        </section>
       </div>
     );
   }
@@ -5008,7 +5036,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
   return (
     <div className="settings-page">
       <header className="settings-header">
-        <button className="back-btn" onClick={onBack}>← Game</button>
+        <button className="back-btn" onClick={onBack}>{"<- Game"}</button>
         <h2>Settings</h2>
         <div style={{ width: 64 }} />
       </header>
@@ -5020,33 +5048,11 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">Game Setup</span>
             <span className="menu-card-sub">
               {myTeamForMenu
-                ? `${myTeamForMenu.name} (${menuSideLabel}) vs ${appData.gameSetup.opponent || "TBD"} • ${appData.gameSetup.gameId}`
+                ? `${myTeamForMenu.name} (${menuSideLabel}) vs ${appData.gameSetup.opponent || "TBD"} | ${appData.gameSetup.gameId}`
                 : "No team selected"}
             </span>
           </div>
-          <span className="menu-chev">›</span>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>Roster Management</h3>
-        <div className="menu-card" onClick={() => onNav("teams")}>
-          <div className="menu-card-info">
-            <span className="menu-card-title">Teams &amp; Rosters</span>
-            <span className="menu-card-sub">{appData.teams.length} team{appData.teams.length !== 1 ? "s" : ""} • {appData.teams.reduce((n, t) => n + t.players.length, 0)} players total</span>
-          </div>
-          <span className="menu-chev">›</span>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>AI &amp; Insights</h3>
-        <div className="menu-card" onClick={() => onNav("ai-settings")}>
-          <div className="menu-card-info">
-            <span className="menu-card-title">AI Coach Settings</span>
-            <span className="menu-card-sub">Playing style, team context, insight focus areas</span>
-          </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">&gt;</span>
         </div>
       </section>
 
@@ -5057,7 +5063,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title">iPad Setup Tips</span>
             <span className="menu-card-sub">Home screen, auto-lock, DND, rotation lock &amp; more</span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">&gt;</span>
         </div>
       </section>
 
@@ -5081,7 +5087,7 @@ function SettingsScreen({ appData, settingsView, editingTeamId, onPersist, onNav
             <span className="menu-card-title" style={{color:'#f87171'}}>Clear Local Data</span>
             <span className="menu-card-sub">Erase all data stored on this device</span>
           </div>
-          <span className="menu-chev">›</span>
+          <span className="menu-chev">&gt;</span>
         </div>
       </section>
     </div>

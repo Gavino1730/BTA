@@ -35,6 +35,11 @@ export interface InsightContext {
   latestEvent: GameEvent;
   /** Whether the operator has clock tracking enabled (undefined = unknown = treat as enabled) */
   clockEnabled?: boolean;
+  /**
+   * Optional roster player list so insights can display "#5 Marcus Johnson" instead of raw player IDs.
+   * Pass the players for the home team (our team). Format: [{id, number, name}]
+   */
+  rosterPlayers?: Array<{ id: string; number?: string; name: string }>;
 }
 
 const MAX_RECENT_EVENTS = 10;
@@ -69,7 +74,7 @@ function resolveTeamLabel(state: GameState, teamId: string): string {
   return prettifyTeamId(teamId);
 }
 
-function resolvePlayerLabel(playerId: string, teamLabel: string): string {
+function resolvePlayerLabel(playerId: string, teamLabel: string, context?: InsightContext): string {
   const normalized = playerId.toLowerCase();
   if (
     normalized === "home-team"
@@ -80,7 +85,20 @@ function resolvePlayerLabel(playerId: string, teamLabel: string): string {
   ) {
     return `${teamLabel} team`;
   }
-  return playerId;
+  // Try roster lookup first for proper "#5 Marcus Johnson" format
+  if (context?.rosterPlayers) {
+    const found = context.rosterPlayers.find((p) => p.id === playerId);
+    if (found) {
+      return found.number ? `#${found.number} ${found.name}` : found.name;
+    }
+  }
+  // Pretty-print raw ID: strip common prefix, title-case
+  return playerId
+    .replace(/^[a-z]{1,4}[-_]/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    || playerId;
 }
 
 /** Derive the "our team" id from the game state (if opponentTeamId is set, the other side is ours) */
@@ -140,11 +158,9 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   // ──────────────────────────────────────────────────────────────────
   if (latestEvent.type === "foul") {
     const foulCount = state.playerFouls[latestEvent.playerId] ?? 0;
-    const playerLabel = resolvePlayerLabel(latestEvent.playerId, eventTeamLabel);
+    const playerLabel = resolvePlayerLabel(latestEvent.playerId, eventTeamLabel, context);
     const isOurPlayer = ourTeamId == null || latestEvent.teamId === ourTeamId;
-    const foulSubject = playerLabel.toLowerCase().endsWith(" team")
-      ? playerLabel
-      : playerLabel;
+    const foulSubject = playerLabel;
 
     const FOUL_DANGER_THRESHOLD = 4;
     const FOUL_WARNING_THRESHOLD = 2;
@@ -463,7 +479,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
     for (const playerId of ourLineup) {
       const fouls = state.playerFouls[playerId] ?? 0;
       if (fouls >= 4) {
-        const playerLabel = resolvePlayerLabel(playerId, resolveTeamLabel(state, ourTeamId));
+        const playerLabel = resolvePlayerLabel(playerId, resolveTeamLabel(state, ourTeamId), context);
         const isFouledOut = fouls >= 5;
         insights.push({
           id: `${latestEvent.id}-sub-${playerId}`,
@@ -508,7 +524,7 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
     for (const [playerId, { makes, attempts }] of playerShotWindow.entries()) {
       if (attempts >= 4 && makes >= 3 && makes / attempts >= 0.6) {
         const pctStr = Math.round((makes / attempts) * 100);
-        const playerLabel = resolvePlayerLabel(playerId, resolveTeamLabel(state, ourTeamId));
+        const playerLabel = resolvePlayerLabel(playerId, resolveTeamLabel(state, ourTeamId), context);
         insights.push({
           id: `${latestEvent.id}-hot-${playerId}`,
           gameId: latestEvent.gameId,

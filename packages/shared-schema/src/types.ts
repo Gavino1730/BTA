@@ -63,6 +63,7 @@ export type TimeoutType = (typeof TIMEOUT_TYPES)[number];
 
 export interface GameEventBase {
   id: string;
+  schoolId: string;
   gameId: string;
   sequence: number;
   timestampIso: string;
@@ -196,17 +197,35 @@ export interface RosterPlayer {
   name: string;
   position: string;
   height?: string;
+  weight?: string;        // e.g. "185 lbs"
   grade?: string;
   role?: string;
   notes?: string;
+  email?: string;         // player email for login
+  phone?: string;         // player phone number
 }
 
 export interface RosterTeam {
   id: string;
+  schoolId?: string;
   name: string;
   abbreviation: string;
+  season?: string;
   teamColor?: string;
   coachStyle?: string;
+  playingStyle?: string;
+  teamContext?: string;
+  customPrompt?: string;
+  focusInsights?: Array<
+    "timeouts"
+    | "substitutions"
+    | "foul_management"
+    | "momentum"
+    | "shot_selection"
+    | "ball_security"
+    | "hot_hand"
+    | "defense"
+  >;
   players: RosterPlayer[];
 }
 

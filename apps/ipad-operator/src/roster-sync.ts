@@ -1,4 +1,4 @@
-import type { RosterTeam, RosterPlayer } from "@bta/shared-schema";
+import type { RosterTeam } from "@bta/shared-schema";
 
 export interface Team {
   id: string;
@@ -20,21 +20,55 @@ export interface Player {
   notes?: string;
 }
 
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
+
+function resolveDefaultSchoolId(hostname: string): string {
+  return isLocalNetworkHost(hostname) ? "default" : "";
+}
+
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID
+  ?? (typeof window !== "undefined" ? resolveDefaultSchoolId(window.location.hostname || "localhost") : "default"))
+  .toString()
+  .trim();
+
+function buildHeaders(apiKey?: string, schoolId?: string, withJson = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const resolvedSchoolId = schoolId?.trim() || DEFAULT_SCHOOL_ID;
+  if (resolvedSchoolId) {
+    headers["x-school-id"] = resolvedSchoolId;
+  }
+  if (withJson) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (apiKey) {
+    headers["x-api-key"] = apiKey;
+  }
+  return headers;
+}
+
 /**
  * Fetch teams from the realtime API.
  */
 export async function fetchTeamsFromRealtime(
   apiUrl: string,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<RosterTeam[]> {
   try {
-    const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/config/roster-teams`, {
-      headers,
+      headers: buildHeaders(apiKey, schoolId),
     });
 
     if (!response.ok) {
@@ -80,19 +114,13 @@ export async function createTeamViaRealtime(
   name: string,
   abbreviation: string,
   teamColor?: string,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<Team | null> {
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/teams`, {
       method: "POST",
-      headers,
+      headers: buildHeaders(apiKey, schoolId, true),
       body: JSON.stringify({ name, abbreviation, teamColor }),
     });
 
@@ -117,19 +145,13 @@ export async function updateTeamViaRealtime(
   name: string,
   abbreviation: string,
   teamColor?: string,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<Team | null> {
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/teams/${teamId}`, {
       method: "PUT",
-      headers,
+      headers: buildHeaders(apiKey, schoolId, true),
       body: JSON.stringify({ name, abbreviation, teamColor }),
     });
 
@@ -151,17 +173,13 @@ export async function updateTeamViaRealtime(
 export async function deleteTeamViaRealtime(
   apiUrl: string,
   teamId: string,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<boolean> {
   try {
-    const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/teams/${teamId}`, {
       method: "DELETE",
-      headers,
+      headers: buildHeaders(apiKey, schoolId),
     });
 
     return response.ok;
@@ -178,19 +196,13 @@ export async function addPlayerViaRealtime(
   apiUrl: string,
   teamId: string,
   player: Player,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<Player | null> {
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/teams/${teamId}/players`, {
       method: "POST",
-      headers,
+      headers: buildHeaders(apiKey, schoolId, true),
       body: JSON.stringify(player),
     });
 
@@ -214,19 +226,13 @@ export async function updatePlayerViaRealtime(
   teamId: string,
   playerId: string,
   updates: Partial<Player>,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<Player | null> {
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/teams/${teamId}/players/${playerId}`, {
       method: "PUT",
-      headers,
+      headers: buildHeaders(apiKey, schoolId, true),
       body: JSON.stringify(updates),
     });
 
@@ -249,17 +255,13 @@ export async function deletePlayerViaRealtime(
   apiUrl: string,
   teamId: string,
   playerId: string,
-  apiKey?: string
+  apiKey?: string,
+  schoolId?: string
 ): Promise<boolean> {
   try {
-    const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers["x-api-key"] = apiKey;
-    }
-
     const response = await fetch(`${apiUrl}/teams/${teamId}/players/${playerId}`, {
       method: "DELETE",
-      headers,
+      headers: buildHeaders(apiKey, schoolId),
     });
 
     return response.ok;

@@ -14,12 +14,13 @@
 param(
   [string]$ApiUrl   = "http://localhost:4000",
   [string]$ApiKey   = $env:BTA_API_KEY,
+  [string]$SchoolId = "smoke-school",
   [switch]$StartApi
 )
 
 Set-StrictMode -Version Latest
 
-$headers = @{ "Content-Type" = "application/json" }
+$headers = @{ "Content-Type" = "application/json"; "x-school-id" = $SchoolId }
 if ($ApiKey) { $headers["x-api-key"] = $ApiKey }
 
 $pass = 0
@@ -67,11 +68,32 @@ function InvokeRaw([string]$method, [string]$path, $body = $null) {
   try {
     return Invoke-WebRequest @params
   } catch {
-    return $_.Exception.Response
+    $response = $_.Exception.Response
+    if ($response) {
+      return $response
+    }
+
+    return [pscustomobject]@{ StatusCode = 0 }
   }
 }
 
-# ── Wait for API if needed ────────────────────────────────────────────────────
+function GetStatusCode($response) {
+  if ($null -eq $response) {
+    return 0
+  }
+
+  if ($response.PSObject.Properties.Name -contains "StatusCode") {
+    try {
+      return [int]$response.StatusCode
+    } catch {
+      return 0
+    }
+  }
+
+  return 0
+}
+
+# -- Wait for API if needed ----------------------------------------------------
 if ($StartApi) {
   Write-Host "  Starting realtime-api..." -ForegroundColor Yellow
   Start-Job { Set-Location $using:PWD; npm run dev:api } | Out-Null
@@ -93,23 +115,23 @@ Write-Host ("  Game ID: {0}" -f $GAME_ID)
 Write-Host ("  API: {0}" -f $ApiUrl)
 Write-Host ""
 
-# ── 1. Health check ───────────────────────────────────────────────────────────
+# -- 1. Health check -----------------------------------------------------------
 Step "Health check"
 $health = Invoke "GET" "/health"
 if ($health -and $health.status -eq "ok") { Ok "GET /health -> ok" }
 else { Fail "GET /health failed" }
 
-# ── 2. Create game ────────────────────────────────────────────────────────────
+# -- 2. Create game ------------------------------------------------------------
 Step "Create game"
-$game = Invoke "POST" "/games" @{ gameId = $GAME_ID; homeTeamId = "home"; awayTeamId = "away" }
-if ($game -and $game.gameId -eq $GAME_ID) { Ok "POST /games -> gameId=$($game.gameId)" }
-else { Fail "POST /games failed - got: $($game | ConvertTo-Json -Compress)" }
+$game = Invoke "POST" "/api/games" @{ gameId = $GAME_ID; homeTeamId = "home"; awayTeamId = "away" }
+if ($game -and $game.gameId -eq $GAME_ID) { Ok "POST /api/games -> gameId=$($game.gameId)" }
+else { Fail "POST /api/games failed - got: $($game | ConvertTo-Json -Compress)" }
 
-# ── 3. Get initial state ──────────────────────────────────────────────────────
+# -- 3. Get initial state ------------------------------------------------------
 Step "Initial state"
-$state = Invoke "GET" "/games/$GAME_ID/state"
-if ($state -and $state.gameId -eq $GAME_ID) { Ok "GET /games/$GAME_ID/state -> ok" }
-else { Fail "GET /games/$GAME_ID/state failed" }
+$state = Invoke "GET" "/api/games/$GAME_ID/state"
+if ($state -and $state.gameId -eq $GAME_ID) { Ok "GET /api/games/$GAME_ID/state -> ok" }
+else { Fail "GET /api/games/$GAME_ID/state failed" }
 
 if ($state) {
   $homeScore = $state.scoreByTeam.home
@@ -117,8 +139,8 @@ if ($state) {
   else { Fail "Expected score 0, got $homeScore" }
 }
 
-# ── 4. Ingest events ─────────────────────────────────────────────────────────
-Step "Ingest events (period start + 3 shots + foul)"
+# -- 4. Ingest events ----------------------------------------------------------
+Step "Ingest events (3 shots + foul + turnover)"
 
 function MakeEvent([string]$type, [hashtable]$extra) {
   $script:seq++
@@ -140,7 +162,6 @@ function MakeEvent([string]$type, [hashtable]$extra) {
 $script:seq = 0
 
 $events = @(
-  (MakeEvent "period_transition" @{ period = "Q1"; newPeriod = "Q1"; operatorId = "op-1"; teamId = "home" }),
   (MakeEvent "shot_attempt" @{ period = "Q1"; operatorId = "op-1"; playerId = "p1"; points = 2; made = $true; zone = "paint" }),
   (MakeEvent "shot_attempt" @{ period = "Q1"; operatorId = "op-1"; playerId = "p1"; points = 3; made = $true; zone = "above_break_three" }),
   (MakeEvent "shot_attempt" @{ period = "Q1"; operatorId = "op-1"; playerId = "p2"; points = 2; made = $false; zone = "paint" }),
@@ -150,15 +171,16 @@ $events = @(
 
 $submitted = 0
 foreach ($ev in $events) {
-  $r = InvokeRaw "POST" "/games/$GAME_ID/events" $ev
-  if ($r -and [int]$r.StatusCode -in 200,201) { $submitted++ }
-  else { Fail "POST event type=$($ev.type) failed (HTTP $($r.StatusCode))" }
+  $r = InvokeRaw "POST" "/api/games/$GAME_ID/events" $ev
+  $statusCode = GetStatusCode $r
+  if ($statusCode -in 200,201) { $submitted++ }
+  else { Fail "POST event type=$($ev.type) failed (HTTP $statusCode)" }
 }
 if ($submitted -eq $events.Count) { Ok "Submitted $submitted/$($events.Count) events" }
 
-# ── 5. Verify score ───────────────────────────────────────────────────────────
+# -- 5. Verify score -----------------------------------------------------------
 Step "Verify score and state after events"
-$state2 = Invoke "GET" "/games/$GAME_ID/state"
+$state2 = Invoke "GET" "/api/games/$GAME_ID/state"
 if ($state2) {
   $expectedScore = 5  # 2pt made + 3pt made
   $actualScore = $state2.scoreByTeam.home
@@ -170,18 +192,18 @@ if ($state2) {
   else { Fail "Expected currentPeriod=Q1, got $actualPeriod" }
 }
 
-# ── 6. Verify event list ──────────────────────────────────────────────────────
-Step "GET /games/$GAME_ID/events"
-$eventList = Invoke "GET" "/games/$GAME_ID/events"
+# -- 6. Verify event list ------------------------------------------------------
+Step "GET /api/games/$GAME_ID/events"
+$eventList = Invoke "GET" "/api/games/$GAME_ID/events"
 if ((CountItems $eventList) -eq $events.Count) {
   Ok "Event list has $((CountItems $eventList)) events"
 } else {
   Fail "Expected $($events.Count) events, got $((CountItems $eventList))"
 }
 
-# ── 7. Insights ───────────────────────────────────────────────────────────────
-Step "GET /games/$GAME_ID/insights"
-$insights = Invoke "GET" "/games/$GAME_ID/insights"
+# -- 7. Insights ---------------------------------------------------------------
+Step "GET /api/games/$GAME_ID/insights"
+$insights = Invoke "GET" "/api/games/$GAME_ID/insights"
 if ($null -ne $insights -or (CountItems $insights) -eq 0) {
   $insightCount = CountItems $insights
   Ok "Insights endpoint returned ($insightCount insights)"
@@ -192,34 +214,35 @@ if ($null -ne $insights -or (CountItems $insights) -eq 0) {
   Fail "Insights endpoint failed"
 }
 
-# ── 8. Undo (DELETE last event) ───────────────────────────────────────────────
+# -- 8. Undo (DELETE last event) ----------------------------------------------
 Step "DELETE last event (undo)"
 $lastEvent = $eventList | Sort-Object sequence | Select-Object -Last 1
 if ($lastEvent) {
-  $del = InvokeRaw "DELETE" "/games/$GAME_ID/events/$($lastEvent.id)"
-  if ($del -and [int]$del.StatusCode -in 200,204) {
-    Ok "DELETE /games/$GAME_ID/events/$($lastEvent.id) -> ok"
-    $afterDel = Invoke "GET" "/games/$GAME_ID/events"
+  $del = InvokeRaw "DELETE" "/api/games/$GAME_ID/events/$($lastEvent.id)"
+  $deleteStatusCode = GetStatusCode $del
+  if ($deleteStatusCode -in 200,204) {
+    Ok "DELETE /api/games/$GAME_ID/events/$($lastEvent.id) -> ok"
+    $afterDel = Invoke "GET" "/api/games/$GAME_ID/events"
     $afterDelCount = CountItems $afterDel
     if ($afterDelCount -eq ($events.Count - 1)) { Ok "Event count after delete = $afterDelCount" }
     else { Fail "Expected $($events.Count - 1) events post-delete, got $afterDelCount" }
   } else {
-    Fail "DELETE event failed (HTTP $($del.StatusCode))"
+    Fail "DELETE event failed (HTTP $deleteStatusCode)"
   }
 }
 
-# ── 9. Auth check (only when key is configured) ───────────────────────────────
+# -- 9. Auth check (only when key is configured) ------------------------------
 if ($ApiKey) {
   Step "Auth guard check"
   $badHeaders = @{ "Content-Type" = "application/json"; "x-api-key" = "wrong-key" }
   try {
-    $r = Invoke-WebRequest -Method GET -Uri "$ApiUrl/games/$GAME_ID/state" -Headers $badHeaders -ErrorAction SilentlyContinue
+    $r = Invoke-WebRequest -Method GET -Uri "$ApiUrl/api/games/$GAME_ID/state" -Headers $badHeaders -ErrorAction SilentlyContinue
     if ([int]$r.StatusCode -eq 401) { Ok "Wrong API key -> 401 Unauthorized" }
     else { Fail "Expected 401 with wrong key, got $($r.StatusCode)" }
   } catch { Ok "Wrong API key -> request rejected" }
 }
 
-# ── Results ───────────────────────────────────────────────────────────────────
+# -- Results -------------------------------------------------------------------
 Write-Host ""
 Write-Host "  -----------------------------------------------------" -ForegroundColor DarkGray
 $total = $pass + $fail

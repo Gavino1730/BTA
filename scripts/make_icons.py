@@ -46,20 +46,8 @@ def add_label(d, text, font_size=26):
                          radius=8, fill="#1e3352")
     d.text((SIZE//2, SIZE-28), text, fill=WHITE, font=font, anchor="mm")
 
-# ── STATS ────────────────────────────────────────────────────────
-img, d = new_canvas()
-# Basketball centered top area
-draw_basketball(d, cx=90, cy=72, r=44)
-# Bar chart below basketball
-bars = [(28,128,52,96), (58,128,82,74), (88,128,112,108), (118,128,142,82)]
-for x1,y1,x2,y2 in bars:
-    d.rectangle([x1, y2, x2, y1], fill=BLUE)
-    d.rectangle([x1, y2, x2, y2+3], fill=WHITE)  # top highlight
-d.rectangle([22, 128, 150, 131], fill=BLUE)       # baseline
-add_label(d, "STATS")
-os.makedirs("apps/stats-dashboard/static", exist_ok=True)
-img.save("apps/stats-dashboard/static/apple-touch-icon.png")
-print("Stats icon saved")
+# Generates icons for the two active frontends in this repo:
+# coach dashboard and iPad operator.
 
 # ── DASHBOARD ────────────────────────────────────────────────────
 img, d = new_canvas()

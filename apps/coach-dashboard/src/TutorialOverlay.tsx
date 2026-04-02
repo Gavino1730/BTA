@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const STEPS = [
   {
-    title: "Welcome to Bench IQ Coach",
+    title: "Welcome",
     body: "Your real-time coaching dashboard. Follow the live game feed, manage lineups, and get AI-powered insights — all in one place.",
     icon: "📊",
   },
@@ -22,13 +22,8 @@ const STEPS = [
     icon: "🤖",
   },
   {
-    title: "Film Review",
-    body: "After the game, the Film tab syncs timestamped video clips to key events. Tap any play in the feed to jump to that moment in the footage.",
-    icon: "🎬",
-  },
-  {
     title: "Settings",
-    body: "Configure your Stats Dashboard URL, Realtime API key, and AI preferences. You can also re-run this tutorial any time from the ? button.",
+    body: "Configure your Realtime API connection, optional legacy export URL, and AI preferences. You can also re-run this tutorial any time from the ? button.",
     icon: "⚙️",
   },
 ];

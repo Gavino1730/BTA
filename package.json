@@ -2,25 +2,27 @@
   "name": "bta-platform",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "apps/*",
     "packages/*",
     "services/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && npm run build -w @bta/insight-engine && npm run build -w @bta/realtime-api && npm run build -w @bta/coach-dashboard && npm run build -w @bta/ipad-operator",
     "test": "npm run test --workspaces --if-present",
     "dev:api": "npm run dev -w @bta/realtime-api",
+    "start:api": "npm run start -w @bta/realtime-api",
     "dev:coach": "npm run dev -w @bta/coach-dashboard",
     "dev:operator": "npm run dev -w @bta/ipad-operator",
-    "dev:video": "npm run dev -w @bta/video-worker",
-    "dev:stats": ".venv\\Scripts\\python apps\\stats-dashboard\\main.py",
-    "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach,video,stats --prefix-colors cyan,green,yellow,magenta,blue \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\" \"npm run dev:video\" \"npm run dev:stats\"",
+    "dev:stats": "npm run dev:coach",
+    "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach --prefix-colors cyan,green,yellow \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\"",
     "game-day": "pwsh -File scripts/game-day.ps1",
     "smoke-test": "pwsh -File scripts/smoke-test.ps1",
     "audit:ui": "node scripts/ui-audit.mjs",
-    "stats:install": "powershell -NoProfile -Command \"if (-not (Test-Path '.venv\\Scripts\\python.exe')) { py -3 -m venv .venv }; .\\.venv\\Scripts\\python -m pip install -r requirements.txt\"",
-    "test:stats": ".venv\\Scripts\\python -m pytest apps\\stats-dashboard\\test -q"
+    "validate:env": "npm run validate:env -w @bta/realtime-api"
   },
   "devDependencies": {
     "@types/node": "^22.15.19",
