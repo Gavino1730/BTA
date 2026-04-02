@@ -1642,9 +1642,7 @@ async function requestAiChatResponse(
   }
 
   const orderedEvents = listOrderedEvents(session);
-  const latestEventForChat = orderedEvents[orderedEvents.length - 1];
-  const isChatPeriodTransition = latestEventForChat?.type === "period_transition";
-  if (isChatPeriodTransition || Date.now() - session.historicalContextFetchedAtMs >= HISTORICAL_CONTEXT_TTL_MS) {
+  if (Date.now() - session.historicalContextFetchedAtMs >= HISTORICAL_CONTEXT_TTL_MS) {
     const summary = await fetchHistoricalContextSummary(session);
     if (summary) {
       session.historicalContextSummary = summary;
@@ -3055,9 +3053,7 @@ export async function refreshGameAiInsights(
   }
 
   const orderedEvents = listOrderedEvents(session);
-  const latestStoredEvent = orderedEvents[orderedEvents.length - 1];
-  const isPeriodTransition = latestStoredEvent?.type === "period_transition";
-  if (isPeriodTransition || Date.now() - session.historicalContextFetchedAtMs >= HISTORICAL_CONTEXT_TTL_MS) {
+  if (Date.now() - session.historicalContextFetchedAtMs >= HISTORICAL_CONTEXT_TTL_MS) {
     const summary = await fetchHistoricalContextSummary(session);
     if (summary) {
       session.historicalContextSummary = summary;
