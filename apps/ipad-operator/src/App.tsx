@@ -3372,7 +3372,7 @@ export function App() {
     const savedLineup = appData.gameSetup.startingLineup ?? [];
     const lineupIsSet = savedLineup.length > 0;
     const hasConnectionId = !!normalizeConnectionId(appData.gameSetup.connectionId);
-    const canStart = hasConnectionId && !!appData.gameSetup.myTeamId && !!appData.gameSetup.opponent?.trim() && lineupIsSet;
+    const canStart = hasConnectionId && !!appData.gameSetup.myTeamId;
     const myTeamDisplay = myTeam?.name ?? null;
 
     const handleStarterToggle = (playerId: string) => {
@@ -3449,98 +3449,17 @@ export function App() {
             </div>
             <div className="pregame-vs">vs</div>
             <div className="pregame-team opp-team">
-              <input
-                className="pregame-opp-input"
-                placeholder="Opponent name"
-                value={appData.gameSetup.opponent ?? ""}
-                onChange={e => persistData({ ...appData, gameSetup: { ...appData.gameSetup, opponent: e.target.value } })}
-              />
+              {opponentName
+                ? <span>{opponentName}</span>
+                : <span className="pregame-no-team">Opponent TBD</span>}
             </div>
           </div>
 
-          <div className="pregame-meta">
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Date</span>
-              <input
-                type="date"
-                className="pregame-date-inp"
-                value={gameDate}
-                onChange={e => setGameDate(e.target.value)}
-              />
-            </div>
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Side</span>
-              <div className="pregame-side-toggle">
-                <button
-                  className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "home" ? " tt-teal" : ""}`}
-                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "home" } })}>
-                  Home
-                </button>
-                <button
-                  className={`tt-btn${(appData.gameSetup.vcSide ?? "home") === "away" ? " tt-red" : ""}`}
-                  onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, vcSide: "away" } })}>
-                  Away
-                </button>
-              </div>
-            </div>
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Colors</span>
-              <div className="team-color-rows">
-                {(() => {
-                  const myColorKey = vcSideSetup === "home" ? "homeTeamColor" : "awayTeamColor";
-                  const oppColorKey = vcSideSetup === "home" ? "awayTeamColor" : "homeTeamColor";
-                  const myEffectiveColor = myTeam?.teamColor
-                    ? normalizeTeamColor(myTeam.teamColor, DEFAULT_HOME_TEAM_COLOR)
-                    : (vcSideSetup === "home" ? homeTeamColor : awayTeamColor);
-                  const oppEffectiveColor = vcSideSetup === "home" ? awayTeamColor : homeTeamColor;
-                  const myLabel = myTeam?.name ?? "My Team";
-                  const oppLabel = opponentName || "Opponent";
-                  return (<>
-                    <div className="team-color-row">
-                      <span className="team-color-label">{oppLabel}</span>
-                      <div className="team-color-swatches">
-                        {TEAM_COLOR_OPTIONS.map((color) => (
-                          <button
-                            key={`pregame-opp-${color}`}
-                            type="button"
-                            className={`team-color-swatch${oppEffectiveColor === color ? " selected" : ""}`}
-                            style={{ background: color }}
-                            onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, [oppColorKey]: color } })}
-                            title={`Opponent color ${color}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </>);
-                })()}
-              </div>
-            </div>
-            <div className="pregame-meta-row">
-              <span className="pregame-meta-label">Clock</span>
-              <div className="pregame-side-toggle">
-                <button
-                  className={`tt-btn${(appData.gameSetup.clockEnabled ?? true) ? " tt-teal" : ""}`}
-                  onClick={() => {
-                    const next = !(appData.gameSetup.clockEnabled ?? true);
-                    persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: next, clockVisible: next } });
-                  }}>
-                  {(appData.gameSetup.clockEnabled ?? true) ? "Enabled" : "Disabled"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {!appData.gameSetup.myTeamId && (
-            <p className="pregame-error">Warning: No team selected - go to Settings to choose your team.</p>
-          )}
           {!hasConnectionId && (
-            <p className="pregame-error">Warning: Paste the coach dashboard connection code above to sync the roster before starting the game.</p>
+            <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
           )}
-          {!appData.gameSetup.opponent?.trim() && appData.gameSetup.myTeamId && (
-            <p className="pregame-error">Warning: Enter the opponent name above to continue.</p>
-          )}
-          {appData.gameSetup.myTeamId && appData.gameSetup.opponent?.trim() && !lineupIsSet && (
-            <p className="pregame-error">Warning: Set the starting lineup below before starting the game.</p>
+          {hasConnectionId && !appData.gameSetup.myTeamId && (
+            <p className="pregame-error">Tap Sync Now to pull team and game setup from the coach dashboard.</p>
           )}
 
           {myTeam && !showLineupSetup && (
@@ -3596,18 +3515,6 @@ export function App() {
             </div>
           )}
 
-          <div className="pregame-meta-row pregame-meta-row-full">
-            <label className="pregame-meta-label" htmlFor="pregame-notes-input">Match Notes (visible to AI)</label>
-            <textarea
-              id="pregame-notes-input"
-              className="pregame-notes-input"
-              value={preGameNotes}
-              onChange={e => setPreGameNotes(e.target.value)}
-              placeholder="Opponent tendencies, team mindset, key matchups — shared with AI throughout the game"
-              rows={3}
-            />
-          </div>
-
           <button
             className="pregame-start-btn"
             disabled={!canStart}
@@ -3622,9 +3529,9 @@ export function App() {
             <button
               className="pregame-settings-link"
               onClick={() => navigateView("settings", "game-setup")}>
-              Open Game Settings
+              Open Advanced Settings
             </button>
-            <p className="pregame-settings-hint">Team/Opponent required. API and Dashboard URLs are critical for live sync and final save.</p>
+            <p className="pregame-settings-hint">API URL, clock, and opponent tracking options.</p>
           </div>
         </div>
       </div>

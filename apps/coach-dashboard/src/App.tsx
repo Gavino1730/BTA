@@ -219,6 +219,12 @@ function generateConnectionId(): string {
   return generateConnectionCode();
 }
 
+function generateGameId(opponent: string, date: string): string {
+  const slug = (opponent || "game").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "game";
+  const d = date || new Date().toISOString().slice(0, 10);
+  return `${d}-${slug}`;
+}
+
 type CoachInsightFocus =
   | "timeouts"
   | "substitutions"
@@ -392,7 +398,7 @@ interface AppProps {
 }
 
 export function App({ onConnectionChange, showTutorial = false, onDismissTutorial }: AppProps = {}) {
-  const setupNames = useMemo(() => {
+  const [setupNames, setSetupNames] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return {
       myTeamId: params.get("myTeamId") ?? "",
@@ -402,7 +408,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       homeColor: params.get("homeColor") ?? "",
       awayColor: params.get("awayColor") ?? "",
     };
-  }, []);
+  });
 
   const [deviceId, setDeviceId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -438,6 +444,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     const params = new URLSearchParams(window.location.search);
     return params.get("gameId") ?? "";
   });
+
+  const [newGameOpponent, setNewGameOpponent] = useState("");
+  const [newGameMyTeamId, setNewGameMyTeamId] = useState("");
+  const [newGameVcSide, setNewGameVcSide] = useState<"home" | "away">("home");
+  const [newGameOppColor, setNewGameOppColor] = useState("#f87171");
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -2034,30 +2045,136 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           <button className={activePage === "live" ? "nav-active" : ""} onClick={() => { setActivePage("live"); sessionStorage.setItem("coach:live-tab", "live"); }}>Scoreboard</button>
           <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => { setActivePage("ai"); sessionStorage.setItem("coach:live-tab", "ai"); }}>AI Insights</button>
         </div>
-      {!gameId && (
+      {!gameId && activePage === "ai" && (
         <div className="idle-screen">
           <div className="idle-screen-icon">||</div>
           <p className="idle-screen-title">No Active Game</p>
-          <p className="idle-screen-sub">
-            {serverConnected ? "Waiting for the operator to start a game..." : "Not connected to server"}
-          </p>
+          <p className="idle-screen-sub">Start a game on the Live tab to enable AI insights.</p>
         </div>
       )}
       {!gameId && activePage === "live" && (
         <section className="card settings-section-card">
           <div className="stats-page-card-head">
             <div>
-              <h3>Live Pairing</h3>
-              <p className="settings-section-desc">Link the score operator iPad to this dashboard using the 6-digit code below.</p>
-            </div>
-            <div className="settings-header-actions">
-              <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionId)}>Copy Code</button>
-              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionId(generateConnectionId())}>New Code</button>
+              <h3>Start New Game</h3>
+              <p className="settings-section-desc">Set up the matchup, then give the operator your pairing code to begin live tracking.</p>
             </div>
           </div>
-          <div className="settings-pairing-display">
-            <span className="settings-pairing-code">{connectionId}</span>
-            <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
+
+          {/* Your Team */}
+          <div style={{ marginBottom: "1rem" }}>
+            <p className="settings-section-label">Your Team</p>
+            {rosterTeams.length === 0 && (
+              <p className="settings-section-desc">No teams yet — add one in <strong>Settings</strong> first.</p>
+            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
+              {rosterTeams.map(t => {
+                const isSelected = newGameMyTeamId === t.id;
+                const color = normalizeTeamColor(t.teamColor) ?? "#4f8cff";
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="shell-nav-link"
+                    style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
+                    onClick={() => setNewGameMyTeamId(t.id)}
+                  >
+                    {t.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Opponent + Side */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", alignItems: "end", marginBottom: "1rem" }}>
+            <div>
+              <p className="settings-section-label">Opponent</p>
+              <input
+                value={newGameOpponent}
+                onChange={e => setNewGameOpponent(e.target.value)}
+                placeholder="e.g. Knappa"
+                style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
+              />
+            </div>
+            <div>
+              <p className="settings-section-label">Side</p>
+              <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+                <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("home")} style={newGameVcSide === "home" ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" } : undefined}>Home</button>
+                <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("away")} style={newGameVcSide === "away" ? { borderColor: "#f87171", color: "#f87171", background: "rgba(248,113,113,0.1)" } : undefined}>Away</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Opponent color */}
+          <div style={{ marginBottom: "1.5rem" }}>
+            <p className="settings-section-label">Opponent Jersey Color</p>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem", alignItems: "center" }}>
+              {["#f87171","#f59e0b","#22c55e","#4f8cff","#a855f7","#14b8a6","#ffffff"].map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setNewGameOppColor(color)}
+                  style={{ width: 28, height: 28, borderRadius: "50%", background: color, border: newGameOppColor === color ? "2px solid white" : "2px solid rgba(255,255,255,0.2)", cursor: "pointer", flexShrink: 0 }}
+                  title={color}
+                />
+              ))}
+              <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} style={{ height: 28, width: 36, borderRadius: 8, padding: "0 2px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.2)", background: "transparent" }} />
+            </div>
+          </div>
+
+          {/* Launch button */}
+          <button
+            type="button"
+            className="shell-nav-link shell-nav-link-active"
+            disabled={!newGameMyTeamId || !newGameOpponent.trim()}
+            style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim()) ? 0.45 : 1 }}
+            onClick={() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const newId = generateGameId(newGameOpponent, today);
+              const selectedTeam = rosterTeams.find(t => t.id === newGameMyTeamId);
+              const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
+              const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
+              const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
+              setGameId(newId);
+              setSetupNames({
+                myTeamId: newGameMyTeamId,
+                myTeamName: selectedTeam?.name ?? "",
+                opponentName: newGameOpponent.trim(),
+                vcSide: newGameVcSide,
+                homeColor,
+                awayColor,
+              });
+              const params = new URLSearchParams(window.location.search);
+              params.set("gameId", newId);
+              params.set("myTeamId", newGameMyTeamId);
+              if (selectedTeam?.name) params.set("myTeamName", selectedTeam.name);
+              params.set("opponentName", newGameOpponent.trim());
+              params.set("vcSide", newGameVcSide);
+              params.set("homeColor", homeColor);
+              params.set("awayColor", awayColor);
+              window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+            }}
+          >
+            Launch Game
+          </button>
+
+          {/* Pairing code */}
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <div className="stats-page-card-head" style={{ paddingBottom: "0.75rem" }}>
+              <div>
+                <h3 style={{ fontSize: "0.95rem" }}>Operator Pairing Code</h3>
+                <p className="settings-section-desc">Have the iPad operator enter this code to sync setup.</p>
+              </div>
+              <div className="settings-header-actions">
+                <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionId)}>Copy Code</button>
+                <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionId(generateConnectionId())}>New Code</button>
+              </div>
+            </div>
+            <div className="settings-pairing-display">
+              <span className="settings-pairing-code">{connectionId}</span>
+              <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
+            </div>
           </div>
         </section>
       )}
