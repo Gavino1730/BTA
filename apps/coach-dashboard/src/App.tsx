@@ -813,8 +813,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
         setGameId((current) => (current === activeGameId ? current : activeGameId));
         socket.emit("join:game", activeGameId);
       } else {
-        setState(null);
-        setGameId("");
+        // Only reset to "waiting" state when no game has been launched by the coach.
+        // If the coach already has a game open, keep it — the operator may just be
+        // between actions or not yet connected.
+        setGameId((current) => {
+          if (current) return current;
+          return "";
+        });
         setDashboardStatus(`Waiting for connection ${connectionId}`);
       }
     }
@@ -2136,6 +2141,15 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
               const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
               const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
               const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
+              const oppSlug = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
+              const homeTeamId = newGameVcSide === "home" ? newGameMyTeamId : oppSlug;
+              const awayTeamId = newGameVcSide === "away" ? newGameMyTeamId : oppSlug;
+              // Create the game on the backend so state/insights/ai-settings endpoints work immediately
+              void fetch(`${apiBase}/api/games`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+                body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName: newGameOpponent.trim() }),
+              }).catch(() => { /* will retry when hydrate runs */ });
               setGameId(newId);
               setSetupNames({
                 myTeamId: newGameMyTeamId,
