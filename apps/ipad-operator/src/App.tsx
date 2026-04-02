@@ -4680,7 +4680,7 @@ export function App() {
               title={`Set possession: ${awayTeamName}`}>
               Away: {awayTeamName}
             </button>
-          </div>}
+          </div>
         </div>}
       </div>
 
