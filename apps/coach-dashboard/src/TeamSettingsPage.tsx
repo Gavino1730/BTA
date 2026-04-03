@@ -4,6 +4,7 @@ import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode 
 interface TeamDto {
   id: string;
   name: string;
+  abbreviation?: string;
   season?: string;
   teamColor?: string;
   playingStyle?: string;
@@ -92,6 +93,7 @@ interface RosterPlayerDto {
 
 interface RosterEditRow {
   key: string;
+  originalName: string;
   name: string;
   number: string;
   position: string;
@@ -241,6 +243,7 @@ export function TeamSettingsPage() {
               Array.isArray(rosterPayload)
                 ? rosterPayload.map((p, i) => ({
                     key: `existing-${i}-${p.name}`,
+                  originalName: p.name ?? "",
                     name: p.name ?? "",
                     number: String(p.number ?? ""),
                     position: p.position ?? "",
@@ -331,6 +334,7 @@ export function TeamSettingsPage() {
         headers: apiKeyHeader(true),
         body: JSON.stringify({
           name: team.name.trim(),
+          abbreviation: team.abbreviation?.trim() || undefined,
           season: team.season?.trim() || undefined,
           teamColor: team.teamColor?.trim() || undefined,
           playingStyle: playingStyle.trim() || undefined,
@@ -509,7 +513,7 @@ export function TeamSettingsPage() {
 
       setRoster((current) => [
         ...current,
-        { key: `new-${Date.now()}`, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim() },
+        { key: `new-${Date.now()}`, originalName: name, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim() },
       ]);
       setNewPlayer({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
       setStatus(`${name} added to roster.`);
@@ -523,15 +527,18 @@ export function TeamSettingsPage() {
   async function savePlayer(row: RosterEditRow) {
     const name = row.name.trim();
     if (!name) return;
+    const originalName = row.originalName.trim() || name;
 
     setSaving(true);
     setStatus(`Saving ${name}...`);
 
     try {
-      const response = await fetch(`${apiBase}/api/player/${encodeURIComponent(name)}`, {
+      const response = await fetch(`${apiBase}/api/player/${encodeURIComponent(originalName)}`, {
         method: "POST",
         headers: apiKeyHeader(true),
         body: JSON.stringify({
+          name,
+          originalName,
           number: row.number.trim() || undefined,
           position: row.position.trim() || undefined,
           grade: row.grade.trim() || undefined,
@@ -548,6 +555,20 @@ export function TeamSettingsPage() {
         throw new Error("Save player failed");
       }
 
+      setRoster((current) => current.map((entry) => entry.key === row.key ? {
+        ...entry,
+        originalName: name,
+        name,
+        number: row.number.trim(),
+        position: row.position.trim(),
+        grade: row.grade.trim(),
+        height: row.height?.trim() || "",
+        weight: row.weight?.trim() || "",
+        role: row.role?.trim() || "",
+        notes: row.notes?.trim() || "",
+        email: row.email?.trim() || "",
+        phone: row.phone?.trim() || "",
+      } : entry));
       setStatus(`${name} saved.`);
     } catch {
       setStatus("Could not save player.");
@@ -558,6 +579,7 @@ export function TeamSettingsPage() {
 
   async function removePlayer(row: RosterEditRow) {
     const name = row.name.trim();
+    const originalName = row.originalName.trim() || name;
     if (!name) {
       setRoster((current) => current.filter((r) => r.key !== row.key));
       return;
@@ -567,7 +589,7 @@ export function TeamSettingsPage() {
     setStatus(`Removing ${name}...`);
 
     try {
-      const response = await fetch(`${apiBase}/api/roster/player/${encodeURIComponent(name)}`, {
+      const response = await fetch(`${apiBase}/api/roster/player/${encodeURIComponent(originalName)}`, {
         method: "DELETE",
         headers: apiKeyHeader(),
       });
@@ -874,7 +896,7 @@ export function TeamSettingsPage() {
             <div className="stats-page-card-head">
               <div>
                 <h3>Team</h3>
-                <p className="settings-section-desc">Team name, season, and identity.</p>
+                <p className="settings-section-desc">Team name, abbreviation, season, and identity.</p>
               </div>
               <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>Save</button>
             </div>
@@ -885,6 +907,14 @@ export function TeamSettingsPage() {
                   value={team?.name ?? ""}
                   onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), name: event.target.value }))}
                   placeholder="Varsity Boys Basketball"
+                />
+              </label>
+              <label className="stats-filter-field">
+                <span>Abbreviation</span>
+                <input
+                  value={team?.abbreviation ?? ""}
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), abbreviation: event.target.value.toUpperCase().slice(0, 12) }))}
+                  placeholder="VC"
                 />
               </label>
               <label className="stats-filter-field">

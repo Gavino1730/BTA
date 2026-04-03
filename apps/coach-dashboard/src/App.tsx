@@ -2198,44 +2198,33 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             </div>
           </div>
 
-          {/* Your Team */}
-          <div style={{ marginBottom: "1rem" }}>
-            <p className="settings-section-label">Your Team</p>
-            {rosterTeams.length === 0 && (
-              <p className="settings-section-desc">No teams yet — add one in <strong>Settings</strong> first.</p>
-            )}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
-              {rosterTeams.map(t => {
-                const isSelected = newGameMyTeamId === t.id;
-                const color = normalizeTeamColor(t.teamColor) ?? "#4f8cff";
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className="shell-nav-link"
-                    style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
-                    onClick={() => setNewGameMyTeamId(t.id)}
-                  >
-                    {t.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Opponent + Side */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", alignItems: "end", marginBottom: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "1rem", alignItems: "start", marginBottom: "1rem" }}>
             <div>
-              <p className="settings-section-label">Opponent</p>
-              <input
-                value={newGameOpponent}
-                onChange={e => setNewGameOpponent(e.target.value)}
-                placeholder="e.g. Knappa"
-                style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
-              />
+              <p className="settings-section-label">Your Team</p>
+              {rosterTeams.length === 0 && (
+                <p className="settings-section-desc">No teams yet — add one in <strong>Settings</strong> first.</p>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
+                {rosterTeams.map(t => {
+                  const isSelected = newGameMyTeamId === t.id;
+                  const color = normalizeTeamColor(t.teamColor) ?? "#4f8cff";
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="shell-nav-link"
+                      style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
+                      onClick={() => setNewGameMyTeamId(t.id)}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div>
-              <p className="settings-section-label">Side</p>
+            <div style={{ minWidth: 190 }}>
+              <p className="settings-section-label">Your Side</p>
+              <p className="settings-section-desc" style={{ marginTop: "0.3rem" }}>Choose whether your team is home or away.</p>
               <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
                 <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("home")} style={newGameVcSide === "home" ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" } : undefined}>Home</button>
                 <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("away")} style={newGameVcSide === "away" ? { borderColor: "#f87171", color: "#f87171", background: "rgba(248,113,113,0.1)" } : undefined}>Away</button>
@@ -2243,7 +2232,29 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             </div>
           </div>
 
-          {/* Opponent color */}
+          <div style={{ marginBottom: "1rem" }}>
+            <p className="settings-section-label">Opponent</p>
+            <input
+              value={newGameOpponent}
+              onChange={e => setNewGameOpponent(e.target.value)}
+              placeholder="e.g. Knappa"
+              style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
+            />
+          </div>
+
+          <div style={{ marginBottom: "1rem", padding: "0.9rem 1rem", borderRadius: 14, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+            <p className="settings-section-label" style={{ marginBottom: "0.55rem" }}>Matchup Preview</p>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", minHeight: 34, padding: "0.35rem 0.75rem", borderRadius: 999, border: "1px solid rgba(79,140,255,0.3)", background: "rgba(79,140,255,0.12)", color: "rgba(232,234,240,0.96)", fontWeight: 700 }}>
+                {(rosterTeams.find(t => t.id === newGameMyTeamId)?.name ?? "Your Team")} · {newGameVcSide === "home" ? "Home" : "Away"}
+              </span>
+              <span style={{ color: "rgba(232,234,240,0.5)", fontWeight: 700 }}>vs</span>
+              <span style={{ display: "inline-flex", alignItems: "center", minHeight: 34, padding: "0.35rem 0.75rem", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "rgba(232,234,240,0.8)", fontWeight: 700 }}>
+                {(newGameOpponent.trim() || "Opponent")} · {newGameVcSide === "home" ? "Away" : "Home"}
+              </span>
+            </div>
+          </div>
+
           <div style={{ marginBottom: "1.5rem" }}>
             <p className="settings-section-label">Opponent Jersey Color</p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem", alignItems: "center" }}>
