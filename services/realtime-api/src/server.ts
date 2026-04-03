@@ -1700,7 +1700,12 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: process.env.NODE_ENV !== "production" 
     ? { origin: true, credentials: true }
-    : { origin: ALLOWED_ORIGINS, credentials: true }
+    : { origin: ALLOWED_ORIGINS, credentials: true },
+  // Give sleeping devices (iPad screen-off, background tabs) more time before
+  // the server declares them disconnected. Defaults are 25s/20s which is too
+  // aggressive for iOS Safari's background network suspension.
+  pingInterval: 30000,   // how often the server pings (ms)
+  pingTimeout: 90000,    // how long to wait for a pong before disconnecting (ms)
 });
 
 io.use(async (socket, next) => {
@@ -2476,6 +2481,8 @@ app.post("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) 
     res.status(400).json({ error: "Player name is required" });
     return;
   }
+  const originalName = normalizePersonName(payload.originalName) || requestedName;
+  const nextName = normalizePersonName(payload.name) || requestedName;
 
   const { teams, team } = getPrimaryTeam(schoolId);
   const primaryTeam: RosterTeam = team ?? {
@@ -2486,8 +2493,8 @@ app.post("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) 
     players: []
   };
 
-  const existingRecord = findPlayerRecord([primaryTeam], requestedName);
-  const builtPlayer = buildRosterPlayer({ ...payload, name: requestedName }, primaryTeam.id, existingRecord?.player);
+  const existingRecord = findPlayerRecord([primaryTeam], originalName);
+  const builtPlayer = buildRosterPlayer({ ...payload, name: nextName }, primaryTeam.id, existingRecord?.player);
   if (!builtPlayer) {
     res.status(400).json({ error: "Player name is required" });
     return;

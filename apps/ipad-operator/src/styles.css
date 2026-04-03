@@ -135,6 +135,43 @@ html, body {
   text-align: center;
 }
 
+.shot-team-switch {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+}
+
+.shot-team-switch-btn {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.04);
+  color: rgba(232,234,240,0.78);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.45rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shot-team-switch-btn-my.active {
+  border-color: rgba(79,140,255,0.6);
+  background: rgba(79,140,255,0.22);
+  color: #bfdbfe;
+}
+
+.shot-team-switch-btn-opp.active {
+  border-color: rgba(232,234,240,0.38);
+  background: rgba(100,116,139,0.22);
+  color: rgba(232,234,240,0.9);
+}
+
 .shot-grid-team-label {
   width: 100%;
   text-align: left;
@@ -276,6 +313,19 @@ html, body {
   min-height: 52px;
 }
 
+.shot-grid-empty {
+  min-height: 52px;
+  border: 1px dashed rgba(232,234,240,0.24);
+  border-radius: 10px;
+  color: rgba(232,234,240,0.6);
+  font-size: 0.68rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem;
+  text-align: center;
+}
+
 .left-panel .circle {
   width: 100%;
   max-width: 12rem;
@@ -353,7 +403,9 @@ html, body {
    ================================================================ */
 .center-panel {
   border-right: 1px solid rgba(255,255,255,0.07);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .center-controls-wrap {
@@ -385,6 +437,28 @@ html, body {
 .scoreboard {
   padding: 0.75rem 1rem 0.45rem;
   border-bottom: 1px solid rgba(242,194,75,0.25);
+}
+
+.scoreboard-team-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.scoreboard-team-card {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  padding: 0.5rem 0.6rem 0.42rem;
+}
+
+.scoreboard-team-card-my {
+  border-color: rgba(79,140,255,0.34);
+  background: rgba(79,140,255,0.08);
+}
+
+.scoreboard-team-card-opp {
+  border-color: rgba(255,255,255,0.12);
 }
 
 .live-summary-card {
@@ -511,6 +585,7 @@ html, body {
   align-items: center;
   gap: 0.4rem;
   margin: 0.16rem 0 0.3rem;
+  flex-wrap: wrap;
 }
 .score-meta {
   font-size: 0.75rem;
@@ -670,6 +745,12 @@ html, body {
 .team-home-txt { color: var(--team-home-color); }
 .team-away-txt { color: var(--team-away-color); }
 
+@media (max-width: 860px) {
+  .scoreboard-team-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Event feed */
 .event-feed-header {
   display: flex;
@@ -696,9 +777,9 @@ html, body {
 }
 
 .event-feed {
-  flex: 1;
-  min-height: 180px;
-  overflow-y: auto;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
   padding: 0.52rem 1rem;
   display: flex;
   flex-direction: column;
@@ -2698,11 +2779,38 @@ html, body {
 }
 
 .team-color-input {
-  width: 44px !important;
-  min-width: 44px;
-  padding: 0.2rem !important;
-  border-radius: 10px;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px;
+  padding: 0;
+  border: 2px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.team-color-input:hover {
+  border-color: rgba(255,255,255,0.32);
+  transform: translateY(-1px);
+}
+
+.team-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.team-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 999px;
+}
+
+.team-color-input::-moz-color-swatch {
+  border: none;
+  border-radius: 999px;
 }
 
 .team-color-label {
@@ -2714,23 +2822,32 @@ html, body {
 
 .team-color-swatches {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.55rem;
   flex-wrap: wrap;
   flex: 1;
   min-width: 220px;
+  align-items: center;
 }
 
 .team-color-swatch {
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
-  border: 2px solid rgba(255,255,255,0.32);
+  border: 2px solid rgba(255,255,255,0.18);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), 0 8px 18px rgba(8,12,30,0.22);
   cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.team-color-swatch:hover {
+  transform: translateY(-1px) scale(1.03);
+  border-color: rgba(255,255,255,0.36);
 }
 
 .team-color-swatch.selected {
   border-color: #fff;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.22);
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.14), 0 0 0 5px rgba(79,140,255,0.28), 0 10px 22px rgba(8,12,30,0.28);
 }
 
 .add-player-row {
@@ -3080,7 +3197,7 @@ html, body {
   border-radius: 20px;
   z-index: 999;
   letter-spacing: 0.06em;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 /* ---- Foul badge in player row ---- */
@@ -3178,6 +3295,12 @@ html, body {
   font-weight: 700;
   padding: 0.15rem 0.55rem;
   cursor: pointer;
+  border: 1px solid rgba(248,113,113,0.52);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.28);
+}
+
+.pending-badge:hover {
+  filter: brightness(1.08);
 }
 
 /* ---- End of Game section (left panel) ---- */

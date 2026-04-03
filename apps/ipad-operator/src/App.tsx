@@ -83,6 +83,13 @@ const TEAM_COLOR_OPTIONS = [
   "#14b8a6",
 ] as const;
 
+type FeedbackTone = "event" | "undo" | "warning";
+
+function getAudioContextCtor(): (new () => AudioContext) | undefined {
+  return window.AudioContext
+    ?? (window as Window & { webkitAudioContext?: new () => AudioContext }).webkitAudioContext;
+}
+
 /** Returns auth headers when a key is configured.
  *  - Local auth tokens (bta.*) are sent as `Authorization: Bearer`.
  *  - Plain API keys are sent as `x-api-key`. */
@@ -891,6 +898,130 @@ function viewToHash(v: "game" | "settings", sv: SettingsView): string {
 }
 
 export function App() {
+  const feedbackAudioRef = useRef<AudioContext | null>(null);
+  const feedbackUnlockedRef = useRef(false);
+
+  function ensureFeedbackAudioContext(): AudioContext | null {
+    if (feedbackAudioRef.current) {
+      return feedbackAudioRef.current;
+    }
+    const AudioContextCtor = getAudioContextCtor();
+    if (!AudioContextCtor) {
+      return null;
+    }
+    try {
+      const ctx = new AudioContextCtor();
+      feedbackAudioRef.current = ctx;
+      return ctx;
+    } catch {
+      return null;
+    }
+  }
+
+  async function unlockFeedbackAudio(): Promise<boolean> {
+    const ctx = ensureFeedbackAudioContext();
+    if (!ctx) {
+      return false;
+    }
+    try {
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      if (ctx.state !== "running") {
+        return false;
+      }
+
+      // Prime audio on first user gesture so Safari allows subsequent playback.
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.00001;
+      osc.frequency.value = 440;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.01);
+
+      feedbackUnlockedRef.current = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function playFeedbackTone(tone: FeedbackTone) {
+    const ctx = ensureFeedbackAudioContext();
+    if (!ctx || ctx.state !== "running") {
+      return;
+    }
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+
+    const now = ctx.currentTime;
+    let frequency = 780;
+    let duration = 0.05;
+    let volume = 0.03;
+
+    if (tone === "undo") {
+      frequency = 500;
+      duration = 0.06;
+      volume = 0.028;
+    } else if (tone === "warning") {
+      frequency = 360;
+      duration = 0.08;
+      volume = 0.03;
+    }
+
+    osc.frequency.setValueAtTime(frequency, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + duration + 0.01);
+  }
+
+  function triggerFeedback(tone: FeedbackTone, vibrateMs = 0) {
+    if (feedbackUnlockedRef.current) {
+      playFeedbackTone(tone);
+    } else {
+      void unlockFeedbackAudio().then((ready) => {
+        if (ready) playFeedbackTone(tone);
+      });
+    }
+
+    if (vibrateMs > 0) {
+      try { navigator.vibrate?.(vibrateMs); } catch { /* empty */ }
+    }
+  }
+
+  useEffect(() => {
+    const unlock = () => {
+      if (feedbackUnlockedRef.current) return;
+      void unlockFeedbackAudio();
+    };
+
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    window.addEventListener("touchstart", unlock, { passive: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const ctx = feedbackAudioRef.current;
+      if (!ctx) return;
+      void ctx.close().catch(() => {});
+      feedbackAudioRef.current = null;
+    };
+  }, []);
+
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
 
@@ -1041,6 +1172,7 @@ export function App() {
   // Guards: prevent concurrent flush calls and back off after server-side failures
   const isFlushingRef = useRef(false);
   const flushBackoffUntilRef = useRef(0);
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
 
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
@@ -1196,6 +1328,11 @@ export function App() {
   const trackPossession = appData.gameSetup.trackPossession ?? true;
   const trackTimeouts = appData.gameSetup.trackTimeouts ?? true;
   const opponentSide: TeamSide = vcSideSetup === "home" ? "away" : "home";
+  const [shotEntrySide, setShotEntrySide] = useState<TeamSide>(vcSideSetup);
+
+  useEffect(() => {
+    setShotEntrySide(vcSideSetup);
+  }, [vcSideSetup]);
 
   function isOpponentStatEnabled(key: OpponentTrackStat): boolean {
     return opponentTrackSet.has(key);
@@ -1293,14 +1430,30 @@ export function App() {
     }
     const socket = io(appData.gameSetup.apiUrl, {
       auth: socketAuth,
-      extraHeaders: apiKeyHeader(appData.gameSetup)
+      extraHeaders: apiKeyHeader(appData.gameSetup),
+      // Be explicit about reconnection so the iPad always retries after
+      // Safari suspends the tab or the screen turns off.
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
     });
+    socketRef.current = socket;
 
     const register = () => {
       socket.emit("operator:register", payload);
     };
 
     socket.on("connect", register);
+
+    // When the iPad wakes up / user switches back to Safari, proactively
+    // reconnect if the socket dropped while the page was hidden.
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && !socket.connected) {
+        socket.connect();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     
     // Error handlers for socket failures
     socket.on("connect_error", (error: unknown) => {
@@ -1392,6 +1545,7 @@ export function App() {
 
     return () => {
       clearInterval(heartbeat);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       socket.off("connect", register);
       socket.off("connect_error");
       socket.off("disconnect");
@@ -1400,6 +1554,9 @@ export function App() {
       socket.off("operator:link:updated");
       socket.off("roster:teams");
       socket.disconnect();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
   }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, gameId, gamePhase]);
 
@@ -1493,6 +1650,19 @@ export function App() {
       } catch { /* empty */ }
       showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
     }
+  }
+
+  async function reconnectAndResubmit() {
+    socketRef.current?.connect();
+    if (!navigator.onLine) {
+      showInlineNotice("Still offline. Check Wi-Fi and tap again to retry.", "warning", 3200);
+      return;
+    }
+    if (pendingEvents.length === 0) {
+      showInlineNotice("Connection looks good. No pending events to resubmit.", "info", 2200);
+      return;
+    }
+    await flushQueue();
   }
 
   useEffect(() => { if (online) void flushQueue(); }, [online]);
@@ -1603,8 +1773,7 @@ export function App() {
     saveSeq(gameId, next);
     // Optimistic update: add to pending immediately so score updates instantly
     setPendingEvents(cur => [...cur, event].sort((a, b) => a.sequence - b.sequence));
-    // Haptic confirmation on supported devices
-    try { navigator.vibrate?.(30); } catch { /* not supported */ }
+    triggerFeedback("event", 30);
     // Then submit in background
     await submitEvent(event);
   }
@@ -1633,7 +1802,7 @@ export function App() {
         showInlineNotice("Could not remove event from server. It may sync on reconnect.", "warning", 4000);
       }
     }
-    try { navigator.vibrate?.(20); } catch { /* not supported */ }
+    triggerFeedback("undo", 20);
     showInlineNotice("Last event undone.", "success", 2500);
   }
 
@@ -4433,14 +4602,11 @@ export function App() {
           </div>
         </div>
       )}
-      {!online && (
-        <div className="offline-badge">
-          OFFLINE{pendingEvents.length > 0 ? ` | ${pendingEvents.length} unsaved` : ""}
-        </div>
-      )}
-      {pendingEvents.length > 0 && online && (
-        <button className="offline-badge pending-badge" onClick={() => void flushQueue()}>
-          {pendingEvents.length} pending upload
+      {(!online || pendingEvents.length > 0) && (
+        <button className="offline-badge pending-badge" onClick={() => void reconnectAndResubmit()}>
+          {!online
+            ? `OFFLINE${pendingEvents.length > 0 ? ` | ${pendingEvents.length} unsaved` : ""} - Tap to reconnect`
+            : `${pendingEvents.length} pending upload - Tap to resubmit`}
         </button>
       )}
 
@@ -4452,6 +4618,11 @@ export function App() {
             const oppName   = vcSideSetup === "home" ? awayTeamName : homeTeamName;
             const myTO      = timeoutRemaining[vcSideSetup];
             const oppTO     = timeoutRemaining[opponentSide];
+            const activeShotSide = shotEntrySide;
+            const activeShotTeamName = activeShotSide === vcSideSetup ? myName : oppName;
+            const isTrackingMyTeam = activeShotSide === vcSideSetup;
+            const canTrackPoints = isTrackingMyTeam || isOpponentStatEnabled("points");
+            const canTrackFreeThrows = isTrackingMyTeam || isOpponentStatEnabled("free_throws");
             return (<>
               {trackTimeouts && (
                 <>
@@ -4473,41 +4644,67 @@ export function App() {
                 </>
               )}
 
-              {/* My team — full make/miss row per shot type */}
-              <div className="shot-grid-team-label shot-grid-team-label-my" style={{ gridColumn: "1 / -1" }} title={`Scoring for ${myName}`}>{myName}</div>
-              <button className="shot-btn shot-btn-make" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>
-                <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MAKE</span>
-              </button>
-              <button className="shot-btn shot-btn-miss" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: false })}>
-                <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MISS</span>
-              </button>
-              <button className="shot-btn shot-btn-make shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>
-                <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MAKE</span>
-              </button>
-              <button className="shot-btn shot-btn-miss shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: false })}>
-                <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MISS</span>
-              </button>
-              <button className="shot-btn shot-btn-ft-make" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>
-                <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MAKE</span>
-              </button>
-              <button className="shot-btn shot-btn-ft-miss" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: false })}>
-                <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MISS</span>
-              </button>
+              <div className="shot-team-switch" role="group" aria-label="Scoring team selector">
+                <button
+                  className={`shot-team-switch-btn${activeShotSide === vcSideSetup ? " active" : ""} shot-team-switch-btn-my`}
+                  onClick={() => setShotEntrySide(vcSideSetup)}
+                >
+                  {myName}
+                </button>
+                <button
+                  className={`shot-team-switch-btn${activeShotSide === opponentSide ? " active" : ""} shot-team-switch-btn-opp`}
+                  onClick={() => setShotEntrySide(opponentSide)}
+                >
+                  {oppName}
+                </button>
+              </div>
 
-              {/* Opponent — full-size row, same speed as own-team controls */}
-              {isOpponentStatEnabled("points") && (<>
-                <div className="shot-grid-team-label shot-grid-team-label-opp" style={{ gridColumn: "1 / -1" }} title={`Opponent: ${oppName}`}>{oppName}</div>
-                <button className="shot-btn shot-btn-opp-make" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>
-                  <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">OPP</span>
-                </button>
-                <button className="shot-btn shot-btn-opp-make shot-btn-opp-three" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>
-                  <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">OPP</span>
-                </button>
-              </>)}
-              {isOpponentStatEnabled("free_throws") && (
-                <button className="shot-btn shot-btn-opp-ft" style={{ gridColumn: "1 / -1" }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>
-                  <span className="shot-btn-pts">FT</span><span className="shot-btn-result">OPP</span>
-                </button>
+              <div className="shot-grid-team-label shot-grid-team-label-my" style={{ gridColumn: "1 / -1" }} title={`Scoring for ${activeShotTeamName}`}>{activeShotTeamName}</div>
+
+              {isTrackingMyTeam && (
+                <>
+                  <button className="shot-btn shot-btn-make" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>
+                    <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MAKE</span>
+                  </button>
+                  <button className="shot-btn shot-btn-miss" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: false })}>
+                    <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MISS</span>
+                  </button>
+                  <button className="shot-btn shot-btn-make shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>
+                    <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MAKE</span>
+                  </button>
+                  <button className="shot-btn shot-btn-miss shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: false })}>
+                    <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MISS</span>
+                  </button>
+                  <button className="shot-btn shot-btn-ft-make" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>
+                    <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MAKE</span>
+                  </button>
+                  <button className="shot-btn shot-btn-ft-miss" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: false })}>
+                    <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MISS</span>
+                  </button>
+                </>
+              )}
+
+              {!isTrackingMyTeam && (
+                <>
+                  {canTrackPoints && (
+                    <>
+                      <button className="shot-btn shot-btn-opp-make" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>
+                        <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">OPP</span>
+                      </button>
+                      <button className="shot-btn shot-btn-opp-make shot-btn-opp-three" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>
+                        <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">OPP</span>
+                      </button>
+                    </>
+                  )}
+                  {canTrackFreeThrows && (
+                    <button className="shot-btn shot-btn-opp-ft" style={{ gridColumn: canTrackPoints ? "1 / -1" : undefined }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>
+                      <span className="shot-btn-pts">FT</span><span className="shot-btn-result">OPP</span>
+                    </button>
+                  )}
+                  {!canTrackPoints && !canTrackFreeThrows && (
+                    <div className="shot-grid-empty" style={{ gridColumn: "1 / -1" }}>Opponent scoring is disabled in settings.</div>
+                  )}
+                </>
               )}
             </>);
           })()}
@@ -4532,7 +4729,7 @@ export function App() {
           </div>
           {(() => {
             const myScoreRow = (
-              <>
+              <div className="scoreboard-team-card scoreboard-team-card-my">
                 <div className="score-row">
                   <span className={`team-lbl team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? homeTeamName : awayTeamName}</span>
                   <span className={`score team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? scores.home : scores.away}</span>
@@ -4544,11 +4741,11 @@ export function App() {
                   {(vcSideSetup === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
                   {possessionTeamId === (vcSideSetup === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${vcSideSetup}`}>POSS</span>}
                 </div>
-              </>
+              </div>
             );
             const oppSide = vcSideSetup === "home" ? "away" : "home";
             const oppScoreRow = (
-              <>
+              <div className="scoreboard-team-card scoreboard-team-card-opp">
                 <div className="score-row">
                   <span className={`team-lbl team-${oppSide}-txt`}>{oppSide === "home" ? homeTeamName : awayTeamName}</span>
                   <span className={`score team-${oppSide}-txt`}>{oppSide === "home" ? scores.home : scores.away}</span>
@@ -4560,9 +4757,9 @@ export function App() {
                   {(oppSide === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
                   {possessionTeamId === (oppSide === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${oppSide}`}>POSS</span>}
                 </div>
-              </>
+              </div>
             );
-            return <>{myScoreRow}{oppScoreRow}</>;
+            return <div className="scoreboard-team-grid">{myScoreRow}{oppScoreRow}</div>;
           })()}
         </div>
 

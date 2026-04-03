@@ -413,6 +413,63 @@ describe("unified stats endpoints", () => {
     expect(missingPlayerRes.status).toBe(404);
   });
 
+  it("renames an existing roster player instead of creating a duplicate", async () => {
+    await resetSchool("rename-school");
+
+    const createRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Player 1")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "rename-school" },
+      body: JSON.stringify({
+        number: "1",
+        position: "G"
+      })
+    });
+
+    expect(createRes.status).toBe(201);
+
+    const renameRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Player 1")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "rename-school" },
+      body: JSON.stringify({
+        originalName: "Player 1",
+        name: "Marcos",
+        number: "5",
+        position: "G"
+      })
+    });
+
+    expect(renameRes.status).toBe(201);
+
+    const teamsRes = await fetch(`${API_BASE}/api/teams`, {
+      headers: { "x-school-id": "rename-school" }
+    });
+
+    expect(teamsRes.status).toBe(200);
+
+    const teamsBody = await teamsRes.json() as {
+      teams: Array<{
+        players: Array<{
+          name: string;
+          number?: string;
+        }>;
+      }>;
+    };
+
+    expect(teamsBody.teams[0]?.players).toEqual([
+      expect.objectContaining({ name: "Marcos", number: "5" })
+    ]);
+
+    const oldPlayerRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Player 1")}`, {
+      headers: { "x-school-id": "rename-school" }
+    });
+    const renamedPlayerRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Marcos")}`, {
+      headers: { "x-school-id": "rename-school" }
+    });
+
+    expect(oldPlayerRes.status).toBe(404);
+    expect(renamedPlayerRes.status).toBe(200);
+  });
+
   it("persists onboarding profile and setup completion state", async () => {
     await resetSchool("onboarding-school");
 
