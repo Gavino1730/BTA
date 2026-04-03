@@ -3,7 +3,6 @@ import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
 import {
   getPeriodDefaultClock,
-  isLocalNetworkHost,
   isOvertimePeriod,
   normalizeTeamColor,
   type FoulType,
@@ -16,12 +15,30 @@ import { io } from "socket.io-client";
 import {
   buildAuthHeaders,
   convertRosterTeamToAppTeam,
-  DEFAULT_SCHOOL_ID,
+  createTeamViaRealtime,
+  deletePlayerViaRealtime,
+  deleteTeamViaRealtime,
   fetchTeamsFromRealtime,
+  updatePlayerViaRealtime,
+  updateTeamViaRealtime,
 } from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
 const defaultOrigin = window.location.origin || `http://${defaultHost}`;
+
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
 
 function resolveDefaultAppBase(hostname: string, origin: string, port: number): string {
   if (isLocalNetworkHost(hostname)) {
@@ -31,9 +48,14 @@ function resolveDefaultAppBase(hostname: string, origin: string, port: number): 
   return origin.replace(/\/+$/, "") || `https://${hostname}`;
 }
 
+function resolveDefaultSchoolId(hostname: string): string {
+  return isLocalNetworkHost(hostname) ? "default" : "";
+}
+
 const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
 const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? resolveDefaultSchoolId(defaultHost)).toString().trim();
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
 const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
@@ -855,7 +877,7 @@ type Modal =
     }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
   | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
-  | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; editContext?: EventEditContext }
+  | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; playerInId?: string; editContext?: EventEditContext }
   | { kind: "sub2"; teamId: TeamSide; playerOutId: string; editContext?: EventEditContext }
   | { kind: "matchup1"; teamId: TeamSide }
   | { kind: "matchup2"; teamId: TeamSide; defenderPlayerId: string; oppJersey: string }
@@ -3148,6 +3170,27 @@ export function App() {
 
   function confirmSubOut(playerOutId: string) {
     if (!modal || modal.kind !== "sub1") return;
+    if (modal.playerInId) {
+      if (modal.editContext) {
+        void saveEditedEvent({
+          ...modal.editContext.originalEvent,
+          teamId: resolveTeamId(modal.teamId),
+          type: "substitution",
+          playerOutId,
+          playerInId: modal.playerInId,
+        } as GameEvent, modal.editContext);
+        return;
+      }
+      void postEvent({
+        ...base(sequence),
+        teamId: resolveTeamId(modal.teamId),
+        type: "substitution",
+        playerOutId,
+        playerInId: modal.playerInId,
+      });
+      closeModal();
+      return;
+    }
     setModal({ kind: "sub2", teamId: modal.teamId, playerOutId, editContext: modal.editContext });
   }
 
@@ -5168,7 +5211,7 @@ export function App() {
                             className="roster-sub-btn"
                             onClick={() => {
                               if (lineup.onCourt.length > 0) {
-                                setModal({ kind: "sub1", teamId: vcSideSetup });
+                                setModal({ kind: "sub1", teamId: vcSideSetup, playerInId: p.id });
                               }
                             }}
                             title="Sub in">+</button>

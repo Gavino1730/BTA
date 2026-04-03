@@ -5,9 +5,6 @@ import type { PlayerStats, TeamStats, LineupUnitStats } from "@bta/game-state";
 import { aggregateLineupStats, computeLineupSegments } from "@bta/game-state";
 import { io } from "socket.io-client";
 import {
-  formatBonusIndicator,
-  formatDashboardClock,
-  formatDashboardEventMeta,
   formatFoulTroubleLabel,
 } from "./display.js";
 import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
@@ -1346,7 +1343,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       canonicalSideIds.awayId !== canonicalSideIds.homeId
         ? canonicalSideIds.awayId
         : (state?.awayTeamId && state.awayTeamId !== state?.homeTeamId
-            ? state.awayTeamId
+            ? state?.awayTeamId
             : "away");
 
     // When the live game state unambiguously places myTeamId on the opposite side
@@ -1357,11 +1354,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     const vcIsConfirmedAway =
       Boolean(setupNames.myTeamId) &&
       Boolean(state?.awayTeamId) &&
-      setupNames.myTeamId === state.awayTeamId;
+      setupNames.myTeamId === state?.awayTeamId;
     const vcIsConfirmedHome =
       Boolean(setupNames.myTeamId) &&
       Boolean(state?.homeTeamId) &&
-      setupNames.myTeamId === state.homeTeamId;
+      setupNames.myTeamId === state?.homeTeamId;
     const effectiveVcSide = vcIsConfirmedAway ? "away" : vcIsConfirmedHome ? "home" : setupNames.vcSide;
 
     // Always put our team (vc side) at index 0 so it renders on the left.
