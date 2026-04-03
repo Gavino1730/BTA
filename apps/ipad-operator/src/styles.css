@@ -309,6 +309,8 @@ html, body {
 .circle.white:hover { background: rgba(232,234,240,0.07); }
 .circle.red-out   { border-color: #f87171; color: #f87171; }
 .circle.red-out:hover { background: rgba(248,113,113,0.12); }
+.circle.match-btn { border-color: #818cf8; color: #a5b4fc; }
+.circle.match-btn:hover { background: rgba(129,140,248,0.12); }
 /* Foul = amber — visually distinct, high priority */
 .circle.stat-foul { border-color: #f59e0b; color: #fcd34d; border-width: 2.5px; }
 .circle.stat-foul:hover { background: rgba(245,158,11,0.12); }
@@ -4238,6 +4240,7 @@ html, body {
 .pqa-asst { border-color: rgba(168,85,247,0.55);  color: #d8b4fe; }
 .pqa-blk  { border-color: rgba(251,146,60,0.55);  color: #fdba74; }
 .pqa-sub  { border-color: rgba(248,113,113,0.4);  color: #fca5a5; }
+.pqa-match { border-color: rgba(129,140,248,0.5); color: #a5b4fc; }
 
 /* Right panel Players/Stats toggle row */
 .right-panel-toggle-row {

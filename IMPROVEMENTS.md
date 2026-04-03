@@ -14,7 +14,8 @@ Last updated: April 2, 2026.
 - **Rule 14 — Period-End Urgency**: Alert once when clock enters ≤18s window in Q1/Q2/Q3 (priority: info)
 - **Rule 15 — Opponent FT Bombardment**: Alert when opponent draws 6+ FT trips in recent 10 events (priority: important)
 - **Rule 16 — Timeout Budget Awareness**: In Q4/OT, when our timeout count drops below 2 and game is within reach, emit a timeout conservation alert (priority: important)
-- New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`
+- **Rule 17 — Matchup Exploitation**: When a defender with an active matchup assignment picks up 3+ fouls, emit a defensive switch suggestion naming the specific assignment (priority: important; urgent if near foul-out). Fires on `foul` events only.
+- New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`, `matchup_exploitation`
 
 ### Shared Schema + Game State (packages/shared-schema, packages/game-state)
 - **Matchup Tracking Foundation**: Added `matchup_assignment` event contract (`defenderPlayerId` -> `offensivePlayerId`), validation, and deterministic replay support via `activeMatchupsByTeam` in game state.
@@ -27,11 +28,13 @@ Last updated: April 2, 2026.
 - Insights now show relative age (for example, `2m ago`) using each insight's `createdAtIso`
 - Added **Current Matchups** panel to show live defender assignment entries from operator matchup events.
 - Added **Lineup +/-** panel showing points-for / points-against and net differential per unit.
+- Label registered for `matchup_exploitation` insight type ("Matchup").
 
 ### Realtime API (services/realtime-api)
 - GPT refresh throttled: every **8 events** (was 3) / **45 seconds** (was 20). Rules engine covers moment-to-moment; GPT reserved for synthesis. Both still env-overridable via `BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS` and `BTA_LIVE_INSIGHT_MIN_INTERVAL_MS`.
 
 ### iPad Operator (apps/ipad-operator)
+- **Matchup Assignment UI**: Two-step modal flow — tap "match" in the stat grid (or "MTCH" on a roster player) to pick a defender then enter the opponent's jersey number. Posts a `matchup_assignment` event with `defenderPlayerId` and `offensivePlayerId = opp-{jersey}`. Indigo-themed button matches the existing action palette.
 - **Periodic offline flush**: every 15s during a live game, if `navigator.onLine` and pending events exist, retries the queue. Fixes iOS/mobile case where the native `online` event never fires after reconnect.
 - **Instant undo**: removed confirmation dialog — `undoLast()` removes the last event immediately with haptic feedback and a toast. No friction under pressure.
 - **MAKE/MISS split buttons**: left panel has 6 dedicated shot buttons (MAKE 2 / MISS 2, MAKE 3 / MISS 3, FT MAKE / FT MISS) — 2 taps to log any shot outcome without a modal toggle.

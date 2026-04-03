@@ -18,7 +18,8 @@ export type InsightType =
   | "scoring_drought"
   | "depth_warning"
   | "efficiency"
-  | "leverage";
+  | "leverage"
+  | "matchup_exploitation";
 
 export interface LiveInsight {
   id: string;
@@ -788,6 +789,43 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
           explanation: "Late game with limited timeouts. Save remaining stoppages for must-have possessions and defensive matchup control.",
           relatedTeamId: ourTeamId
         });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 17. Matchup exploitation — a defender with an active matchup
+  //     assignment has accumulated foul trouble, signalling a risk
+  //     to the current defensive assignment.
+  // ──────────────────────────────────────────────────────────────────
+  if (latestEvent.type === "foul" && ourTeamId) {
+    const foulEvent = latestEvent as Extract<GameEvent, { type: "foul" }>;
+    const defenderId: string = (foulEvent as unknown as Record<string, string>).playerId ?? "";
+    if (defenderId) {
+      const assignments = state.activeMatchupsByTeam[ourTeamId] ?? {};
+      const assignedOppId = assignments[defenderId];
+      if (assignedOppId) {
+        const fouls = state.playerFouls[defenderId] ?? 0;
+        const MATCHUP_FOUL_THRESHOLD = 3;
+        if (fouls >= MATCHUP_FOUL_THRESHOLD) {
+          const teamLabel = resolveTeamLabel(state, ourTeamId);
+          const defLabel = resolvePlayerLabel(defenderId, teamLabel, context);
+          // Strip "opp-" prefix to get opponent jersey number
+          const oppJersey = assignedOppId.replace(/^opp-/i, "");
+          const warning = fouls >= FOUL_OUT_THRESHOLD - 1 ? "near foul-out" : `${fouls} fouls`;
+          insights.push({
+            id: `${latestEvent.id}-matchup-foul-${defenderId}`,
+            gameId: latestEvent.gameId,
+            type: "matchup_exploitation",
+            priority: fouls >= FOUL_OUT_THRESHOLD - 1 ? "urgent" : "important",
+            createdAtIso: now,
+            confidence: "high",
+            message: `${defLabel} (${warning}) assigned to guard #${oppJersey} — consider a switch`,
+            explanation: `${defLabel} is in foul trouble while covering opponent #${oppJersey}. Keeping this matchup risks a foul-out or strategic fouling by the opponent. Consider switching assignments or adjusting the defensive scheme.`,
+            relatedTeamId: ourTeamId,
+            relatedPlayerId: defenderId
+          });
+        }
       }
     }
   }

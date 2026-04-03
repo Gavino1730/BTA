@@ -1636,6 +1636,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       depth_warning: "Depth Warning",
       efficiency: "Efficiency",
       leverage: "Game Leverage",
+      matchup_exploitation: "Matchup",
     };
     if (labels[type]) return labels[type];
 

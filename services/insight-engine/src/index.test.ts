@@ -398,4 +398,79 @@ describe("insight engine", () => {
 
     expect(insights.some((i) => i.id.includes("timeout-budget") && i.type === "timeout_suggestion")).toBe(true);
   });
+
+  it("emits matchup_exploitation when a defender with an active assignment picks up foul trouble", () => {
+    // Set up: h3 is assigned to guard opp-22, then h3 accumulates 3 fouls.
+    const matchupEvent: GameEvent = {
+      id: "mqp-assign-1",
+      schoolId: "test-school",
+      gameId: "game-mqp",
+      sequence: 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 480,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "matchup_assignment" as const,
+      defenderPlayerId: "h3",
+      offensivePlayerId: "opp-22",
+    };
+
+    const paddingFoul: GameEvent = {
+      id: "mqp-pad-foul",
+      schoolId: "test-school",
+      gameId: "game-mqp",
+      sequence: 2,
+      timestampIso: "2026-03-18T20:00:02.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 475,
+      teamId: "away",
+      operatorId: "op-1",
+      type: "foul" as const,
+      playerId: "a1",
+      foulType: "personal" as const,
+    };
+
+    const paddingScore: GameEvent = {
+      id: "mqp-pad-score",
+      schoolId: "test-school",
+      gameId: "game-mqp",
+      sequence: 3,
+      timestampIso: "2026-03-18T20:00:04.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: true,
+      points: 2 as const,
+      zone: "paint" as const,
+    };
+
+    const foulEvents: GameEvent[] = [4, 5, 6].map((seq) => ({
+      id: `mqp-foul-${seq}`,
+      schoolId: "test-school",
+      gameId: "game-mqp",
+      sequence: seq,
+      timestampIso: "2026-03-18T20:00:10.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 400 - seq,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "foul" as const,
+      playerId: "h3",
+      foulType: "personal" as const,
+    }));
+
+    const allEvents = [matchupEvent, paddingFoul, paddingScore, ...foulEvents];
+    const state = replayEvents(createInitialGameState("game-mqp", "home", "away"), allEvents);
+    state.opponentTeamId = "away";
+
+    const insights = generateInsights({ state, latestEvent: foulEvents[2] });
+    const mqpInsight = insights.find((i) => i.type === "matchup_exploitation");
+    expect(mqpInsight).toBeDefined();
+    expect(mqpInsight?.message).toContain("22");
+    expect(mqpInsight?.relatedPlayerId).toBe("h3");
+  });
 });

@@ -824,6 +824,8 @@ type Modal =
   | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
   | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; editContext?: EventEditContext }
   | { kind: "sub2"; teamId: TeamSide; playerOutId: string; editContext?: EventEditContext }
+  | { kind: "matchup1"; teamId: TeamSide }
+  | { kind: "matchup2"; teamId: TeamSide; defenderPlayerId: string; oppJersey: string }
   | { kind: "assistEdit"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string; editContext: EventEditContext }
   | { kind: "timeoutEdit"; teamId: TeamSide; timeoutType: "full" | "short"; editContext: EventEditContext }
   | { kind: "possessionEdit"; teamId: TeamSide; editContext: EventEditContext }
@@ -2913,6 +2915,25 @@ export function App() {
     closeModal();
   }
 
+  function confirmMatchupDefender(defenderPlayerId: string) {
+    if (!modal || modal.kind !== "matchup1") return;
+    setModal({ kind: "matchup2", teamId: modal.teamId, defenderPlayerId, oppJersey: "" });
+  }
+
+  function confirmMatchupOpponent() {
+    if (!modal || modal.kind !== "matchup2") return;
+    const jersey = modal.oppJersey.trim();
+    if (!jersey) return;
+    void postEvent({
+      ...base(sequence),
+      teamId: resolveTeamId(modal.teamId),
+      type: "matchup_assignment",
+      defenderPlayerId: modal.defenderPlayerId,
+      offensivePlayerId: `opp-${jersey}`,
+    } as GameEvent);
+    closeModal();
+  }
+
   function setPossession(side: TeamSide) {
     const teamId = resolveTeamId(side);
     if (possessionTeamId === teamId) {
@@ -3446,6 +3467,72 @@ export function App() {
               >
                 Save Possession
               </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "matchup1") {
+      const players = teamPlayers(modal.teamId);
+      const currentLineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], players);
+      const onCourtPlayers = currentLineup.onCourt;
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Assign Matchup — {tLabel(modal.teamId)}</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
+            </div>
+            <div className="modal-subtitle">Pick your defender</div>
+            <div className="player-list">
+              {onCourtPlayers.length === 0 && <p className="no-players">No players on court yet</p>}
+              {onCourtPlayers.map(p => (
+                <button key={p.id} className="player-row" onClick={() => confirmMatchupDefender(p.id)}>
+                  <span className="pnum">#{p.number}</span>
+                  <span className="pname">{p.name}</span>
+                  {(pTotals[p.id]?.fouls ?? 0) > 0 ? (
+                    <span className={`pfoul${(pTotals[p.id]?.fouls ?? 0) >= 4 ? " pfoul-warn" : ""}`}>{pTotals[p.id].fouls}f</span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (modal.kind === "matchup2") {
+      const defPlayer = teamPlayers(modal.teamId).find(p => p.id === modal.defenderPlayerId);
+      const defLabel = defPlayer ? `#${defPlayer.number} ${defPlayer.name}` : modal.defenderPlayerId;
+      return (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">{defLabel} guards opponent…</span>
+              <button className="modal-close" onClick={closeModal}>X</button>
+            </div>
+            <div className="modal-subtitle">Enter opponent jersey number</div>
+            <div style={{ padding: "1rem 1.2rem" }}>
+              <input
+                type="number"
+                min="0"
+                max="99"
+                inputMode="numeric"
+                placeholder="Opponent #"
+                value={modal.oppJersey}
+                onChange={e => setModal({ ...modal, oppJersey: e.target.value })}
+                style={{ fontSize: "1.6rem", padding: "0.7rem 1rem", width: "100%", borderRadius: "0.5rem", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "white", textAlign: "center", boxSizing: "border-box" }}
+                autoFocus
+              />
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
+              <button
+                className="confirm-btn confirm-btn-primary"
+                disabled={!modal.oppJersey.trim()}
+                onClick={confirmMatchupOpponent}
+              >Assign</button>
             </div>
           </div>
         </div>
@@ -4711,6 +4798,7 @@ export function App() {
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
             <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
+            <button className="circle match-btn" onClick={() => setModal({ kind: "matchup1", teamId: vcSideSetup })}>match</button>
           </div>
         ) : (
           <div className="roster-panel">
@@ -4757,6 +4845,7 @@ export function App() {
                               <button className="pqa-btn pqa-asst" onClick={() => handlePlayerQuickStat(p, "assist")}>ASST</button>
                               <button className="pqa-btn pqa-blk" onClick={() => handlePlayerQuickStat(p, "block")}>BLK</button>
                               <button className="pqa-btn pqa-sub" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id }); }}>SUB</button>
+                              <button className="pqa-btn pqa-match" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "matchup2", teamId: vcSideSetup, defenderPlayerId: p.id, oppJersey: "" }); }}>MTCH</button>
                             </div>
                           )}
                         </div>
