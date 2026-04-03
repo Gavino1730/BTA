@@ -68,31 +68,18 @@ Last updated: April 2, 2026.
 
 ---
 
-## Code Audit — Cleanup Backlog (April 2, 2026)
+## Code Audit — Cleanup (April 2, 2026)
 
-Found during static analysis pass. None of these affect runtime behavior — safe to clean up incrementally.
+Found during static analysis pass. All items resolved except two noted below.
 
-### Dead Exports
-- **`getRosterTeams()`** in `services/realtime-api/src/store.ts` — exported but never imported or called anywhere. Only the scoped variant `getRosterTeamsByScope()` is used.
-- **`SCHOOL_ID`** constant in `apps/coach-dashboard/src/platform.ts` — exported but never imported anywhere. Callers use `resolveActiveSchoolId()` directly.
+### ✅ Fixed
+- **`getRosterTeams()`** in `services/realtime-api/src/store.ts` — dead export removed; only `getRosterTeamsByScope()` remains.
+- **`SCHOOL_ID`** constant in `apps/coach-dashboard/src/platform.ts` — unused export removed.
+- **`apps/coach-dashboard/src/App.tsx`** — removed stale imports of `formatBonusIndicator`, `formatDashboardClock`, `formatDashboardEventMeta` (only `formatFoulTroubleLabel` is actually rendered; the other three are still tested in `display.test.ts`).
+- **`isLocalNetworkHost` / `DEFAULT_SCHOOL_ID` in ipad-operator** — deduplicated: both are now exported from `roster-sync.ts` and imported by `App.tsx`; local copies removed from `App.tsx`.
+- **`RosterPlayer` / `RosterTeam` interfaces** — local definitions removed from `services/realtime-api/src/store.ts`; both now imported from `@bta/shared-schema` (canonical source) and re-exported so downstream imports are unchanged.
 
-### Stale Imports
-- **`apps/coach-dashboard/src/App.tsx`** imports `formatBonusIndicator`, `formatDashboardClock`, and `formatDashboardEventMeta` from `./display.js` but never calls any of them in component code. Only `formatFoulTroubleLabel` is actually rendered. (The other three are exercised in `display.test.ts` — tests are fine, just the App.tsx import list is stale.)
-
-### Duplicate Function Definitions
-- **`isLocalNetworkHost(hostname)`** — identical implementation in 3 places:
-  - `apps/coach-dashboard/src/platform.ts` (private)
-  - `apps/ipad-operator/src/App.tsx` (private)
-  - `apps/ipad-operator/src/roster-sync.ts` (private)
-- **`normalizeSchoolId(input)`** — two independent internal copies inside the same service:
-  - `services/realtime-api/src/persistence.ts`
-  - `services/realtime-api/src/store.ts`
-- **`DEFAULT_SCHOOL_ID`** — defined separately in two files within the iPad operator app:
-  - `apps/ipad-operator/src/App.tsx`
-  - `apps/ipad-operator/src/roster-sync.ts`
-- **Header-building utilities** — two different implementations within the same app doing the same job:
-  - `apiKeyHeader(setup)` in `apps/ipad-operator/src/App.tsx`
-  - `buildHeaders(apiKey, schoolId, withJson)` in `apps/ipad-operator/src/roster-sync.ts`
-
-### Duplicate Type Definitions
-- **`RosterPlayer` and `RosterTeam` interfaces** are defined independently in `services/realtime-api/src/store.ts` (lines 37, 51) and in the canonical location `packages/shared-schema/src/types.ts`. `server.ts` imports from `store.ts` instead of shared-schema.
+### Deferred / Won't Fix
+- **`normalizeSchoolId` in `persistence.ts` and `store.ts`** — both are private internal helpers with `string` return type (falling back to `"default"`), distinct from the `tenant-guards.ts` version which returns `string | undefined`. Consolidating would require a circular value import (`store` ↔ `persistence`); leave as private copies.
+- **`apiKeyHeader` vs `buildHeaders`** — `App.tsx`'s `apiKeyHeader` handles `bta.*` bearer tokens via `Authorization: Bearer`; `roster-sync.ts`'s `buildHeaders` only emits `x-api-key`. Different semantics — leave separate.
+- **`isLocalNetworkHost` cross-app** — `coach-dashboard/src/platform.ts` still has its own copy. Sharing across apps would require adding a browser utility to `packages/shared-schema`; low enough impact to defer.

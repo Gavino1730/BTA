@@ -58,7 +58,6 @@ export const apiBase = (import.meta.env.VITE_API ?? resolveDefaultApiBase(defaul
 export const operatorBase = (import.meta.env.VITE_OPERATOR_CONSOLE ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5174)).replace(/\/+$/, "");
 export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 export const AUTH_SESSION_KEY = "bta.coach.authSession";
-export const SCHOOL_ID: string = resolveActiveSchoolId();
 
 const AUTH_COOKIE_NAME = "bta_coach_auth";
 const AUTH_COOKIE_DAYS = 90;
