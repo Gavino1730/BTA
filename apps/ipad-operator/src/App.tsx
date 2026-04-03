@@ -54,7 +54,8 @@ function resolveDefaultSchoolId(hostname: string): string {
 
 const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
-const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
+const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD
+  ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : "");
 const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? resolveDefaultSchoolId(defaultHost)).toString().trim();
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
@@ -158,11 +159,33 @@ function normalizeUrlBase(url: string | undefined): string {
   return (url ?? "").trim().replace(/\/+$/, "");
 }
 
+function isLegacyExportTargetReachableFromCurrentHost(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const appIsLocal = isLocalNetworkHost(window.location.hostname);
+
+    // Prevent mixed-content failures on hosted HTTPS deployments.
+    if (window.location.protocol === "https:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    // Hosted deployments should not try to call a local/private endpoint by default.
+    if (!appIsLocal && isLocalNetworkHost(parsed.hostname)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
   const apiBase = normalizeUrlBase(setup.apiUrl);
   const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
   if (!dashboardBase) return false;
-  return dashboardBase !== apiBase;
+  if (dashboardBase === apiBase) return false;
+  return isLegacyExportTargetReachableFromCurrentHost(dashboardBase);
 }
 
 function buildAiContextFromSetup(setup: GameSetup): {
@@ -1703,6 +1726,23 @@ export function App() {
     }
   }
 
+  function parseActiveGameIdFromConflictResponse(bodyText: string): string | null {
+    if (!bodyText) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(bodyText) as { activeGameId?: unknown };
+      if (typeof parsed.activeGameId !== "string") {
+        return null;
+      }
+      const activeGameId = parsed.activeGameId.trim();
+      return activeGameId.length > 0 ? activeGameId : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function submitEvent(event: GameEvent): Promise<boolean> {
     const normalizedEvent = normalizeEventTeamId(event);
     try {
@@ -1941,6 +1981,8 @@ export function App() {
     // before this async function resolves, so we always get the latest values.
     const latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
+    let effectiveGameId = gid;
+    let shouldResetEventTimeline = false;
 
     try {
       const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
@@ -1951,11 +1993,32 @@ export function App() {
 
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        showInlineNotice(
-          `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
-          "error"
-        );
-        return;
+        if (res.status === 409) {
+          const activeGameId = parseActiveGameIdFromConflictResponse(body);
+          if (!activeGameId) {
+            showInlineNotice(
+              "Live server already has an active game in progress. Resume or submit that game before starting a new one.",
+              "error"
+            );
+            return;
+          }
+
+          effectiveGameId = activeGameId;
+          showInlineNotice(
+            `Live server already has an active game (${activeGameId}). Resuming that game instead.`,
+            "warning",
+            6000,
+          );
+        } else {
+          showInlineNotice(
+            `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
+            "error"
+          );
+          return;
+        }
+      } else {
+        // New games are 201 and should start from a clean local timeline.
+        shouldResetEventTimeline = res.status === 201;
       }
     } catch {
       showInlineNotice(
@@ -1969,15 +2032,17 @@ export function App() {
     // that were saved by saveGameSetup() just before this call.
     const nextData: AppData = {
       ...latest,
-      gameSetup: { ...latest.gameSetup, gameId: gid, statsGameId: undefined },
+      gameSetup: { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined },
     };
     setAppData(nextData);
     saveAppData(nextData);
-    setPendingEvents([]);
-    setSubmittedEvents([]);
-    setSequence(1);
-    savePending(gid, []);
-    saveSeq(gid, 1);
+    if (shouldResetEventTimeline) {
+      setPendingEvents([]);
+      setSubmittedEvents([]);
+      setSequence(1);
+      savePending(effectiveGameId, []);
+      saveSeq(effectiveGameId, 1);
+    }
     persistPhase("live");
   }
 
@@ -2036,7 +2101,7 @@ export function App() {
     const vcSide = appData.gameSetup.vcSide ?? "home";
     const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
     const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "http://localhost:4000";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "";
 
     if (!opponent) {
       const message = "Enter the opponent name in Game Setup before submitting.";
@@ -5275,7 +5340,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
-  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? "http://localhost:4000");
+  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? DEFAULT_STATS_DASHBOARD);
   const [gsClockVisible, setGsClockVisible] = useState(appData.gameSetup.clockVisible ?? true);
   const [gsClockEnabled, setGsClockEnabled] = useState(appData.gameSetup.clockEnabled ?? true);
   const [gsTrackClock, setGsTrackClock] = useState(appData.gameSetup.trackClock ?? true);
@@ -5338,7 +5403,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
           schoolId: appData.gameSetup.schoolId,
           opponent: gsOpponent.trim(),
           vcSide: gsVcSide,
-          dashboardUrl: gsDashboardUrl.trim() || "http://localhost:4000",
+          dashboardUrl: gsDashboardUrl.trim(),
           clockVisible: gsClockVisible,
           clockEnabled: gsClockEnabled,
           trackClock: gsTrackClock,

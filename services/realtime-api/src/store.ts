@@ -2376,6 +2376,8 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
     input.opponentTeamId
   );
 
+  const seededLineups: Record<string, string[]> = {};
+
   if (input.startingLineupByTeam) {
     for (const [teamId, lineup] of Object.entries(input.startingLineupByTeam)) {
       if (teamId !== input.homeTeamId && teamId !== input.awayTeamId) {
@@ -2387,9 +2389,13 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
         : [];
 
       state.activeLineupsByTeam[teamId] = seededLineup;
+      seededLineups[teamId] = seededLineup;
     }
-    // Expose starting lineup on the state so it's included in socket fanout
-    state.startingLineupByTeam = input.startingLineupByTeam;
+  }
+
+  if (Object.keys(seededLineups).length > 0) {
+    // Expose normalized starting lineups on state so they are safe for socket fanout.
+    state.startingLineupByTeam = seededLineups;
   }
 
   sessions.set(buildGameSessionKey(input.gameId, schoolId), {
@@ -2398,7 +2404,7 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
     awayTeamId: input.awayTeamId,
     opponentName: input.opponentName,
     opponentTeamId: input.opponentTeamId,
-    startingLineupByTeam: input.startingLineupByTeam,
+    startingLineupByTeam: Object.keys(seededLineups).length > 0 ? seededLineups : undefined,
     aiSettings: defaultCoachAiSettings(),
     aiContext: sanitizeGameAiContext(input.aiContext),
     historicalContextSummary: "",
@@ -2463,22 +2469,35 @@ export function patchGameLineup(
   let changed = false;
   for (const [teamId, lineup] of Object.entries(startingLineupByTeam)) {
     if (teamId !== session.homeTeamId && teamId !== session.awayTeamId) continue;
-    if ((session.state.activeLineupsByTeam[teamId]?.length ?? 0) >= 5) continue;
+    const existing = session.state.activeLineupsByTeam[teamId] ?? [];
+    if (existing.length >= 5) continue;
 
-    const seeded = [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5);
-    if (seeded.length === 0) continue;
+    const incoming = [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))];
+    if (incoming.length === 0) continue;
+
+    const merged = [...existing];
+    for (const playerId of incoming) {
+      if (merged.length >= 5) {
+        break;
+      }
+      if (!merged.includes(playerId)) {
+        merged.push(playerId);
+      }
+    }
+
+    if (merged.length === existing.length) continue;
 
     session.state = {
       ...session.state,
       activeLineupsByTeam: {
         ...session.state.activeLineupsByTeam,
-        [teamId]: seeded,
+        [teamId]: merged,
       },
     };
     // Persist the starting lineup so it survives server restarts.
     session.startingLineupByTeam = {
       ...(session.startingLineupByTeam ?? {}),
-      [teamId]: seeded,
+      [teamId]: merged,
     };
     changed = true;
   }
@@ -3131,7 +3150,11 @@ export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
     throw new Error(`Sequence ${event.sequence} already belongs to event ${existingEventId}`);
   }
 
-  if (session.eventsById.has(event.id)) {
+  const existingEvent = session.eventsById.get(event.id);
+  if (existingEvent) {
+    if (JSON.stringify(existingEvent) !== JSON.stringify(event)) {
+      throw new Error(`Event ${event.id} already exists with different payload`);
+    }
     return { event, state: session.state, insights: combineInsights(session) };
   }
 

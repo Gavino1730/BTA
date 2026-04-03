@@ -81,11 +81,70 @@ function normalizeUrlBase(url: string | undefined): string {
   return (url ?? "").trim().replace(/\/+$/, "");
 }
 
-function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
+
+function isLegacyExportTargetReachableFromCurrentHost(
+  url: string,
+  currentProtocol = "http:",
+  currentHostname = "localhost",
+): boolean {
+  try {
+    const parsed = new URL(url);
+    const appIsLocal = isLocalNetworkHost(currentHostname);
+
+    if (currentProtocol === "https:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    if (!appIsLocal && isLocalNetworkHost(parsed.hostname)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isLegacyStatsExportConfigured(
+  setup: { apiUrl?: string; dashboardUrl?: string },
+  currentProtocol = "http:",
+  currentHostname = "localhost",
+): boolean {
   const apiBase = normalizeUrlBase(setup.apiUrl);
   const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
   if (!dashboardBase) return false;
-  return dashboardBase !== apiBase;
+  if (dashboardBase === apiBase) return false;
+  return isLegacyExportTargetReachableFromCurrentHost(dashboardBase, currentProtocol, currentHostname);
+}
+
+function parseActiveGameIdFromConflictResponse(bodyText: string): string | null {
+  if (!bodyText) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(bodyText) as { activeGameId?: unknown };
+    if (typeof parsed.activeGameId !== "string") {
+      return null;
+    }
+    const activeGameId = parsed.activeGameId.trim();
+    return activeGameId.length > 0 ? activeGameId : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -209,6 +268,44 @@ describe("legacy dashboard export detection", () => {
       apiUrl: "http://localhost:4000",
       dashboardUrl: "https://stats.example.com",
     })).toBe(true);
+  });
+
+  it("skips legacy export on hosted deployments when URL targets localhost/private hosts", () => {
+    expect(isLegacyStatsExportConfigured(
+      {
+        apiUrl: "https://api.example.com",
+        dashboardUrl: "http://localhost:4000",
+      },
+      "https:",
+      "operator.example.com",
+    )).toBe(false);
+  });
+
+  it("skips legacy export on hosted HTTPS when endpoint is non-HTTPS", () => {
+    expect(isLegacyStatsExportConfigured(
+      {
+        apiUrl: "https://api.example.com",
+        dashboardUrl: "http://stats.example.com",
+      },
+      "https:",
+      "operator.example.com",
+    )).toBe(false);
+  });
+});
+
+describe("active game conflict parsing", () => {
+  it("extracts activeGameId from a valid 409 payload", () => {
+    expect(parseActiveGameIdFromConflictResponse('{"error":"An active game is already in progress for this school","activeGameId":"2026-04-03-oregon"}'))
+      .toBe("2026-04-03-oregon");
+  });
+
+  it("returns null when payload is not JSON", () => {
+    expect(parseActiveGameIdFromConflictResponse("not-json")).toBeNull();
+  });
+
+  it("returns null when activeGameId is missing or blank", () => {
+    expect(parseActiveGameIdFromConflictResponse('{"error":"conflict"}')).toBeNull();
+    expect(parseActiveGameIdFromConflictResponse('{"activeGameId":"   "}')).toBeNull();
   });
 });
 

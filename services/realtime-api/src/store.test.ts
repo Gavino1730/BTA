@@ -7,6 +7,7 @@ import {
   getGameInsights,
   getGameState,
   ingestEvent,
+  patchGameLineup,
   refreshGameAiInsights,
   updateEvent
 } from "./store.js";
@@ -28,6 +29,28 @@ describe("store", () => {
     expect(state.activeLineupsByTeam.home).toEqual(["h1", "h2", "h3", "h4", "h5"]);
     expect(state.activeLineupsByTeam.away).toEqual(["a1", "a2", "a3", "a4", "a5"]);
     expect(state.activeLineupsByTeam).not.toHaveProperty("other");
+    expect(state.startingLineupByTeam).toEqual({
+      home: ["h1", "h2", "h3", "h4", "h5"],
+      away: ["a1", "a2", "a3", "a4", "a5"]
+    });
+  });
+
+  it("fills missing lineup slots without replacing existing active players", () => {
+    createGame({
+      schoolId: "default",
+      gameId: "game-lineup-patch",
+      homeTeamId: "home",
+      awayTeamId: "away",
+      startingLineupByTeam: {
+        home: ["h1", "h2", "h3"]
+      }
+    });
+
+    const patched = patchGameLineup("game-lineup-patch", {
+      home: ["h3", "h4", "h5", "h6"]
+    });
+
+    expect(patched?.activeLineupsByTeam.home).toEqual(["h1", "h2", "h3", "h4", "h5"]);
   });
 
   it("creates a game and ingests event idempotently", () => {
@@ -60,6 +83,49 @@ describe("store", () => {
     expect(first.state.scoreByTeam.home).toBe(2);
     expect(second.state.scoreByTeam.home).toBe(2);
     expect(second.state.events.length).toBe(1);
+  });
+
+  it("rejects duplicate event ids with conflicting payload", () => {
+    createGame({
+      schoolId: "default",
+      gameId: "game-1-conflict",
+      homeTeamId: "home",
+      awayTeamId: "away"
+    });
+
+    ingestEvent({
+      id: "evt-conflict-1",
+      gameId: "game-1-conflict",
+      sequence: 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: true,
+      points: 2,
+      zone: "paint"
+    });
+
+    expect(() =>
+      ingestEvent({
+        id: "evt-conflict-1",
+        gameId: "game-1-conflict",
+        sequence: 1,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q1",
+        clockSecondsRemaining: 470,
+        teamId: "home",
+        operatorId: "op-1",
+        type: "shot_attempt",
+        playerId: "h1",
+        made: false,
+        points: 2,
+        zone: "paint"
+      })
+    ).toThrow(/already exists with different payload/);
   });
 
   it("returns null for unknown game", () => {

@@ -407,7 +407,7 @@ html, body {
 
 .center-toggle-btn {
   width: 100%;
-  min-height: 38px;
+  min-height: 44px;
   border-radius: 9px;
   border: 1px solid rgba(79,140,255,0.42);
   background: rgba(79,140,255,0.14);
@@ -3865,7 +3865,11 @@ html, body {
   font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
-  padding: 0.25rem;
+  min-height: 44px;
+  padding: 0.25rem 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   align-self: center;
   transition: color 0.1s;
 }

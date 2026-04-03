@@ -479,10 +479,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [newGameOppColor, setNewGameOppColor] = useState("#f87171");
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
+  const [isEndingGame, setIsEndingGame] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
   const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endedGameIdsRef = useRef<Set<string>>(new Set());
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
@@ -829,7 +831,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       setServerConnected(true);
       const recoveredGameId = gameIdRef.current;
       socket.emit("join:coach", { connectionId, gameId: recoveredGameId });
-      if (recoveredGameId) {
+      if (recoveredGameId && !endedGameIdsRef.current.has(recoveredGameId)) {
         socket.emit("join:game", recoveredGameId);
       }
     });
@@ -856,6 +858,10 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       setDeviceConnected(status.online);
       const activeGameId = status.gameId;
       if (status.online && activeGameId) {
+        if (endedGameIdsRef.current.has(activeGameId)) {
+          setDashboardStatus("Game ended. Start a new game when ready.");
+          return;
+        }
         setGameId((current) => (current === activeGameId ? current : activeGameId));
         socket.emit("join:game", activeGameId);
       } else {
@@ -873,10 +879,27 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     socket.on("presence:status", handlePresence);
 
     socket.on("game:state", (nextState: GameState) => {
+      if (endedGameIdsRef.current.has(nextState.gameId)) {
+        return;
+      }
       stopPoll();
       setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
       setState((current) => mergeGameState(current, nextState));
       setDashboardStatus("Live state synced");
+    });
+
+    socket.on("game:submitted", (payload: unknown) => {
+      const submittedGameId = typeof (payload as { gameId?: unknown })?.gameId === "string"
+        ? (payload as { gameId: string }).gameId
+        : "";
+      if (!submittedGameId) {
+        return;
+      }
+
+      endedGameIdsRef.current.add(submittedGameId);
+      if (gameIdRef.current === submittedGameId) {
+        clearActiveGame("Game ended. Start a new game when ready.");
+      }
     });
 
     socket.on("game:insights", (nextInsights: Insight[]) => {
@@ -892,6 +915,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     return () => {
       stopPoll();
       socket.off("presence:status", handlePresence);
+      socket.off("game:submitted");
       socket.off("roster:teams");
       socket.disconnect();
     };
@@ -1188,6 +1212,55 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     }
   }
 
+  function clearActiveGame(statusMessage: string): void {
+    setGameId("");
+    setState(null);
+    setInsights([]);
+    setAiChatMessages([]);
+    setAiChatInput("");
+    setAiChatSuggestions([]);
+    setBoxScoreFilter([]);
+    setPromptPreview(null);
+    setAiRefreshError("");
+    setIsLoading(false);
+    setActivePage("live");
+    setDashboardStatus(statusMessage);
+  }
+
+  async function endGameFromDashboard(): Promise<void> {
+    if (!gameId || isEndingGame) {
+      return;
+    }
+
+    const endingGameId = gameId;
+    const shouldEnd = window.confirm("End this game now? This will finalize it and return the dashboard to Start New Game.");
+    if (!shouldEnd) {
+      return;
+    }
+
+    setIsEndingGame(true);
+    setDashboardStatus("Ending game...");
+
+    try {
+      const response = await fetch(`${apiBase}/api/games/${endingGameId}/submit`, {
+        method: "POST",
+        headers: apiKeyHeader(),
+      });
+
+      if (!response.ok) {
+        setDashboardStatus(`Could not end game (status ${response.status}).`);
+        return;
+      }
+
+      endedGameIdsRef.current.add(endingGameId);
+      clearActiveGame("Game ended. Start a new game when ready.");
+    } catch {
+      setDashboardStatus("Could not reach realtime API to end game.");
+    } finally {
+      setIsEndingGame(false);
+    }
+  }
+
   function toggleFocusInsight(focus: CoachInsightFocus): void {
     setAiSettingsDraft((current) => {
       const exists = current.focusInsights.includes(focus);
@@ -1364,7 +1437,21 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     // Always put our team (vc side) at index 0 so it renders on the left.
     const preferred = (effectiveVcSide === "away" ? [awaySlot, homeSlot] : [homeSlot, awaySlot])
       .filter((teamId): teamId is string => Boolean(teamId));
-    return [...new Set([...preferred, ...Object.keys(aggregatedTeams)])];
+    const preferredUnique = [...new Set(preferred)];
+
+    // Render exactly two team cards. Extra aggregated IDs can appear from stale
+    // aliases or historic payloads and should never create a third scoreboard team.
+    if (preferredUnique.length >= 2) {
+      return preferredUnique.slice(0, 2);
+    }
+
+    const observedFallback = [...new Set(
+      Object.keys(aggregatedTeams)
+        .map((teamId) => canonicalTeamId(teamId))
+        .filter((teamId): teamId is string => Boolean(teamId) && !preferredUnique.includes(teamId))
+    )];
+
+    return [...preferredUnique, ...observedFallback].slice(0, 2);
   }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.vcSide, setupNames.myTeamId, state?.awayTeamId, state?.homeTeamId]);
 
   const rosterLabels = useMemo(() => {
@@ -2271,6 +2358,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             onClick={() => {
               const today = new Date().toISOString().slice(0, 10);
               const newId = generateGameId(newGameOpponent, today);
+              endedGameIdsRef.current.delete(newId);
               const selectedTeam = rosterTeams.find(t => t.id === newGameMyTeamId);
               const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
               const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
@@ -2327,6 +2415,25 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
         </section>
       )}
       {gameId && activePage === "live" && <>
+      <section className="card settings-section-card">
+        <div className="stats-page-card-head">
+          <div>
+            <h3>Live Game Controls</h3>
+            <p className="settings-section-desc">Game ID: {gameId}</p>
+          </div>
+          <div className="settings-header-actions">
+            <button
+              type="button"
+              className="shell-nav-link danger-btn"
+              onClick={() => void endGameFromDashboard()}
+              disabled={isEndingGame}
+            >
+              {isEndingGame ? "Ending..." : "End Game"}
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section className="card">
         <h2>Scoreboard</h2>
         {isLoading && (

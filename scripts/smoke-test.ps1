@@ -121,6 +121,13 @@ $health = Invoke "GET" "/health"
 if ($health -and $health.status -eq "ok") { Ok "GET /health -> ok" }
 else { Fail "GET /health failed" }
 
+# Ensure smoke scope is clean so repeated runs are deterministic.
+$reset = InvokeRaw "DELETE" "/admin/reset"
+$resetStatusCode = GetStatusCode $reset
+if ($resetStatusCode -notin 200,204) {
+  Fail "DELETE /admin/reset failed (HTTP $resetStatusCode)"
+}
+
 # -- 2. Create game ------------------------------------------------------------
 Step "Create game"
 $game = Invoke "POST" "/api/games" @{ gameId = $GAME_ID; homeTeamId = "home"; awayTeamId = "away" }

@@ -108,11 +108,37 @@ app.use(express.json());
 
 // Simple rate limiter: per-IP event submission limit (100 events per minute)
 const rateLimitByIp = new Map<string, { count: number; resetAt: number }>();
+
+function resolveClientIp(req: Request): string {
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const firstForwarded = Array.isArray(forwardedFor)
+    ? forwardedFor[0]
+    : typeof forwardedFor === "string"
+      ? forwardedFor.split(",")[0]
+      : undefined;
+
+  const rawIp = (firstForwarded?.trim() || req.ip || req.socket.remoteAddress || "unknown").trim();
+  if (!rawIp) {
+    return "unknown";
+  }
+
+  return rawIp.startsWith("::ffff:") ? rawIp.slice(7) : rawIp;
+}
+
 function createRateLimitMiddleware(maxRequests: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const ip = (req.ip || req.socket.remoteAddress || "unknown").split(":").pop() || "unknown";
+    const ip = resolveClientIp(req);
     const now = Date.now();
     const limit = rateLimitByIp.get(ip) ?? { count: 0, resetAt: now + windowMs };
+
+    // Opportunistic cleanup so map size stays bounded under high IP churn.
+    if (rateLimitByIp.size > 5000) {
+      for (const [key, value] of rateLimitByIp.entries()) {
+        if (value.resetAt <= now) {
+          rateLimitByIp.delete(key);
+        }
+      }
+    }
 
     if (now > limit.resetAt) {
       limit.count = 0;
@@ -766,7 +792,18 @@ function getSchoolAnalyticsContext(schoolId: string) {
   const teamIds = new Set(teams.map((team) => team.id));
   const seasonGames = getSeasonGames({ schoolId })
     .slice()
-    .sort((left, right) => Number(left.gameId) - Number(right.gameId));
+    .sort((left, right) => {
+      const leftNumeric = Number(left.gameId);
+      const rightNumeric = Number(right.gameId);
+      const leftIsNumeric = Number.isFinite(leftNumeric);
+      const rightIsNumeric = Number.isFinite(rightNumeric);
+
+      if (leftIsNumeric && rightIsNumeric) {
+        return leftNumeric - rightNumeric;
+      }
+
+      return left.gameId.localeCompare(right.gameId);
+    });
   const playerIdsByName = new Map<string, string[]>();
 
   for (const team of teams) {
