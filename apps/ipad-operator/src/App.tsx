@@ -1305,11 +1305,6 @@ export function App() {
   const trackPossession = appData.gameSetup.trackPossession ?? true;
   const trackTimeouts = appData.gameSetup.trackTimeouts ?? true;
   const opponentSide: TeamSide = vcSideSetup === "home" ? "away" : "home";
-  const [shotEntrySide, setShotEntrySide] = useState<TeamSide>(vcSideSetup);
-
-  useEffect(() => {
-    setShotEntrySide(vcSideSetup);
-  }, [vcSideSetup]);
 
   function isOpponentStatEnabled(key: OpponentTrackStat): boolean {
     return opponentTrackSet.has(key);
@@ -4595,11 +4590,10 @@ export function App() {
             const oppName   = vcSideSetup === "home" ? awayTeamName : homeTeamName;
             const myTO      = timeoutRemaining[vcSideSetup];
             const oppTO     = timeoutRemaining[opponentSide];
-            const activeShotSide = shotEntrySide;
-            const activeShotTeamName = activeShotSide === vcSideSetup ? myName : oppName;
-            const isTrackingMyTeam = activeShotSide === vcSideSetup;
-            const canTrackPoints = isTrackingMyTeam || isOpponentStatEnabled("points");
-            const canTrackFreeThrows = isTrackingMyTeam || isOpponentStatEnabled("free_throws");
+            const myColorClass = vcSideSetup === "home" ? "teal" : "red";
+            const oppColorClass = opponentSide === "home" ? "teal" : "red";
+            const canTrackOppPoints = isOpponentStatEnabled("points");
+            const canTrackOppFt = isOpponentStatEnabled("free_throws");
             return (<>
               {trackTimeouts && (
                 <>
@@ -4621,68 +4615,36 @@ export function App() {
                 </>
               )}
 
-              <div className="shot-team-switch" role="group" aria-label="Scoring team selector">
-                <button
-                  className={`shot-team-switch-btn${activeShotSide === vcSideSetup ? " active" : ""} shot-team-switch-btn-my`}
-                  onClick={() => setShotEntrySide(vcSideSetup)}
-                >
-                  {myName}
-                </button>
-                <button
-                  className={`shot-team-switch-btn${activeShotSide === opponentSide ? " active" : ""} shot-team-switch-btn-opp`}
-                  onClick={() => setShotEntrySide(opponentSide)}
-                >
-                  {oppName}
-                </button>
+              <div className="classic-score-grid" role="group" aria-label="Scoring controls by team">
+                <div className="classic-score-col">
+                  <div className="shot-grid-team-label shot-grid-team-label-my" title={`Scoring for ${myName}`}>{myName}</div>
+                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>2pt</button>
+                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>3pt</button>
+                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>1pt</button>
+                </div>
+
+                <div className="classic-score-col">
+                  <div className="shot-grid-team-label shot-grid-team-label-opp" title={`Scoring for ${oppName}`}>{oppName}</div>
+                  <button
+                    className={`circle classic-score-btn ${oppColorClass}`}
+                    disabled={!canTrackOppPoints}
+                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}
+                    title={canTrackOppPoints ? `Add 2PT for ${oppName}` : "Enable opponent points tracking in settings"}
+                  >2pt</button>
+                  <button
+                    className={`circle classic-score-btn ${oppColorClass}`}
+                    disabled={!canTrackOppPoints}
+                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}
+                    title={canTrackOppPoints ? `Add 3PT for ${oppName}` : "Enable opponent points tracking in settings"}
+                  >3pt</button>
+                  <button
+                    className={`circle classic-score-btn ${oppColorClass}`}
+                    disabled={!canTrackOppFt}
+                    onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}
+                    title={canTrackOppFt ? `Add FT for ${oppName}` : "Enable opponent free throw tracking in settings"}
+                  >1pt</button>
+                </div>
               </div>
-
-              <div className="shot-grid-team-label shot-grid-team-label-my" style={{ gridColumn: "1 / -1" }} title={`Scoring for ${activeShotTeamName}`}>{activeShotTeamName}</div>
-
-              {isTrackingMyTeam && (
-                <>
-                  <button className="shot-btn shot-btn-make" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>
-                    <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MAKE</span>
-                  </button>
-                  <button className="shot-btn shot-btn-miss" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: false })}>
-                    <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">MISS</span>
-                  </button>
-                  <button className="shot-btn shot-btn-make shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>
-                    <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MAKE</span>
-                  </button>
-                  <button className="shot-btn shot-btn-miss shot-btn-three" onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: false })}>
-                    <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">MISS</span>
-                  </button>
-                  <button className="shot-btn shot-btn-ft-make" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>
-                    <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MAKE</span>
-                  </button>
-                  <button className="shot-btn shot-btn-ft-miss" onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: false })}>
-                    <span className="shot-btn-pts">FT</span><span className="shot-btn-result">MISS</span>
-                  </button>
-                </>
-              )}
-
-              {!isTrackingMyTeam && (
-                <>
-                  {canTrackPoints && (
-                    <>
-                      <button className="shot-btn shot-btn-opp-make" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}>
-                        <span className="shot-btn-pts">2PT</span><span className="shot-btn-result">OPP</span>
-                      </button>
-                      <button className="shot-btn shot-btn-opp-make shot-btn-opp-three" onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}>
-                        <span className="shot-btn-pts">3PT</span><span className="shot-btn-result">OPP</span>
-                      </button>
-                    </>
-                  )}
-                  {canTrackFreeThrows && (
-                    <button className="shot-btn shot-btn-opp-ft" style={{ gridColumn: canTrackPoints ? "1 / -1" : undefined }} onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}>
-                      <span className="shot-btn-pts">FT</span><span className="shot-btn-result">OPP</span>
-                    </button>
-                  )}
-                  {!canTrackPoints && !canTrackFreeThrows && (
-                    <div className="shot-grid-empty" style={{ gridColumn: "1 / -1" }}>Opponent scoring is disabled in settings.</div>
-                  )}
-                </>
-              )}
             </>);
           })()}
         </div>

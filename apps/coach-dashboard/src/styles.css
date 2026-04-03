@@ -833,6 +833,41 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.coach-color-swatch {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.18);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.32);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+  padding: 0;
+}
+.coach-color-swatch:hover {
+  transform: scale(1.1);
+  border-color: rgba(255,255,255,0.45);
+}
+.coach-color-swatch.selected {
+  border-color: white;
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.22), 0 2px 8px rgba(0,0,0,0.32);
+}
+.coach-color-input {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.18);
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.coach-color-input::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
+.coach-color-input::-webkit-color-swatch { border: none; border-radius: 50%; }
+.coach-color-input::-moz-color-swatch { border: none; border-radius: 50%; }
+
 .setup-color-field {
   min-width: 240px;
 }
