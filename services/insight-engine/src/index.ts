@@ -1,5 +1,5 @@
 import type { GameState } from "@bta/game-state";
-import { FOUL_OUT_THRESHOLD } from "@bta/game-state";
+import { FOUL_OUT_THRESHOLD, BONUS_FOUL_THRESHOLD } from "@bta/game-state";
 import { isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 
 export type InsightType =
@@ -19,7 +19,9 @@ export type InsightType =
   | "depth_warning"
   | "efficiency"
   | "leverage"
-  | "matchup_exploitation";
+  | "matchup_exploitation"
+  | "three_point_streak"
+  | "foul_to_give";
 
 export interface LiveInsight {
   id: string;
@@ -249,26 +251,35 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // 3. Team foul warning (bonus territory)
+  // 3. Team foul warning (bonus territory) — fires only at the moment
+  //    the latest foul just pushed the fouling team into the bonus.
+  //    The dashboard scoreboard already shows the ongoing bonus state,
+  //    so re-alerting every event would be pure noise.
   // ──────────────────────────────────────────────────────────────────
-  for (const [teamId, inBonus] of Object.entries(state.bonusByTeam)) {
-    if (inBonus) {
-      const teamLabel = resolveTeamLabel(state, teamId);
-      const isOurBonus = teamId === ourTeamId;
+  if (latestEvent.type === "foul") {
+    const foulingTeamId = latestEvent.teamId;
+    // Period fouls for the team that just fouled
+    const periodFouls = (state.teamFoulsByPeriod[foulingTeamId] ?? {})[period] ?? 0;
+    if (periodFouls === BONUS_FOUL_THRESHOLD) {
+      // The fouling team just hit the threshold — the opposing team just entered bonus
+      const benefitingTeamId = foulingTeamId === state.homeTeamId ? state.awayTeamId : state.homeTeamId;
+      const benefitingLabel = resolveTeamLabel(state, benefitingTeamId);
+      const foulingLabel = resolveTeamLabel(state, foulingTeamId);
+      const isOurBonus = benefitingTeamId === ourTeamId;
       insights.push({
-        id: `${latestEvent.id}-bonus-${teamId}`,
+        id: `${latestEvent.id}-bonus-${benefitingTeamId}`,
         gameId: latestEvent.gameId,
         type: "team_foul_warning",
         priority: "important",
         createdAtIso: now,
         confidence: "high",
         message: isOurBonus
-          ? `${teamLabel} is in the bonus — attack the basket`
-          : `${teamLabel} is in bonus — protect the ball on offense`,
+          ? `${benefitingLabel} enters the bonus — attack the basket`
+          : `${foulingLabel} has ${BONUS_FOUL_THRESHOLD} fouls — protect the ball`,
         explanation: isOurBonus
-          ? "Opposing team has 5+ fouls this period. Drive to the rim and draw contact — every foul produces two free throws."
-          : "We have 5+ fouls this period. Avoid unnecessary contact and keep the opponent out of the line.",
-        relatedTeamId: teamId
+          ? `${foulingLabel} has hit ${BONUS_FOUL_THRESHOLD} team fouls this period. Drive to the rim and draw contact — every foul sends us to the line for 2 shots.`
+          : `We have ${BONUS_FOUL_THRESHOLD} fouls this period. Any additional foul sends ${benefitingLabel} to the line. Be selective with contests — no reaching.`,
+        relatedTeamId: benefitingTeamId
       });
     }
   }
@@ -826,6 +837,74 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
             relatedPlayerId: defenderId
           });
         }
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 18. Opponent 3PT streak — if opponent hits 3 or more of their last
+  //     6 three-point attempts, flag a defensive scheme adjustment.
+  // ──────────────────────────────────────────────────────────────────
+  if (state.opponentTeamId) {
+    const OPP_3PT_WINDOW = 6;
+    const OPP_3PT_HIT_THRESHOLD = 3;
+    const recent3PAs = allEvents
+      .filter(
+        (e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+          e.type === "shot_attempt" && e.teamId === state.opponentTeamId &&
+          (e as Extract<GameEvent, { type: "shot_attempt" }>).points === 3
+      )
+      .slice(-OPP_3PT_WINDOW);
+
+    if (recent3PAs.length >= OPP_3PT_WINDOW) {
+      const made3s = recent3PAs.filter((e) => e.made).length;
+      if (made3s >= OPP_3PT_HIT_THRESHOLD) {
+        const oppLabel = resolveTeamLabel(state, state.opponentTeamId);
+        const pct = Math.round((made3s / recent3PAs.length) * 100);
+        insights.push({
+          id: `${latestEvent.id}-3pt-streak`,
+          gameId: latestEvent.gameId,
+          type: "three_point_streak",
+          priority: "important",
+          createdAtIso: now,
+          confidence: "high",
+          message: `${oppLabel} hitting ${made3s}/${recent3PAs.length} recent 3s (${pct}%) — close out harder`,
+          explanation: `${oppLabel} is getting rhythm from behind the arc. Step up on three-point shooters earlier, contest with a hand in their face, and consider switching defensive assignments to disrupt their catch-and-shoot looks.`,
+          relatedTeamId: state.opponentTeamId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 19. Fouls to give — late Q4/OT reminder that our team can foul
+  //     without sending the opponent to the line yet. Useful for
+  //     disrupting a late-game possession without burning a timeout.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && clockEnabled) {
+    const isLateGame = period === "Q4" || isOvertimePeriod(period);
+    const clockSec = getClockSeconds(latestEvent);
+    const FOUlS_TO_GIVE_WINDOW = 45;
+    if (isLateGame && clockSec > 0 && clockSec <= FOUlS_TO_GIVE_WINDOW) {
+      const ourPeriodFouls = (state.teamFoulsByPeriod[ourTeamId] ?? {})[period] ?? 0;
+      const foulsRemaining = Math.max(0, BONUS_FOUL_THRESHOLD - 1 - ourPeriodFouls);
+      // Only alert once per entry into this window (same guard as period-end urgency)
+      const prevEvent = allEvents.at(-2);
+      const prevClock = prevEvent ? getClockSeconds(prevEvent) : Infinity;
+      const prevPeriod = prevEvent?.period ?? "";
+      const justEnteredWindow = prevPeriod !== period || prevClock > FOUlS_TO_GIVE_WINDOW;
+      if (foulsRemaining >= 1 && justEnteredWindow) {
+        insights.push({
+          id: `${latestEvent.id}-fouls-to-give`,
+          gameId: latestEvent.gameId,
+          type: "foul_to_give",
+          priority: "info",
+          createdAtIso: now,
+          confidence: "high",
+          message: `${foulsRemaining} foul${foulsRemaining > 1 ? "s" : ""} to give — can foul without sending them to the line`,
+          explanation: `We have ${foulsRemaining} defensive foul${foulsRemaining > 1 ? "s" : ""} available before the bonus is triggered. Use them to stop the clock, deny an inbound, or break up a possession without giving free throws.`,
+          relatedTeamId: ourTeamId
+        });
       }
     }
   }

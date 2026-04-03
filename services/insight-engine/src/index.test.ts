@@ -473,4 +473,123 @@ describe("insight engine", () => {
     expect(mqpInsight?.message).toContain("22");
     expect(mqpInsight?.relatedPlayerId).toBe("h3");
   });
+
+  it("emits team_foul_warning only when the 5th foul crosses the bonus threshold", () => {
+    // 4 away fouls → no bonus alert; 5th foul → alert fires exactly once
+    const makeFoul = (seq: number): GameEvent => ({
+      id: `bn-foul-${seq}`,
+      schoolId: "test-school",
+      gameId: "game-bonus",
+      sequence: seq,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 480 - seq * 10,
+      teamId: "away",
+      operatorId: "op-1",
+      type: "foul" as const,
+      playerId: "a1",
+      foulType: "personal" as const,
+    });
+    // padding score so pre-game guard is bypassed
+    const paddingScore: GameEvent = {
+      id: "bn-pad-score",
+      schoolId: "test-school",
+      gameId: "game-bonus",
+      sequence: 0,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 490,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: true,
+      points: 2 as const,
+      zone: "paint" as const,
+    };
+    const fourFouls = [1, 2, 3, 4].map(makeFoul);
+    const state4 = replayEvents(createInitialGameState("game-bonus", "home", "away"), [paddingScore, ...fourFouls]);
+    state4.opponentTeamId = "away";
+    // 4 fouls — no bonus alert yet
+    const insights4 = generateInsights({ state: state4, latestEvent: fourFouls[3] });
+    expect(insights4.some((i) => i.type === "team_foul_warning")).toBe(false);
+
+    // 5th foul — bonus threshold crossed → alert should fire
+    const fifthFoul = makeFoul(5);
+    const state5 = replayEvents(createInitialGameState("game-bonus", "home", "away"), [paddingScore, ...fourFouls, fifthFoul]);
+    state5.opponentTeamId = "away";
+    const insights5 = generateInsights({ state: state5, latestEvent: fifthFoul });
+    expect(insights5.some((i) => i.type === "team_foul_warning")).toBe(true);
+  });
+
+  it("emits three_point_streak when opponent hits 3 of last 6 three-pointers", () => {
+    const make3 = (seq: number, made: boolean): GameEvent => ({
+      id: `tp-${seq}`,
+      schoolId: "test-school",
+      gameId: "game-3pt",
+      sequence: seq,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - seq,
+      teamId: "away",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "a1",
+      made,
+      points: 3 as const,
+      zone: "above_break_three" as const,
+    });
+    // padding score so pre-game guard is bypassed
+    const paddingScore: GameEvent = {
+      id: "tp-pad",
+      schoolId: "test-school",
+      gameId: "game-3pt",
+      sequence: 0,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 490,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: true,
+      points: 2 as const,
+      zone: "paint" as const,
+    };
+    // 3 makes + 3 misses = 3/6 = exactly at threshold
+    const events = [paddingScore, make3(1, true), make3(2, false), make3(3, true), make3(4, false), make3(5, true), make3(6, false)];
+    const state = replayEvents(createInitialGameState("game-3pt", "home", "away"), events);
+    state.opponentTeamId = "away";
+    const insights = generateInsights({ state, latestEvent: events[events.length - 1] });
+    expect(insights.some((i) => i.type === "three_point_streak")).toBe(true);
+  });
+
+  it("emits foul_to_give in late Q4 when our team has fouls remaining before bonus", () => {
+    const scoreEvent: GameEvent = {
+      id: "ftg-score",
+      schoolId: "test-school",
+      gameId: "game-ftg",
+      sequence: 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q4" as const,
+      clockSecondsRemaining: 44,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: true,
+      points: 2 as const,
+      zone: "paint" as const,
+    };
+    const prevEvent: GameEvent = {
+      ...scoreEvent,
+      id: "ftg-prev",
+      sequence: 0,
+      clockSecondsRemaining: 60, // was outside the window
+    };
+    const state = replayEvents(createInitialGameState("game-ftg", "home", "away"), [prevEvent, scoreEvent]);
+    state.opponentTeamId = "away";
+    const insights = generateInsights({ state, latestEvent: scoreEvent, clockEnabled: true });
+    expect(insights.some((i) => i.type === "foul_to_give")).toBe(true);
+  });
 });

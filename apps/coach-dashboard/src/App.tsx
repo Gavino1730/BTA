@@ -1637,6 +1637,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       efficiency: "Efficiency",
       leverage: "Game Leverage",
       matchup_exploitation: "Matchup",
+      three_point_streak: "3PT Alert",
+      foul_to_give: "Fouls to Give",
     };
     if (labels[type]) return labels[type];
 
