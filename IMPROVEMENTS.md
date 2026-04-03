@@ -16,11 +16,17 @@ Last updated: April 2, 2026.
 - **Rule 16 — Timeout Budget Awareness**: In Q4/OT, when our timeout count drops below 2 and game is within reach, emit a timeout conservation alert (priority: important)
 - New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`
 
+### Shared Schema + Game State (packages/shared-schema, packages/game-state)
+- **Matchup Tracking Foundation**: Added `matchup_assignment` event contract (`defenderPlayerId` -> `offensivePlayerId`), validation, and deterministic replay support via `activeMatchupsByTeam` in game state.
+- **Lineup +/- Tracking**: Added deterministic lineup stint segmentation and aggregate plus/minus utilities (`computeLineupSegments`, `aggregateLineupStats`) with dashboard integration.
+
 ### Coach Dashboard (apps/coach-dashboard)
 - Labels registered for all 4 new insight types
 - `depth_warning` added to the Action Items panel (requires immediate response)
 - Live scoreboard now shows **PPP** (points per possession, after ≥5 possessions) and **FT Rate** (FTA/FGA) instead of the less-actionable POSS and SUBS columns
 - Insights now show relative age (for example, `2m ago`) using each insight's `createdAtIso`
+- Added **Current Matchups** panel to show live defender assignment entries from operator matchup events.
+- Added **Lineup +/-** panel showing points-for / points-against and net differential per unit.
 
 ### Realtime API (services/realtime-api)
 - GPT refresh throttled: every **8 events** (was 3) / **45 seconds** (was 20). Rules engine covers moment-to-moment; GPT reserved for synthesis. Both still env-overridable via `BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS` and `BTA_LIVE_INSIGHT_MIN_INTERVAL_MS`.
@@ -40,22 +46,6 @@ Last updated: April 2, 2026.
 - **Sub Suggestion Intelligence (Rule 9)**: When bench is empty and a player has 4 fouls (not fouled out), suggests a timeout for scheme adjustment instead of an impossible sub.
 - **Possession Inference (Rule 13 + scoreboard)**: Rule 13 and the coach dashboard PPP column both fall back to inferred possessions (FGA + turnovers) when no explicit `possession_start` events exist.
 - **Historical Context TTL at Period Transitions**: `refreshGameAiInsights` and `requestAiChatResponse` force a historical context refresh on `period_transition` events in addition to the time-based TTL.
-
----
-
-## 🟢 Low Priority / Long-Term
-
-### 9. Matchup Tracking
-**What**: Track which defender is assigned to which offensive player each possession. Enables "their #23 is 4-for-4 against your zone" style insights.
-**Complexity**: Requires operator workflow change — they'd need to log matchup assignments. New event type or annotation on existing events. Significant schema change.
-**Files**: `packages/shared-schema/src/types.ts`, game-state, insight engine, operator UI.
-
-### 10. Lineup +/- Tracking
-**What**: Track net point differential while each 5-man lineup is on the court. 
-
-**What's needed**: Game state needs to record when each lineup combination started and what the score was. Currently substitution events exist but differential per lineup isn't computed.
-**Use case**: "Your starting lineup is +12 but your second unit is -8 — the gap is real."
-**Files**: `packages/game-state/src/index.ts`, coach dashboard.
 
 ---
 

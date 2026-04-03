@@ -69,6 +69,25 @@ describe("gameEventSchema", () => {
     expect(parsed.period).toBe("OT1");
   });
 
+  it("parses a valid matchup assignment event", () => {
+    const parsed = parseGameEvent({
+      id: "evt-matchup",
+      schoolId: "test-school",
+      gameId: "game-1",
+      sequence: 4,
+      timestampIso: "2026-03-18T21:05:00.000Z",
+      period: "Q2",
+      clockSecondsRemaining: 380,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "matchup_assignment",
+      defenderPlayerId: "h2",
+      offensivePlayerId: "a4"
+    });
+
+    expect(parsed.type).toBe("matchup_assignment");
+  });
+
   it("rejects an invalid event (bad points value)", () => {
     expect(
       isGameEvent({

@@ -16,7 +16,8 @@ export const EVENT_TYPES = [
   "possession_start",
   "possession_end",
   "timeout",
-  "period_transition"
+  "period_transition",
+  "matchup_assignment"
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -172,6 +173,14 @@ export interface PeriodTransitionEvent extends GameEventBase {
   newPeriod: string;
 }
 
+// Assigns a defender to a current offensive assignment.
+// teamId is the defending team making the assignment.
+export interface MatchupAssignmentEvent extends GameEventBase {
+  type: "matchup_assignment";
+  defenderPlayerId: string;
+  offensivePlayerId: string;
+}
+
 export type GameEvent =
   | ShotAttemptEvent
   | FreeThrowAttemptEvent
@@ -185,7 +194,8 @@ export type GameEvent =
   | PossessionStartEvent
   | PossessionEndEvent
   | TimeoutEvent
-  | PeriodTransitionEvent;
+  | PeriodTransitionEvent
+  | MatchupAssignmentEvent;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Roster & Team Management

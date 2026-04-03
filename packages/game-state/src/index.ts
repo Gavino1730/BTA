@@ -102,6 +102,8 @@ export interface GameState {
   bonusByTeam: Record<string, boolean>;
   /** Total timeouts used per team across the game */
   timeoutsByTeam: Record<string, number>;
+  /** Active defender -> offensive player matchup assignments by defending team */
+  activeMatchupsByTeam: Record<string, Record<string, string>>;
   events: GameEvent[];
   lastSequence: number;
   /** Starting lineup by team for lineup-unit tracking. Preserved across event applications. */
@@ -216,6 +218,10 @@ export function createInitialGameState(
       [homeTeamId]: 0,
       [awayTeamId]: 0
     },
+    activeMatchupsByTeam: {
+      [homeTeamId]: {},
+      [awayTeamId]: {}
+    },
     events: [],
     lastSequence: 0
   };
@@ -227,6 +233,7 @@ function ensureTeamState(state: GameState, teamId: string): TeamStats {
     state.scoreByTeam[teamId] = state.scoreByTeam[teamId] ?? 0;
     state.possessionsByTeam[teamId] = state.possessionsByTeam[teamId] ?? 0;
     state.teamFoulsByPeriod[teamId] = state.teamFoulsByPeriod[teamId] ?? {};
+    state.activeMatchupsByTeam[teamId] = state.activeMatchupsByTeam[teamId] ?? {};
   }
 
   return state.teamStats[teamId];
@@ -281,6 +288,9 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
     ),
     bonusByTeam: { ...current.bonusByTeam },
     timeoutsByTeam: { ...current.timeoutsByTeam },
+    activeMatchupsByTeam: Object.fromEntries(
+      Object.entries(current.activeMatchupsByTeam ?? {}).map(([teamId, entries]) => [teamId, { ...entries }])
+    ),
     events: [...current.events, event],
     lastSequence: event.sequence
   };
@@ -388,6 +398,11 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
         withoutOutgoing.push(event.playerInId);
       }
       state.activeLineupsByTeam[event.teamId] = withoutOutgoing;
+      if (!state.activeMatchupsByTeam[event.teamId]) {
+        state.activeMatchupsByTeam[event.teamId] = {};
+      }
+      // Outgoing defender no longer has an active on-court assignment.
+      delete state.activeMatchupsByTeam[event.teamId][event.playerOutId];
       teamStats.substitutions += 1;
       break;
     }
@@ -404,6 +419,13 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
     }
     case "timeout": {
       state.timeoutsByTeam[event.teamId] = (state.timeoutsByTeam[event.teamId] ?? 0) + 1;
+      break;
+    }
+    case "matchup_assignment": {
+      if (!state.activeMatchupsByTeam[event.teamId]) {
+        state.activeMatchupsByTeam[event.teamId] = {};
+      }
+      state.activeMatchupsByTeam[event.teamId][event.defenderPlayerId] = event.offensivePlayerId;
       break;
     }
     default: {

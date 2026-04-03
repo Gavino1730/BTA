@@ -117,6 +117,12 @@ const periodTransitionSchema = baseSchema.extend({
   newPeriod: periodSchema
 });
 
+const matchupAssignmentSchema = baseSchema.extend({
+  type: z.literal("matchup_assignment"),
+  defenderPlayerId: z.string().min(1),
+  offensivePlayerId: z.string().min(1)
+});
+
 export const gameEventSchema = z.discriminatedUnion("type", [
   shotAttemptSchema,
   freeThrowAttemptSchema,
@@ -130,7 +136,8 @@ export const gameEventSchema = z.discriminatedUnion("type", [
   possessionStartSchema,
   possessionEndSchema,
   timeoutSchema,
-  periodTransitionSchema
+  periodTransitionSchema,
+  matchupAssignmentSchema
 ]).refine(
   (event) => {
     // Validate free throw cross-constraints
@@ -151,6 +158,14 @@ export const gameEventSchema = z.discriminatedUnion("type", [
     return true;
   },
   { message: "newPeriod must differ from the current period", path: ["newPeriod"] }
+).refine(
+  (event) => {
+    if (event.type === "matchup_assignment") {
+      return event.defenderPlayerId !== event.offensivePlayerId;
+    }
+    return true;
+  },
+  { message: "defenderPlayerId and offensivePlayerId must differ", path: ["offensivePlayerId"] }
 );
 
 export function parseGameEvent(input: unknown): GameEvent {
