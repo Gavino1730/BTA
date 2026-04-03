@@ -4,16 +4,10 @@ import IpadTipsPage from "./IpadTipsPage.js";
 import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent, type RosterTeam } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
-  addPlayerViaRealtime,
   convertRosterTeamToAppTeam,
-  createTeamViaRealtime,
   DEFAULT_SCHOOL_ID,
-  deletePlayerViaRealtime,
-  deleteTeamViaRealtime,
   fetchTeamsFromRealtime,
   isLocalNetworkHost,
-  updatePlayerViaRealtime,
-  updateTeamViaRealtime,
 } from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
