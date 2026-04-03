@@ -23,6 +23,7 @@ import {
   type PersistedGameSessionRecord,
   type PersistenceProvider
 } from "./persistence.js";
+import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "./school-id.js";
 
 export interface CreateGameInput {
   schoolId: string;
@@ -363,21 +364,6 @@ interface PersistedSnapshot {
 
 export interface TenantScope {
   schoolId?: string;
-}
-
-const DEFAULT_SCHOOL_ID = "default";
-
-function normalizeSchoolId(input: unknown): string {
-  if (typeof input !== "string") {
-    return DEFAULT_SCHOOL_ID;
-  }
-
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed) {
-    return DEFAULT_SCHOOL_ID;
-  }
-
-  return trimmed.replace(/[^a-z0-9_-]/g, "").slice(0, 64) || DEFAULT_SCHOOL_ID;
 }
 
 function resolveSchoolId(scope?: TenantScope): string {

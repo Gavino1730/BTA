@@ -2404,6 +2404,35 @@ html, body {
   transform: translateY(-1px);
 }
 
+.shot-zone-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0 1.4rem 0.9rem;
+}
+
+.zone-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1.5px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  color: rgba(232,234,240,0.72);
+  padding: 0.48rem 0.42rem;
+  min-height: 38px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.zone-btn.active {
+  background: rgba(79,140,255,0.18);
+  border-color: rgba(79,140,255,0.62);
+  color: #c7dbff;
+  box-shadow: 0 0 0 1px rgba(79,140,255,0.33);
+}
+
 /* Team toggle inside stat modal */
 .modal-team-toggle {
   display: flex;
@@ -2425,6 +2454,31 @@ html, body {
 }
 .modal-team-toggle button.t-teal { background: color-mix(in srgb, var(--team-home-color) 15%, transparent); border-color: var(--team-home-color); color: var(--team-home-color); }
 .modal-team-toggle button.t-red  { background: color-mix(in srgb, var(--team-away-color) 15%, transparent); border-color: var(--team-away-color); color: var(--team-away-color); }
+
+.modal-subtype-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.2rem 1.1rem 0.45rem;
+}
+
+.modal-subtype-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  color: rgba(232,234,240,0.78);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.35rem 0.62rem;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.modal-subtype-btn.active {
+  background: rgba(242,194,75,0.19);
+  border-color: rgba(242,194,75,0.65);
+  color: #f7d67c;
+}
 
 /* Player list */
 .player-list {

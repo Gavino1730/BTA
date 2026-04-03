@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import type { GameEvent } from "@bta/shared-schema";
 import type { CoachAiSettings, GameAiContext, LocalAuthAccount, OrganizationMember, OrganizationProfile, RosterTeam } from "./store.js";
+import { normalizeSchoolId } from "./school-id.js";
 
 export interface PersistedGameSessionRecord {
   schoolId: string;
@@ -43,21 +44,6 @@ export interface PersistenceProvider {
 interface PostgresPersistenceOptions {
   connectionString: string;
   tableName?: string;
-}
-
-const DEFAULT_SCHOOL_ID = "default";
-
-function normalizeSchoolId(input: unknown): string {
-  if (typeof input !== "string") {
-    return DEFAULT_SCHOOL_ID;
-  }
-
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed) {
-    return DEFAULT_SCHOOL_ID;
-  }
-
-  return trimmed.replace(/[^a-z0-9_-]/g, "").slice(0, 64) || DEFAULT_SCHOOL_ID;
 }
 
 async function setTenantContext(client: { query: Pool["query"] }, schoolId: string): Promise<void> {

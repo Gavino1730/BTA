@@ -4,7 +4,12 @@ import { getPeriodDurationSeconds, normalizeTeamColor, type GameEvent, type Peri
 import type { PlayerStats, TeamStats, LineupUnitStats } from "@bta/game-state";
 import { aggregateLineupStats, computeLineupSegments } from "@bta/game-state";
 import { io } from "socket.io-client";
-import { formatFoulTroubleLabel } from "./display.js";
+import {
+  formatBonusIndicator,
+  formatDashboardClock,
+  formatDashboardEventMeta,
+  formatFoulTroubleLabel,
+} from "./display.js";
 import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 
 interface GameState {
@@ -229,12 +234,6 @@ interface PresenceStatus {
   online: boolean;
   gameId: string | null;
   lastSeenIso: string | null;
-}
-
-interface ActiveGameConflictResponse {
-  error?: string;
-  activeGameId?: string;
-  activeState?: GameState;
 }
 
 function normalizeConnectionId(value: string | null | undefined): string {
@@ -1013,62 +1012,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   }, [gameId]);
 
   useEffect(() => {
-    if (gameId) {
-      return;
-    }
-
-    let cancelled = false;
-    async function hydrateActiveGame() {
-      try {
-        const response = await fetch(`${apiBase}/api/games/active/state`, {
-          headers: apiKeyHeader(),
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const activeState = (await response.json()) as GameState;
-        if (cancelled || !activeState?.gameId) {
-          return;
-        }
-
-        const myTeam = rosterTeams.find((team) => team.id === activeState.homeTeamId || team.id === activeState.awayTeamId);
-        const myTeamId = myTeam?.id ?? "";
-        const vcSide = myTeamId
-          ? (myTeamId === activeState.awayTeamId ? "away" : "home")
-          : setupNames.vcSide;
-        const myTeamColor = normalizeTeamColor(myTeam?.teamColor);
-        const homeColor = vcSide === "home"
-          ? (myTeamColor ?? setupNames.homeColor)
-          : (setupNames.homeColor || "");
-        const awayColor = vcSide === "away"
-          ? (myTeamColor ?? setupNames.awayColor)
-          : (setupNames.awayColor || "");
-
-        setGameId(activeState.gameId);
-        setSetupNames((current) => ({
-          ...current,
-          myTeamId,
-          myTeamName: myTeam?.name ?? current.myTeamName,
-          opponentName: activeState.opponentName ?? current.opponentName,
-          vcSide,
-          homeColor,
-          awayColor,
-        }));
-        setDashboardStatus(`Synced active game ${activeState.gameId}`);
-      } catch {
-        // Ignore when no active game exists or API is unavailable.
-      }
-    }
-
-    void hydrateActiveGame();
-    return () => {
-      cancelled = true;
-    };
-  }, [gameId, rosterTeams, setupNames.awayColor, setupNames.homeColor, setupNames.vcSide]);
-
-  useEffect(() => {
     if (!gameId) {
       setAiSettings(defaultCoachAiSettings());
       setAiSettingsDraft(defaultCoachAiSettings());
@@ -1694,6 +1637,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       efficiency: "Efficiency",
       leverage: "Game Leverage",
       matchup_exploitation: "Matchup",
+      three_point_streak: "3PT Alert",
+      foul_to_give: "Fouls to Give",
+      opponent_hot_hand: "Opp Hot Hand",
+      cold_shooter: "Cold Shooter",
+      transition_momentum: "Transition",
     };
     if (labels[type]) return labels[type];
 
@@ -2231,83 +2179,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     }
   }
 
-  async function launchGame(): Promise<void> {
-    if (!newGameMyTeamId || !newGameOpponent.trim()) {
-      return;
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const newId = generateGameId(newGameOpponent, today);
-    const selectedTeam = rosterTeams.find((team) => team.id === newGameMyTeamId);
-    const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
-    const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
-    const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
-    const oppSlug = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
-    const homeTeamId = newGameVcSide === "home" ? newGameMyTeamId : oppSlug;
-    const awayTeamId = newGameVcSide === "away" ? newGameMyTeamId : oppSlug;
-
-    let targetGameId = newId;
-    let returnedState: GameState | null = null;
-
-    try {
-      const response = await fetch(`${apiBase}/api/games`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-        body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName: newGameOpponent.trim() }),
-      });
-
-      if (response.status === 409) {
-        const payload = (await response.json()) as ActiveGameConflictResponse;
-        if (!payload.activeGameId) {
-          setDashboardStatus("Another active game is already running.");
-          return;
-        }
-
-        targetGameId = payload.activeGameId;
-        returnedState = payload.activeState ?? null;
-        setDashboardStatus(`Joined existing active game ${targetGameId}`);
-      } else if (response.ok) {
-        returnedState = (await response.json()) as GameState;
-      } else {
-        setDashboardStatus(`Could not launch game (${response.status})`);
-        return;
-      }
-    } catch {
-      setDashboardStatus("Could not launch game right now.");
-      return;
-    }
-
-    const resolvedHomeTeamId = returnedState?.homeTeamId ?? homeTeamId;
-    const resolvedAwayTeamId = returnedState?.awayTeamId ?? awayTeamId;
-    const resolvedOpponentName = returnedState?.opponentName ?? newGameOpponent.trim();
-    const inferredMyTeam = rosterTeams.find((team) => team.id === resolvedHomeTeamId || team.id === resolvedAwayTeamId) ?? selectedTeam;
-    const resolvedMyTeamId = inferredMyTeam?.id ?? newGameMyTeamId;
-    const resolvedVcSide = resolvedMyTeamId === resolvedAwayTeamId ? "away" : "home";
-    const resolvedTeamColor = normalizeTeamColor(inferredMyTeam?.teamColor) ?? myTeamColor;
-    const resolvedHomeColor = resolvedVcSide === "home" ? resolvedTeamColor : homeColor;
-    const resolvedAwayColor = resolvedVcSide === "away" ? resolvedTeamColor : awayColor;
-
-    setGameId(targetGameId);
-    setSetupNames({
-      myTeamId: resolvedMyTeamId,
-      myTeamName: inferredMyTeam?.name ?? "",
-      opponentName: resolvedOpponentName,
-      vcSide: resolvedVcSide,
-      homeColor: resolvedHomeColor,
-      awayColor: resolvedAwayColor,
-    });
-
-    const params = new URLSearchParams(window.location.search);
-    params.set("gameId", targetGameId);
-    params.set("myTeamId", resolvedMyTeamId);
-    if (inferredMyTeam?.name) params.set("myTeamName", inferredMyTeam.name);
-    params.set("opponentName", resolvedOpponentName);
-    params.set("vcSide", resolvedVcSide);
-    params.set("homeColor", resolvedHomeColor);
-    params.set("awayColor", resolvedAwayColor);
-    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
-  }
-
   return (
     <>
       {showTutorial && <TutorialOverlay onDismiss={() => onDismissTutorial?.()} />}
@@ -2364,7 +2235,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
               <input
                 value={newGameOpponent}
                 onChange={e => setNewGameOpponent(e.target.value)}
-                placeholder="e.g. Opponent FC"
+                placeholder="e.g. Knappa"
                 style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
               />
             </div>
@@ -2386,12 +2257,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                   key={color}
                   type="button"
                   onClick={() => setNewGameOppColor(color)}
-                  className={`coach-color-swatch${newGameOppColor === color ? " selected" : ""}`}
-                  style={{ background: color }}
+                  style={{ width: 28, height: 28, borderRadius: "50%", background: color, border: newGameOppColor === color ? "2px solid white" : "2px solid rgba(255,255,255,0.2)", cursor: "pointer", flexShrink: 0 }}
                   title={color}
                 />
               ))}
-              <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} className="coach-color-input" title="Custom color" />
+              <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} style={{ height: 28, width: 36, borderRadius: 8, padding: "0 2px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.2)", background: "transparent" }} />
             </div>
           </div>
 
@@ -2402,7 +2272,39 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             disabled={!newGameMyTeamId || !newGameOpponent.trim()}
             style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim()) ? 0.45 : 1 }}
             onClick={() => {
-              void launchGame();
+              const today = new Date().toISOString().slice(0, 10);
+              const newId = generateGameId(newGameOpponent, today);
+              const selectedTeam = rosterTeams.find(t => t.id === newGameMyTeamId);
+              const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
+              const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
+              const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
+              const oppSlug = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
+              const homeTeamId = newGameVcSide === "home" ? newGameMyTeamId : oppSlug;
+              const awayTeamId = newGameVcSide === "away" ? newGameMyTeamId : oppSlug;
+              // Create the game on the backend so state/insights/ai-settings endpoints work immediately
+              void fetch(`${apiBase}/api/games`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+                body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName: newGameOpponent.trim() }),
+              }).catch(() => { /* will retry when hydrate runs */ });
+              setGameId(newId);
+              setSetupNames({
+                myTeamId: newGameMyTeamId,
+                myTeamName: selectedTeam?.name ?? "",
+                opponentName: newGameOpponent.trim(),
+                vcSide: newGameVcSide,
+                homeColor,
+                awayColor,
+              });
+              const params = new URLSearchParams(window.location.search);
+              params.set("gameId", newId);
+              params.set("myTeamId", newGameMyTeamId);
+              if (selectedTeam?.name) params.set("myTeamName", selectedTeam.name);
+              params.set("opponentName", newGameOpponent.trim());
+              params.set("vcSide", newGameVcSide);
+              params.set("homeColor", homeColor);
+              params.set("awayColor", awayColor);
+              window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
             }}
           >
             Launch Game

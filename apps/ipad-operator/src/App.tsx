@@ -1,13 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
-import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent, type RosterTeam } from "@bta/shared-schema";
+import {
+  getPeriodDefaultClock,
+  isLocalNetworkHost,
+  isOvertimePeriod,
+  normalizeTeamColor,
+  type FoulType,
+  type GameEvent,
+  type RosterTeam,
+  type ShotZone,
+  type TurnoverType
+} from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
+  buildAuthHeaders,
   convertRosterTeamToAppTeam,
   DEFAULT_SCHOOL_ID,
   fetchTeamsFromRealtime,
-  isLocalNetworkHost,
 } from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
@@ -41,6 +51,50 @@ const OPPONENT_TRACK_STAT_OPTIONS = [
 ] as const;
 type OpponentTrackStat = (typeof OPPONENT_TRACK_STAT_OPTIONS)[number];
 
+const TWO_POINT_ZONES = ["rim", "paint", "midrange"] as const;
+const THREE_POINT_ZONES = ["corner_three", "above_break_three"] as const;
+const FOUL_TYPE_OPTIONS: readonly FoulType[] = ["personal", "shooting", "offensive", "technical", "flagrant"] as const;
+const TURNOVER_TYPE_OPTIONS: readonly TurnoverType[] = ["bad_pass", "traveling", "double_dribble", "out_of_bounds", "offensive_foul", "steal", "other"] as const;
+
+function defaultZoneForPoints(points: 2 | 3): ShotZone {
+  return points === 3 ? "above_break_three" : "paint";
+}
+
+function zoneLabel(zone: ShotZone): string {
+  switch (zone) {
+    case "rim": return "Rim";
+    case "paint": return "Paint";
+    case "midrange": return "Mid";
+    case "corner_three": return "Corner 3";
+    case "above_break_three": return "AB 3";
+    default: return zone;
+  }
+}
+
+function foulTypeLabel(foulType: FoulType): string {
+  switch (foulType) {
+    case "personal": return "Personal";
+    case "shooting": return "Shooting";
+    case "offensive": return "Offensive";
+    case "technical": return "Technical";
+    case "flagrant": return "Flagrant";
+    default: return foulType;
+  }
+}
+
+function turnoverTypeLabel(turnoverType: TurnoverType): string {
+  switch (turnoverType) {
+    case "bad_pass": return "Bad Pass";
+    case "traveling": return "Travel";
+    case "double_dribble": return "Double Dribble";
+    case "out_of_bounds": return "Out of Bounds";
+    case "offensive_foul": return "Offensive Foul";
+    case "steal": return "Steal";
+    case "other": return "Other";
+    default: return turnoverType;
+  }
+}
+
 const DEFAULT_OPPONENT_TRACK_STATS: OpponentTrackStat[] = [...OPPONENT_TRACK_STAT_OPTIONS];
 
 function normalizeOpponentTrackStats(value: string[] | undefined): OpponentTrackStat[] {
@@ -71,19 +125,7 @@ function getAudioContextCtor(): (new () => AudioContext) | undefined {
  *  - Local auth tokens (bta.*) are sent as `Authorization: Bearer`.
  *  - Plain API keys are sent as `x-api-key`. */
 function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
-  if (schoolId) {
-    headers["x-school-id"] = schoolId;
-  }
-  if (setup.apiKey) {
-    if (setup.apiKey.startsWith("bta.")) {
-      headers["Authorization"] = `Bearer ${setup.apiKey}`;
-    } else {
-      headers["x-api-key"] = setup.apiKey;
-    }
-  }
-  return headers;
+  return buildAuthHeaders(setup, { allowBearerToken: true });
 }
 /** Returns RequestInit for a plain GET request, adding the API key header when configured. */
 function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
@@ -801,9 +843,16 @@ function computeTeamStats(events: GameEvent[], teamId: string) {
 
 // ---- Modal types ----
 type Modal =
-  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean; editContext?: EventEditContext }
+  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean; zone: ShotZone; editContext?: EventEditContext }
   | { kind: "freeThrow"; teamId: TeamSide; made: boolean; editContext?: EventEditContext }
-  | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide; editContext?: EventEditContext }
+  | {
+      kind: "stat";
+      stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul";
+      teamId: TeamSide;
+      foulType?: FoulType;
+      turnoverType?: TurnoverType;
+      editContext?: EventEditContext;
+    }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
   | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
   | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; editContext?: EventEditContext }
@@ -1150,6 +1199,7 @@ export function App() {
   const isFlushingRef = useRef(false);
   const flushBackoffUntilRef = useRef(0);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
+  const sequenceRef = useRef(1);
 
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
@@ -1186,6 +1236,11 @@ export function App() {
   useEffect(() => {
     setPossessionOverrideTeamId(undefined);
   }, [gameId]);
+
+  useEffect(() => {
+    sequenceRef.current = sequence;
+  }, [sequence]);
+
   const [submitMessage, setSubmitMessage] = useState<string>("Ready to save final stats to the dashboard.");
   const [postGameNameInput, setPostGameNameInput] = useState("");
   const [postGameOpponentInput, setPostGameOpponentInput] = useState("");
@@ -1560,16 +1615,94 @@ export function App() {
   useEffect(() => { savePending(gameId, pendingEvents); }, [gameId, pendingEvents]);
   useEffect(() => { saveSeq(gameId, sequence); }, [gameId, sequence]);
 
+  function buildRealtimeGameRegistrationPayload(activeSetup: GameSetup, gid: string): {
+    gameId: string;
+    homeTeamId: string;
+    awayTeamId: string;
+    opponentName: string;
+    opponentTeamId: string;
+    startingLineupByTeam?: Record<string, string[]>;
+    aiContext: {
+      clockEnabled: boolean;
+      opponentStatsLimited: boolean;
+      opponentTrackedStats: string[];
+      preGameNotes?: string;
+    };
+  } {
+    const vcSide = activeSetup.vcSide ?? "home";
+    const opponentName = activeSetup.opponent?.trim() || "";
+    const opponentTeamId = opponentName
+      ? `team-${opponentName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`
+      : "opponent";
+    const homeTeamId = vcSide === "home"
+      ? activeSetup.myTeamId || "team-home"
+      : opponentTeamId;
+    const awayTeamId = vcSide === "away"
+      ? activeSetup.myTeamId || "team-away"
+      : opponentTeamId;
+    const trackedTeamId = vcSide === "home" ? homeTeamId : awayTeamId;
+    const startingLineup = Array.isArray(activeSetup.startingLineup)
+      ? [...new Set(activeSetup.startingLineup.map((playerId) => String(playerId).trim()).filter(Boolean))].slice(0, 5)
+      : [];
+    const startingLineupByTeam = startingLineup.length > 0
+      ? { [trackedTeamId]: startingLineup }
+      : undefined;
+
+    return {
+      gameId: gid,
+      homeTeamId,
+      awayTeamId,
+      opponentName,
+      opponentTeamId,
+      startingLineupByTeam,
+      aiContext: {
+        ...buildAiContextFromSetup(activeSetup),
+        preGameNotes: preGameNotes.trim() || undefined,
+      },
+    };
+  }
+
+  async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
+    const latest = loadAppData();
+    const apiUrl = latest.gameSetup.apiUrl?.trim();
+    if (!apiUrl || !gid) {
+      return false;
+    }
+
+    try {
+      const res = await fetch(`${apiUrl}/api/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
+        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid)),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function submitEvent(event: GameEvent): Promise<boolean> {
     const normalizedEvent = normalizeEventTeamId(event);
     try {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, {
+      const submitWithCurrentPayload = () => fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(normalizedEvent),
       });
+
+      let res = await submitWithCurrentPayload();
       if (!res.ok) {
-        const errorMsg = `Submit failed (${res.status}). Check connection and tap Submit again.`;
+        const firstErrorBody = (await res.text().catch(() => "")).trim();
+        const missingGame = res.status === 404 || /game not found/i.test(firstErrorBody);
+        if (missingGame && await ensureRealtimeGameExists(gameId)) {
+          res = await submitWithCurrentPayload();
+        }
+      }
+
+      if (!res.ok) {
+        const responseBody = (await res.text().catch(() => "")).trim();
+        const details = responseBody ? ` ${responseBody}` : "";
+        const errorMsg = `Submit failed (${res.status}).${details}`;
         showInlineNotice(errorMsg, "error", 10000);
         return false;
       }
@@ -1740,14 +1873,17 @@ export function App() {
   }, [appData.gameSetup.clockEnabled, clockRunning, trackClock]);
 
   async function postEvent(event: GameEvent) {
-    const next = event.sequence + 1;
+    const reservedSequence = sequenceRef.current;
+    const next = reservedSequence + 1;
+    sequenceRef.current = next;
     setSequence(next);
     saveSeq(gameId, next);
+    const eventWithReservedSequence = normalizeEventTeamId({ ...event, sequence: reservedSequence });
     // Optimistic update: add to pending immediately so score updates instantly
-    setPendingEvents(cur => [...cur, event].sort((a, b) => a.sequence - b.sequence));
+    setPendingEvents(cur => [...cur, eventWithReservedSequence].sort((a, b) => a.sequence - b.sequence));
     triggerFeedback("event", 30);
     // Then submit in background
-    await submitEvent(event);
+    await submitEvent(eventWithReservedSequence);
   }
 
   async function undoLast() {
@@ -1784,44 +1920,11 @@ export function App() {
     const latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
 
-    // Derive team IDs from the latest saved setup
-    const latestVcSide = latest.gameSetup.vcSide ?? "home";
-    const latestOpponent = latest.gameSetup.opponent?.trim() || "";
-    const latestOpponentTeamId = latestOpponent
-      ? `team-${latestOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`
-      : "opponent";
-    const latestHomeTeamId =
-      latestVcSide === "home"
-        ? latest.gameSetup.myTeamId || "team-home"
-        : latestOpponentTeamId;
-    const latestAwayTeamId =
-      latestVcSide === "away"
-        ? latest.gameSetup.myTeamId || "team-away"
-        : latestOpponentTeamId;
-    const latestStartingLineup = Array.isArray(latest.gameSetup.startingLineup)
-      ? [...new Set(latest.gameSetup.startingLineup.map((playerId) => String(playerId).trim()).filter(Boolean))].slice(0, 5)
-      : [];
-    const trackedTeamId = latestVcSide === "home" ? latestHomeTeamId : latestAwayTeamId;
-    const startingLineupByTeam = latestStartingLineup.length > 0
-      ? { [trackedTeamId]: latestStartingLineup }
-      : undefined;
-
     try {
       const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
-        body: JSON.stringify({
-          gameId: gid,
-          homeTeamId: latestHomeTeamId,
-          awayTeamId: latestAwayTeamId,
-          opponentName: latestOpponent,
-          opponentTeamId: latestOpponentTeamId,
-          startingLineupByTeam,
-          aiContext: {
-            ...buildAiContextFromSetup(latest.gameSetup),
-            preGameNotes: preGameNotes.trim() || undefined,
-          },
-        }),
+        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid)),
       });
 
       if (!res.ok) {
@@ -2610,7 +2713,14 @@ export function App() {
       case "shot_attempt": {
         const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
         if (!teamSide) return null;
-        return { kind: "shot", teamId: teamSide, points: target.event.points, made: target.event.made, editContext };
+        return {
+          kind: "shot",
+          teamId: teamSide,
+          points: target.event.points,
+          made: target.event.made,
+          zone: target.event.zone,
+          editContext
+        };
       }
       case "free_throw_attempt": {
         const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
@@ -2633,7 +2743,14 @@ export function App() {
           : target.event.type === "foul"
             ? "foul"
             : target.event.type;
-        return { kind: "stat", stat, teamId: teamSide, editContext };
+        return {
+          kind: "stat",
+          stat,
+          teamId: teamSide,
+          foulType: target.event.type === "foul" ? target.event.foulType : undefined,
+          turnoverType: target.event.type === "turnover" ? target.event.turnoverType : undefined,
+          editContext
+        };
       }
       case "assist": {
         const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
@@ -2846,7 +2963,7 @@ export function App() {
         playerId,
         made: modal.made,
         points: modal.points,
-        zone: modal.points === 3 ? "above_break_three" : "paint",
+        zone: modal.zone,
       } as GameEvent, modal.editContext);
       return;
     }
@@ -2860,7 +2977,7 @@ export function App() {
       playerId,
       made: shotMade,
       points: shotPoints,
-      zone: shotPoints === 3 ? "above_break_three" : "paint",
+      zone: modal.zone,
     } as GameEvent);
     closeModal();
     // Chain: auto-possession + contextual next prompt
@@ -2930,8 +3047,8 @@ export function App() {
     let event: GameEvent | null = null;
     if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false };
     if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  };
-    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: "personal" };
-    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: "bad_pass" };
+    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: modal.foulType ?? "personal" };
+    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: modal.turnoverType ?? "bad_pass" };
     if (stat === "steal") {
       if (modal.editContext) {
         void saveEditedEvent({
@@ -2953,7 +3070,9 @@ export function App() {
           teamId: otherTeamId,
           type: "turnover",
           playerId: otherTeamId,
-          turnoverType: "bad_pass",
+          turnoverType: "steal",
+          // Supports both full roster ids and team-level fallback ids.
+          forcedByPlayerId: playerId,
         };
         void postEvent(turnoverEvent);
       }
@@ -3149,7 +3268,7 @@ export function App() {
       void postEvent({ ...b, teamId, type: "steal", playerId: player.id } as GameEvent);
       const otherTeamId = resolveTeamId(vcSideSetup === "home" ? "away" : "home");
       if (isOpponentStatEnabled("turnover")) {
-        void postEvent({ ...base(sequence + 1), teamId: otherTeamId, type: "turnover", playerId: otherTeamId, turnoverType: "bad_pass" } as GameEvent);
+        void postEvent({ ...base(sequence + 1), teamId: otherTeamId, type: "turnover", playerId: otherTeamId, turnoverType: "steal", forcedByPlayerId: player.id } as GameEvent);
       }
       autoEmitPossession(teamId);
       return;
@@ -3195,6 +3314,19 @@ export function App() {
               <button className={`toggle-btn ${modal.made ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, made: true })}>Made</button>
               <button className={`toggle-btn ${!modal.made ? "t-red" : ""}`} onClick={() => setModal({ ...modal, made: false })}>Miss</button>
             </div>
+            {modal.kind === "shot" && (
+              <div className="shot-zone-row">
+                {(modal.points === 3 ? THREE_POINT_ZONES : TWO_POINT_ZONES).map((zone) => (
+                  <button
+                    key={zone}
+                    className={`zone-btn ${modal.zone === zone ? "active" : ""}`}
+                    onClick={() => setModal({ ...modal, zone })}
+                  >
+                    {zoneLabel(zone)}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="player-list">
               {players.length === 0 && !allowTeamOnlyForOpponent && <p className="no-players">No players on court yet</p>}
               {players.map(p => (
@@ -3265,6 +3397,32 @@ export function App() {
               <button className="modal-close" onClick={closeModal}>X</button>
             </div>
             {renderEditDeleteAction(modal.editContext ?? null)}
+            {modal.stat === "foul" && (
+              <div className="modal-subtype-row">
+                {FOUL_TYPE_OPTIONS.map((foulType) => (
+                  <button
+                    key={foulType}
+                    className={`modal-subtype-btn ${(modal.foulType ?? "personal") === foulType ? "active" : ""}`}
+                    onClick={() => setModal({ ...modal, foulType })}
+                  >
+                    {foulTypeLabel(foulType)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {modal.stat === "turnover" && (
+              <div className="modal-subtype-row">
+                {TURNOVER_TYPE_OPTIONS.map((turnoverType) => (
+                  <button
+                    key={turnoverType}
+                    className={`modal-subtype-btn ${(modal.turnoverType ?? "bad_pass") === turnoverType ? "active" : ""}`}
+                    onClick={() => setModal({ ...modal, turnoverType })}
+                  >
+                    {turnoverTypeLabel(turnoverType)}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="player-list">
               {isTrackedSelection ? (
                 <>
@@ -4618,8 +4776,8 @@ export function App() {
               <div className="classic-score-grid" role="group" aria-label="Scoring controls by team">
                 <div className="classic-score-col">
                   <div className="shot-grid-team-label shot-grid-team-label-my" title={`Scoring for ${myName}`}>{myName}</div>
-                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true })}>2pt</button>
-                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true })}>3pt</button>
+                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) })}>2pt</button>
+                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) })}>3pt</button>
                   <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>1pt</button>
                 </div>
 
@@ -4628,13 +4786,13 @@ export function App() {
                   <button
                     className={`circle classic-score-btn ${oppColorClass}`}
                     disabled={!canTrackOppPoints}
-                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true })}
+                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true, zone: defaultZoneForPoints(2) })}
                     title={canTrackOppPoints ? `Add 2PT for ${oppName}` : "Enable opponent points tracking in settings"}
                   >2pt</button>
                   <button
                     className={`circle classic-score-btn ${oppColorClass}`}
                     disabled={!canTrackOppPoints}
-                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true })}
+                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true, zone: defaultZoneForPoints(3) })}
                     title={canTrackOppPoints ? `Add 3PT for ${oppName}` : "Enable opponent points tracking in settings"}
                   >3pt</button>
                   <button

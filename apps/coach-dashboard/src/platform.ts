@@ -1,19 +1,7 @@
+import { isLocalNetworkHost } from "@bta/shared-schema";
+
 const defaultHost = typeof window !== "undefined" ? (window.location.hostname || "localhost") : "localhost";
 const defaultOrigin = typeof window !== "undefined" ? (window.location.origin || `http://${defaultHost}`) : `http://${defaultHost}`;
-
-function isLocalNetworkHost(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase();
-  return normalized === "localhost"
-    || normalized === "0.0.0.0"
-    || normalized === "::1"
-    || normalized === "[::1]"
-    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
-    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
-    || normalized.endsWith(".local")
-    || !normalized.includes(".");
-}
 
 export function resolveDefaultAppBase(hostname: string, origin: string, port: number): string {
   if (isLocalNetworkHost(hostname)) {

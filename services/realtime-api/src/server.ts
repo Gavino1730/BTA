@@ -3453,7 +3453,12 @@ app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRate
 
     res.status(201).json({ event, state, insights });
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "invalid event" });
+    const message = error instanceof Error ? error.message : "invalid event";
+    if (/^Game not found:/i.test(message)) {
+      res.status(404).json({ error: message });
+      return;
+    }
+    res.status(400).json({ error: message });
   }
 });
 

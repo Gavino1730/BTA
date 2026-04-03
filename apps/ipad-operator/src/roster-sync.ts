@@ -1,4 +1,4 @@
-import type { RosterTeam } from "@bta/shared-schema";
+import { isLocalNetworkHost, type RosterTeam } from "@bta/shared-schema";
 
 export interface Team {
   id: string;
@@ -20,20 +20,6 @@ export interface Player {
   notes?: string;
 }
 
-export function isLocalNetworkHost(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase();
-  return normalized === "localhost"
-    || normalized === "0.0.0.0"
-    || normalized === "::1"
-    || normalized === "[::1]"
-    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
-    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
-    || normalized.endsWith(".local")
-    || !normalized.includes(".");
-}
-
 function resolveDefaultSchoolId(hostname: string): string {
   return isLocalNetworkHost(hostname) ? "default" : "";
 }
@@ -43,19 +29,30 @@ export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID
   .toString()
   .trim();
 
-function buildHeaders(apiKey?: string, schoolId?: string, withJson = false): Record<string, string> {
+export function buildAuthHeaders(
+  setup: { apiKey?: string; schoolId?: string },
+  options?: { withJson?: boolean; allowBearerToken?: boolean }
+): Record<string, string> {
   const headers: Record<string, string> = {};
-  const resolvedSchoolId = schoolId?.trim() || DEFAULT_SCHOOL_ID;
+  const resolvedSchoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
   if (resolvedSchoolId) {
     headers["x-school-id"] = resolvedSchoolId;
   }
-  if (withJson) {
+  if (options?.withJson) {
     headers["Content-Type"] = "application/json";
   }
-  if (apiKey) {
-    headers["x-api-key"] = apiKey;
+  if (setup.apiKey) {
+    if (options?.allowBearerToken && setup.apiKey.startsWith("bta.")) {
+      headers["Authorization"] = `Bearer ${setup.apiKey}`;
+    } else {
+      headers["x-api-key"] = setup.apiKey;
+    }
   }
   return headers;
+}
+
+function buildHeaders(apiKey?: string, schoolId?: string, withJson = false): Record<string, string> {
+  return buildAuthHeaders({ apiKey, schoolId }, { withJson, allowBearerToken: false });
 }
 
 /**

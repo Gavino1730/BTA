@@ -40,6 +40,8 @@ Last updated: April 2, 2026.
 - GPT refresh throttled: every **8 events** (was 3) / **45 seconds** (was 20). Rules engine covers moment-to-moment; GPT reserved for synthesis. Both still env-overridable via `BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS` and `BTA_LIVE_INSIGHT_MIN_INTERVAL_MS`.
 
 ### iPad Operator (apps/ipad-operator)
+- **Shot Zone Capture**: Added zone chips to shot-entry modal so each shot records a real NFHS zone (`rim`, `paint`, `midrange`, `corner_three`, `above_break_three`) instead of hardcoded defaults. Zone options auto-filter by shot value (2PT vs 3PT) and preselect sensible defaults for speed.
+- **Foul/Turnover Type Capture**: Stat modal now includes quick subtype chips for fouls (`personal`, `shooting`, `offensive`, `technical`, `flagrant`) and turnovers (`bad_pass`, `traveling`, `double_dribble`, `out_of_bounds`, `offensive_foul`, `steal`, `other`) so events are no longer forced to defaults.
 - **Matchup Assignment UI**: Two-step modal flow — tap "match" in the stat grid (or "MTCH" on a roster player) to pick a defender then enter the opponent's jersey number. Posts a `matchup_assignment` event with `defenderPlayerId` and `offensivePlayerId = opp-{jersey}`. Indigo-themed button matches the existing action palette.
 - **Periodic offline flush**: every 15s during a live game, if `navigator.onLine` and pending events exist, retries the queue. Fixes iOS/mobile case where the native `online` event never fires after reconnect.
 - **Instant undo**: removed confirmation dialog — `undoLast()` removes the last event immediately with haptic feedback and a toast. No friction under pressure.
@@ -70,18 +72,18 @@ Last updated: April 2, 2026.
 
 ## Code Audit — Cleanup (April 2, 2026)
 
-Found during static analysis pass. All items resolved except two noted below.
+Found during static analysis pass. All items resolved.
 
 ### ✅ Fixed
 - **`getRosterTeams()`** in `services/realtime-api/src/store.ts` — dead export removed; only `getRosterTeamsByScope()` remains.
 - **`SCHOOL_ID`** constant in `apps/coach-dashboard/src/platform.ts` — unused export removed.
 - **`apps/coach-dashboard/src/App.tsx`** — removed stale imports of `formatBonusIndicator`, `formatDashboardClock`, `formatDashboardEventMeta`; then removed those dead helpers from `display.ts` and simplified `display.test.ts` to only cover the remaining live helper (`formatFoulTroubleLabel`).
-- **`isLocalNetworkHost` / `DEFAULT_SCHOOL_ID` in ipad-operator** — deduplicated: both are now exported from `roster-sync.ts` and imported by `App.tsx`; local copies removed from `App.tsx`.
+- **`isLocalNetworkHost` cross-app duplication** — consolidated into `@bta/shared-schema` (`packages/shared-schema/src/validators.ts`) and now consumed by both `coach-dashboard/src/platform.ts` and `ipad-operator/src/roster-sync.ts` / `App.tsx`.
 - **`RosterPlayer` / `RosterTeam` interfaces** — local definitions removed from `services/realtime-api/src/store.ts`; both now imported from `@bta/shared-schema` (canonical source) and re-exported so downstream imports are unchanged.
 - **`apps/ipad-operator/src/App.tsx`** — removed six unused imports from `roster-sync.ts` (team/player CRUD helpers were imported but never invoked).
 - **`services/insight-engine/src/config.ts`** — deleted orphaned module (unused thresholds/helpers with zero imports across the workspace).
+- **`normalizeSchoolId` in realtime-api** — deduplicated into shared internal helper `services/realtime-api/src/school-id.ts` and consumed by both `store.ts` and `persistence.ts`.
+- **`apiKeyHeader` vs `buildHeaders` in iPad operator** — consolidated into shared `buildAuthHeaders` in `apps/ipad-operator/src/roster-sync.ts`; behavior preserved via options (`allowBearerToken` for app requests, x-api-key-only for roster-sync requests).
 
 ### Deferred / Won't Fix
-- **`normalizeSchoolId` in `persistence.ts` and `store.ts`** — both are private internal helpers with `string` return type (falling back to `"default"`), distinct from the `tenant-guards.ts` version which returns `string | undefined`. Consolidating would require a circular value import (`store` ↔ `persistence`); leave as private copies.
-- **`apiKeyHeader` vs `buildHeaders`** — `App.tsx`'s `apiKeyHeader` handles `bta.*` bearer tokens via `Authorization: Bearer`; `roster-sync.ts`'s `buildHeaders` only emits `x-api-key`. Different semantics — leave separate.
-- **`isLocalNetworkHost` cross-app** — `coach-dashboard/src/platform.ts` still has its own copy. Sharing across apps would require adding a browser utility to `packages/shared-schema`; low enough impact to defer.
+- None.
