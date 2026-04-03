@@ -21,7 +21,10 @@ export type InsightType =
   | "leverage"
   | "matchup_exploitation"
   | "three_point_streak"
-  | "foul_to_give";
+  | "foul_to_give"
+  | "opponent_hot_hand"
+  | "cold_shooter"
+  | "transition_momentum";
 
 export interface LiveInsight {
   id: string;
@@ -615,6 +618,48 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   }
 
   // ──────────────────────────────────────────────────────────────────
+  // 10b. Opponent hot hand — an opponent player is shooting efficiently.
+  //      Prompts a defensive adjustment or matchup switch.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && state.opponentTeamId) {
+    const OPP_HOT_WINDOW = 15;
+    const opponentTeamId = state.opponentTeamId;
+    const recentOppShots = allEvents
+      .filter((e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+        e.type === "shot_attempt" && e.teamId === opponentTeamId
+      )
+      .slice(-OPP_HOT_WINDOW);
+
+    const oppPlayerWindow = new Map<string, { makes: number; attempts: number }>();
+    for (const shot of recentOppShots) {
+      const entry = oppPlayerWindow.get(shot.playerId) ?? { makes: 0, attempts: 0 };
+      entry.attempts++;
+      if (shot.made) entry.makes++;
+      oppPlayerWindow.set(shot.playerId, entry);
+    }
+
+    for (const [playerId, { makes, attempts }] of oppPlayerWindow.entries()) {
+      if (attempts >= 4 && makes >= 3 && makes / attempts >= 0.6) {
+        const pctStr = Math.round((makes / attempts) * 100);
+        const oppLabel = resolveTeamLabel(state, opponentTeamId);
+        const playerLabel = resolvePlayerLabel(playerId, oppLabel, context);
+        insights.push({
+          id: `${latestEvent.id}-opp-hot-${playerId}`,
+          gameId: latestEvent.gameId,
+          type: "opponent_hot_hand",
+          priority: "important",
+          createdAtIso: now,
+          confidence: "high",
+          message: `⚠️ ${playerLabel} is on fire — ${makes}/${attempts} recent shots (${pctStr}%)`,
+          explanation: `${playerLabel} is shooting with high efficiency right now. Lock them down — send a better defender, deny catches, or shade help their way.`,
+          relatedTeamId: opponentTeamId,
+          relatedPlayerId: playerId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
   // 11. Scoring drought — our team has gone cold from the field
   // ──────────────────────────────────────────────────────────────────
   if (ourTeamId) {
@@ -638,6 +683,46 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         explanation: "Offense has gone cold. Try a set play for a rim attack, move the ball inside, or call a timeout to reset the half-court offense.",
         relatedTeamId: ourTeamId
       });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 20. Cold shooter — an individual player is 0-for-4 or worse in
+  //     recent attempts. Coach should reduce their shot volume.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId) {
+    const COLD_WINDOW = 5;
+    const recentOurShotsForCold = allEvents
+      .filter((e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+        e.type === "shot_attempt" && e.teamId === ourTeamId
+      )
+      .slice(-COLD_WINDOW * 3); // wider scan so low-volume players show up
+
+    const coldWindow = new Map<string, { makes: number; attempts: number }>();
+    for (const shot of recentOurShotsForCold) {
+      const entry = coldWindow.get(shot.playerId) ?? { makes: 0, attempts: 0 };
+      entry.attempts++;
+      if (shot.made) entry.makes++;
+      coldWindow.set(shot.playerId, entry);
+    }
+
+    for (const [playerId, { makes, attempts }] of coldWindow.entries()) {
+      if (attempts >= 4 && makes === 0) {
+        const ourLabel = resolveTeamLabel(state, ourTeamId);
+        const playerLabel = resolvePlayerLabel(playerId, ourLabel, context);
+        insights.push({
+          id: `${latestEvent.id}-cold-${playerId}`,
+          gameId: latestEvent.gameId,
+          type: "cold_shooter",
+          priority: "info",
+          createdAtIso: now,
+          confidence: "medium",
+          message: `🥶 ${playerLabel} 0-for-${attempts} in recent looks — reduce shot volume`,
+          explanation: `${playerLabel} is struggling from the field right now. Consider running sets for other players until they can get an easy look to rebuild rhythm.`,
+          relatedTeamId: ourTeamId,
+          relatedPlayerId: playerId
+        });
+      }
     }
   }
 
@@ -906,6 +991,48 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
           relatedTeamId: ourTeamId
         });
       }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 21. Transition momentum — opponent converting turnovers/steals
+  //     into quick buckets. Signals a need for defensive discipline.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && state.opponentTeamId) {
+    const opponentTeamId = state.opponentTeamId;
+    const TRANSITION_WINDOW = 20;
+    const recentForTransition = allEvents.slice(-TRANSITION_WINDOW);
+    let transitionScores = 0;
+
+    for (let i = 0; i < recentForTransition.length; i++) {
+      const e = recentForTransition[i];
+      const isTrigger =
+        (e.type === "steal" && e.teamId === opponentTeamId) ||
+        (e.type === "turnover" && e.teamId === ourTeamId);
+      if (!isTrigger) continue;
+      // Count as transition if opponent scores within the next 3 events
+      for (let j = i + 1; j <= i + 3 && j < recentForTransition.length; j++) {
+        const next = recentForTransition[j];
+        if (next.type === "shot_attempt" && next.teamId === opponentTeamId && next.made) {
+          transitionScores++;
+          break;
+        }
+      }
+    }
+
+    if (transitionScores >= 2) {
+      const oppLabel = resolveTeamLabel(state, opponentTeamId);
+      insights.push({
+        id: `${latestEvent.id}-transition`,
+        gameId: latestEvent.gameId,
+        type: "transition_momentum",
+        priority: "important",
+        createdAtIso: now,
+        confidence: "medium",
+        message: `🏃 ${oppLabel} converting turnovers into transition points (${transitionScores}x)`,
+        explanation: `${oppLabel} has scored quickly off ${transitionScores} live-ball turnovers in recent possessions. Slow down after misses and turnovers — get organized in transition defense before the opponent can push.`,
+        relatedTeamId: opponentTeamId
+      });
     }
   }
 

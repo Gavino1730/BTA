@@ -1639,6 +1639,9 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       matchup_exploitation: "Matchup",
       three_point_streak: "3PT Alert",
       foul_to_give: "Fouls to Give",
+      opponent_hot_hand: "Opp Hot Hand",
+      cold_shooter: "Cold Shooter",
+      transition_momentum: "Transition",
     };
     if (labels[type]) return labels[type];
 

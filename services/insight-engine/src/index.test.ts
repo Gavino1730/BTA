@@ -592,4 +592,131 @@ describe("insight engine", () => {
     const insights = generateInsights({ state, latestEvent: scoreEvent, clockEnabled: true });
     expect(insights.some((i) => i.type === "foul_to_give")).toBe(true);
   });
+
+  it("emits opponent_hot_hand when an opponent player is shooting hot in recent attempts", () => {
+    const makeOppShot = (seq: number, made: boolean): GameEvent => ({
+      id: `opp-shot-${seq}`,
+      schoolId: "test-school",
+      gameId: "game-opp-hot",
+      sequence: seq,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - seq,
+      teamId: "away",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "a1",
+      made,
+      points: 2 as const,
+      zone: "paint" as const,
+    });
+    // padding score so pre-game guard is bypassed
+    const paddingScore: GameEvent = {
+      id: "opp-hot-pad",
+      schoolId: "test-school",
+      gameId: "game-opp-hot",
+      sequence: 0,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 490,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: true,
+      points: 2 as const,
+      zone: "paint" as const,
+    };
+    // opp player a1 goes 4-for-5 in recent shots
+    const oppShots = [1, 2, 3, 4, 5].map((seq) => makeOppShot(seq, seq !== 3));
+    const state = replayEvents(
+      createInitialGameState("game-opp-hot", "home", "away"),
+      [paddingScore, ...oppShots]
+    );
+    state.opponentTeamId = "away";
+    const insights = generateInsights({ state, latestEvent: oppShots.at(-1)! });
+    expect(insights.some((i) => i.type === "opponent_hot_hand")).toBe(true);
+  });
+
+  it("emits cold_shooter when our player is 0-for-4 in recent attempts", () => {
+    const makeOurShot = (seq: number): GameEvent => ({
+      id: `cold-${seq}`,
+      schoolId: "test-school",
+      gameId: "game-cold",
+      sequence: seq,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 400 - seq,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h2",
+      made: false,
+      points: 2 as const,
+      zone: "paint" as const,
+    });
+    const paddingScore: GameEvent = {
+      id: "cold-pad",
+      schoolId: "test-school",
+      gameId: "game-cold",
+      sequence: 0,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q2" as const,
+      clockSecondsRemaining: 490,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt" as const,
+      playerId: "h1",
+      made: true,
+      points: 2 as const,
+      zone: "paint" as const,
+    };
+    // h2 misses 4 in a row (seqs 1-4)
+    const misses = [1, 2, 3, 4].map(makeOurShot);
+    const state = replayEvents(
+      createInitialGameState("game-cold", "home", "away"),
+      [paddingScore, ...misses]
+    );
+    state.opponentTeamId = "away";
+    const insights = generateInsights({ state, latestEvent: misses.at(-1)! });
+    expect(insights.some((i) => i.type === "cold_shooter")).toBe(true);
+  });
+
+  it("emits transition_momentum when opponent scores quickly off 2+ turnovers/steals", () => {
+    const baseEvent = (seq: number, overrides: Partial<GameEvent>): GameEvent =>
+      ({
+        id: `tr-${seq}`,
+        schoolId: "test-school",
+        gameId: "game-tr",
+        sequence: seq,
+        timestampIso: "2026-03-18T20:00:00.000Z",
+        period: "Q2" as const,
+        clockSecondsRemaining: 400 - seq,
+        teamId: "home",
+        operatorId: "op-1",
+        ...overrides,
+      } as GameEvent);
+
+    const paddingScore = baseEvent(0, {
+      teamId: "home",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: true,
+      points: 2,
+      zone: "paint",
+    } as Partial<GameEvent>);
+
+    // Pattern: our turnover → opponent quickly scores, twice
+    const events: GameEvent[] = [
+      paddingScore,
+      baseEvent(1, { teamId: "home", type: "turnover", playerId: "h1", turnoverType: "bad_pass" } as Partial<GameEvent>),
+      baseEvent(2, { teamId: "away", type: "shot_attempt", playerId: "a1", made: true, points: 2, zone: "paint" } as Partial<GameEvent>),
+      baseEvent(3, { teamId: "home", type: "turnover", playerId: "h2", turnoverType: "bad_pass" } as Partial<GameEvent>),
+      baseEvent(4, { teamId: "away", type: "shot_attempt", playerId: "a1", made: true, points: 2, zone: "paint" } as Partial<GameEvent>),
+    ];
+    const state = replayEvents(createInitialGameState("game-tr", "home", "away"), events);
+    state.opponentTeamId = "away";
+    const insights = generateInsights({ state, latestEvent: events.at(-1)! });
+    expect(insights.some((i) => i.type === "transition_momentum")).toBe(true);
+  });
 });
