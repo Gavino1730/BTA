@@ -615,6 +615,24 @@ function getSessionsForSchool(schoolId: string): GameSession[] {
   return [...sessions.values()].filter((session) => session.schoolId === schoolId);
 }
 
+function getMostRecentActiveSessionForSchool(schoolId: string): GameSession | null {
+  const activeSessions = getSessionsForSchool(schoolId).filter((session) => !session.submitted);
+  if (activeSessions.length === 0) {
+    return null;
+  }
+
+  activeSessions.sort((left, right) => {
+    const eventCountDiff = right.state.events.length - left.state.events.length;
+    if (eventCountDiff !== 0) {
+      return eventCountDiff;
+    }
+
+    return right.state.gameId.localeCompare(left.state.gameId);
+  });
+
+  return activeSessions[0] ?? null;
+}
+
 function setRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): RosterTeam[] {
   const normalized = Array.isArray(teams)
     ? teams.map((team) => ({
@@ -2446,6 +2464,16 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
   persistSessions();
 
   return state;
+}
+
+export function getActiveGameState(scope?: TenantScope): GameState | null {
+  const schoolId = resolveSchoolId(scope);
+  const activeSession = getMostRecentActiveSessionForSchool(schoolId);
+  return activeSession?.state ?? null;
+}
+
+export function getActiveGameId(scope?: TenantScope): string | null {
+  return getActiveGameState(scope)?.gameId ?? null;
 }
 
 export function submitGame(gameId: string, scope?: TenantScope): boolean {

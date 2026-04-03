@@ -328,6 +328,82 @@ describe("unified stats endpoints", () => {
     expect(body.opponentName).toBe("OES");
   });
 
+  it("blocks starting a second active game and returns the existing active game", async () => {
+    await resetSchool("single-active-school");
+
+    const firstResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "single-active-school" },
+      body: JSON.stringify({
+        gameId: "2026-04-02-first",
+        homeTeamId: "vc",
+        awayTeamId: "opp-a",
+        opponentName: "Opponent A",
+      })
+    });
+    expect(firstResponse.status).toBe(201);
+
+    const secondResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "single-active-school" },
+      body: JSON.stringify({
+        gameId: "2026-04-02-second",
+        homeTeamId: "vc",
+        awayTeamId: "opp-b",
+        opponentName: "Opponent B",
+      })
+    });
+
+    expect(secondResponse.status).toBe(409);
+    const secondBody = await secondResponse.json() as {
+      activeGameId?: string;
+      activeState?: { gameId: string };
+    };
+    expect(secondBody.activeGameId).toBe("2026-04-02-first");
+    expect(secondBody.activeState?.gameId).toBe("2026-04-02-first");
+
+    const activeStateResponse = await fetch(`${API_BASE}/api/games/active/state`, {
+      headers: { "x-school-id": "single-active-school" }
+    });
+    expect(activeStateResponse.status).toBe(200);
+    const activeStateBody = await activeStateResponse.json() as { gameId: string };
+    expect(activeStateBody.gameId).toBe("2026-04-02-first");
+  });
+
+  it("allows a new game after the active game is submitted", async () => {
+    await resetSchool("single-active-after-submit");
+
+    const firstResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "single-active-after-submit" },
+      body: JSON.stringify({
+        gameId: "2026-04-02-submit-first",
+        homeTeamId: "vc",
+        awayTeamId: "opp-a",
+        opponentName: "Opponent A",
+      })
+    });
+    expect(firstResponse.status).toBe(201);
+
+    const submitResponse = await fetch(`${API_BASE}/api/games/2026-04-02-submit-first/submit`, {
+      method: "POST",
+      headers: { "x-school-id": "single-active-after-submit" }
+    });
+    expect(submitResponse.status).toBe(200);
+
+    const secondResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "single-active-after-submit" },
+      body: JSON.stringify({
+        gameId: "2026-04-02-submit-second",
+        homeTeamId: "vc",
+        awayTeamId: "opp-b",
+        opponentName: "Opponent B",
+      })
+    });
+    expect(secondResponse.status).toBe(201);
+  });
+
   it("supports legacy team settings and roster management routes", async () => {
     await resetSchool("compat-school");
 

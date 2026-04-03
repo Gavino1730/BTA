@@ -135,41 +135,45 @@ html, body {
   text-align: center;
 }
 
-.shot-team-switch {
+.classic-score-grid {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.45rem;
-  margin-top: 0.2rem;
+  gap: 0.7rem;
+  margin-top: 0.3rem;
 }
 
-.shot-team-switch-btn {
-  min-height: 44px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.2);
-  background: rgba(255,255,255,0.04);
-  color: rgba(232,234,240,0.78);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.35rem 0.45rem;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.classic-score-col {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: center;
+  align-content: start;
 }
 
-.shot-team-switch-btn-my.active {
-  border-color: rgba(79,140,255,0.6);
-  background: rgba(79,140,255,0.22);
-  color: #bfdbfe;
+.classic-score-col .shot-grid-team-label {
+  width: 100%;
+  margin: 0;
+  padding: 0 0.2rem;
+  font-size: 0.72rem;
 }
 
-.shot-team-switch-btn-opp.active {
-  border-color: rgba(232,234,240,0.38);
-  background: rgba(100,116,139,0.22);
-  color: rgba(232,234,240,0.9);
+.classic-score-col .shot-grid-team-label-opp {
+  border-top: none;
+  padding-top: 0;
+}
+
+.classic-score-btn {
+  width: 100%;
+  max-width: 8.1rem;
+  aspect-ratio: 1;
+  font-size: 2rem;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+.classic-score-btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
 }
 
 .shot-grid-team-label {
@@ -313,19 +317,6 @@ html, body {
   min-height: 52px;
 }
 
-.shot-grid-empty {
-  min-height: 52px;
-  border: 1px dashed rgba(232,234,240,0.24);
-  border-radius: 10px;
-  color: rgba(232,234,240,0.6);
-  font-size: 0.68rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.45rem;
-  text-align: center;
-}
-
 .left-panel .circle {
   width: 100%;
   max-width: 12rem;
@@ -406,6 +397,7 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  align-items: center;
 }
 
 .center-controls-wrap {
@@ -435,6 +427,7 @@ html, body {
 
 /* Scoreboard */
 .scoreboard {
+  width: 100%;
   padding: 0.75rem 1rem 0.45rem;
   border-bottom: 1px solid rgba(242,194,75,0.25);
 }
@@ -753,6 +746,7 @@ html, body {
 
 /* Event feed */
 .event-feed-header {
+  width: 100%;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -777,16 +771,24 @@ html, body {
 }
 
 .event-feed {
+  width: 100%;
   flex: 0 0 auto;
-  min-height: 0;
-  overflow: visible;
+  max-height: 340px;
+  min-height: 80px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.52rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.34rem;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.12);
+  margin: 0 0 0.5rem;
 }
-.event-feed::-webkit-scrollbar { width: 3px; }
-.event-feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+.event-feed::-webkit-scrollbar { width: 4px; }
+.event-feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
+.event-feed::-webkit-scrollbar-track { background: transparent; }
 
 .empty-feed {
   color: rgba(232,234,240,0.3);
@@ -949,6 +951,7 @@ html, body {
 
 /* Period selector */
 .period-row {
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   align-items: stretch;
@@ -1035,7 +1038,7 @@ html, body {
 }
 
 /* Clock */
-.clock-row { padding: 0.75rem 0.75rem 0.22rem; margin-top: 0.5rem; }
+.clock-row { width: 100%; padding: 0.75rem 0.75rem 0.22rem; margin-top: 0.5rem; }
 .clock-inp {
   width: 100%;
   background: rgba(255,255,255,0.05);
@@ -3197,7 +3200,7 @@ html, body {
   border-radius: 20px;
   z-index: 999;
   letter-spacing: 0.06em;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 /* ---- Foul badge in player row ---- */
@@ -3221,6 +3224,7 @@ html, body {
 
 /* ---- Foul-out alerts in game view ---- */
 .foul-alerts {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
@@ -3295,12 +3299,6 @@ html, body {
   font-weight: 700;
   padding: 0.15rem 0.55rem;
   cursor: pointer;
-  border: 1px solid rgba(248,113,113,0.52);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.28);
-}
-
-.pending-badge:hover {
-  filter: brightness(1.08);
 }
 
 /* ---- End of Game section (left panel) ---- */

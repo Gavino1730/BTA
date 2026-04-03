@@ -30,6 +30,7 @@ import {
   getGameAiSettings,
   getGameEvents,
   getGameInsights,
+  getActiveGameState,
   getLiveContext,
   getRosterPlayers,
   getRosterTeamsByScope,
@@ -3202,6 +3203,22 @@ app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) =
     return;
   }
 
+  const existingState = getGameState(gameId, { schoolId });
+  if (existingState) {
+    res.status(200).json(existingState);
+    return;
+  }
+
+  const activeState = getActiveGameState({ schoolId });
+  if (activeState && activeState.gameId !== gameId) {
+    res.status(409).json({
+      error: "An active game is already in progress for this school",
+      activeGameId: activeState.gameId,
+      activeState,
+    });
+    return;
+  }
+
   const state = createGame({
     schoolId,
     gameId,
@@ -3229,6 +3246,18 @@ app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => 
 
   emitToGameRooms(schoolId, req.params.gameId, "game:deleted", { gameId: req.params.gameId });
   res.json({ gameId: req.params.gameId, deleted: true });
+});
+
+app.get("/api/games/active/state", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const activeState = getActiveGameState({ schoolId });
+
+  if (!activeState) {
+    res.status(404).json({ error: "no active game" });
+    return;
+  }
+
+  res.json(activeState);
 });
 
 app.get("/api/games/:gameId/state", requireApiKey, (req, res) => {
