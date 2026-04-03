@@ -20,7 +20,7 @@ export interface Player {
   notes?: string;
 }
 
-function isLocalNetworkHost(hostname: string): boolean {
+export function isLocalNetworkHost(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase();
   return normalized === "localhost"
     || normalized === "0.0.0.0"
@@ -38,7 +38,7 @@ function resolveDefaultSchoolId(hostname: string): string {
   return isLocalNetworkHost(hostname) ? "default" : "";
 }
 
-const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID
+export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID
   ?? (typeof window !== "undefined" ? resolveDefaultSchoolId(window.location.hostname || "localhost") : "default"))
   .toString()
   .trim();

@@ -15,7 +15,8 @@ import {
   generateInsights,
   type LiveInsight
 } from "@bta/insight-engine";
-import { parseGameEvent, isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
+import { parseGameEvent, isOvertimePeriod, type GameEvent, type RosterPlayer, type RosterTeam } from "@bta/shared-schema";
+export type { RosterPlayer, RosterTeam };
 import {
   createPostgresPersistenceProvider,
   type OrgDataResult,
@@ -32,35 +33,6 @@ export interface CreateGameInput {
   opponentTeamId?: string;
   startingLineupByTeam?: Record<string, string[]>;
   aiContext?: Partial<GameAiContext>;
-}
-
-export interface RosterPlayer {
-  id: string;
-  number: string;
-  name: string;
-  position: string;
-  height?: string;
-  weight?: string;
-  grade?: string;
-  role?: string;
-  notes?: string;
-  email?: string;
-  phone?: string;
-}
-
-export interface RosterTeam {
-  id: string;
-  schoolId?: string;
-  name: string;
-  abbreviation: string;
-  season?: string;
-  teamColor?: string;
-  coachStyle?: string;
-  playingStyle?: string;
-  teamContext?: string;
-  customPrompt?: string;
-  focusInsights?: CoachAiSettings["focusInsights"];
-  players: RosterPlayer[];
 }
 
 export interface OrganizationProfile {
@@ -2258,10 +2230,6 @@ export async function initializeStore(): Promise<void> {
   setupRetentionMaintenance();
 
   storeInitialized = true;
-}
-
-export function getRosterTeams(): RosterTeam[] {
-  return getRosterTeamsForSchool(DEFAULT_SCHOOL_ID);
 }
 
 export function getRosterTeamsByScope(scope?: TenantScope): RosterTeam[] {
