@@ -7,17 +7,29 @@ import {
   addPlayerViaRealtime,
   convertRosterTeamToAppTeam,
   createTeamViaRealtime,
-  DEFAULT_SCHOOL_ID,
   deletePlayerViaRealtime,
   deleteTeamViaRealtime,
   fetchTeamsFromRealtime,
-  isLocalNetworkHost,
   updatePlayerViaRealtime,
   updateTeamViaRealtime,
 } from "./roster-sync.js";
 
 const defaultHost = window.location.hostname || "localhost";
 const defaultOrigin = window.location.origin || `http://${defaultHost}`;
+
+function isLocalNetworkHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "0.0.0.0"
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
+    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
+    || normalized.endsWith(".local")
+    || !normalized.includes(".");
+}
 
 function resolveDefaultAppBase(hostname: string, origin: string, port: number): string {
   if (isLocalNetworkHost(hostname)) {
@@ -27,9 +39,14 @@ function resolveDefaultAppBase(hostname: string, origin: string, port: number): 
   return origin.replace(/\/+$/, "") || `https://${hostname}`;
 }
 
+function resolveDefaultSchoolId(hostname: string): string {
+  return isLocalNetworkHost(hostname) ? "default" : "";
+}
+
 const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
 const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? resolveDefaultSchoolId(defaultHost)).toString().trim();
 const STORE = "operator-console";
 const APP_DATA_KEY = "shared-app-data-v3";
 const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";

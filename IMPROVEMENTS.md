@@ -58,6 +58,67 @@ Last updated: April 2, 2026.
 
 ---
 
+## Next Priorities — Easy Stats Parity Track (April 2026)
+
+Goal: match Easy Stats' speed and low-friction game-day workflow while preserving BTA's existing AI and multi-device strengths.
+
+### P0 — Input Speed + Recovery (Must Land First)
+- **Logical stat flows by default**: after made shots, prompt assist; after misses/blocks, prompt rebound; free throw sets in one guided flow.
+- **Zero-friction correction loop**: keep instant undo/redo visible during active game; promote "edit recent event" and "insert missed event" actions.
+- **Two-tap guarantee audit**: validate that core actions (2pt/3pt/FT make-miss, foul, turnover, rebound, steal, block, assist) require no more than two taps in the primary flow.
+
+**Done means**
+- Pilot scorekeepers can log 1 full game with no modal dead-ends and no flow reset.
+- At least 90% of core stat events are recorded in <=2 taps from the default screen state.
+- Edit/insert/undo are available within 2 interactions from the live feed.
+
+### P1 — Shot Chart + Filters (Core Easy Stats Experience)
+- **Shot chart view** (team + player): made/miss points on court map with zone coloring.
+- **Filters**: game, date range/season subset, player, make/miss, and shot type (2PT/3PT/FT where applicable).
+- **Share-ready rendering**: mobile-safe chart output for dashboard and exported artifacts.
+
+**Done means**
+- Coaches can open a shot chart from game and season contexts with identical filter behavior.
+- Filtered chart totals match box score shot totals for the same scope.
+- Chart is legible on tablet and phone widths without horizontal scroll.
+
+### P1 — Box Score Sharing + Export
+- **Public share link** for game box score (read-only).
+- **CSV exports**: play-by-play and cumulative box score in one action path.
+- **Print layout**: clean single-game report optimized for email/PDF export.
+
+**Done means**
+- Non-app users can open shared box score links without authentication.
+- Exported CSV columns are stable and documented for downstream tools.
+- Shared/report views include score, team stats, player stats, and period scoring.
+
+### P2 — Minutes + Matchup History Surfaces
+- **Minutes surfaced everywhere**: game summary, season leaderboard, and player detail.
+- **Head-to-head matchup history**: compare repeated opponents over selected games.
+- **Lineup context tie-in**: connect minutes and +/- views to existing lineup panels.
+
+**Done means**
+- Minutes values are deterministic from replay and consistent across operator/dashboard.
+- Coaches can select a repeat opponent and view aggregated comparison metrics.
+- No duplicate/alias team identity issues in matchup aggregation.
+
+### P2 — Packaging and Pricing UX (If Productized)
+- Keep core tracking free-tier friendly (no blocking game logging).
+- Gate premium value on advanced analytics/sharing scale, not basic stat entry.
+- Make entitlement status visible in-feature (avoid hidden feature failure states).
+
+**Done means**
+- Free workflow can complete setup -> game tracking -> basic share path.
+- Premium-only surfaces show clear upgrade messaging before interaction dead-ends.
+
+### Guardrails For This Track
+- Do not regress deterministic replay semantics in `packages/game-state`.
+- Do not make live coaching insights dependent on GPT availability.
+- Do not increase game-day latency to ship visual polish.
+- Prefer defaults that reduce decision count during live entry.
+
+---
+
 ## Architecture Observations (Don't Change Without Discussion)
 
 - **Don't add direct app-to-app imports.** All shared logic goes through `packages/*`. Currently clean — keep it that way.

@@ -4,7 +4,12 @@ import { getPeriodDurationSeconds, normalizeTeamColor, type GameEvent, type Peri
 import type { PlayerStats, TeamStats, LineupUnitStats } from "@bta/game-state";
 import { aggregateLineupStats, computeLineupSegments } from "@bta/game-state";
 import { io } from "socket.io-client";
-import { formatFoulTroubleLabel } from "./display.js";
+import {
+  formatBonusIndicator,
+  formatDashboardClock,
+  formatDashboardEventMeta,
+  formatFoulTroubleLabel,
+} from "./display.js";
 import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 
 interface GameState {
