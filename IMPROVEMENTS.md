@@ -15,7 +15,13 @@ Last updated: April 2, 2026.
 - **Rule 15 — Opponent FT Bombardment**: Alert when opponent draws 6+ FT trips in recent 10 events (priority: important)
 - **Rule 16 — Timeout Budget Awareness**: In Q4/OT, when our timeout count drops below 2 and game is within reach, emit a timeout conservation alert (priority: important)
 - **Rule 17 — Matchup Exploitation**: When a defender with an active matchup assignment picks up 3+ fouls, emit a defensive switch suggestion naming the specific assignment (priority: important; urgent if near foul-out). Fires on `foul` events only.
-- New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`, `matchup_exploitation`
+- **Rule 18 — Opponent 3PT Streak**: Fires when opponent hits 3 or more of their last 6 three-point attempts. Prompts a defensive adjustment to close out on perimeter shooters.
+- **Rule 19 — Fouls to Give**: In Q4/OT with ≤45s remaining, fires once when our team still has fouls available before the bonus threshold. Prompts the bench to intentionally foul to stop the clock.
+- **Rule 3 fix — Bonus alert threshold**: Previously re-fired on every event once a team was in the bonus. Now fires exactly once at the moment the fouling team's period tally hits `BONUS_FOUL_THRESHOLD` (5).
+- **Rule 10b — Opponent Hot Hand**: When an opponent player is shooting efficiently (3+ of 4+ recent attempts, ≥60%), emits a defensive adjustment prompt naming the player.
+- **Rule 20 — Cold Shooter**: When one of our players is 0-for-4 in recent field goal attempts, emits an `info`-priority nudge to reduce their shot volume until they can get an easy look.
+- **Rule 21 — Transition Momentum**: When the opponent converts 2+ turnovers/live-ball steals into quick baskets within a 20-event window, emits an alert to tighten transition defense.
+- New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`, `matchup_exploitation`, `three_point_streak`, `foul_to_give`, `opponent_hot_hand`, `cold_shooter`, `transition_momentum`
 
 ### Shared Schema + Game State (packages/shared-schema, packages/game-state)
 - **Matchup Tracking Foundation**: Added `matchup_assignment` event contract (`defenderPlayerId` -> `offensivePlayerId`), validation, and deterministic replay support via `activeMatchupsByTeam` in game state.
@@ -59,3 +65,34 @@ Last updated: April 2, 2026.
 - **GPT is additive, not authoritative.** Rules engine output always shows; GPT is a layer on top. If GPT fails, the rules engine fallback handles it cleanly. Never make the coach view dependent on a GPT response.
 - **File-backed persistence is dev-only.** `services/realtime-api/.platform-data` is fine locally. Production requires `DATABASE_URL` for Postgres.
 - **Vite ports are strict**: operator on 5174, dashboard on 5173. Both fail if occupied.
+
+---
+
+## Code Audit — Cleanup Backlog (April 2, 2026)
+
+Found during static analysis pass. None of these affect runtime behavior — safe to clean up incrementally.
+
+### Dead Exports
+- **`getRosterTeams()`** in `services/realtime-api/src/store.ts` — exported but never imported or called anywhere. Only the scoped variant `getRosterTeamsByScope()` is used.
+- **`SCHOOL_ID`** constant in `apps/coach-dashboard/src/platform.ts` — exported but never imported anywhere. Callers use `resolveActiveSchoolId()` directly.
+
+### Stale Imports
+- **`apps/coach-dashboard/src/App.tsx`** imports `formatBonusIndicator`, `formatDashboardClock`, and `formatDashboardEventMeta` from `./display.js` but never calls any of them in component code. Only `formatFoulTroubleLabel` is actually rendered. (The other three are exercised in `display.test.ts` — tests are fine, just the App.tsx import list is stale.)
+
+### Duplicate Function Definitions
+- **`isLocalNetworkHost(hostname)`** — identical implementation in 3 places:
+  - `apps/coach-dashboard/src/platform.ts` (private)
+  - `apps/ipad-operator/src/App.tsx` (private)
+  - `apps/ipad-operator/src/roster-sync.ts` (private)
+- **`normalizeSchoolId(input)`** — two independent internal copies inside the same service:
+  - `services/realtime-api/src/persistence.ts`
+  - `services/realtime-api/src/store.ts`
+- **`DEFAULT_SCHOOL_ID`** — defined separately in two files within the iPad operator app:
+  - `apps/ipad-operator/src/App.tsx`
+  - `apps/ipad-operator/src/roster-sync.ts`
+- **Header-building utilities** — two different implementations within the same app doing the same job:
+  - `apiKeyHeader(setup)` in `apps/ipad-operator/src/App.tsx`
+  - `buildHeaders(apiKey, schoolId, withJson)` in `apps/ipad-operator/src/roster-sync.ts`
+
+### Duplicate Type Definitions
+- **`RosterPlayer` and `RosterTeam` interfaces** are defined independently in `services/realtime-api/src/store.ts` (lines 37, 51) and in the canonical location `packages/shared-schema/src/types.ts`. `server.ts` imports from `store.ts` instead of shared-schema.

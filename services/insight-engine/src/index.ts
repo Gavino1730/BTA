@@ -1,5 +1,5 @@
 import type { GameState } from "@bta/game-state";
-import { FOUL_OUT_THRESHOLD } from "@bta/game-state";
+import { FOUL_OUT_THRESHOLD, BONUS_FOUL_THRESHOLD } from "@bta/game-state";
 import { isOvertimePeriod, type GameEvent } from "@bta/shared-schema";
 
 export type InsightType =
@@ -19,7 +19,12 @@ export type InsightType =
   | "depth_warning"
   | "efficiency"
   | "leverage"
-  | "matchup_exploitation";
+  | "matchup_exploitation"
+  | "three_point_streak"
+  | "foul_to_give"
+  | "opponent_hot_hand"
+  | "cold_shooter"
+  | "transition_momentum";
 
 export interface LiveInsight {
   id: string;
@@ -249,26 +254,35 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // 3. Team foul warning (bonus territory)
+  // 3. Team foul warning (bonus territory) — fires only at the moment
+  //    the latest foul just pushed the fouling team into the bonus.
+  //    The dashboard scoreboard already shows the ongoing bonus state,
+  //    so re-alerting every event would be pure noise.
   // ──────────────────────────────────────────────────────────────────
-  for (const [teamId, inBonus] of Object.entries(state.bonusByTeam)) {
-    if (inBonus) {
-      const teamLabel = resolveTeamLabel(state, teamId);
-      const isOurBonus = teamId === ourTeamId;
+  if (latestEvent.type === "foul") {
+    const foulingTeamId = latestEvent.teamId;
+    // Period fouls for the team that just fouled
+    const periodFouls = (state.teamFoulsByPeriod[foulingTeamId] ?? {})[period] ?? 0;
+    if (periodFouls === BONUS_FOUL_THRESHOLD) {
+      // The fouling team just hit the threshold — the opposing team just entered bonus
+      const benefitingTeamId = foulingTeamId === state.homeTeamId ? state.awayTeamId : state.homeTeamId;
+      const benefitingLabel = resolveTeamLabel(state, benefitingTeamId);
+      const foulingLabel = resolveTeamLabel(state, foulingTeamId);
+      const isOurBonus = benefitingTeamId === ourTeamId;
       insights.push({
-        id: `${latestEvent.id}-bonus-${teamId}`,
+        id: `${latestEvent.id}-bonus-${benefitingTeamId}`,
         gameId: latestEvent.gameId,
         type: "team_foul_warning",
         priority: "important",
         createdAtIso: now,
         confidence: "high",
         message: isOurBonus
-          ? `${teamLabel} is in the bonus — attack the basket`
-          : `${teamLabel} is in bonus — protect the ball on offense`,
+          ? `${benefitingLabel} enters the bonus — attack the basket`
+          : `${foulingLabel} has ${BONUS_FOUL_THRESHOLD} fouls — protect the ball`,
         explanation: isOurBonus
-          ? "Opposing team has 5+ fouls this period. Drive to the rim and draw contact — every foul produces two free throws."
-          : "We have 5+ fouls this period. Avoid unnecessary contact and keep the opponent out of the line.",
-        relatedTeamId: teamId
+          ? `${foulingLabel} has hit ${BONUS_FOUL_THRESHOLD} team fouls this period. Drive to the rim and draw contact — every foul sends us to the line for 2 shots.`
+          : `We have ${BONUS_FOUL_THRESHOLD} fouls this period. Any additional foul sends ${benefitingLabel} to the line. Be selective with contests — no reaching.`,
+        relatedTeamId: benefitingTeamId
       });
     }
   }
@@ -604,6 +618,48 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
   }
 
   // ──────────────────────────────────────────────────────────────────
+  // 10b. Opponent hot hand — an opponent player is shooting efficiently.
+  //      Prompts a defensive adjustment or matchup switch.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && state.opponentTeamId) {
+    const OPP_HOT_WINDOW = 15;
+    const opponentTeamId = state.opponentTeamId;
+    const recentOppShots = allEvents
+      .filter((e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+        e.type === "shot_attempt" && e.teamId === opponentTeamId
+      )
+      .slice(-OPP_HOT_WINDOW);
+
+    const oppPlayerWindow = new Map<string, { makes: number; attempts: number }>();
+    for (const shot of recentOppShots) {
+      const entry = oppPlayerWindow.get(shot.playerId) ?? { makes: 0, attempts: 0 };
+      entry.attempts++;
+      if (shot.made) entry.makes++;
+      oppPlayerWindow.set(shot.playerId, entry);
+    }
+
+    for (const [playerId, { makes, attempts }] of oppPlayerWindow.entries()) {
+      if (attempts >= 4 && makes >= 3 && makes / attempts >= 0.6) {
+        const pctStr = Math.round((makes / attempts) * 100);
+        const oppLabel = resolveTeamLabel(state, opponentTeamId);
+        const playerLabel = resolvePlayerLabel(playerId, oppLabel, context);
+        insights.push({
+          id: `${latestEvent.id}-opp-hot-${playerId}`,
+          gameId: latestEvent.gameId,
+          type: "opponent_hot_hand",
+          priority: "important",
+          createdAtIso: now,
+          confidence: "high",
+          message: `⚠️ ${playerLabel} is on fire — ${makes}/${attempts} recent shots (${pctStr}%)`,
+          explanation: `${playerLabel} is shooting with high efficiency right now. Lock them down — send a better defender, deny catches, or shade help their way.`,
+          relatedTeamId: opponentTeamId,
+          relatedPlayerId: playerId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
   // 11. Scoring drought — our team has gone cold from the field
   // ──────────────────────────────────────────────────────────────────
   if (ourTeamId) {
@@ -627,6 +683,46 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
         explanation: "Offense has gone cold. Try a set play for a rim attack, move the ball inside, or call a timeout to reset the half-court offense.",
         relatedTeamId: ourTeamId
       });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 20. Cold shooter — an individual player is 0-for-4 or worse in
+  //     recent attempts. Coach should reduce their shot volume.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId) {
+    const COLD_WINDOW = 5;
+    const recentOurShotsForCold = allEvents
+      .filter((e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+        e.type === "shot_attempt" && e.teamId === ourTeamId
+      )
+      .slice(-COLD_WINDOW * 3); // wider scan so low-volume players show up
+
+    const coldWindow = new Map<string, { makes: number; attempts: number }>();
+    for (const shot of recentOurShotsForCold) {
+      const entry = coldWindow.get(shot.playerId) ?? { makes: 0, attempts: 0 };
+      entry.attempts++;
+      if (shot.made) entry.makes++;
+      coldWindow.set(shot.playerId, entry);
+    }
+
+    for (const [playerId, { makes, attempts }] of coldWindow.entries()) {
+      if (attempts >= 4 && makes === 0) {
+        const ourLabel = resolveTeamLabel(state, ourTeamId);
+        const playerLabel = resolvePlayerLabel(playerId, ourLabel, context);
+        insights.push({
+          id: `${latestEvent.id}-cold-${playerId}`,
+          gameId: latestEvent.gameId,
+          type: "cold_shooter",
+          priority: "info",
+          createdAtIso: now,
+          confidence: "medium",
+          message: `🥶 ${playerLabel} 0-for-${attempts} in recent looks — reduce shot volume`,
+          explanation: `${playerLabel} is struggling from the field right now. Consider running sets for other players until they can get an easy look to rebuild rhythm.`,
+          relatedTeamId: ourTeamId,
+          relatedPlayerId: playerId
+        });
+      }
     }
   }
 
@@ -827,6 +923,116 @@ export function generateInsights(context: InsightContext): LiveInsight[] {
           });
         }
       }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 18. Opponent 3PT streak — if opponent hits 3 or more of their last
+  //     6 three-point attempts, flag a defensive scheme adjustment.
+  // ──────────────────────────────────────────────────────────────────
+  if (state.opponentTeamId) {
+    const OPP_3PT_WINDOW = 6;
+    const OPP_3PT_HIT_THRESHOLD = 3;
+    const recent3PAs = allEvents
+      .filter(
+        (e): e is Extract<GameEvent, { type: "shot_attempt" }> =>
+          e.type === "shot_attempt" && e.teamId === state.opponentTeamId &&
+          (e as Extract<GameEvent, { type: "shot_attempt" }>).points === 3
+      )
+      .slice(-OPP_3PT_WINDOW);
+
+    if (recent3PAs.length >= OPP_3PT_WINDOW) {
+      const made3s = recent3PAs.filter((e) => e.made).length;
+      if (made3s >= OPP_3PT_HIT_THRESHOLD) {
+        const oppLabel = resolveTeamLabel(state, state.opponentTeamId);
+        const pct = Math.round((made3s / recent3PAs.length) * 100);
+        insights.push({
+          id: `${latestEvent.id}-3pt-streak`,
+          gameId: latestEvent.gameId,
+          type: "three_point_streak",
+          priority: "important",
+          createdAtIso: now,
+          confidence: "high",
+          message: `${oppLabel} hitting ${made3s}/${recent3PAs.length} recent 3s (${pct}%) — close out harder`,
+          explanation: `${oppLabel} is getting rhythm from behind the arc. Step up on three-point shooters earlier, contest with a hand in their face, and consider switching defensive assignments to disrupt their catch-and-shoot looks.`,
+          relatedTeamId: state.opponentTeamId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 19. Fouls to give — late Q4/OT reminder that our team can foul
+  //     without sending the opponent to the line yet. Useful for
+  //     disrupting a late-game possession without burning a timeout.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && clockEnabled) {
+    const isLateGame = period === "Q4" || isOvertimePeriod(period);
+    const clockSec = getClockSeconds(latestEvent);
+    const FOUlS_TO_GIVE_WINDOW = 45;
+    if (isLateGame && clockSec > 0 && clockSec <= FOUlS_TO_GIVE_WINDOW) {
+      const ourPeriodFouls = (state.teamFoulsByPeriod[ourTeamId] ?? {})[period] ?? 0;
+      const foulsRemaining = Math.max(0, BONUS_FOUL_THRESHOLD - 1 - ourPeriodFouls);
+      // Only alert once per entry into this window (same guard as period-end urgency)
+      const prevEvent = allEvents.at(-2);
+      const prevClock = prevEvent ? getClockSeconds(prevEvent) : Infinity;
+      const prevPeriod = prevEvent?.period ?? "";
+      const justEnteredWindow = prevPeriod !== period || prevClock > FOUlS_TO_GIVE_WINDOW;
+      if (foulsRemaining >= 1 && justEnteredWindow) {
+        insights.push({
+          id: `${latestEvent.id}-fouls-to-give`,
+          gameId: latestEvent.gameId,
+          type: "foul_to_give",
+          priority: "info",
+          createdAtIso: now,
+          confidence: "high",
+          message: `${foulsRemaining} foul${foulsRemaining > 1 ? "s" : ""} to give — can foul without sending them to the line`,
+          explanation: `We have ${foulsRemaining} defensive foul${foulsRemaining > 1 ? "s" : ""} available before the bonus is triggered. Use them to stop the clock, deny an inbound, or break up a possession without giving free throws.`,
+          relatedTeamId: ourTeamId
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // 21. Transition momentum — opponent converting turnovers/steals
+  //     into quick buckets. Signals a need for defensive discipline.
+  // ──────────────────────────────────────────────────────────────────
+  if (ourTeamId && state.opponentTeamId) {
+    const opponentTeamId = state.opponentTeamId;
+    const TRANSITION_WINDOW = 20;
+    const recentForTransition = allEvents.slice(-TRANSITION_WINDOW);
+    let transitionScores = 0;
+
+    for (let i = 0; i < recentForTransition.length; i++) {
+      const e = recentForTransition[i];
+      const isTrigger =
+        (e.type === "steal" && e.teamId === opponentTeamId) ||
+        (e.type === "turnover" && e.teamId === ourTeamId);
+      if (!isTrigger) continue;
+      // Count as transition if opponent scores within the next 3 events
+      for (let j = i + 1; j <= i + 3 && j < recentForTransition.length; j++) {
+        const next = recentForTransition[j];
+        if (next.type === "shot_attempt" && next.teamId === opponentTeamId && next.made) {
+          transitionScores++;
+          break;
+        }
+      }
+    }
+
+    if (transitionScores >= 2) {
+      const oppLabel = resolveTeamLabel(state, opponentTeamId);
+      insights.push({
+        id: `${latestEvent.id}-transition`,
+        gameId: latestEvent.gameId,
+        type: "transition_momentum",
+        priority: "important",
+        createdAtIso: now,
+        confidence: "medium",
+        message: `🏃 ${oppLabel} converting turnovers into transition points (${transitionScores}x)`,
+        explanation: `${oppLabel} has scored quickly off ${transitionScores} live-ball turnovers in recent possessions. Slow down after misses and turnovers — get organized in transition defense before the opponent can push.`,
+        relatedTeamId: opponentTeamId
+      });
     }
   }
 
