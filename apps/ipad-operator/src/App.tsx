@@ -828,7 +828,7 @@ type Modal =
   | { kind: "stat"; stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul"; teamId: TeamSide; editContext?: EventEditContext }
   | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
   | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
-  | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; editContext?: EventEditContext }
+  | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; playerInId?: string; editContext?: EventEditContext }
   | { kind: "sub2"; teamId: TeamSide; playerOutId: string; editContext?: EventEditContext }
   | { kind: "matchup1"; teamId: TeamSide }
   | { kind: "matchup2"; teamId: TeamSide; defenderPlayerId: string; oppJersey: string }
@@ -3051,6 +3051,27 @@ export function App() {
 
   function confirmSubOut(playerOutId: string) {
     if (!modal || modal.kind !== "sub1") return;
+    if (modal.playerInId) {
+      if (modal.editContext) {
+        void saveEditedEvent({
+          ...modal.editContext.originalEvent,
+          teamId: resolveTeamId(modal.teamId),
+          type: "substitution",
+          playerOutId,
+          playerInId: modal.playerInId,
+        } as GameEvent, modal.editContext);
+        return;
+      }
+      void postEvent({
+        ...base(sequence),
+        teamId: resolveTeamId(modal.teamId),
+        type: "substitution",
+        playerOutId,
+        playerInId: modal.playerInId,
+      });
+      closeModal();
+      return;
+    }
     setModal({ kind: "sub2", teamId: modal.teamId, playerOutId, editContext: modal.editContext });
   }
 
@@ -5032,7 +5053,7 @@ export function App() {
                             className="roster-sub-btn"
                             onClick={() => {
                               if (lineup.onCourt.length > 0) {
-                                setModal({ kind: "sub1", teamId: vcSideSetup });
+                                setModal({ kind: "sub1", teamId: vcSideSetup, playerInId: p.id });
                               }
                             }}
                             title="Sub in">+</button>

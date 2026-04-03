@@ -62,54 +62,46 @@ Last updated: April 2, 2026.
 
 Goal: match Easy Stats' speed and low-friction game-day workflow while preserving BTA's existing AI and multi-device strengths.
 
-### P0 — Input Speed + Recovery (Must Land First)
-- **Logical stat flows by default**: after made shots, prompt assist; after misses/blocks, prompt rebound; free throw sets in one guided flow.
-- **Zero-friction correction loop**: keep instant undo/redo visible during active game; promote "edit recent event" and "insert missed event" actions.
-- **Two-tap guarantee audit**: validate that core actions (2pt/3pt/FT make-miss, foul, turnover, rebound, steal, block, assist) require no more than two taps in the primary flow.
+### Execution Board
 
-**Done means**
-- Pilot scorekeepers can log 1 full game with no modal dead-ends and no flow reset.
-- At least 90% of core stat events are recorded in <=2 taps from the default screen state.
-- Edit/insert/undo are available within 2 interactions from the live feed.
+Status legend: `not-started`, `in-progress`, `blocked`, `done`
 
-### P1 — Shot Chart + Filters (Core Easy Stats Experience)
-- **Shot chart view** (team + player): made/miss points on court map with zone coloring.
-- **Filters**: game, date range/season subset, player, make/miss, and shot type (2PT/3PT/FT where applicable).
-- **Share-ready rendering**: mobile-safe chart output for dashboard and exported artifacts.
+| Sprint | Status | Owner | Target Date | Work Item | Exit Criteria |
+| --- | --- | --- | --- | --- | --- |
+| Sprint 1 | not-started | unassigned | 2026-04-12 | Logical stat flows by default (made->assist, miss/block->rebound, guided FT sets) | Prompt chains complete without dead-end; no duplicate events on cancel/back |
+| Sprint 1 | not-started | unassigned | 2026-04-12 | Two-tap guarantee audit for core stats (2PT/3PT/FT make/miss, foul, turnover, rebound, steal, block, assist) | >=90% of core events are <=2 taps from default live screen |
+| Sprint 1 | not-started | unassigned | 2026-04-12 | Recovery UX pass (undo/redo/edit recent/insert missed event surfaced) | Undo/redo/edit/insert reachable in <=2 interactions during live game |
+| Sprint 1 | not-started | unassigned | 2026-04-12 | Pilot run with scorekeepers | 1 full game logged with no flow reset or modal trap |
+| Sprint 2 | not-started | unassigned | 2026-04-26 | Shot chart MVP (team + player, made/miss plotting, zone coloring) | Chart renders correctly on tablet + phone; no horizontal scroll |
+| Sprint 2 | not-started | unassigned | 2026-04-26 | Shot chart filters (game, season subset, player, make/miss, shot type) | Filtered chart totals match filtered box score totals |
+| Sprint 2 | not-started | unassigned | 2026-04-26 | Box score public share link (read-only) | Non-auth users can open and view complete game box score |
+| Sprint 2 | not-started | unassigned | 2026-04-26 | CSV exports (play-by-play + cumulative box score) | Stable documented CSV columns; both files generated from one share/export path |
+| Sprint 2 | not-started | unassigned | 2026-04-26 | Print/PDF report layout for single game | Readable one-page summary including score, period scoring, team stats, player stats |
+| Sprint 3 | not-started | unassigned | 2026-05-10 | Minutes surfaced in game, season leaderboard, player detail | Minutes are deterministic from replay and consistent across operator/dashboard |
+| Sprint 3 | not-started | unassigned | 2026-05-10 | Head-to-head matchup history for repeat opponents | Coach can select opponent and view aggregate comparisons across selected games |
+| Sprint 3 | not-started | unassigned | 2026-05-10 | Lineup context tie-in for minutes and +/- | Minutes and +/- panels cross-link without identity alias duplication |
+| Sprint 3 | not-started | unassigned | 2026-05-10 | Packaging/entitlement UX pass (if productized) | Free path completes setup->track->basic share; premium gating is explicit and non-blocking |
 
-**Done means**
-- Coaches can open a shot chart from game and season contexts with identical filter behavior.
-- Filtered chart totals match box score shot totals for the same scope.
-- Chart is legible on tablet and phone widths without horizontal scroll.
+### Sprint Checklist
 
-### P1 — Box Score Sharing + Export
-- **Public share link** for game box score (read-only).
-- **CSV exports**: play-by-play and cumulative box score in one action path.
-- **Print layout**: clean single-game report optimized for email/PDF export.
+#### Sprint 1 — Input Speed + Recovery
+- [ ] Implement logical stat prompt chains for make/miss/FT workflows.
+- [ ] Add telemetry counters for tap-depth on core stat actions.
+- [ ] Promote edit/insert actions in live feed and keep undo/redo persistent.
+- [ ] Run pilot game test and capture friction notes.
 
-**Done means**
-- Non-app users can open shared box score links without authentication.
-- Exported CSV columns are stable and documented for downstream tools.
-- Shared/report views include score, team stats, player stats, and period scoring.
+#### Sprint 2 — Shot Chart + Share/Export
+- [ ] Build shot chart component with team/player modes.
+- [ ] Add filter state model shared between game and season contexts.
+- [ ] Add public read-only share route for game box scores.
+- [ ] Add one-click CSV export bundle (PBP + cumulative).
+- [ ] Add print-safe box score report layout.
 
-### P2 — Minutes + Matchup History Surfaces
-- **Minutes surfaced everywhere**: game summary, season leaderboard, and player detail.
-- **Head-to-head matchup history**: compare repeated opponents over selected games.
-- **Lineup context tie-in**: connect minutes and +/- views to existing lineup panels.
-
-**Done means**
-- Minutes values are deterministic from replay and consistent across operator/dashboard.
-- Coaches can select a repeat opponent and view aggregated comparison metrics.
-- No duplicate/alias team identity issues in matchup aggregation.
-
-### P2 — Packaging and Pricing UX (If Productized)
-- Keep core tracking free-tier friendly (no blocking game logging).
-- Gate premium value on advanced analytics/sharing scale, not basic stat entry.
-- Make entitlement status visible in-feature (avoid hidden feature failure states).
-
-**Done means**
-- Free workflow can complete setup -> game tracking -> basic share path.
-- Premium-only surfaces show clear upgrade messaging before interaction dead-ends.
+#### Sprint 3 — Minutes + Matchup History
+- [ ] Add deterministic minutes aggregation pipeline to summaries and leaderboards.
+- [ ] Build repeat-opponent matchup history view.
+- [ ] Link minutes and lineup +/- context in coach dashboard.
+- [ ] Add entitlement messaging and upgrade states where needed.
 
 ### Guardrails For This Track
 - Do not regress deterministic replay semantics in `packages/game-state`.
