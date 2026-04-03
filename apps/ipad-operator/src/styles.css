@@ -20,6 +20,18 @@ button, .circle, .icon-btn, [role="button"] {
   --accent-blue-soft: rgba(79,140,255,0.14);
   --accent-gold: #f2c24b;
   --accent-gold-soft: rgba(242,194,75,0.16);
+  --result-make-bg: rgba(16,185,129,0.26);
+  --result-make-bg-strong: rgba(16,185,129,0.38);
+  --result-make-bg-soft: rgba(16,185,129,0.1);
+  --result-make-border: rgba(16,185,129,0.55);
+  --result-make-text: #6ee7b7;
+  --result-make-text-soft: #a7f3d0;
+  --result-miss-bg: rgba(239,68,68,0.22);
+  --result-miss-bg-strong: rgba(239,68,68,0.34);
+  --result-miss-bg-soft: rgba(239,68,68,0.08);
+  --result-miss-border: rgba(239,68,68,0.5);
+  --result-miss-text: #fca5a5;
+  --result-miss-text-soft: #fecaca;
 }
 
 html, body {
@@ -213,37 +225,37 @@ html, body {
 
 /* MAKE = green */
 .shot-btn-make {
-  background: rgba(16, 185, 129, 0.26);
-  color: #6ee7b7;
+  background: var(--result-make-bg);
+  color: var(--result-make-text);
 }
-.shot-btn-make:active { background: rgba(16, 185, 129, 0.38); }
+.shot-btn-make:active { background: var(--result-make-bg-strong); }
 
 /* MISS = red */
 .shot-btn-miss {
-  background: rgba(239, 68, 68, 0.22);
-  color: #fca5a5;
+  background: var(--result-miss-bg);
+  color: var(--result-miss-text);
 }
-.shot-btn-miss:active { background: rgba(239, 68, 68, 0.34); }
+.shot-btn-miss:active { background: var(--result-miss-bg-strong); }
 
-/* 3PT variant — slightly different tint to distinguish */
+/* Keep 3PT in the same make/miss palette for consistency. */
 .shot-btn-three.shot-btn-make {
-  background: rgba(59, 130, 246, 0.26);
-  color: #93c5fd;
+  background: var(--result-make-bg);
+  color: var(--result-make-text);
 }
 .shot-btn-three.shot-btn-miss {
-  background: rgba(245, 158, 11, 0.22);
-  color: #fcd34d;
+  background: var(--result-miss-bg);
+  color: var(--result-miss-text);
 }
 
 /* FT variants — slightly smaller since less frequent */
 .shot-btn-ft-make {
-  background: rgba(16, 185, 129, 0.18);
-  color: #a7f3d0;
+  background: rgba(16,185,129,0.18);
+  color: var(--result-make-text-soft);
   min-height: 60px;
 }
 .shot-btn-ft-miss {
-  background: rgba(239, 68, 68, 0.16);
-  color: #fecaca;
+  background: rgba(239,68,68,0.16);
+  color: var(--result-miss-text-soft);
   min-height: 60px;
 }
 
@@ -2279,8 +2291,8 @@ html, body {
   min-height: 44px;
   transition: all 0.12s;
 }
-.t-teal { background: rgba(79,140,255,0.15); border-color: #4f8cff; color: #4f8cff; }
-.t-red  { background: rgba(248,113,113,0.15); border-color: #f87171; color: #f87171; }
+.t-teal { background: var(--result-make-bg-soft); border-color: var(--result-make-border); color: var(--result-make-text); }
+.t-red  { background: var(--result-miss-bg-soft); border-color: var(--result-miss-border); color: var(--result-miss-text); }
 
 /* Stronger visual coding for Made/Miss in operator flow */
 .made-miss-row .toggle-btn {
@@ -2291,16 +2303,16 @@ html, body {
   opacity: 0.72;
 }
 .made-miss-row .toggle-btn.t-teal {
-  background: rgba(45,212,191,0.24);
-  border-color: #2dd4bf;
-  color: #ccfbf1;
-  box-shadow: 0 0 0 1px rgba(45,212,191,0.35), 0 8px 18px rgba(45,212,191,0.16);
+  background: var(--result-make-bg);
+  border-color: var(--result-make-border);
+  color: var(--result-make-text-soft);
+  box-shadow: 0 0 0 1px rgba(16,185,129,0.35), 0 8px 18px rgba(16,185,129,0.16);
 }
 .made-miss-row .toggle-btn.t-red {
-  background: rgba(248,113,113,0.24);
-  border-color: #f87171;
-  color: #fee2e2;
-  box-shadow: 0 0 0 1px rgba(248,113,113,0.35), 0 8px 18px rgba(248,113,113,0.16);
+  background: var(--result-miss-bg);
+  border-color: var(--result-miss-border);
+  color: var(--result-miss-text-soft);
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.35), 0 8px 18px rgba(239,68,68,0.16);
 }
 .made-miss-row .toggle-btn:hover {
   transform: translateY(-1px);
@@ -4214,10 +4226,10 @@ html, body {
   font-family: inherit;
 }
 .pqa-btn:active { opacity: 0.65; }
-.pqa-make.pqa-2pt { border-color: rgba(16,185,129,0.55); color: #6ee7b7; background: rgba(16,185,129,0.1); }
-.pqa-miss.pqa-2pt { border-color: rgba(239,68,68,0.4);  color: #fca5a5; background: rgba(239,68,68,0.08); }
-.pqa-make.pqa-3pt { border-color: rgba(59,130,246,0.55); color: #93c5fd; background: rgba(59,130,246,0.1); }
-.pqa-miss.pqa-3pt { border-color: rgba(245,158,11,0.4); color: #fcd34d; background: rgba(245,158,11,0.08); }
+.pqa-make.pqa-2pt { border-color: var(--result-make-border); color: var(--result-make-text); background: var(--result-make-bg-soft); }
+.pqa-miss.pqa-2pt { border-color: var(--result-miss-border); color: var(--result-miss-text); background: var(--result-miss-bg-soft); }
+.pqa-make.pqa-3pt { border-color: var(--result-make-border); color: var(--result-make-text); background: var(--result-make-bg-soft); }
+.pqa-miss.pqa-3pt { border-color: var(--result-miss-border); color: var(--result-miss-text); background: var(--result-miss-bg-soft); }
 .pqa-ft   { border-color: rgba(16,185,129,0.35);  color: #a7f3d0; }
 .pqa-reb  { border-color: rgba(79,140,255,0.5);   color: #93c5fd; }
 .pqa-foul { border-color: rgba(245,158,11,0.65);  color: #fcd34d; background: rgba(245,158,11,0.1); }
