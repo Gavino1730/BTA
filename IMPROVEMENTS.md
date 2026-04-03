@@ -136,9 +136,11 @@ Found during static analysis pass. All items resolved except two noted below.
 ### ✅ Fixed
 - **`getRosterTeams()`** in `services/realtime-api/src/store.ts` — dead export removed; only `getRosterTeamsByScope()` remains.
 - **`SCHOOL_ID`** constant in `apps/coach-dashboard/src/platform.ts` — unused export removed.
-- **`apps/coach-dashboard/src/App.tsx`** — removed stale imports of `formatBonusIndicator`, `formatDashboardClock`, `formatDashboardEventMeta` (only `formatFoulTroubleLabel` is actually rendered; the other three are still tested in `display.test.ts`).
+- **`apps/coach-dashboard/src/App.tsx`** — removed stale imports of `formatBonusIndicator`, `formatDashboardClock`, `formatDashboardEventMeta`; then removed those dead helpers from `display.ts` and simplified `display.test.ts` to only cover the remaining live helper (`formatFoulTroubleLabel`).
 - **`isLocalNetworkHost` / `DEFAULT_SCHOOL_ID` in ipad-operator** — deduplicated: both are now exported from `roster-sync.ts` and imported by `App.tsx`; local copies removed from `App.tsx`.
 - **`RosterPlayer` / `RosterTeam` interfaces** — local definitions removed from `services/realtime-api/src/store.ts`; both now imported from `@bta/shared-schema` (canonical source) and re-exported so downstream imports are unchanged.
+- **`apps/ipad-operator/src/App.tsx`** — removed six unused imports from `roster-sync.ts` (team/player CRUD helpers were imported but never invoked).
+- **`services/insight-engine/src/config.ts`** — deleted orphaned module (unused thresholds/helpers with zero imports across the workspace).
 
 ### Deferred / Won't Fix
 - **`normalizeSchoolId` in `persistence.ts` and `store.ts`** — both are private internal helpers with `string` return type (falling back to `"default"`), distinct from the `tenant-guards.ts` version which returns `string | undefined`. Consolidating would require a circular value import (`store` ↔ `persistence`); leave as private copies.

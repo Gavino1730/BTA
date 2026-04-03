@@ -4,7 +4,6 @@ import IpadTipsPage from "./IpadTipsPage.js";
 import { getPeriodDefaultClock, isOvertimePeriod, normalizeTeamColor, type GameEvent, type RosterTeam } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
-  addPlayerViaRealtime,
   convertRosterTeamToAppTeam,
   createTeamViaRealtime,
   deletePlayerViaRealtime,
