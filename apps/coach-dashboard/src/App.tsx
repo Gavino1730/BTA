@@ -480,6 +480,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isEndingGame, setIsEndingGame] = useState(false);
+  const [endGameStatus, setEndGameStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
@@ -1222,6 +1223,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     setBoxScoreFilter([]);
     setPromptPreview(null);
     setAiRefreshError("");
+    setEndGameStatus("");
     setIsLoading(false);
     setActivePage("live");
     setDashboardStatus(statusMessage);
@@ -1239,6 +1241,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     }
 
     setIsEndingGame(true);
+    setEndGameStatus("Ending game...");
     setDashboardStatus("Ending game...");
 
     try {
@@ -1248,14 +1251,24 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       });
 
       if (!response.ok) {
-        setDashboardStatus(`Could not end game (status ${response.status}).`);
+        const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
+        const reason = payload.error ?? payload.message ?? `status ${response.status}`;
+        const message = response.status === 403
+          ? `Could not end game: ${reason}. Your account needs write permissions.`
+          : response.status === 401
+            ? `Could not end game: ${reason}. Please sign in again.`
+            : `Could not end game: ${reason}.`;
+        setEndGameStatus(message);
+        setDashboardStatus(message);
         return;
       }
 
       endedGameIdsRef.current.add(endingGameId);
       clearActiveGame("Game ended. Start a new game when ready.");
     } catch {
-      setDashboardStatus("Could not reach realtime API to end game.");
+      const message = "Could not reach realtime API to end game.";
+      setEndGameStatus(message);
+      setDashboardStatus(message);
     } finally {
       setIsEndingGame(false);
     }
@@ -2432,6 +2445,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
             </button>
           </div>
         </div>
+        {endGameStatus ? <p className="settings-section-desc">{endGameStatus}</p> : null}
       </section>
 
       <section className="card">
