@@ -836,6 +836,9 @@ body {
 .coach-color-swatch {
   width: 38px;
   height: 38px;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  appearance: none;
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.18);
   box-shadow: 0 2px 8px rgba(0,0,0,0.32);
@@ -856,6 +859,9 @@ body {
 .coach-color-input {
   width: 38px;
   height: 38px;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  appearance: none;
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.18);
   padding: 0;

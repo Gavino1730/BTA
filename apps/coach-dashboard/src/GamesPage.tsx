@@ -130,7 +130,8 @@ const thSt: CSSProperties = {
   textTransform: "uppercase", color: "var(--text-muted)", whiteSpace: "nowrap",
 };
 
-function EditModal({ game, onClose, onSaved }: { game: GameSummary; onClose: () => void; onSaved: (g: GameSummary) => void }) {
+function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
+  const [mode, setMode] = useState<"view" | "edit">(initialMode);
   const [date, setDate] = useState(game.date ?? "");
   const [opponent, setOpponent] = useState(game.opponent ?? "");
   const [location, setLocation] = useState(game.location ?? "home");
@@ -142,7 +143,11 @@ function EditModal({ game, onClose, onSaved }: { game: GameSummary; onClose: () 
       : [emptyRow()]
   );
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+
+  const isEditing = mode === "edit";
 
   const ts = useMemo(() => sumTeamStats(rows), [rows]);
   const playerPts = useMemo(() => rows.reduce((s, r) => s + rowPts(r), 0), [rows]);
@@ -179,10 +184,36 @@ function EditModal({ game, onClose, onSaved }: { game: GameSummary; onClose: () 
       }
       const result = await res.json() as { game: GameSummary };
       onSaved(result.game);
+      setMode("view");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    const confirmDelete = window.confirm(`Delete game #${game.gameId} (${game.opponent})? This cannot be undone.`);
+    if (!confirmDelete) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`${apiBase}/api/games/${encodeURIComponent(String(game.gameId))}`, {
+        method: "DELETE",
+        headers: apiKeyHeader(),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Delete failed");
+      }
+      onDeleted(game.gameId);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -201,34 +232,52 @@ function EditModal({ game, onClose, onSaved }: { game: GameSummary; onClose: () 
         {/* header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.1rem 1.4rem", borderBottom: "1px solid var(--border)" }}>
           <div>
-            <p style={{ margin: 0, fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.06em" }}>Edit Game #{game.gameId}</p>
+            <p style={{ margin: 0, fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.06em" }}>{isEditing ? "Edit" : "View"} Game #{game.gameId}</p>
             <h2 style={{ margin: "0.2rem 0 0" }}>{game.location === "away" ? "@" : "vs"} {game.opponent}</h2>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Cancel</button>
-            <button type="button" onClick={() => void handleSave()} disabled={saving} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1.1rem", cursor: saving ? "default" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
-              {saving ? "Saving…" : "Save Changes"}
-            </button>
+            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
+            {!isEditing && (
+              <button type="button" onClick={() => setMode("edit")} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1rem", cursor: "pointer", fontWeight: 600 }}>
+                Edit
+              </button>
+            )}
+            {!isEditing && (
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} style={{ background: "rgba(248,113,113,0.16)", border: "1px solid rgba(248,113,113,0.3)", color: "var(--red)", borderRadius: 8, padding: "0.45rem 1rem", cursor: deleting ? "default" : "pointer", fontWeight: 600, opacity: deleting ? 0.75 : 1 }}>
+                {deleting ? "Deleting..." : "Delete Game"}
+              </button>
+            )}
+            {isEditing && (
+              <button type="button" onClick={() => setMode("view")} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>
+                Back to View
+              </button>
+            )}
+            {isEditing && (
+              <button type="button" onClick={() => void handleSave()} disabled={saving} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1.1rem", cursor: saving ? "default" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            )}
           </div>
         </div>
 
         <div style={{ padding: "1.1rem 1.4rem" }}>
           {saveError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{saveError}</p>}
+          {deleteError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{deleteError}</p>}
 
           {/* meta fields */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
             {([
-              ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />],
-              ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} />],
+              ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} disabled={!isEditing} />],
+              ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} disabled={!isEditing} />],
               ["Location", (
-                <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt}>
+                <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt} disabled={!isEditing}>
                   <option value="home">Home</option>
                   <option value="away">Away</option>
                   <option value="neutral">Neutral</option>
                 </select>
               )],
-              ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} />],
-              ["Opp Score",  <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} />],
+              ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} disabled={!isEditing} />],
+              ["Opp Score",  <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} disabled={!isEditing} />],
             ] as [string, React.ReactNode][]).map(([lbl, el]) => (
               <label key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
                 <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{lbl}</span>
@@ -251,7 +300,9 @@ function EditModal({ game, onClose, onSaved }: { game: GameSummary; onClose: () 
           {/* box score table */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
             <h3 style={{ margin: 0 }}>Box Score</h3>
-            <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
+            {isEditing && (
+              <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
+            )}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1300, fontSize: "0.81rem" }}>
@@ -262,28 +313,30 @@ function EditModal({ game, onClose, onSaved }: { game: GameSummary; onClose: () 
                   {STAT_COLS.map(c => <th key={c.key} style={thSt}>{c.label}</th>)}
                   <th style={thSt}>REB</th>
                   <th style={{ ...thSt, color: "var(--teal)" }}>PTS</th>
-                  <th style={thSt}></th>
+                  {isEditing && <th style={thSt}></th>}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                     <td style={{ padding: "0.3rem 0.3rem" }}>
-                      <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} />
+                      <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} disabled={!isEditing} />
                     </td>
                     <td style={{ padding: "0.3rem 0.2rem" }}>
-                      <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} />
+                      <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} disabled={!isEditing} />
                     </td>
                     {STAT_COLS.map(c => (
                       <td key={c.key} style={{ padding: "0.3rem 0.2rem" }}>
-                        <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} />
+                        <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} disabled={!isEditing} />
                       </td>
                     ))}
                     <td style={{ padding: "0.3rem 0.2rem", fontWeight: 700, textAlign: "center" }}>{rowReb(row)}</td>
                     <td style={{ padding: "0.3rem 0.2rem", fontWeight: 700, color: "var(--teal)", textAlign: "center" }}>{rowPts(row)}</td>
-                    <td style={{ padding: "0.3rem 0.2rem" }}>
-                      <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} style={{ background: "rgba(248,113,113,0.14)", border: "none", color: "var(--red)", borderRadius: 6, padding: "0.28rem 0.55rem", cursor: "pointer" }}>✕</button>
-                    </td>
+                    {isEditing && (
+                      <td style={{ padding: "0.3rem 0.2rem" }}>
+                        <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} style={{ background: "rgba(248,113,113,0.14)", border: "none", color: "var(--red)", borderRadius: 6, padding: "0.28rem 0.55rem", cursor: "pointer" }}>✕</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -308,7 +361,7 @@ export function GamesPage() {
   const [query, setQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("");
   const [status, setStatus] = useState("Loading games...");
-  const [editGame, setEditGame] = useState<GameSummary | null>(null);
+  const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
 
   function loadGames() {
     setStatus("Loading games...");
@@ -331,23 +384,29 @@ export function GamesPage() {
 
   function handleSaved(updated: GameSummary) {
     setGames(prev => prev.map(g => String(g.gameId) === String(updated.gameId) ? updated : g));
-    setEditGame(updated);
+    setSelectedGame(updated);
+  }
+
+  function handleDeleted(gameId: string | number) {
+    setGames(prev => prev.filter(g => String(g.gameId) !== String(gameId)));
+    setSelectedGame(null);
   }
 
   return (
     <div className="stats-page">
-      {editGame && (
-        <EditModal
-          game={editGame}
-          onClose={() => setEditGame(null)}
+      {selectedGame && (
+        <GameModal
+          game={selectedGame}
+          onClose={() => setSelectedGame(null)}
           onSaved={handleSaved}
+          onDeleted={handleDeleted}
         />
       )}
 
       <section className="stats-page-hero compact">
         <div>
           <h1>Games</h1>
-          <p className="stats-page-subtitle">Full season history. Click any game to view or edit the box score.</p>
+          <p className="stats-page-subtitle">Full season history. Click any game to view details, then choose Edit to make changes.</p>
         </div>
         {status && <p className="stats-page-status">{status}</p>}
       </section>
@@ -381,10 +440,10 @@ export function GamesPage() {
                 key={String(game.gameId)}
                 className="stats-game-card"
                 style={{ cursor: "pointer" }}
-                onClick={() => setEditGame(game)}
+                onClick={() => setSelectedGame(game)}
                 role="button"
                 tabIndex={0}
-                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditGame(game); }}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setSelectedGame(game); }}
               >
                 <div className="stats-game-card-head">
                   <div>
@@ -427,7 +486,7 @@ export function GamesPage() {
                     <strong>{Number(game.team_stats?.oreb ?? 0) + Number(game.team_stats?.dreb ?? 0)}</strong>
                   </div>
                 </div>
-                <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--teal)", opacity: 0.8 }}>Click to edit box score →</p>
+                <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--teal)", opacity: 0.8 }}>Click to view box score →</p>
               </article>
             );
           })}

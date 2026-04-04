@@ -2434,12 +2434,18 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                 <button
                   key={color}
                   type="button"
+                  className={`coach-color-swatch${newGameOppColor === color ? " selected" : ""}`}
                   onClick={() => setNewGameOppColor(color)}
-                  style={{ width: 28, height: 28, borderRadius: "50%", background: color, border: newGameOppColor === color ? "2px solid white" : "2px solid rgba(255,255,255,0.2)", cursor: "pointer", flexShrink: 0 }}
+                  style={{ background: color }}
                   title={color}
                 />
               ))}
-              <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} style={{ height: 28, width: 36, borderRadius: 8, padding: "0 2px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.2)", background: "transparent" }} />
+              <input
+                type="color"
+                className="coach-color-input"
+                value={newGameOppColor}
+                onChange={e => setNewGameOppColor(e.target.value)}
+              />
             </div>
           </div>
 
