@@ -479,6 +479,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [newGameOppColor, setNewGameOppColor] = useState("#f87171");
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
+  const [isLaunchingGame, setIsLaunchingGame] = useState(false);
   const [isEndingGame, setIsEndingGame] = useState(false);
   const [endGameStatus, setEndGameStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -927,6 +928,55 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       return;
     }
 
+    let cancelled = false;
+    async function reconcileStaleGameId() {
+      try {
+        const stateResponse = await fetch(`${apiBase}/api/games/${gameId}/state`, {
+          headers: apiKeyHeader(),
+        });
+
+        if (cancelled || stateResponse.status !== 404) {
+          return;
+        }
+
+        const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
+          headers: apiKeyHeader(),
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (activeResponse.ok) {
+          const active = await activeResponse.json() as { gameId?: string };
+          if (active.gameId && active.gameId !== gameId) {
+            setDashboardStatus("Recovered active game from server.");
+            setGameId(active.gameId);
+          }
+          return;
+        }
+
+        if (activeResponse.status === 404) {
+          endedGameIdsRef.current.add(gameId);
+          clearActiveGame("Cleared stale game session. Start a new game when ready.");
+        }
+      } catch {
+        // Keep local state when offline/unreachable.
+      }
+    }
+
+    void reconcileStaleGameId();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
+
+  useEffect(() => {
+    if (!gameId) {
+      return;
+    }
+
     // Clear ALL game-specific state immediately so the dashboard shows a clean
     // slate while new game data loads - no stale scores, events, AI chat,
     // or device-connection carry-over from the previous game.
@@ -1229,6 +1279,30 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     setDashboardStatus(statusMessage);
   }
 
+  function applyGameSessionToUrl(
+    nextGameId: string,
+    myTeamId: string,
+    myTeamName: string,
+    opponentName: string,
+    vcSide: "home" | "away",
+    homeColor: string,
+    awayColor: string,
+  ): void {
+    const params = new URLSearchParams(window.location.search);
+    params.set("gameId", nextGameId);
+    params.set("myTeamId", myTeamId);
+    if (myTeamName) {
+      params.set("myTeamName", myTeamName);
+    } else {
+      params.delete("myTeamName");
+    }
+    params.set("opponentName", opponentName);
+    params.set("vcSide", vcSide);
+    params.set("homeColor", homeColor);
+    params.set("awayColor", awayColor);
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  }
+
   async function endGameFromDashboard(): Promise<void> {
     if (!gameId || isEndingGame) {
       return;
@@ -1253,6 +1327,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
         const reason = payload.error ?? payload.message ?? `status ${response.status}`;
+        if (response.status === 404) {
+          // The dashboard can keep a stale gameId in local/session state after
+          // restarts or manual data resets. Treat "not found" as already ended.
+          endedGameIdsRef.current.add(endingGameId);
+          clearActiveGame("Server no longer has this game. Cleared local session.");
+          return;
+        }
         const message = response.status === 403
           ? `Could not end game: ${reason}. Your account needs write permissions.`
           : response.status === 401
@@ -2366,47 +2447,88 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           <button
             type="button"
             className="shell-nav-link shell-nav-link-active"
-            disabled={!newGameMyTeamId || !newGameOpponent.trim()}
-            style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim()) ? 0.45 : 1 }}
+            disabled={!newGameMyTeamId || !newGameOpponent.trim() || isLaunchingGame}
+            style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim() || isLaunchingGame) ? 0.45 : 1 }}
             onClick={() => {
+              if (isLaunchingGame) {
+                return;
+              }
+
               const today = new Date().toISOString().slice(0, 10);
               const newId = generateGameId(newGameOpponent, today);
               endedGameIdsRef.current.delete(newId);
               const selectedTeam = rosterTeams.find(t => t.id === newGameMyTeamId);
+              const opponentName = newGameOpponent.trim();
               const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
               const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
               const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
               const oppSlug = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
               const homeTeamId = newGameVcSide === "home" ? newGameMyTeamId : oppSlug;
               const awayTeamId = newGameVcSide === "away" ? newGameMyTeamId : oppSlug;
-              // Create the game on the backend so state/insights/ai-settings endpoints work immediately
-              void fetch(`${apiBase}/api/games`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-                body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName: newGameOpponent.trim() }),
-              }).catch(() => { /* will retry when hydrate runs */ });
-              setGameId(newId);
-              setSetupNames({
-                myTeamId: newGameMyTeamId,
-                myTeamName: selectedTeam?.name ?? "",
-                opponentName: newGameOpponent.trim(),
-                vcSide: newGameVcSide,
-                homeColor,
-                awayColor,
-              });
-              const params = new URLSearchParams(window.location.search);
-              params.set("gameId", newId);
-              params.set("myTeamId", newGameMyTeamId);
-              if (selectedTeam?.name) params.set("myTeamName", selectedTeam.name);
-              params.set("opponentName", newGameOpponent.trim());
-              params.set("vcSide", newGameVcSide);
-              params.set("homeColor", homeColor);
-              params.set("awayColor", awayColor);
-              window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+
+              void (async () => {
+                setIsLaunchingGame(true);
+                setDashboardStatus("Starting game...");
+
+                try {
+                  const response = await fetch(`${apiBase}/api/games`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+                    body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName }),
+                  });
+
+                  if (response.status === 409) {
+                    const payload = await response.json().catch(() => ({})) as {
+                      activeGameId?: string;
+                      activeState?: { gameId?: string };
+                    };
+                    const existingGameId = payload.activeGameId ?? payload.activeState?.gameId;
+                    if (existingGameId) {
+                      setGameId(existingGameId);
+                      setDashboardStatus("Joined existing active game from another device.");
+                    } else {
+                      setDashboardStatus("A game is already active on another device.");
+                    }
+                    return;
+                  }
+
+                  if (!response.ok) {
+                    setDashboardStatus(`Could not start game (status ${response.status}).`);
+                    return;
+                  }
+
+                  const payload = await response.json().catch(() => ({})) as { gameId?: string };
+                  const createdGameId = payload.gameId ?? newId;
+                  setGameId(createdGameId);
+                  setSetupNames({
+                    myTeamId: newGameMyTeamId,
+                    myTeamName: selectedTeam?.name ?? "",
+                    opponentName,
+                    vcSide: newGameVcSide,
+                    homeColor,
+                    awayColor,
+                  });
+                  applyGameSessionToUrl(
+                    createdGameId,
+                    newGameMyTeamId,
+                    selectedTeam?.name ?? "",
+                    opponentName,
+                    newGameVcSide,
+                    homeColor,
+                    awayColor,
+                  );
+                  setDashboardStatus("Game started.");
+                } catch {
+                  setDashboardStatus("Could not start game because realtime API is unreachable.");
+                } finally {
+                  setIsLaunchingGame(false);
+                }
+              })();
             }}
           >
-            Launch Game
+            {isLaunchingGame ? "Starting..." : "Launch Game"}
           </button>
+          <p className="settings-section-desc">{dashboardStatus}</p>
 
           {/* Pairing code */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>

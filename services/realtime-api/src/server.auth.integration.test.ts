@@ -10,8 +10,8 @@ function makeTestToken(payload: Record<string, unknown>): string {
 }
 
 describe("server auth integration", () => {
-  let startServer: (() => Promise<void>) | undefined;
-  let stopServer: (() => Promise<void>) | undefined;
+  let startServer: (overridePort?: number) => Promise<number>;
+  let stopServer: () => Promise<void>;
 
   beforeAll(async () => {
     process.env.BTA_AUTH_TEST_MODE = "1";
@@ -29,9 +29,7 @@ describe("server auth integration", () => {
   });
 
   afterAll(async () => {
-    if (stopServer) {
-      await stopServer();
-    }
+    await stopServer();
     delete process.env.BTA_AUTH_TEST_MODE;
     delete process.env.BTA_REQUIRE_TENANT;
     delete process.env.BTA_JWT_WRITE_REQUIRED;
