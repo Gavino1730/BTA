@@ -94,6 +94,20 @@ function GetStatusCode($response) {
 }
 
 # -- Wait for API if needed ----------------------------------------------------
+function TestApiReady() {
+  try {
+    $health = Invoke-RestMethod "$ApiUrl/health" -ErrorAction Stop
+    return $health.status -eq "ok"
+  } catch {
+    return $false
+  }
+}
+
+if (-not $StartApi -and -not (TestApiReady)) {
+  Write-Host "  Realtime API not detected at $ApiUrl. Auto-starting for smoke test..." -ForegroundColor Yellow
+  $StartApi = $true
+}
+
 if ($StartApi) {
   Write-Host "  Starting realtime-api..." -ForegroundColor Yellow
   Start-Job { Set-Location $using:PWD; npm run dev:api } | Out-Null
@@ -103,7 +117,7 @@ if ($StartApi) {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
     Write-Host "." -NoNewline -ForegroundColor Yellow
-    try { $h = Invoke-RestMethod "$ApiUrl/health" -ErrorAction Stop; if ($h.status -eq "ok") { $ready = $true; break } } catch {}
+    if (TestApiReady) { $ready = $true; break }
   }
   Write-Host ""
   if (-not $ready) { Write-Host "  API did not start in time." -ForegroundColor Red; exit 1 }
