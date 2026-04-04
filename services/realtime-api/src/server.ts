@@ -1961,7 +1961,15 @@ app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
 });
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    uptime: Math.round(process.uptime()),
+    persistence: DATABASE_URL ? "postgres" : "file",
+    auth: {
+      apiKey: Boolean(API_KEY),
+      jwt: isJwtAuthEnabled(),
+    },
+  });
 });
 
 app.use(attachAuthContext);
@@ -3495,6 +3503,10 @@ app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRate
       res.status(404).json({ error: message });
       return;
     }
+    if (/^Game already submitted:/i.test(message)) {
+      res.status(409).json({ error: message });
+      return;
+    }
     res.status(400).json({ error: message });
   }
 });
@@ -3510,7 +3522,12 @@ app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole
 
     res.json({ state, insights });
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "delete failed" });
+    const message = error instanceof Error ? error.message : "delete failed";
+    if (/^Game already submitted:/i.test(message)) {
+      res.status(409).json({ error: message });
+      return;
+    }
+    res.status(400).json({ error: message });
   }
 });
 
@@ -3531,7 +3548,12 @@ app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (
 
     res.json({ event, state, insights });
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : "update failed" });
+    const message = error instanceof Error ? error.message : "update failed";
+    if (/^Game already submitted:/i.test(message)) {
+      res.status(409).json({ error: message });
+      return;
+    }
+    res.status(400).json({ error: message });
   }
 });
 
@@ -3738,8 +3760,6 @@ app.get("*", (_req, res) => {
   });
 });
 
-const port = Number(process.env.PORT ?? 4000);
-const host = process.env.HOST ?? "0.0.0.0";
 let serverStarted = false;
 
 // Warn if API key not set in production
@@ -3748,9 +3768,18 @@ if (NODE_ENV === "production" && !API_KEY) {
   console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Event ingest endpoints are open to anyone.");
 }
 
-export async function startServer(): Promise<void> {
+/**
+ * Start the HTTP server. Accepts an optional port override (pass 0 for an
+ * OS-assigned ephemeral port — useful in tests to avoid EADDRINUSE conflicts).
+ * Returns the actual bound port number.
+ */
+export async function startServer(overridePort?: number): Promise<number> {
   if (serverStarted) {
-    return;
+    const addr = httpServer.address();
+    const boundPort = (typeof addr === "object" && addr !== null)
+      ? (addr as { port: number }).port
+      : (overridePort ?? Number(process.env.PORT ?? 4000));
+    return boundPort;
   }
 
   assertRuntimeConfig(readRuntimeConfig(isJwtAuthEnabled()));
@@ -3759,10 +3788,17 @@ export async function startServer(): Promise<void> {
     console.error("[realtime-api] Failed to initialize store persistence", error);
   });
 
-  await new Promise<void>((resolve) => {
+  const port = overridePort ?? Number(process.env.PORT ?? 4000);
+  const host = process.env.HOST ?? "0.0.0.0";
+
+  return new Promise<number>((resolve) => {
     httpServer.listen(port, host, () => {
       serverStarted = true;
-      console.log(`Realtime API listening on http://${host}:${port}`);
+      const addr = httpServer.address();
+      const boundPort = (typeof addr === "object" && addr !== null)
+        ? (addr as { port: number }).port
+        : port;
+      console.log(`Realtime API listening on http://${host}:${boundPort}`);
       if (API_KEY) {
         console.log(`[realtime-api] API key authentication: ENABLED`);
       } else {
@@ -3777,7 +3813,7 @@ export async function startServer(): Promise<void> {
         console.log("[realtime-api] JWT authentication: ENABLED");
       }
       console.log(`[realtime-api] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
-      resolve();
+      resolve(boundPort);
     });
   });
 }

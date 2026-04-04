@@ -39,6 +39,16 @@ Last updated: April 2, 2026.
 ### Realtime API (services/realtime-api)
 - GPT refresh throttled: every **8 events** (was 3) / **45 seconds** (was 20). Rules engine covers moment-to-moment; GPT reserved for synthesis. Both still env-overridable via `BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS` and `BTA_LIVE_INSIGHT_MIN_INTERVAL_MS`.
 
+### Reliability Hardening (services/realtime-api, packages/game-state, scripts)
+- **`startServer()` dynamic port**: Signature changed from `(): Promise<void>` to `(overridePort?: number): Promise<number>`. Port/host moved inside the function body (no longer module-level). Passing `0` lets the OS assign an ephemeral port, eliminating `EADDRINUSE` conflicts when the dev server is running. Returns the actual bound port.
+- **`server.test.ts` isolated ports**: All 28 server integration tests previously skipped due to `EADDRINUSE` on port 4000. Test suite now calls `startServer(0)` in `beforeAll`, captures the returned port, and dynamically sets `API_BASE` — tests reliably pass alongside a running dev server.
+- **`/health` endpoint enriched**: Response now includes `uptime` (seconds), `persistence` (`"postgres"` or `"file"`), and `auth` flags (`apiKey`, `jwt`) so load balancers and monitoring tools can distinguish configuration states.
+- **`eFG% test coverage`**: `state.test.ts` now asserts `fgMade3`/`fgAttempts3` are populated separately from 2PT makes, and validates the eFG% formula `(FGM + 0.5 × 3PM) / FGA`.
+- **Correction-determinism test**: Verifies that deleting an event and re-applying a corrected version produces the exact same state as a fresh replay with the corrected event — the core guarantee of the replay model.
+- **Golden fixture (20-event game stream)**: Full-coverage determinism test spanning shots, fouls, FTs, reboundsm subs, matchup assignments, turnovers, and period transitions. Replays twice and asserts byte-identical state including score, stats, lineups, fouls, bonus.
+- **Lineup +/- test coverage**: `computeLineupSegments` and `aggregateLineupStats` now have explicit tests that verify per-unit `pointsFor`, `pointsAgainst`, and `plusMinus` across a substitution boundary, and that `aggregateLineupStats` sorts best unit first.
+- **`scripts/ci-gate.mjs`**: New script that chains `npm run build` + `npm run test`, exits non-zero on any failure — suitable as a pre-push or CI pipeline entrypoint.
+
 ### iPad Operator (apps/ipad-operator)
 - **Shot Zone Capture**: Added zone chips to shot-entry modal so each shot records a real NFHS zone (`rim`, `paint`, `midrange`, `corner_three`, `above_break_three`) instead of hardcoded defaults. Zone options auto-filter by shot value (2PT vs 3PT) and preselect sensible defaults for speed.
 - **Foul/Turnover Type Capture**: Stat modal now includes quick subtype chips for fouls (`personal`, `shooting`, `offensive`, `technical`, `flagrant`) and turnovers (`bad_pass`, `traveling`, `double_dribble`, `out_of_bounds`, `offensive_foul`, `steal`, `other`) so events are no longer forced to defaults.

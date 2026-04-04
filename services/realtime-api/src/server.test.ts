@@ -11,8 +11,9 @@ import { startServer, stopServer } from "./server.js";
  *   npm run test -- server.test.ts
  */
 
-const API_BASE = "http://localhost:4000";
+let API_BASE = "http://localhost:4000";
 const API_KEY = process.env.BTA_API_KEY || "test-key-xyz";
+
 
 beforeEach(() => {
   // Reset env for each test
@@ -27,8 +28,11 @@ async function resetSchool(schoolId: string): Promise<void> {
 }
 
 beforeAll(async () => {
-  await startServer();
-});
+  // Use port 0 so the OS assigns a free ephemeral port, avoiding EADDRINUSE
+  // conflicts when a dev server is already running on the default port 4000.
+  const boundPort = await startServer(0);
+  API_BASE = `http://localhost:${boundPort}`;
+}, 30000);
 
 afterAll(async () => {
   await stopServer();
@@ -402,6 +406,77 @@ describe("unified stats endpoints", () => {
       })
     });
     expect(secondResponse.status).toBe(201);
+  });
+
+  it("rejects event mutation requests after game submit", async () => {
+    await resetSchool("submitted-lock-school");
+
+    const createResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "submitted-lock-school" },
+      body: JSON.stringify({
+        gameId: "2026-04-03-submitted-lock",
+        homeTeamId: "vc",
+        awayTeamId: "opp-a",
+        opponentName: "Opponent A",
+      })
+    });
+    expect(createResponse.status).toBe(201);
+
+    const eventPayload = {
+      id: "submitted-lock-evt-1",
+      sequence: 1,
+      timestampIso: new Date().toISOString(),
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "vc",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "p1",
+      made: true,
+      points: 2,
+      zone: "paint",
+    };
+
+    const postBeforeSubmit = await fetch(`${API_BASE}/api/games/2026-04-03-submitted-lock/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "submitted-lock-school" },
+      body: JSON.stringify(eventPayload)
+    });
+    expect(postBeforeSubmit.status).toBe(201);
+
+    const submitResponse = await fetch(`${API_BASE}/api/games/2026-04-03-submitted-lock/submit`, {
+      method: "POST",
+      headers: { "x-school-id": "submitted-lock-school" }
+    });
+    expect(submitResponse.status).toBe(200);
+
+    const postAfterSubmit = await fetch(`${API_BASE}/api/games/2026-04-03-submitted-lock/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "submitted-lock-school" },
+      body: JSON.stringify({
+        ...eventPayload,
+        id: "submitted-lock-evt-2",
+        sequence: 2,
+      })
+    });
+    expect(postAfterSubmit.status).toBe(409);
+
+    const updateAfterSubmit = await fetch(`${API_BASE}/api/games/2026-04-03-submitted-lock/events/submitted-lock-evt-1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "submitted-lock-school" },
+      body: JSON.stringify({
+        ...eventPayload,
+        made: false,
+      })
+    });
+    expect(updateAfterSubmit.status).toBe(409);
+
+    const deleteAfterSubmit = await fetch(`${API_BASE}/api/games/2026-04-03-submitted-lock/events/submitted-lock-evt-1`, {
+      method: "DELETE",
+      headers: { "x-school-id": "submitted-lock-school" },
+    });
+    expect(deleteAfterSubmit.status).toBe(409);
   });
 
   it("supports legacy team settings and roster management routes", async () => {

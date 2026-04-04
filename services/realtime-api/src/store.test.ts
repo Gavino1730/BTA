@@ -9,6 +9,7 @@ import {
   ingestEvent,
   patchGameLineup,
   refreshGameAiInsights,
+  submitGame,
   updateEvent
 } from "./store.js";
 
@@ -126,6 +127,65 @@ describe("store", () => {
         zone: "paint"
       })
     ).toThrow(/already exists with different payload/);
+  });
+
+  it("rejects ingest/update/delete after game is submitted", () => {
+    createGame({
+      schoolId: "default",
+      gameId: "game-submitted-lock",
+      homeTeamId: "home",
+      awayTeamId: "away"
+    });
+
+    ingestEvent({
+      id: "evt-lock-1",
+      gameId: "game-submitted-lock",
+      sequence: 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: true,
+      points: 2,
+      zone: "paint"
+    });
+
+    expect(submitGame("game-submitted-lock")).toBe(true);
+
+    expect(() => ingestEvent({
+      id: "evt-lock-2",
+      gameId: "game-submitted-lock",
+      sequence: 2,
+      timestampIso: "2026-03-18T20:01:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 460,
+      teamId: "away",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "a1",
+      made: true,
+      points: 2,
+      zone: "paint"
+    })).toThrow(/Game already submitted/);
+
+    expect(() => updateEvent("game-submitted-lock", "evt-lock-1", {
+      sequence: 1,
+      timestampIso: "2026-03-18T20:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: false,
+      points: 2,
+      zone: "paint"
+    })).toThrow(/Game already submitted/);
+
+    expect(() => deleteEvent("game-submitted-lock", "evt-lock-1")).toThrow(/Game already submitted/);
   });
 
   it("returns null for unknown game", () => {

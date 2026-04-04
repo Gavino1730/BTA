@@ -371,14 +371,20 @@ function resolveSchoolId(scope?: TenantScope): string {
 }
 
 function resolveRequiredSchoolId(inputSchoolId: unknown, scope?: TenantScope): string {
-  const normalizedInput = normalizeSchoolId(inputSchoolId);
+  const hasInputSchoolId = inputSchoolId !== undefined
+    && inputSchoolId !== null
+    && String(inputSchoolId).trim().length > 0;
+  const normalizedInput = hasInputSchoolId ? normalizeSchoolId(inputSchoolId) : "";
   const normalizedScope = scope?.schoolId !== undefined ? normalizeSchoolId(scope.schoolId) : undefined;
 
-  if (normalizedScope && normalizedInput !== normalizedScope) {
+  if (normalizedScope && hasInputSchoolId && normalizedInput !== normalizedScope) {
     throw new Error("Tenant schoolId mismatch between payload and scope");
   }
 
-  return normalizedScope ?? normalizedInput;
+  if (normalizedScope) {
+    return normalizedScope;
+  }
+  return hasInputSchoolId ? normalizedInput : normalizeSchoolId(undefined);
 }
 
 function buildGameSessionKey(gameId: string, schoolId: string): string {
@@ -3145,6 +3151,10 @@ export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
     throw new Error(`Game not found: ${event.gameId}`);
   }
 
+  if (session.submitted) {
+    throw new Error(`Game already submitted: ${event.gameId}`);
+  }
+
   const existingEventId = session.eventIdsBySequence.get(event.sequence);
   if (existingEventId && existingEventId !== event.id) {
     throw new Error(`Sequence ${event.sequence} already belongs to event ${existingEventId}`);
@@ -3180,6 +3190,10 @@ export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope
     throw new Error(`Game not found: ${gameId}`);
   }
 
+  if (session.submitted) {
+    throw new Error(`Game already submitted: ${gameId}`);
+  }
+
   const event = session.eventsById.get(eventId);
   if (!event) {
     throw new Error(`Event not found: ${eventId}`);
@@ -3205,6 +3219,10 @@ export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, 
   const session = getSession(gameId, { schoolId });
   if (!session) {
     throw new Error(`Game not found: ${gameId}`);
+  }
+
+  if (session.submitted) {
+    throw new Error(`Game already submitted: ${gameId}`);
   }
 
   const existing = session.eventsById.get(eventId);
