@@ -221,7 +221,7 @@ function PlayerDetailModal({ player, history, onClose }: { player: PlayerSummary
         <section className="stats-page-card">
           <div className="stats-page-card-head">
             <h3>Previous Games</h3>
-            <span className="stats-page-status">Click any game in the Games tab to edit the box score.</span>
+            <span className="stats-page-status">Click any game in the Games tab to view the box score, then select Edit if changes are needed.</span>
           </div>
 
           {history.length === 0 ? (
