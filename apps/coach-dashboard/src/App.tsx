@@ -314,6 +314,9 @@ function extractHistoricalContextFromPrompt(prompt: string): string {
 // Local storage is fallback only; source of truth is realtime API roster config.
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 const ACTIVE_GAME_KEY = "coach-active-game-id";
+// Minimum delay before revoking a blob URL created for a file download, giving
+// the browser time to queue the download before the URL is invalidated.
+const DOWNLOAD_REVOKE_DELAY_MS = 100;
 
 
 export interface RosterPlayer {
@@ -744,15 +747,18 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     a.href = url;
     a.download = "roster.json";
     a.click();
-    URL.revokeObjectURL(url);
+    // Delay revocation so the browser has time to start the download before
+    // the object URL is invalidated.
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_REVOKE_DELAY_MS);
   }
 
   function importRoster(file: File) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = JSON.parse(e.target!.result as string) as { teams?: RosterTeam[] };
-        if (Array.isArray(data.teams)) setRosterTeams(data.teams);
+        const data = JSON.parse(e.target!.result as string) as { teams?: unknown };
+        const validated = normalizeRosterTeams(data.teams);
+        if (validated.length > 0) setRosterTeams(validated);
       } catch { /* invalid JSON */ }
     };
     reader.readAsText(file);
