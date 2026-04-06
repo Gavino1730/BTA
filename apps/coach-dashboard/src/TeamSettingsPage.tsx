@@ -777,7 +777,7 @@ export function TeamSettingsPage() {
                         />
                       </label>
                       <label className="stats-filter-field">
-                        <span>Notes <span className="settings-hint">(injuries, tendencies, matchup notes)</span></span>
+                        <span>Notes <span className="settings-hint">(injuries, tendencies, rotation notes)</span></span>
                         <textarea
                           className="settings-roster-textarea"
                           value={row.notes}
@@ -838,7 +838,7 @@ export function TeamSettingsPage() {
                   className="settings-roster-textarea"
                   value={newPlayer.notes}
                   onChange={(e) => setNewPlayer((cur) => ({ ...cur, notes: e.target.value }))}
-                  placeholder="Injuries, tendencies, matchup notes..."
+                  placeholder="Injuries, tendencies, rotation notes..."
                   rows={2}
                 />
               </label>
@@ -972,7 +972,7 @@ export function TeamSettingsPage() {
             </label>
             <label className="stats-filter-field">
               <span>Custom AI Prompt</span>
-              <textarea className="settings-ai-textarea" value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} placeholder="Use concise halftime adjustments with risk level. Prioritize matchup-based recommendations." rows={4} />
+              <textarea className="settings-ai-textarea" value={customPrompt} onChange={(event) => setCustomPrompt(event.target.value)} placeholder="Use concise halftime adjustments with risk level. Prioritize rotation and defensive recommendations." rows={4} />
             </label>
           </div>
         </section>

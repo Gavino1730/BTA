@@ -336,7 +336,7 @@ export function AiInsightsPage() {
                   className="ai-live-notes-textarea"
                   value={preGameNotes}
                   onChange={(e) => setPreGameNotes(e.target.value)}
-                  placeholder="Opponent tendencies, team mindset, key matchups..."
+                  placeholder="Opponent tendencies, team mindset, key rotations..."
                   rows={2}
                 />
                 <button
@@ -456,7 +456,7 @@ export function AiInsightsPage() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={handleChatKey}
-            placeholder={chatHistory.length > 0 ? "Follow up..." : "Ask about lineups, trends, who's in form, matchup concerns..."}
+            placeholder={chatHistory.length > 0 ? "Follow up..." : "Ask about lineups, trends, who's in form, defensive concerns..."}
             rows={3}
             className="ai-chat-textarea"
             disabled={chatLoading}

@@ -14,17 +14,15 @@ Last updated: April 2, 2026.
 - **Rule 14 — Period-End Urgency**: Alert once when clock enters ≤18s window in Q1/Q2/Q3 (priority: info)
 - **Rule 15 — Opponent FT Bombardment**: Alert when opponent draws 6+ FT trips in recent 10 events (priority: important)
 - **Rule 16 — Timeout Budget Awareness**: In Q4/OT, when our timeout count drops below 2 and game is within reach, emit a timeout conservation alert (priority: important)
-- **Rule 17 — Matchup Exploitation**: When a defender with an active matchup assignment picks up 3+ fouls, emit a defensive switch suggestion naming the specific assignment (priority: important; urgent if near foul-out). Fires on `foul` events only.
 - **Rule 18 — Opponent 3PT Streak**: Fires when opponent hits 3 or more of their last 6 three-point attempts. Prompts a defensive adjustment to close out on perimeter shooters.
 - **Rule 19 — Fouls to Give**: In Q4/OT with ≤45s remaining, fires once when our team still has fouls available before the bonus threshold. Prompts the bench to intentionally foul to stop the clock.
 - **Rule 3 fix — Bonus alert threshold**: Previously re-fired on every event once a team was in the bonus. Now fires exactly once at the moment the fouling team's period tally hits `BONUS_FOUL_THRESHOLD` (5).
 - **Rule 10b — Opponent Hot Hand**: When an opponent player is shooting efficiently (3+ of 4+ recent attempts, ≥60%), emits a defensive adjustment prompt naming the player.
 - **Rule 20 — Cold Shooter**: When one of our players is 0-for-4 in recent field goal attempts, emits an `info`-priority nudge to reduce their shot volume until they can get an easy look.
 - **Rule 21 — Transition Momentum**: When the opponent converts 2+ turnovers/live-ball steals into quick baskets within a 20-event window, emits an alert to tighten transition defense.
-- New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`, `matchup_exploitation`, `three_point_streak`, `foul_to_give`, `opponent_hot_hand`, `cold_shooter`, `transition_momentum`
+- New InsightTypes added: `scoring_drought`, `depth_warning`, `efficiency`, `leverage`, `three_point_streak`, `foul_to_give`, `opponent_hot_hand`, `cold_shooter`, `transition_momentum`
 
 ### Shared Schema + Game State (packages/shared-schema, packages/game-state)
-- **Matchup Tracking Foundation**: Added `matchup_assignment` event contract (`defenderPlayerId` -> `offensivePlayerId`), validation, and deterministic replay support via `activeMatchupsByTeam` in game state.
 - **Lineup +/- Tracking**: Added deterministic lineup stint segmentation and aggregate plus/minus utilities (`computeLineupSegments`, `aggregateLineupStats`) with dashboard integration.
 
 ### Coach Dashboard (apps/coach-dashboard)
@@ -32,9 +30,7 @@ Last updated: April 2, 2026.
 - `depth_warning` added to the Action Items panel (requires immediate response)
 - Live scoreboard now shows **PPP** (points per possession, after ≥5 possessions) and **FT Rate** (FTA/FGA) instead of the less-actionable POSS and SUBS columns
 - Insights now show relative age (for example, `2m ago`) using each insight's `createdAtIso`
-- Added **Current Matchups** panel to show live defender assignment entries from operator matchup events.
 - Added **Lineup +/-** panel showing points-for / points-against and net differential per unit.
-- Label registered for `matchup_exploitation` insight type ("Matchup").
 
 ### Realtime API (services/realtime-api)
 - GPT refresh throttled: every **8 events** (was 3) / **45 seconds** (was 20). Rules engine covers moment-to-moment; GPT reserved for synthesis. Both still env-overridable via `BTA_LIVE_INSIGHT_REFRESH_EVERY_EVENTS` and `BTA_LIVE_INSIGHT_MIN_INTERVAL_MS`.
@@ -45,14 +41,13 @@ Last updated: April 2, 2026.
 - **`/health` endpoint enriched**: Response now includes `uptime` (seconds), `persistence` (`"postgres"` or `"file"`), and `auth` flags (`apiKey`, `jwt`) so load balancers and monitoring tools can distinguish configuration states.
 - **`eFG% test coverage`**: `state.test.ts` now asserts `fgMade3`/`fgAttempts3` are populated separately from 2PT makes, and validates the eFG% formula `(FGM + 0.5 × 3PM) / FGA`.
 - **Correction-determinism test**: Verifies that deleting an event and re-applying a corrected version produces the exact same state as a fresh replay with the corrected event — the core guarantee of the replay model.
-- **Golden fixture (20-event game stream)**: Full-coverage determinism test spanning shots, fouls, FTs, reboundsm subs, matchup assignments, turnovers, and period transitions. Replays twice and asserts byte-identical state including score, stats, lineups, fouls, bonus.
+- **Golden fixture (20-event game stream)**: Full-coverage determinism test spanning shots, fouls, FTs, rebounds, subs, turnovers, and period transitions. Replays twice and asserts byte-identical state including score, stats, lineups, fouls, bonus.
 - **Lineup +/- test coverage**: `computeLineupSegments` and `aggregateLineupStats` now have explicit tests that verify per-unit `pointsFor`, `pointsAgainst`, and `plusMinus` across a substitution boundary, and that `aggregateLineupStats` sorts best unit first.
 - **`scripts/ci-gate.mjs`**: New script that chains `npm run build` + `npm run test`, exits non-zero on any failure — suitable as a pre-push or CI pipeline entrypoint.
 
 ### iPad Operator (apps/ipad-operator)
 - **Shot Zone Capture**: Added zone chips to shot-entry modal so each shot records a real NFHS zone (`rim`, `paint`, `midrange`, `corner_three`, `above_break_three`) instead of hardcoded defaults. Zone options auto-filter by shot value (2PT vs 3PT) and preselect sensible defaults for speed.
 - **Foul/Turnover Type Capture**: Stat modal now includes quick subtype chips for fouls (`personal`, `shooting`, `offensive`, `technical`, `flagrant`) and turnovers (`bad_pass`, `traveling`, `double_dribble`, `out_of_bounds`, `offensive_foul`, `steal`, `other`) so events are no longer forced to defaults.
-- **Matchup Assignment UI**: Two-step modal flow — tap "match" in the stat grid (or "MTCH" on a roster player) to pick a defender then enter the opponent's jersey number. Posts a `matchup_assignment` event with `defenderPlayerId` and `offensivePlayerId = opp-{jersey}`. Indigo-themed button matches the existing action palette.
 - **Periodic offline flush**: every 15s during a live game, if `navigator.onLine` and pending events exist, retries the queue. Fixes iOS/mobile case where the native `online` event never fires after reconnect.
 - **Instant undo**: removed confirmation dialog — `undoLast()` removes the last event immediately with haptic feedback and a toast. No friction under pressure.
 - **MAKE/MISS split buttons**: left panel has 6 dedicated shot buttons (MAKE 2 / MISS 2, MAKE 3 / MISS 3, FT MAKE / FT MISS) — 2 taps to log any shot outcome without a modal toggle.

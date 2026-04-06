@@ -24,7 +24,6 @@ interface GameState {
   playerStatsByTeam: Record<string, Record<string, PlayerStats>>;
   timeoutsByTeam: Record<string, number>;
   teamFoulsByPeriod: Record<string, Record<string, number>>;
-  activeMatchupsByTeam?: Record<string, Record<string, string>>;
   events: GameEvent[];
   startingLineupByTeam?: Record<string, string[]>;
 }
@@ -155,23 +154,6 @@ function mergeLineupsByTeam(
   return merged;
 }
 
-function mergeMatchupsByTeam(
-  previous: Record<string, Record<string, string>> | undefined,
-  incoming: Record<string, Record<string, string>> | undefined
-): Record<string, Record<string, string>> {
-  const merged: Record<string, Record<string, string>> = {
-    ...(previous ?? {}),
-    ...(incoming ?? {}),
-  };
-  for (const teamId of Object.keys(merged)) {
-    merged[teamId] = {
-      ...(previous?.[teamId] ?? {}),
-      ...(incoming?.[teamId] ?? {}),
-    };
-  }
-  return merged;
-}
-
 function mergeGameState(previous: GameState | null, incoming: GameState): GameState {
   if (!previous || previous.gameId !== incoming.gameId) {
     return incoming;
@@ -184,7 +166,6 @@ function mergeGameState(previous: GameState | null, incoming: GameState): GameSt
     bonusByTeam: mergeByTeamKeys(previous.bonusByTeam, incoming.bonusByTeam),
     possessionsByTeam: mergeByTeamKeys(previous.possessionsByTeam, incoming.possessionsByTeam),
     activeLineupsByTeam: mergeLineupsByTeam(previous.activeLineupsByTeam, incoming.activeLineupsByTeam),
-    activeMatchupsByTeam: mergeMatchupsByTeam(previous.activeMatchupsByTeam, incoming.activeMatchupsByTeam),
     teamStats: mergeByTeamKeys(previous.teamStats, incoming.teamStats),
     playerStatsByTeam: mergeByTeamKeys(previous.playerStatsByTeam, incoming.playerStatsByTeam),
   };
@@ -499,7 +480,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [promptPreviewStatus, setPromptPreviewStatus] = useState("Prompt preview not loaded.");
   const [aiChatMessages, setAiChatMessages] = useState<AiChatMessage[]>([]);
   const [aiChatInput, setAiChatInput] = useState("");
-  const [aiChatStatus, setAiChatStatus] = useState("Ask the live assistant about subs, foul danger, hot hands, or matchup decisions.");
+  const [aiChatStatus, setAiChatStatus] = useState("Ask the live assistant about subs, foul danger, hot hands, or defensive adjustments.");
   const [isSendingAiChat, setIsSendingAiChat] = useState(false);
   const [aiChatSuggestions, setAiChatSuggestions] = useState<string[]>([]);
   const historicalPromptContext = useMemo(
@@ -1814,7 +1795,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       depth_warning: "Depth Warning",
       efficiency: "Efficiency",
       leverage: "Game Leverage",
-      matchup_exploitation: "Matchup",
       three_point_streak: "3PT Alert",
       foul_to_give: "Fouls to Give",
       opponent_hot_hand: "Opp Hot Hand",
@@ -2050,27 +2030,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       liveCount: liveOnCourt.length,
     };
   }, [aggregatedTeams, canonicalTeamId, coachedTeamId, rosterTeams]);
-
-  const matchupContext = useMemo(() => {
-    if (!coachedTeamId) {
-      return null;
-    }
-    const assignments = state?.activeMatchupsByTeam?.[coachedTeamId] ?? {};
-    const entries = Object.entries(assignments)
-      .filter(([defenderId, offensiveId]) => Boolean(defenderId) && Boolean(offensiveId));
-    if (entries.length === 0) {
-      return null;
-    }
-
-    const opponentTeamId = state?.opponentTeamId
-      ?? (coachedTeamId === canonicalSideIds.homeId ? canonicalSideIds.awayId : canonicalSideIds.homeId);
-
-    return {
-      teamId: coachedTeamId,
-      opponentTeamId,
-      assignments: entries,
-    };
-  }, [canonicalSideIds.awayId, canonicalSideIds.homeId, coachedTeamId, state?.activeMatchupsByTeam, state?.opponentTeamId]);
 
   const aiInsights = useMemo(
     () => insights.filter((insight) => insight.type === "ai_coaching"),
@@ -2377,7 +2336,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           <div className="stats-page-card-head">
             <div>
               <h3>Start New Game</h3>
-              <p className="settings-section-desc">Set up the matchup, then give the operator your pairing code to begin live tracking.</p>
+              <p className="settings-section-desc">Set up your game connection, then give the operator your pairing code to begin live tracking.</p>
             </div>
           </div>
 
@@ -2434,18 +2393,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                 <button
                   key={color}
                   type="button"
-                  className={`coach-color-swatch${newGameOppColor === color ? " selected" : ""}`}
                   onClick={() => setNewGameOppColor(color)}
-                  style={{ background: color }}
+                  style={{ width: 28, height: 28, borderRadius: "50%", background: color, border: newGameOppColor === color ? "2px solid white" : "2px solid rgba(255,255,255,0.2)", cursor: "pointer", flexShrink: 0 }}
                   title={color}
                 />
               ))}
-              <input
-                type="color"
-                className="coach-color-input"
-                value={newGameOppColor}
-                onChange={e => setNewGameOppColor(e.target.value)}
-              />
+              <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} style={{ height: 28, width: 36, borderRadius: 8, padding: "0 2px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.2)", background: "transparent" }} />
             </div>
           </div>
 
@@ -3017,32 +2970,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                 </div>
               );
             })}
-          </div>
-        </section>
-      )}
-
-      {matchupContext && (
-        <section className="card">
-          <h2>Current Matchups</h2>
-          <p className="insight-context-note" style={{ marginBottom: "0.75rem" }}>
-            Defender assignment log from operator input.
-          </p>
-          <div className="lineup-unit-list">
-            {matchupContext.assignments.map(([defenderId, offensiveId]) => (
-              <div key={`${defenderId}-${offensiveId}`} className="lineup-unit-row">
-                <div className="lineup-unit-players">
-                  <span className="lineup-unit-chip">
-                    {displayPlayerName(matchupContext.teamId, defenderId)}
-                  </span>
-                </div>
-                <div className="lineup-unit-scores">
-                  <span className="lineup-unit-score-sep">defends</span>
-                  <span className="lineup-unit-chip">
-                    {displayPlayerName(matchupContext.opponentTeamId, offensiveId)}
-                  </span>
-                </div>
-              </div>
-            ))}
           </div>
         </section>
       )}

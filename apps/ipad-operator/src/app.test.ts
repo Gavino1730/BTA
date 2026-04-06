@@ -5,6 +5,15 @@ import type { GameEvent } from "@bta/shared-schema";
 
 type TeamSide = "home" | "away";
 
+const OPERATOR_ALERT_AUTOCLEAR_MS = 12000;
+const OPERATOR_ALERT_AUTOCLEAR_URGENT_MS = 20000;
+
+function getOperatorAlertAutoClearMs(alerts: Array<{ priority: "urgent" | "important" | "info" }>): number {
+  return alerts.some((alert) => alert.priority === "urgent")
+    ? OPERATOR_ALERT_AUTOCLEAR_URGENT_MS
+    : OPERATOR_ALERT_AUTOCLEAR_MS;
+}
+
 function clockToSec(clock: string): number {
   const [m, s] = clock.split(":").map(Number);
   return (m || 0) * 60 + (s || 0);
@@ -145,6 +154,15 @@ function parseActiveGameIdFromConflictResponse(bodyText: string): string | null 
   } catch {
     return null;
   }
+}
+
+function normalizeOperatorId(value: string | null | undefined): string | null {
+  const normalized = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 40);
+  return normalized.length > 0 ? normalized : null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -306,6 +324,41 @@ describe("active game conflict parsing", () => {
   it("returns null when activeGameId is missing or blank", () => {
     expect(parseActiveGameIdFromConflictResponse('{"error":"conflict"}')).toBeNull();
     expect(parseActiveGameIdFromConflictResponse('{"activeGameId":"   "}')).toBeNull();
+  });
+});
+
+describe("operator alert auto-clear timing", () => {
+  it("uses the default timeout for important-only alerts", () => {
+    expect(getOperatorAlertAutoClearMs([
+      { priority: "important" },
+      { priority: "important" },
+    ])).toBe(12000);
+  });
+
+  it("uses the longer timeout when any alert is urgent", () => {
+    expect(getOperatorAlertAutoClearMs([
+      { priority: "important" },
+      { priority: "urgent" },
+    ])).toBe(20000);
+  });
+});
+
+describe("operator id normalization", () => {
+  it("normalizes casing and trims spaces", () => {
+    expect(normalizeOperatorId("  OP-Alpha_1  ")).toBe("op-alpha_1");
+  });
+
+  it("strips unsupported characters", () => {
+    expect(normalizeOperatorId("op@#$%^&*()ID")).toBe("opid");
+  });
+
+  it("returns null for blank/invalid values", () => {
+    expect(normalizeOperatorId("   ")).toBeNull();
+    expect(normalizeOperatorId("***")).toBeNull();
+  });
+
+  it("caps id length at 40 characters", () => {
+    expect(normalizeOperatorId("abcdefghijklmnopqrstuvwxyz0123456789extra")?.length).toBe(40);
   });
 });
 
@@ -471,6 +524,7 @@ describe("coach code sync snapshot", () => {
     teams: SyncTeam[];
     gameSetup: {
       connectionId?: string;
+      syncedConnectionId?: string;
       gameId: string;
       myTeamId: string;
       opponent: string;
@@ -494,6 +548,7 @@ describe("coach code sync snapshot", () => {
       teams?: SyncTeam[];
     },
   ): SyncState {
+    const normalizedConnectionId = normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId);
     const teams = snapshot.teams ?? current.teams;
     const nextTeamId = snapshot.setup?.myTeamId?.trim() || current.gameSetup.myTeamId || teams[0]?.id || "";
     const allowed = new Set((teams.find((team) => team.id === nextTeamId)?.players ?? []).map((player) => player.id));
@@ -503,7 +558,8 @@ describe("coach code sync snapshot", () => {
       teams,
       gameSetup: {
         ...current.gameSetup,
-        connectionId: normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId),
+        connectionId: normalizedConnectionId,
+        syncedConnectionId: normalizedConnectionId,
         gameId: snapshot.setup?.gameId ?? current.gameSetup.gameId,
         myTeamId: nextTeamId,
         opponent: snapshot.setup?.opponentName ?? current.gameSetup.opponent,
@@ -516,7 +572,13 @@ describe("coach code sync snapshot", () => {
     };
   }
 
-  it("hydrates the operator team and matchup from the coach code", () => {
+  function isConnectionReadyForStart(setup: { connectionId?: string; syncedConnectionId?: string }): boolean {
+    const connectionId = normalizeConnectionId(setup.connectionId);
+    const syncedConnectionId = normalizeConnectionId(setup.syncedConnectionId);
+    return Boolean(connectionId) && connectionId === syncedConnectionId;
+  }
+
+  it("hydrates the operator team and connection from the coach code", () => {
     const state: SyncState = {
       teams: [],
       gameSetup: {
@@ -549,6 +611,7 @@ describe("coach code sync snapshot", () => {
     });
 
     expect(merged.gameSetup.connectionId).toBe("conn-vc-2026");
+    expect(merged.gameSetup.syncedConnectionId).toBe("conn-vc-2026");
     expect(merged.gameSetup.gameId).toBe("vc-vs-central");
     expect(merged.gameSetup.myTeamId).toBe("vc-varsity");
     expect(merged.gameSetup.opponent).toBe("Central Christian");
@@ -595,5 +658,32 @@ describe("coach code sync snapshot", () => {
     });
 
     expect(merged.gameSetup.startingLineup).toEqual(["p1"]);
+  });
+
+  it("requires the current code to be the synced code before start", () => {
+    const syncedState: SyncState = {
+      teams: [],
+      gameSetup: {
+        connectionId: "conn-vc-2026",
+        syncedConnectionId: "conn-vc-2026",
+        gameId: "vc-vs-central",
+        myTeamId: "vc-varsity",
+        opponent: "Central Christian",
+        vcSide: "home",
+        dashboardUrl: "http://localhost:4000",
+      },
+    };
+
+    expect(isConnectionReadyForStart(syncedState.gameSetup)).toBe(true);
+
+    const changedCodeState: SyncState = {
+      ...syncedState,
+      gameSetup: {
+        ...syncedState.gameSetup,
+        connectionId: "some-random-code",
+      },
+    };
+
+    expect(isConnectionReadyForStart(changedCodeState.gameSetup)).toBe(false);
   });
 });

@@ -1824,7 +1824,9 @@ interface OperatorLinkSetup {
 
 const operatorLinkByConnectionId = new Map<string, OperatorLinkSetup>();
 
-// Debounce game state broadcasts to max 1 per 200ms per game
+// Debounce game state broadcasts to max 1 per 60ms per game.
+// This keeps fanout fast enough for near-instant multi-device updates while
+// still coalescing bursts during rapid stat entry.
 interface PendingBroadcast {
   state: unknown;
   insights: unknown;
@@ -1832,7 +1834,7 @@ interface PendingBroadcast {
 }
 
 const pendingBroadcasts = new Map<string, PendingBroadcast>();
-const BROADCAST_DEBOUNCE_MS = 200;
+const BROADCAST_DEBOUNCE_MS = 60;
 
 function emitToGameRooms(schoolId: string, gameId: string, eventName: string, payload: unknown): void {
   io.to(gameRoom(schoolId, gameId)).emit(eventName, payload);
@@ -3505,6 +3507,14 @@ app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRate
     }
     if (/^Game already submitted:/i.test(message)) {
       res.status(409).json({ error: message });
+      return;
+    }
+    if (/^Sequence\s+\d+\s+already belongs to event\s+/i.test(message) || /^Event\s+.+\s+already exists with different payload/i.test(message)) {
+      res.status(409).json({
+        error: message,
+        code: "event_conflict",
+        state: getGameState(req.params.gameId, { schoolId }) ?? null,
+      });
       return;
     }
     res.status(400).json({ error: message });

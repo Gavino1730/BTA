@@ -48,19 +48,18 @@ function resolveDefaultAppBase(hostname: string, origin: string, port: number): 
   return origin.replace(/\/+$/, "") || `https://${hostname}`;
 }
 
-function resolveDefaultSchoolId(hostname: string): string {
-  return isLocalNetworkHost(hostname) ? "default" : "";
-}
-
 const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
 const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
 const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD
   ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : "");
-const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? resolveDefaultSchoolId(defaultHost)).toString().trim();
+const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? "").toString().trim();
 const STORE = "operator-console";
+const OPERATOR_ID_KEY = "operator-console:operator-id";
 const APP_DATA_KEY = "shared-app-data-v3";
 const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
 const DEFAULT_AWAY_TEAM_COLOR = "#f87171";
+const OPERATOR_ALERT_AUTOCLEAR_MS = 12000;
+const OPERATOR_ALERT_AUTOCLEAR_URGENT_MS = 20000;
 const OPPONENT_TRACK_STAT_OPTIONS = [
   "points",
   "free_throws",
@@ -266,6 +265,7 @@ export interface Team {
 export interface GameSetup {
   gameId: string;
   connectionId?: string;
+  syncedConnectionId?: string;
   myTeamId: string;      // the team you are tracking
   apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
   apiKey?: string;       // shared secret sent as x-api-key header
@@ -329,12 +329,15 @@ function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse
     ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
     : [];
 
+  const resolvedConnectionId = normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId);
+
   return {
     ...current,
     teams: convertedTeams,
     gameSetup: {
       ...current.gameSetup,
-      connectionId: normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId) || undefined,
+      connectionId: resolvedConnectionId || undefined,
+      syncedConnectionId: resolvedConnectionId || undefined,
       gameId: snapshot.setup?.gameId?.trim() || current.gameSetup.gameId,
       myTeamId: nextTeamId,
       opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
@@ -347,6 +350,12 @@ function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse
       apiKey: snapshot.operatorToken ?? current.gameSetup.apiKey,
     },
   };
+}
+
+function isConnectionReadyForStart(setup: { connectionId?: string; syncedConnectionId?: string }): boolean {
+  const connectionId = normalizeConnectionId(setup.connectionId);
+  const syncedConnectionId = normalizeConnectionId(setup.syncedConnectionId);
+  return Boolean(connectionId) && connectionId === syncedConnectionId;
 }
 
 const DEFAULT_DATA: AppData = {
@@ -413,6 +422,18 @@ function isValidApiUrl(url: string): boolean {
   }
 }
 
+function clearOperatorLocalCache(): void {
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (key === APP_DATA_KEY || key.startsWith(`${STORE}:`) || key.startsWith("operator-console:")) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach((key) => localStorage.removeItem(key));
+}
+
 function loadAppData(): AppData {
   // Check URL params first - a QR-code scan may carry config overrides.
   const qp = new URLSearchParams(window.location.search);
@@ -440,6 +461,10 @@ function loadAppData(): AppData {
   if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
   if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
 
+  if (!urlSetup.connectionId) {
+    clearOperatorLocalCache();
+  }
+
   try {
     const s = localStorage.getItem(APP_DATA_KEY);
     if (s) {
@@ -452,6 +477,7 @@ function loadAppData(): AppData {
         if (legacyId) gs.myTeamId = legacyId;
       }
       gs.connectionId = normalizeConnectionId(gs.connectionId);
+      gs.syncedConnectionId = normalizeConnectionId(gs.syncedConnectionId);
       gs.trackClock = gs.trackClock ?? true;
       gs.schoolId = gs.schoolId?.trim() || DEFAULT_SCHOOL_ID;
       gs.trackPossession = gs.trackPossession ?? true;
@@ -479,6 +505,34 @@ function savePending(gid: string, evts: GameEvent[]) { localStorage.setItem(pend
 function loadSeq(gid: string) { const s = localStorage.getItem(seqKey(gid)); return s ? +s : 1; }
 function saveSeq(gid: string, seq: number) { localStorage.setItem(seqKey(gid), String(seq)); }
 function uid() { return `id-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
+
+function normalizeOperatorId(value: string | null | undefined): string | null {
+  const normalized = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 40);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function createOperatorId(): string {
+  return `op-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getOrCreateOperatorId(): string {
+  try {
+    const existing = normalizeOperatorId(localStorage.getItem(OPERATOR_ID_KEY));
+    if (existing) {
+      return existing;
+    }
+    const created = createOperatorId();
+    localStorage.setItem(OPERATOR_ID_KEY, created);
+    return created;
+  } catch {
+    // Fail open if storage is unavailable (private mode/restrictions).
+    return createOperatorId();
+  }
+}
 
 // ---- Utilities ----
 function clockToSec(clock: string): number {
@@ -902,8 +956,6 @@ type Modal =
   | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
   | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; playerInId?: string; editContext?: EventEditContext }
   | { kind: "sub2"; teamId: TeamSide; playerOutId: string; editContext?: EventEditContext }
-  | { kind: "matchup1"; teamId: TeamSide }
-  | { kind: "matchup2"; teamId: TeamSide; defenderPlayerId: string; oppJersey: string }
   | { kind: "assistEdit"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string; editContext: EventEditContext }
   | { kind: "timeoutEdit"; teamId: TeamSide; timeoutType: "full" | "short"; editContext: EventEditContext }
   | { kind: "possessionEdit"; teamId: TeamSide; editContext: EventEditContext }
@@ -945,6 +997,12 @@ interface OperatorAlert {
   explanation: string;
 }
 
+function getOperatorAlertAutoClearMs(alerts: OperatorAlert[]): number {
+  return alerts.some((alert) => alert.priority === "urgent")
+    ? OPERATOR_ALERT_AUTOCLEAR_URGENT_MS
+    : OPERATOR_ALERT_AUTOCLEAR_MS;
+}
+
 interface ConfirmDialogState {
   title: string;
   message: string;
@@ -971,6 +1029,7 @@ function viewToHash(v: "game" | "settings", sv: SettingsView): string {
 export function App() {
   const feedbackAudioRef = useRef<AudioContext | null>(null);
   const feedbackUnlockedRef = useRef(false);
+  const operatorId = useMemo(() => getOrCreateOperatorId(), []);
 
   function ensureFeedbackAudioContext(): AudioContext | null {
     if (feedbackAudioRef.current) {
@@ -1117,6 +1176,22 @@ export function App() {
       );
 
       if (response.status === 404) {
+        // Invalid/unpublished code: clear linked team/setup so stale local values cannot masquerade as synced data.
+        setAppData((current) => {
+          const next: AppData = {
+            ...current,
+            gameSetup: {
+              ...current.gameSetup,
+              connectionId: normalizedConnectionId,
+              syncedConnectionId: undefined,
+              myTeamId: "",
+              opponent: "",
+              startingLineup: [],
+            },
+          };
+          saveAppData(next);
+          return next;
+        });
         setConnectionSyncStatus("Code saved locally. Waiting for the coach dashboard to publish the linked team and roster.");
         if (!options?.silent) {
           showInlineNotice("That code is saved on this iPad. Open the coach dashboard live page or try Sync again in a moment.", "warning", 5000);
@@ -1156,6 +1231,12 @@ export function App() {
     let active = true;
 
     async function syncTeamsFromRealtime() {
+      // Keep brand-new/incognito sessions empty until a coach connection code is entered.
+      const normalizedConnectionId = normalizeConnectionId(appData.gameSetup.connectionId);
+      if (!normalizedConnectionId) {
+        return;
+      }
+
       const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
       const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
       const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
@@ -1277,6 +1358,7 @@ export function App() {
   const [liveAlerts, setLiveAlerts] = useState<OperatorAlert[]>([]);
   const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
   const noticeTimerRef = useRef<number | null>(null);
+  const liveAlertTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setPossessionOverrideTeamId(undefined);
@@ -1303,7 +1385,90 @@ export function App() {
 
   const [showLineupSetup, setShowLineupSetup] = useState(false);
   const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
+  const [lineupLockedByLiveGame, setLineupLockedByLiveGame] = useState(false);
   const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
+
+  useEffect(() => {
+    if (gamePhase !== "pre-game") {
+      setLineupLockedByLiveGame(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncActiveGameLockAndLineup() {
+      try {
+        const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/active/state`, apiHeaders(appData.gameSetup));
+        if (cancelled) return;
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            setLineupLockedByLiveGame(false);
+          }
+          return;
+        }
+
+        const activeState = await response.json() as {
+          gameId?: string;
+          events?: unknown[];
+          activeLineupsByTeam?: Record<string, string[]>;
+        };
+
+        const hasLiveEvents = Array.isArray(activeState.events) && activeState.events.length > 0;
+        setLineupLockedByLiveGame(hasLiveEvents);
+
+        if (hasLiveEvents && gamePhase === "pre-game") {
+          setConnectionSyncStatus("Live game detected from the server. Resuming this game on this iPad.");
+          persistPhase("live");
+        }
+
+        setAppData((current) => {
+          const trackedTeamId = current.gameSetup.vcSide === "away"
+            ? (current.gameSetup.myTeamId || "team-away")
+            : (current.gameSetup.myTeamId || "team-home");
+
+          const serverLineup = sanitizeLineup(activeState.activeLineupsByTeam?.[trackedTeamId]);
+          const currentLineup = sanitizeLineup(current.gameSetup.startingLineup ?? []);
+
+          const team = current.teams.find((entry) => entry.id === current.gameSetup.myTeamId);
+          const allowedPlayerIds = new Set((team?.players ?? []).map((player) => player.id));
+          const filteredLineup = serverLineup.filter((playerId) => allowedPlayerIds.has(playerId));
+          const nextLineup = filteredLineup.length > 0 ? filteredLineup : serverLineup;
+
+          const nextGameId = activeState.gameId?.trim() || current.gameSetup.gameId;
+          const lineupChanged = nextLineup.length > 0 && !lineupsEqual(currentLineup, nextLineup);
+          const gameIdChanged = nextGameId !== current.gameSetup.gameId;
+
+          if (!lineupChanged && !gameIdChanged) {
+            return current;
+          }
+
+          const next = {
+            ...current,
+            gameSetup: {
+              ...current.gameSetup,
+              gameId: nextGameId,
+              startingLineup: lineupChanged ? nextLineup : current.gameSetup.startingLineup,
+            },
+          };
+          saveAppData(next);
+          return next;
+        });
+      } catch {
+        // Keep last known lineup lock if network is temporarily unavailable.
+      }
+    }
+
+    void syncActiveGameLockAndLineup();
+    const intervalId = window.setInterval(() => {
+      void syncActiveGameLockAndLineup();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, gamePhase]);
 
   // ---- In-game roster state ----
   const [showRosterPanel, setShowRosterPanel] = useState(true);
@@ -1321,6 +1486,19 @@ export function App() {
   function persistPhase(phase: "pre-game" | "live" | "post-game") {
     setGamePhase(phase);
     localStorage.setItem("operator-console:phase", phase);
+  }
+
+  function sanitizeLineup(lineup: unknown): string[] {
+    if (!Array.isArray(lineup)) return [];
+    return [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5);
+  }
+
+  function lineupsEqual(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+    return true;
   }
 
   function dismissInlineNotice() {
@@ -1563,6 +1741,7 @@ export function App() {
         }))
         .filter((i) => i.id && i.message);
       if (alerts.length > 0) {
+        setDismissedAlertIds(new Set());
         setLiveAlerts(alerts);
       }
     });
@@ -1633,6 +1812,31 @@ export function App() {
   }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, gameId, gamePhase]);
 
   useEffect(() => {
+    if (liveAlertTimerRef.current !== null) {
+      window.clearTimeout(liveAlertTimerRef.current);
+      liveAlertTimerRef.current = null;
+    }
+
+    const visibleAlerts = liveAlerts.filter((alert) => !dismissedAlertIds.has(alert.id));
+    if (visibleAlerts.length === 0) {
+      return;
+    }
+
+    liveAlertTimerRef.current = window.setTimeout(() => {
+      setLiveAlerts([]);
+      setDismissedAlertIds(new Set());
+      liveAlertTimerRef.current = null;
+    }, getOperatorAlertAutoClearMs(visibleAlerts));
+
+    return () => {
+      if (liveAlertTimerRef.current !== null) {
+        window.clearTimeout(liveAlertTimerRef.current);
+        liveAlertTimerRef.current = null;
+      }
+    };
+  }, [dismissedAlertIds, liveAlerts]);
+
+  useEffect(() => {
     const localPending = loadPending(gameId).map(normalizeEventTeamId);
     const localSeq = loadSeq(gameId);
     setPendingEvents(localPending);
@@ -1650,6 +1854,37 @@ export function App() {
         const next = Math.max(localSeq, highest + 1);
         setSequence(next);
         saveSeq(gameId, next);
+
+        const stateRes = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/state`, apiHeaders(appData.gameSetup));
+        if (stateRes.ok) {
+          const statePayload = await stateRes.json() as {
+            events?: unknown[];
+            activeLineupsByTeam?: Record<string, string[]>;
+          };
+          const trackedTeamId = appData.gameSetup.vcSide === "away"
+            ? (appData.gameSetup.myTeamId || "team-away")
+            : (appData.gameSetup.myTeamId || "team-home");
+          const serverLineup = sanitizeLineup(statePayload.activeLineupsByTeam?.[trackedTeamId]);
+          if (serverLineup.length > 0) {
+            setAppData((current) => {
+              const currentLineup = sanitizeLineup(current.gameSetup.startingLineup ?? []);
+              if (lineupsEqual(currentLineup, serverLineup)) {
+                return current;
+              }
+              const nextData = {
+                ...current,
+                gameSetup: {
+                  ...current.gameSetup,
+                  startingLineup: serverLineup,
+                },
+              };
+              saveAppData(nextData);
+              return nextData;
+            });
+          }
+          const hasStarted = Array.isArray(statePayload.events) && statePayload.events.length > 0;
+          setLineupLockedByLiveGame(hasStarted);
+        }
       } catch {
         // Hydration failed (offline) - keep local pending queue intact
       }
@@ -2785,7 +3020,7 @@ export function App() {
       timestampIso: new Date().toISOString(),
       period: period as string,
       clockSecondsRemaining: clockToSec(clockInput),
-      operatorId: "op-1",
+      operatorId,
     };
   }
 
@@ -3280,25 +3515,6 @@ export function App() {
       playerOutId,
       playerInId,
     });
-    closeModal();
-  }
-
-  function confirmMatchupDefender(defenderPlayerId: string) {
-    if (!modal || modal.kind !== "matchup1") return;
-    setModal({ kind: "matchup2", teamId: modal.teamId, defenderPlayerId, oppJersey: "" });
-  }
-
-  function confirmMatchupOpponent() {
-    if (!modal || modal.kind !== "matchup2") return;
-    const jersey = modal.oppJersey.trim();
-    if (!jersey) return;
-    void postEvent({
-      ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
-      type: "matchup_assignment",
-      defenderPlayerId: modal.defenderPlayerId,
-      offensivePlayerId: `opp-${jersey}`,
-    } as GameEvent);
     closeModal();
   }
 
@@ -3880,72 +4096,6 @@ export function App() {
       );
     }
 
-    if (modal.kind === "matchup1") {
-      const players = teamPlayers(modal.teamId);
-      const currentLineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], players);
-      const onCourtPlayers = currentLineup.onCourt;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Assign Matchup — {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            <div className="modal-subtitle">Pick your defender</div>
-            <div className="player-list">
-              {onCourtPlayers.length === 0 && <p className="no-players">No players on court yet</p>}
-              {onCourtPlayers.map(p => (
-                <button key={p.id} className="player-row" onClick={() => confirmMatchupDefender(p.id)}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                  {(pTotals[p.id]?.fouls ?? 0) > 0 ? (
-                    <span className={`pfoul${(pTotals[p.id]?.fouls ?? 0) >= 4 ? " pfoul-warn" : ""}`}>{pTotals[p.id].fouls}f</span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "matchup2") {
-      const defPlayer = teamPlayers(modal.teamId).find(p => p.id === modal.defenderPlayerId);
-      const defLabel = defPlayer ? `#${defPlayer.number} ${defPlayer.name}` : modal.defenderPlayerId;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">{defLabel} guards opponent…</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            <div className="modal-subtitle">Enter opponent jersey number</div>
-            <div style={{ padding: "1rem 1.2rem" }}>
-              <input
-                type="number"
-                min="0"
-                max="99"
-                inputMode="numeric"
-                placeholder="Opponent #"
-                value={modal.oppJersey}
-                onChange={e => setModal({ ...modal, oppJersey: e.target.value })}
-                style={{ fontSize: "1.6rem", padding: "0.7rem 1rem", width: "100%", borderRadius: "0.5rem", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "white", textAlign: "center", boxSizing: "border-box" }}
-                autoFocus
-              />
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
-              <button
-                className="confirm-btn confirm-btn-primary"
-                disabled={!modal.oppJersey.trim()}
-                onClick={confirmMatchupOpponent}
-              >Assign</button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     if (modal.kind === "periodTransitionEdit") {
       const availablePeriods = [
         "Q1",
@@ -4199,7 +4349,11 @@ export function App() {
     const savedLineup = appData.gameSetup.startingLineup ?? [];
     const lineupIsSet = savedLineup.length > 0;
     const hasConnectionId = !!normalizeConnectionId(appData.gameSetup.connectionId);
-    const canStart = hasConnectionId && !!appData.gameSetup.myTeamId;
+    const hasSyncedConnection = isConnectionReadyForStart(appData.gameSetup);
+    const canStart = hasSyncedConnection && !!appData.gameSetup.myTeamId;
+    const lineupLockedMessage = lineupLockedByLiveGame
+      ? "Lineup is locked because this game is already live on another device."
+      : "";
     const myTeamDisplay = myTeam?.name ?? null;
 
     const handleStarterToggle = (playerId: string) => {
@@ -4214,6 +4368,10 @@ export function App() {
     };
 
     const handleSaveLineup = () => {
+      if (lineupLockedByLiveGame) {
+        showInlineNotice("Lineup is locked. This game has already started.", "warning", 4000);
+        return;
+      }
       persistData({
         ...appData,
         gameSetup: {
@@ -4242,6 +4400,7 @@ export function App() {
                 value={appData.gameSetup.connectionId ?? ""}
                 onChange={(event) => {
                   const nextConnectionId = normalizeConnectionId(event.target.value);
+                  const nextConnectionChanged = nextConnectionId !== normalizeConnectionId(appData.gameSetup.connectionId);
                   setConnectionSyncStatus(nextConnectionId
                     ? `Connection code ${nextConnectionId} saved locally. Syncing coach setup...`
                     : DEFAULT_CONNECTION_SYNC_STATUS);
@@ -4250,6 +4409,10 @@ export function App() {
                     gameSetup: {
                       ...appData.gameSetup,
                       connectionId: nextConnectionId || undefined,
+                      syncedConnectionId: nextConnectionChanged ? undefined : appData.gameSetup.syncedConnectionId,
+                      myTeamId: nextConnectionChanged ? "" : appData.gameSetup.myTeamId,
+                      opponent: nextConnectionChanged ? "" : appData.gameSetup.opponent,
+                      startingLineup: nextConnectionChanged ? [] : appData.gameSetup.startingLineup,
                     },
                   });
                 }}
@@ -4270,7 +4433,7 @@ export function App() {
           </div>
           <p className="pregame-settings-hint">{connectionSyncStatus}</p>
 
-          <div className="pregame-matchup">
+          <div className="pregame-opponent-row">
             <div className="pregame-team my-team">
               {myTeamDisplay ?? <span className="pregame-no-team">No team</span>}
             </div>
@@ -4285,6 +4448,9 @@ export function App() {
           {!hasConnectionId && (
             <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
           )}
+          {hasConnectionId && !hasSyncedConnection && (
+            <p className="pregame-error">This connection code is not synced yet. Tap Sync Now to validate and load the linked team.</p>
+          )}
           {hasConnectionId && !appData.gameSetup.myTeamId && (
             <p className="pregame-error">Tap Sync Now to pull team and game setup from the coach dashboard.</p>
           )}
@@ -4292,7 +4458,9 @@ export function App() {
           {myTeam && !showLineupSetup && (
             <button
               className={`pregame-lineup-btn${lineupIsSet ? " lineup-is-set" : ""}${!lineupIsSet ? " lineup-required" : ""}`}
+              disabled={lineupLockedByLiveGame}
               onClick={() => {
+                if (lineupLockedByLiveGame) return;
                 setSelectedStarters(new Set(savedLineup));
                 setShowLineupSetup(true);
               }}>
@@ -4300,6 +4468,10 @@ export function App() {
                 ? `Edit Starting Lineup (${savedLineup.length}/5)`
                 : "Set Starting Lineup"}
             </button>
+          )}
+
+          {lineupLockedByLiveGame && (
+            <p className="pregame-settings-hint">{lineupLockedMessage}</p>
           )}
 
           {showLineupSetup && myTeam && (
@@ -4324,7 +4496,7 @@ export function App() {
                     key={p.id}
                     className={`lineup-player-btn${selectedStarters.has(p.id) ? " lineup-player-selected" : ""}`}
                     onClick={() => handleStarterToggle(p.id)}
-                    disabled={selectedStarters.size >= 5 && !selectedStarters.has(p.id)}>
+                    disabled={lineupLockedByLiveGame || (selectedStarters.size >= 5 && !selectedStarters.has(p.id))}>
                     <span className="lineup-player-num">#{p.number}</span>
                     <span className="lineup-player-name">{p.name}</span>
                     {selectedStarters.has(p.id) && <span className="lineup-player-badge">*</span>}
@@ -4332,10 +4504,10 @@ export function App() {
                 ))}
               </div>
               <div className="lineup-setup-actions">
-                <button className="lineup-clear-btn" onClick={() => setSelectedStarters(new Set())}>
+                <button className="lineup-clear-btn" disabled={lineupLockedByLiveGame} onClick={() => setSelectedStarters(new Set())}>
                   Clear
                 </button>
-                <button className="lineup-save-btn" onClick={handleSaveLineup}>
+                <button className="lineup-save-btn" disabled={lineupLockedByLiveGame} onClick={handleSaveLineup}>
                   Save Lineup ({selectedStarters.size}/5)
                 </button>
               </div>
@@ -4346,8 +4518,8 @@ export function App() {
             className="pregame-start-btn"
             disabled={!canStart}
             onClick={async () => {
-              const newId = generateGameId(appData.gameSetup.opponent ?? "", gameDate);
-              await startGame(newId);
+              // Start with the coach-linked game ID stored in setup to keep every operator on one game.
+              await startGame();
             }}>
             Start Game
           </button>
@@ -5200,7 +5372,6 @@ export function App() {
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
             <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
             <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
-            <button className="circle match-btn" onClick={() => setModal({ kind: "matchup1", teamId: vcSideSetup })}>match</button>
           </div>
         ) : (
           <div className="roster-panel">
@@ -5247,7 +5418,6 @@ export function App() {
                               <button className="pqa-btn pqa-asst" onClick={() => handlePlayerQuickStat(p, "assist")}>ASST</button>
                               <button className="pqa-btn pqa-blk" onClick={() => handlePlayerQuickStat(p, "block")}>BLK</button>
                               <button className="pqa-btn pqa-sub" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id }); }}>SUB</button>
-                              <button className="pqa-btn pqa-match" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "matchup2", teamId: vcSideSetup, defenderPlayerId: p.id, oppJersey: "" }); }}>MTCH</button>
                             </div>
                           )}
                         </div>
@@ -5390,6 +5560,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
 
   function saveGameSetup() {
     const normalizedConnectionId = normalizeConnectionId(gsConnectionId || appData.gameSetup.connectionId);
+    const connectionChanged = normalizedConnectionId !== normalizeConnectionId(appData.gameSetup.connectionId);
     setGsConnectionId(normalizedConnectionId);
     onPersist({
       ...appData,
@@ -5397,6 +5568,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
         {
           gameId: gsGameId.trim() || "game-1",
           connectionId: normalizedConnectionId || undefined,
+          syncedConnectionId: connectionChanged ? undefined : appData.gameSetup.syncedConnectionId,
           myTeamId: gsMyTeamId,
           apiUrl: gsApiUrl.trim() || DEFAULT_API,
           apiKey: gsApiKey.trim() || undefined,
@@ -5466,7 +5638,7 @@ function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onSta
 
           <section className="settings-section">
             <h3>Connection Code</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code to link roster and matchup sync.</p>
+            <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code to link roster and live sync.</p>
             <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="482913" />
           </section>
         </div>

@@ -479,6 +479,64 @@ describe("unified stats endpoints", () => {
     expect(deleteAfterSubmit.status).toBe(409);
   });
 
+  it("returns a conflict payload when two events claim the same sequence", async () => {
+    await resetSchool("sequence-conflict-school");
+
+    const createResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "sequence-conflict-school" },
+      body: JSON.stringify({
+        gameId: "2026-04-06-sequence-conflict",
+        homeTeamId: "vc",
+        awayTeamId: "opp-a",
+        opponentName: "Opponent A",
+      })
+    });
+    expect(createResponse.status).toBe(201);
+
+    const firstEvent = {
+      id: "sequence-conflict-evt-1",
+      sequence: 1,
+      timestampIso: new Date().toISOString(),
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "vc",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "p1",
+      made: true,
+      points: 2,
+      zone: "paint",
+    };
+
+    const firstResponse = await fetch(`${API_BASE}/api/games/2026-04-06-sequence-conflict/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "sequence-conflict-school" },
+      body: JSON.stringify(firstEvent)
+    });
+    expect(firstResponse.status).toBe(201);
+
+    const conflictingResponse = await fetch(`${API_BASE}/api/games/2026-04-06-sequence-conflict/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "sequence-conflict-school" },
+      body: JSON.stringify({
+        ...firstEvent,
+        id: "sequence-conflict-evt-2",
+        made: false,
+      })
+    });
+
+    expect(conflictingResponse.status).toBe(409);
+    const conflictBody = await conflictingResponse.json() as {
+      code?: string;
+      error?: string;
+      state?: { gameId?: string } | null;
+    };
+    expect(conflictBody.code).toBe("event_conflict");
+    expect(conflictBody.error).toMatch(/sequence\s+1\s+already belongs/i);
+    expect(conflictBody.state?.gameId).toBe("2026-04-06-sequence-conflict");
+  });
+
   it("supports legacy team settings and roster management routes", async () => {
     await resetSchool("compat-school");
 

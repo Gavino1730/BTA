@@ -1,4 +1,4 @@
-import { isLocalNetworkHost, type RosterTeam } from "@bta/shared-schema";
+import { type RosterTeam } from "@bta/shared-schema";
 
 export interface Team {
   id: string;
@@ -20,12 +20,8 @@ export interface Player {
   notes?: string;
 }
 
-function resolveDefaultSchoolId(hostname: string): string {
-  return isLocalNetworkHost(hostname) ? "default" : "";
-}
-
 export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID
-  ?? (typeof window !== "undefined" ? resolveDefaultSchoolId(window.location.hostname || "localhost") : "default"))
+  ?? "")
   .toString()
   .trim();
 

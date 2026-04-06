@@ -356,61 +356,6 @@ describe("game-state", () => {
     expect(withSub.activeLineupsByTeam.home).not.toContain("h1");
   });
 
-  it("tracks active matchup assignments by defending team", () => {
-    const initial = createInitialGameState("game-matchup", "home", "away");
-    const matchup: GameEvent = {
-      id: "evt-matchup-1",
-      gameId: "game-matchup",
-      sequence: 1,
-      timestampIso: "2026-03-18T20:00:00.000Z",
-      period: "Q1",
-      clockSecondsRemaining: 470,
-      teamId: "home",
-      operatorId: "op-1",
-      type: "matchup_assignment",
-      defenderPlayerId: "h3",
-      offensivePlayerId: "a1"
-    };
-
-    const final = applyEvent(initial, matchup);
-    expect(final.activeMatchupsByTeam.home.h3).toBe("a1");
-  });
-
-  it("clears outgoing defender matchup assignment on substitution", () => {
-    const initial = createInitialGameState("game-matchup-sub", "home", "away");
-    const events: GameEvent[] = [
-      {
-        id: "evt-matchup-1",
-        gameId: "game-matchup-sub",
-        sequence: 1,
-        timestampIso: "2026-03-18T20:00:00.000Z",
-        period: "Q1",
-        clockSecondsRemaining: 470,
-        teamId: "home",
-        operatorId: "op-1",
-        type: "matchup_assignment",
-        defenderPlayerId: "h3",
-        offensivePlayerId: "a1"
-      },
-      {
-        id: "evt-sub-1",
-        gameId: "game-matchup-sub",
-        sequence: 2,
-        timestampIso: "2026-03-18T20:00:10.000Z",
-        period: "Q1",
-        clockSecondsRemaining: 460,
-        teamId: "home",
-        operatorId: "op-1",
-        type: "substitution",
-        playerOutId: "h3",
-        playerInId: "h6"
-      }
-    ];
-
-    const final = replayEvents(initial, events);
-    expect(final.activeMatchupsByTeam.home.h3).toBeUndefined();
-  });
-
   it("tracks assists, steals, and blocks per player", () => {
     const initial = createInitialGameState("game-1", "home", "away");
     const events: GameEvent[] = [
@@ -700,18 +645,18 @@ describe("game-state", () => {
       makeEvent({ id: "g6", sequence: 6, teamId: "home", type: "free_throw_attempt", playerId: "h1", made: false, attemptNumber: 2, totalAttempts: 2 }),
       makeEvent({ id: "g7", sequence: 7, teamId: "home", type: "rebound", playerId: "h3", reboundType: "offensive" }),
       makeEvent({ id: "g8", sequence: 8, teamId: "home", type: "substitution", playerOutId: "h3", playerInId: "h6" }),
-      makeEvent({ id: "g9", sequence: 9, teamId: "home", type: "matchup_assignment", defenderPlayerId: "h2", offensivePlayerId: "opp-11" }),
-      makeEvent({ id: "g10", sequence: 10, teamId: "away", type: "shot_attempt", playerId: "a1", made: true, points: 2, zone: "rim" }),
-      makeEvent({ id: "g11", sequence: 11, period: "Q2", teamId: "home", type: "period_transition", newPeriod: "Q2", clockSecondsRemaining: 480 }),
+      makeEvent({ id: "g9", sequence: 9, teamId: "away", type: "shot_attempt", playerId: "a1", made: true, points: 2, zone: "rim" }),
+      makeEvent({ id: "g10", sequence: 10, period: "Q2", teamId: "home", type: "period_transition", newPeriod: "Q2", clockSecondsRemaining: 480 }),
+      makeEvent({ id: "g11", sequence: 11, period: "Q2", teamId: "away", type: "foul", playerId: "a2", foulType: "personal" }),
       makeEvent({ id: "g12", sequence: 12, period: "Q2", teamId: "away", type: "foul", playerId: "a2", foulType: "personal" }),
-      makeEvent({ id: "g13", sequence: 13, period: "Q2", teamId: "away", type: "foul", playerId: "a2", foulType: "personal" }),
-      makeEvent({ id: "g14", sequence: 14, period: "Q2", teamId: "home", type: "turnover", playerId: "h1", turnoverType: "bad_pass" }),
-      makeEvent({ id: "g15", sequence: 15, period: "Q2", teamId: "away", type: "shot_attempt", playerId: "a3", made: true, points: 3, zone: "corner_three" }),
-      makeEvent({ id: "g16", sequence: 16, period: "Q2", teamId: "home", type: "assist", playerId: "h6", scorerPlayerId: "h2" }),
-      makeEvent({ id: "g17", sequence: 17, period: "Q2", teamId: "home", type: "steal", playerId: "h1" }),
-      makeEvent({ id: "g18", sequence: 18, period: "Q2", teamId: "home", type: "shot_attempt", playerId: "h1", made: true, points: 2, zone: "paint", clockSecondsRemaining: 120 }),
-      makeEvent({ id: "g19", sequence: 19, period: "Q2", teamId: "home", type: "timeout", timeoutType: "full", clockSecondsRemaining: 115 }),
-      makeEvent({ id: "g20", sequence: 20, period: "Q2", teamId: "away", type: "foul", playerId: "a3", foulType: "shooting", clockSecondsRemaining: 108 }),
+      makeEvent({ id: "g13", sequence: 13, period: "Q2", teamId: "home", type: "turnover", playerId: "h1", turnoverType: "bad_pass" }),
+      makeEvent({ id: "g14", sequence: 14, period: "Q2", teamId: "away", type: "shot_attempt", playerId: "a3", made: true, points: 3, zone: "corner_three" }),
+      makeEvent({ id: "g15", sequence: 15, period: "Q2", teamId: "home", type: "assist", playerId: "h6", scorerPlayerId: "h2" }),
+      makeEvent({ id: "g16", sequence: 16, period: "Q2", teamId: "home", type: "steal", playerId: "h1" }),
+      makeEvent({ id: "g17", sequence: 17, period: "Q2", teamId: "home", type: "shot_attempt", playerId: "h1", made: true, points: 2, zone: "paint", clockSecondsRemaining: 120 }),
+      makeEvent({ id: "g18", sequence: 18, period: "Q2", teamId: "home", type: "timeout", timeoutType: "full", clockSecondsRemaining: 115 }),
+      makeEvent({ id: "g19", sequence: 19, period: "Q2", teamId: "away", type: "foul", playerId: "a3", foulType: "shooting", clockSecondsRemaining: 108 }),
+      makeEvent({ id: "g20", sequence: 20, period: "Q2", teamId: "home", type: "rebound", playerId: "h4", offensive: false, clockSecondsRemaining: 102 }),
     ];
 
     const initial1 = createInitialGameState(gameId, "home", "away");
@@ -727,7 +672,6 @@ describe("game-state", () => {
     expect(stateA.playerFouls).toEqual(stateB.playerFouls);
     expect(stateA.teamFoulsByPeriod).toEqual(stateB.teamFoulsByPeriod);
     expect(stateA.bonusByTeam).toEqual(stateB.bonusByTeam);
-    expect(stateA.activeMatchupsByTeam).toEqual(stateB.activeMatchupsByTeam);
     expect(stateA.activeLineupsByTeam).toEqual(stateB.activeLineupsByTeam);
     expect(stateA.lastSequence).toBe(stateB.lastSequence);
     expect(stateA.currentPeriod).toBe(stateB.currentPeriod);
