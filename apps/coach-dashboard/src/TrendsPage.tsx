@@ -460,10 +460,10 @@ export function TrendsPage() {
 
     return {
       recentRecord: `${recent.filter((row) => row.teamScore > row.oppScore).length}-${recent.filter((row) => row.teamScore < row.oppScore).length}`,
-      avgDiff: computeAverageMargin(recent).toFixed(1),
+      avgDiff: computeAverageMargin(recent.map((r) => ({ vc_score: r.teamScore, opp_score: r.oppScore }))).toFixed(1),
       avgFg: avgFg.toFixed(1),
       avgFg3: avgFg3.toFixed(1),
-      streak: computeCurrentStreak(recent),
+      streak: computeCurrentStreak(recent.map((r) => ({ vc_score: r.teamScore, opp_score: r.oppScore }))),
     };
   }, [rows]);
 

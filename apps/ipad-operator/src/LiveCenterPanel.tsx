@@ -10,7 +10,7 @@ type Scores = { home: number; away: number };
 type PeriodFouls = { home: number; away: number };
 type GameStateDisplay = { tone: string; label: string };
 type FeedItem = { event: GameEvent; pending: boolean };
-type ConfirmOpts = { title: string; message: string; confirmLabel: string; tone: string };
+type ConfirmOpts = { title: string; message: string; confirmLabel: string; tone?: "default" | "danger" };
 
 interface LiveCenterPanelProps {
   // Connection

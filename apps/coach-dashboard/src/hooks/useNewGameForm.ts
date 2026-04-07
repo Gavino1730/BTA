@@ -42,7 +42,7 @@ export function useNewGameForm({
 
     const today = new Date().toISOString().slice(0, 10);
     const newId = generateGameId(newGameOpponent, today);
-    endedGameIdsRef.current.delete(newId);
+    endedGameIdsRef.current?.delete(newId);
     const selectedTeam = rosterTeams.find((t) => t.id === newGameMyTeamId);
     const opponentName = newGameOpponent.trim();
     const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";

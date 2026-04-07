@@ -7,27 +7,13 @@ import { RotationPanel } from "./RotationPanel.js";
 import { ScoreboardSection } from "./ScoreboardSection.js";
 import { BoxScoreSection } from "./BoxScoreSection.js";
 import { LineupUnitPanel } from "./LineupUnitPanel.js";
-import { normalizeTeamColor } from "@bta/shared-schema";
 import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, resolveActiveSchoolId } from "./platform.js";
-import { useRosterManager, useCoachAi, useCoachSocket, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos } from "./hooks/index.js";
+import { useRosterManager, useCoachAi, useCoachSocket, useGameHydration, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos } from "./hooks/index.js";
 import {
   type GameState, type BoxScoreFilter,
   ACTIVE_GAME_KEY,
   type Insight,
 } from "./helpers/index.js";
-
-interface ActiveSetupResponse {
-  activeGameId?: string;
-  setup?: {
-    gameId?: string;
-    myTeamId?: string;
-    myTeamName?: string;
-    opponentName?: string;
-    vcSide?: "home" | "away";
-    homeTeamColor?: string;
-    awayTeamColor?: string;
-  } | null;
-}
 
 export interface AppConnectionInfo {
   deviceConnected: boolean;
@@ -277,235 +263,21 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     setRosterTeamsFromRemote,
   });
 
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function reconcileGameId() {
-      try {
-        if (!gameId) {
-          // Only auto-recover an active game if we have a valid connection code.
-          // Without a connection code, this dashboard is not paired to any operator
-          // and should NOT adopt whatever game happens to be active on the school.
-          if (!connectionId) {
-            return;
-          }
-
-          const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
-            headers: apiKeyHeader(),
-          });
-
-          if (!activeResponse.ok || cancelled) {
-            return;
-          }
-
-          const active = await activeResponse.json() as { gameId?: string };
-          if (cancelled || !active.gameId || endedGameIdsRef.current.has(active.gameId)) {
-            return;
-          }
-
-          setDashboardStatus("Recovered active game from server.");
-          setGameId(active.gameId);
-          return;
-        }
-
-        const stateResponse = await fetch(`${apiBase}/api/games/${gameId}/state`, {
-          headers: apiKeyHeader(),
-        });
-
-        if (cancelled || stateResponse.status !== 404) {
-          return;
-        }
-
-        const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
-          headers: apiKeyHeader(),
-        });
-
-        if (cancelled) {
-          return;
-        }
-
-        if (activeResponse.ok) {
-          const active = await activeResponse.json() as { gameId?: string };
-          if (active.gameId && active.gameId !== gameId) {
-            setDashboardStatus("Recovered active game from server.");
-            setGameId(active.gameId);
-          }
-          return;
-        }
-
-        if (activeResponse.status === 404) {
-          endedGameIdsRef.current.add(gameId);
-          clearActiveGame("Cleared stale game session. Start a new game when ready.");
-        }
-      } catch {
-        // Keep local state when offline/unreachable.
-      }
-    }
-
-    void reconcileGameId();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId, gameId]);
-
-  useEffect(() => {
-    if (!gameId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function hydrateActiveSetupNames() {
-      try {
-        const response = await fetch(`${apiBase}/api/games/active/setup`, {
-          headers: apiKeyHeader(),
-        });
-
-        if (!response.ok || cancelled) {
-          return;
-        }
-
-        const payload = await response.json() as ActiveSetupResponse;
-        if (cancelled || !payload.setup) {
-          return;
-        }
-
-        if (payload.activeGameId && payload.activeGameId !== gameId) {
-          return;
-        }
-
-        setSetupNames((current) => ({
-          myTeamId: payload.setup?.myTeamId ?? current.myTeamId,
-          myTeamName: payload.setup?.myTeamName ?? current.myTeamName,
-          opponentName: payload.setup?.opponentName ?? current.opponentName,
-          vcSide: payload.setup?.vcSide === "away"
-            ? "away"
-            : payload.setup?.vcSide === "home"
-              ? "home"
-              : current.vcSide,
-          homeColor: normalizeTeamColor(payload.setup?.homeTeamColor) ?? current.homeColor,
-          awayColor: normalizeTeamColor(payload.setup?.awayTeamColor) ?? current.awayColor,
-        }));
-      } catch {
-        // Keep current setup when active setup cannot be fetched.
-      }
-    }
-
-    void hydrateActiveSetupNames();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [gameId]);
-
-  useEffect(() => {
-    if (!gameId) {
-      return;
-    }
-
-    // Clear ALL game-specific state immediately so the dashboard shows a clean
-    // slate while new game data loads - no stale scores, events, AI chat,
-    // or device-connection carry-over from the previous game.
-    setState(null);
-    setInsights([]);
-    resetAiState();
-    setBoxScoreFilter([]);
-    setDeviceConnected(false);
-    setDashboardStatus("Loading new game...");
-    setIsLoading(true);
-
-    async function hydrate() {
-      // Fetch state and insights in parallel for faster load
-      const [stateRes, insightRes] = await Promise.all([
-        fetch(`${apiBase}/api/games/${gameId}/state`, { headers: apiKeyHeader() }),
-        fetch(`${apiBase}/api/games/${gameId}/insights`, { headers: apiKeyHeader() })
-      ]);
-
-      // Handle game state
-      try {
-        if (stateRes.ok) {
-          const payload = (await stateRes.json()) as GameState;
-          setState(payload);
-          setDashboardStatus("Loaded server game state");
-          // Cache to localStorage
-          try {
-            localStorage.setItem(`gameState-${gameId}`, JSON.stringify(payload));
-          } catch {
-            // localStorage full or disabled, ignore
-          }
-        } else {
-          // Try to load from cache
-          const cachedState = localStorage.getItem(`gameState-${gameId}`);
-          if (cachedState) {
-            try {
-              const payload = JSON.parse(cachedState) as GameState;
-              setState(payload);
-              setDashboardStatus("Loaded cached game state (offline mode)");
-            } catch {
-              setDashboardStatus("Offline and no cached state available");
-            }
-          }
-        }
-      } catch {
-        // Network error - try cache
-        const cachedState = localStorage.getItem(`gameState-${gameId}`);
-        if (cachedState) {
-          try {
-            const payload = JSON.parse(cachedState) as GameState;
-            setState(payload);
-            setDashboardStatus("Loaded cached game state (offline mode)");
-          } catch {
-            setDashboardStatus("Offline and no cached state available");
-          }
-        }
-      }
-
-      // Handle insights
-      try {
-        if (insightRes.ok) {
-          const payload = (await insightRes.json()) as Insight[];
-          setInsights(payload);
-          // Cache to localStorage (persistent, not session-only)
-          try {
-            localStorage.setItem(`gameInsights-${gameId}`, JSON.stringify(payload));
-          } catch {
-            // localStorage full or disabled, ignore
-          }
-        } else {
-          // Try to load from cache
-          const cachedInsights = localStorage.getItem(`gameInsights-${gameId}`);
-          if (cachedInsights) {
-            try {
-              const payload = JSON.parse(cachedInsights) as Insight[];
-              setInsights(payload);
-            } catch {
-              // Invalid cached data
-            }
-          }
-        }
-      } catch {
-        // Network error - try cache
-        const cachedInsights = localStorage.getItem(`gameInsights-${gameId}`);
-        if (cachedInsights) {
-          try {
-            const payload = JSON.parse(cachedInsights) as Insight[];
-            setInsights(payload);
-          } catch {
-            // Invalid cached data
-          }
-        }
-      }
-
-      setIsLoading(false);
-    }
-
-    hydrate().catch(() => {
-      setIsLoading(false);
-      // Ignore network errors in dashboard bootstrap.
-    });
-  }, [gameId]);
+  useGameHydration({
+    gameId,
+    connectionId,
+    endedGameIdsRef,
+    clearActiveGame,
+    setGameId,
+    setState,
+    setInsights,
+    setDeviceConnected,
+    setIsLoading,
+    setDashboardStatus,
+    setSetupNames,
+    resetAiState,
+    setBoxScoreFilter,
+  });
 
   async function endGameFromDashboard(): Promise<void> {
     if (!gameId || isEndingGame) {

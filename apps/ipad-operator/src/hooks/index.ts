@@ -20,3 +20,5 @@ export { useGameFlow, buildRealtimeGameRegistrationPayload } from "./useGameFlow
 export type { UseGameFlowInput } from "./useGameFlow.js";
 export { useLiveGameDerived } from "./useLiveGameDerived.js";
 export { useTeamSetup } from "./useTeamSetup.js";
+export { useLineupSync } from "./useLineupSync.js";
+export type { UseLineupSyncInput } from "./useLineupSync.js";

@@ -33,12 +33,12 @@ interface ModalCallbacks {
   confirmFreeThrow: (playerId: string) => void;
   confirmStat: (playerId: string) => void;
   confirmAssistScorer: (scorerId: string) => void;
-  confirmAssistPoints: (points: number) => void;
+  confirmAssistPoints: (points: 2 | 3) => Promise<void>;
   confirmSubOut: (playerId: string) => void;
   confirmSubIn: (playerId: string) => void;
   saveEditedEvent: (event: GameEvent, editContext: EventEditContext) => void;
   deleteEventRecord: (args: { event: GameEvent; pending: boolean }) => void;
-  requestConfirm: (opts: { title: string; message: string; confirmLabel: string; tone?: string }) => Promise<boolean>;
+  requestConfirm: (opts: { title: string; message: string; confirmLabel: string; tone?: "default" | "danger" }) => Promise<boolean>;
   postEvent: (event: GameEvent) => void;
   base: (seq: number) => Record<string, unknown>;
   sequence: number;
