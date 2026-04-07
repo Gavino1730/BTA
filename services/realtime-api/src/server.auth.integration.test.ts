@@ -18,6 +18,7 @@ describe("server auth integration", () => {
     process.env.BTA_REQUIRE_TENANT = "1";
     process.env.BTA_JWT_WRITE_REQUIRED = "1";
     process.env.BTA_API_KEY = "rollout-api-key";
+    process.env.BTA_LOCAL_AUTH_SECRET = "integration-local-auth-secret";
     process.env.NODE_ENV = "test";
     process.env.PORT = API_PORT;
 
@@ -34,7 +35,18 @@ describe("server auth integration", () => {
     delete process.env.BTA_REQUIRE_TENANT;
     delete process.env.BTA_JWT_WRITE_REQUIRED;
     delete process.env.BTA_API_KEY;
+    delete process.env.BTA_LOCAL_AUTH_SECRET;
     delete process.env.PORT;
+  });
+
+  it("applies defensive security headers on API responses", async () => {
+    const response = await fetch(`${API_BASE}/health`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
   it("allows API-key fallback for roster reads when JWT auth is enabled", async () => {

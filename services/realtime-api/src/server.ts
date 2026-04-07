@@ -82,6 +82,25 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "accelerometer=(), autoplay=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+
+  const forwardedProto = readHeaderValue(req.headers["x-forwarded-proto"]);
+  const isHttps = req.secure || forwardedProto === "https";
+  if (isHttps) {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
+  next();
+});
+
 // CORS whitelist: allow only known app origins and explicitly configured deployments.
 // Entries in ALLOWED_ORIGINS may use a single '*' wildcard (e.g. https://bta-coach-*.vercel.app).
 const ALLOWED_ORIGINS = [
@@ -124,8 +143,8 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Simple rate limiter: per-IP event submission limit (100 events per minute)
-const rateLimitByIp = new Map<string, { count: number; resetAt: number }>();
+// Simple rate limiter: scoped per route family and IP.
+const rateLimitState = new Map<string, { count: number; resetAt: number }>();
 
 function resolveClientIp(req: Request): string {
   const forwardedFor = req.headers["x-forwarded-for"];
@@ -143,17 +162,18 @@ function resolveClientIp(req: Request): string {
   return rawIp.startsWith("::ffff:") ? rawIp.slice(7) : rawIp;
 }
 
-function createRateLimitMiddleware(maxRequests: number, windowMs: number) {
+function createRateLimitMiddleware(bucket: string, maxRequests: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction) => {
     const ip = resolveClientIp(req);
     const now = Date.now();
-    const limit = rateLimitByIp.get(ip) ?? { count: 0, resetAt: now + windowMs };
+    const key = `${bucket}:${ip}`;
+    const limit = rateLimitState.get(key) ?? { count: 0, resetAt: now + windowMs };
 
     // Opportunistic cleanup so map size stays bounded under high IP churn.
-    if (rateLimitByIp.size > 5000) {
-      for (const [key, value] of rateLimitByIp.entries()) {
+    if (rateLimitState.size > 5000) {
+      for (const [entryKey, value] of rateLimitState.entries()) {
         if (value.resetAt <= now) {
-          rateLimitByIp.delete(key);
+          rateLimitState.delete(entryKey);
         }
       }
     }
@@ -164,17 +184,19 @@ function createRateLimitMiddleware(maxRequests: number, windowMs: number) {
     }
 
     if (limit.count >= maxRequests) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((limit.resetAt - now) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSeconds));
       res.status(429).json({ error: "Too many requests" });
       return;
     }
 
     limit.count++;
-    rateLimitByIp.set(ip, limit);
+    rateLimitState.set(key, limit);
     next();
   };
 }
-const eventRateLimiter = createRateLimitMiddleware(100, 60000); // 100 events/min per IP
-const authRateLimiter = createRateLimitMiddleware(20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
+const eventRateLimiter = createRateLimitMiddleware("events", 100, 60000); // 100 events/min per IP
+const authRateLimiter = createRateLimitMiddleware("auth", 20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
 const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
   "substitutions",

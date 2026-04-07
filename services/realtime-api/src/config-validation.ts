@@ -6,7 +6,7 @@ export interface RuntimeConfig {
   apiKeyPresent: boolean;
   allowedOriginsConfigured: boolean;
   databaseUrlConfigured: boolean;
-  localAuthSecretSeparate: boolean;
+  localAuthSecretConfigured: boolean;
 }
 
 export interface RuntimeValidationResult {
@@ -24,7 +24,7 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     apiKeyPresent: Boolean(process.env.BTA_API_KEY?.trim()),
     allowedOriginsConfigured: Boolean(process.env.ALLOWED_ORIGINS?.trim()),
     databaseUrlConfigured: Boolean(process.env.DATABASE_URL?.trim()),
-    localAuthSecretSeparate: Boolean(
+    localAuthSecretConfigured: Boolean(
       process.env.BTA_LOCAL_AUTH_SECRET?.trim() || process.env.BTA_AUTH_SECRET?.trim()
     ),
   };
@@ -55,17 +55,17 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
   }
 
   if (!config.allowedOriginsConfigured) {
-    warnings.push("ALLOWED_ORIGINS is not set; production CORS will default to local origins only.");
+    errors.push("Production requires explicit CORS origins. Set ALLOWED_ORIGINS.");
   }
 
   if (!config.databaseUrlConfigured) {
-    warnings.push("DATABASE_URL is not set; persistence will use local file snapshot storage.");
+    errors.push("Production requires DATABASE_URL so persistence does not fall back to local file storage.");
   }
 
-  if (!config.localAuthSecretSeparate && config.apiKeyPresent) {
+  if (!config.localAuthSecretConfigured) {
     warnings.push(
-      "BTA_LOCAL_AUTH_SECRET is not set; local auth tokens are signed with BTA_API_KEY. " +
-      "Set a dedicated BTA_LOCAL_AUTH_SECRET so a single credential compromise does not widen both auth paths."
+      "BTA_LOCAL_AUTH_SECRET is not set; built-in email/password auth cannot issue signed local tokens. " +
+      "Set a dedicated BTA_LOCAL_AUTH_SECRET to enable local auth safely in production."
     );
   }
 

@@ -10,7 +10,7 @@ function baseConfig(): RuntimeConfig {
     apiKeyPresent: false,
     allowedOriginsConfigured: true,
     databaseUrlConfigured: true,
-    localAuthSecretSeparate: true
+    localAuthSecretConfigured: true
   };
 }
 
@@ -53,19 +53,44 @@ describe("runtime config validation", () => {
     expect(result.errors.some((error) => error.includes("requires authentication"))).toBe(true);
   });
 
-  it("emits production warnings for missing CORS origins and database", () => {
+  it("rejects production when explicit CORS origins are missing", () => {
     const config: RuntimeConfig = {
       ...baseConfig(),
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
       allowedOriginsConfigured: false,
+      databaseUrlConfigured: true
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.errors.some((error) => error.includes("ALLOWED_ORIGINS"))).toBe(true);
+  });
+
+  it("rejects production when DATABASE_URL is missing", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      jwtWriteRequired: false,
+      apiKeyPresent: true,
+      allowedOriginsConfigured: true,
       databaseUrlConfigured: false
     };
 
     const result = validateRuntimeConfig(config);
-    expect(result.errors).toHaveLength(0);
-    expect(result.warnings.some((warning) => warning.includes("ALLOWED_ORIGINS"))).toBe(true);
-    expect(result.warnings.some((warning) => warning.includes("DATABASE_URL"))).toBe(true);
+    expect(result.errors.some((error) => error.includes("DATABASE_URL"))).toBe(true);
+  });
+
+  it("warns when local auth signing is not configured", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      jwtWriteRequired: false,
+      apiKeyPresent: true,
+      localAuthSecretConfigured: false
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.warnings.some((warning) => warning.includes("BTA_LOCAL_AUTH_SECRET"))).toBe(true);
   });
 });

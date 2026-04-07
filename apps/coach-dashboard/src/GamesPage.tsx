@@ -267,22 +267,22 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
           {/* meta fields */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
             {([
-              ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} disabled={!isEditing} />],
-              ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} disabled={!isEditing} />],
-              ["Location", (
-                <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt} disabled={!isEditing}>
+              ["Date", date || "—", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />],
+              ["Opponent", opponent || "—", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} />],
+              ["Location", location === "away" ? "Away" : location === "neutral" ? "Neutral" : "Home", (
+                <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt}>
                   <option value="home">Home</option>
                   <option value="away">Away</option>
                   <option value="neutral">Neutral</option>
                 </select>
               )],
-              ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} disabled={!isEditing} />],
-              ["Opp Score",  <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} disabled={!isEditing} />],
-            ] as [string, React.ReactNode][]).map(([lbl, el]) => (
-              <label key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
+              ["Team Score", vcScore, <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} />],
+              ["Opp Score", oppScore, <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} />],
+            ] as [string, string, React.ReactNode][]).map(([lbl, viewVal, editEl]) => (
+              <div key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
                 <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{lbl}</span>
-                {el}
-              </label>
+                {isEditing ? editEl : <span style={{ ...inputSt, display: "block", cursor: "default", userSelect: "text" }}>{viewVal}</span>}
+              </div>
             ))}
           </div>
 
@@ -320,14 +320,20 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
                 {rows.map((row, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                     <td style={{ padding: "0.3rem 0.3rem" }}>
-                      <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} disabled={!isEditing} />
+                      {isEditing
+                        ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} />
+                        : <span style={{ padding: "0 0.3rem" }}>{row.name || "—"}</span>}
                     </td>
-                    <td style={{ padding: "0.3rem 0.2rem" }}>
-                      <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} disabled={!isEditing} />
+                    <td style={{ padding: "0.3rem 0.2rem", textAlign: "center" }}>
+                      {isEditing
+                        ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} />
+                        : <span>{row.number || "—"}</span>}
                     </td>
                     {STAT_COLS.map(c => (
-                      <td key={c.key} style={{ padding: "0.3rem 0.2rem" }}>
-                        <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} disabled={!isEditing} />
+                      <td key={c.key} style={{ padding: "0.3rem 0.2rem", textAlign: "center" }}>
+                        {isEditing
+                          ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} />
+                          : <span>{String(row[c.key as StatKey])}</span>}
                       </td>
                     ))}
                     <td style={{ padding: "0.3rem 0.2rem", fontWeight: 700, textAlign: "center" }}>{rowReb(row)}</td>

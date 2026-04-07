@@ -8,6 +8,7 @@ export interface PreGameScreenProps {
   myTeam: Team | undefined;
   opponentName: string;
   connectionSyncStatus: string;
+  lineupSyncStatus: string;
   selectedStarters: Set<string>;
   showLineupSetup: boolean;
   lineupLockedByLiveGame: boolean;
@@ -28,6 +29,7 @@ export function PreGameScreen({
   myTeam,
   opponentName,
   connectionSyncStatus,
+  lineupSyncStatus,
   selectedStarters,
   showLineupSetup,
   lineupLockedByLiveGame,
@@ -128,6 +130,9 @@ export function PreGameScreen({
           </button>
         </div>
         <p className="pregame-settings-hint">{connectionSyncStatus}</p>
+        {lineupSyncStatus && (
+          <p className="pregame-error">{lineupSyncStatus}</p>
+        )}
 
         <div className="pregame-opponent-row">
           <div className="pregame-team my-team">

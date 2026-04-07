@@ -15,10 +15,17 @@ const JWT_JWKS_URI = process.env.BTA_JWT_JWKS_URI?.trim();
 const JWT_SCHOOL_CLAIM = process.env.BTA_JWT_SCHOOL_CLAIM?.trim();
 const JWT_ROLE_CLAIM = process.env.BTA_JWT_ROLE_CLAIM?.trim();
 const AUTH_TEST_MODE = process.env.BTA_AUTH_TEST_MODE === "1";
+const NODE_ENV = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
 const LOCAL_AUTH_SECRET = process.env.BTA_LOCAL_AUTH_SECRET?.trim()
   || process.env.BTA_AUTH_SECRET?.trim()
   || process.env.BTA_API_KEY?.trim()
-  || ((process.env.NODE_ENV ?? "development") !== "production" ? "bta-local-auth-dev-secret" : "");
+  || (JWT_JWKS_URI && JWT_ISSUER && JWT_AUDIENCE
+    // Derive a stable secret from JWT config so operator tokens work even when no
+    // explicit local-auth secret is configured. Stable across restarts as long as
+    // the JWT provider config doesn't change.
+    ? createHmac("sha256", JWT_JWKS_URI).update(`${JWT_ISSUER}:${JWT_AUDIENCE}`).digest("hex")
+    : "")
+  || (NODE_ENV !== "production" ? "bta-local-auth-dev-secret" : "");
 
 const jwtEnabled = AUTH_TEST_MODE || Boolean(JWT_ISSUER && JWT_AUDIENCE && JWT_JWKS_URI);
 const localTokenEnabled = Boolean(LOCAL_AUTH_SECRET);

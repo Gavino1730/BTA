@@ -160,6 +160,7 @@ export function App() {
   const [showLineupSetup, setShowLineupSetup] = useState(false);
   const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
   const [lineupLockedByLiveGame, setLineupLockedByLiveGame] = useState(false);
+  const [lineupSyncStatus, setLineupSyncStatus] = useState("");
   const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
   const { syncFromCoachCode } = useCoachSync({ appData, setAppData, setConnectionSyncStatus, showInlineNotice });
 
@@ -169,6 +170,7 @@ export function App() {
     setAppData,
     setLineupLockedByLiveGame,
     setConnectionSyncStatus,
+    setLineupSyncStatus,
     persistPhase,
   });
 
@@ -462,6 +464,7 @@ export function App() {
         myTeam={myTeam}
         opponentName={opponentName}
         connectionSyncStatus={connectionSyncStatus}
+        lineupSyncStatus={lineupSyncStatus}
         selectedStarters={selectedStarters}
         showLineupSetup={showLineupSetup}
         lineupLockedByLiveGame={lineupLockedByLiveGame}

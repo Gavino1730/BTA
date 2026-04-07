@@ -10,6 +10,7 @@ export interface UseLineupSyncInput {
   setAppData: React.Dispatch<React.SetStateAction<AppData>>;
   setLineupLockedByLiveGame: (locked: boolean) => void;
   setConnectionSyncStatus: (status: string) => void;
+  setLineupSyncStatus: (status: string) => void;
   persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
 }
 
@@ -19,16 +20,19 @@ export function useLineupSync({
   setAppData,
   setLineupLockedByLiveGame,
   setConnectionSyncStatus,
+  setLineupSyncStatus,
   persistPhase,
 }: UseLineupSyncInput) {
   useEffect(() => {
     if (gamePhase !== "pre-game") {
       setLineupLockedByLiveGame(false);
+      setLineupSyncStatus("");
       return;
     }
 
     if (!isConnectionReadyForStart(appData.gameSetup)) {
       setLineupLockedByLiveGame(false);
+      setLineupSyncStatus("");
       return;
     }
 
@@ -42,6 +46,7 @@ export function useLineupSync({
         if (!response.ok) {
           if (response.status === 404) {
             setLineupLockedByLiveGame(false);
+            setLineupSyncStatus("");
           }
           return;
         }
@@ -54,6 +59,7 @@ export function useLineupSync({
 
         const hasLiveEvents = Array.isArray(activeState.events) && activeState.events.length > 0;
         setLineupLockedByLiveGame(hasLiveEvents);
+        setLineupSyncStatus("");
 
         if (hasLiveEvents && gamePhase === "pre-game") {
           setConnectionSyncStatus("Live game detected from the server. Resuming this game on this iPad.");
@@ -93,7 +99,9 @@ export function useLineupSync({
           return next;
         });
       } catch {
-        // Keep last known lineup lock if network is temporarily unavailable.
+        setLineupSyncStatus(
+          "Could not refresh the live lineup lock from the server. Your last saved starters remain available on this iPad.",
+        );
       }
     }
 
