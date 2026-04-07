@@ -33,25 +33,25 @@ const FAQS = [
 // ---- Live demo widget ----
 
 const DEMO_EVENTS = [
-  { msg: "+2 Cooper Bonnett",         vc: 2, opp: 0 },
-  { msg: "+3 Kye Fixter (3PT)",       vc: 3, opp: 0 },
-  { msg: "+2 Gavin Galan",            vc: 2, opp: 0 },
-  { msg: "+1 Cooper Bonnett (FT)",    vc: 1, opp: 0 },
-  { msg: "Turnover \u2192 Tigard",    vc: 0, opp: 0 },
-  { msg: "+2 Tigard #24",             vc: 0, opp: 2 },
-  { msg: "+3 Tigard sharpshooter",    vc: 0, opp: 3 },
-  { msg: "Timeout \u00b7 Valley Catholic", vc: 0, opp: 0 },
-  { msg: "+2 Alex Post",              vc: 2, opp: 0 },
-  { msg: "Foul \u2192 Tigard (bonus)", vc: 0, opp: 0 },
-  { msg: "+2 Marcos Mueller",         vc: 2, opp: 0 },
+  { msg: "+2 Jaxon Reed",             vc: 2, opp: 0 },
+  { msg: "+3 Milo Hart (3PT)",        vc: 3, opp: 0 },
+  { msg: "+2 Theo Lin",               vc: 2, opp: 0 },
+  { msg: "+1 Jaxon Reed (FT)",        vc: 1, opp: 0 },
+  { msg: "Turnover -> Cedar Grove",   vc: 0, opp: 0 },
+  { msg: "+2 Cedar Grove #24",        vc: 0, opp: 2 },
+  { msg: "+3 Cedar Grove wing",       vc: 0, opp: 3 },
+  { msg: "Timeout - North Ridge Prep",vc: 0, opp: 0 },
+  { msg: "+2 Elias Shaw",             vc: 2, opp: 0 },
+  { msg: "Foul -> Cedar Grove (bonus)", vc: 0, opp: 0 },
+  { msg: "+2 Rowan Pike",             vc: 2, opp: 0 },
 ];
 
 const DEMO_BOX = [
-  { name: "Cooper Bonnett", pts: 24, reb: 3, ast: 6 },
-  { name: "Gavin Galan",    pts: 14, reb: 8, ast: 2 },
-  { name: "Kye Fixter",     pts: 10, reb: 6, ast: 1 },
-  { name: "Alex Post",      pts: 6,  reb: 2, ast: 4 },
-  { name: "Marcos Mueller", pts: 4,  reb: 1, ast: 3 },
+  { name: "Jaxon Reed",  pts: 24, reb: 3, ast: 6 },
+  { name: "Theo Lin",    pts: 14, reb: 8, ast: 2 },
+  { name: "Milo Hart",   pts: 10, reb: 6, ast: 1 },
+  { name: "Elias Shaw",  pts: 6,  reb: 2, ast: 4 },
+  { name: "Rowan Pike",  pts: 4,  reb: 1, ast: 3 },
 ];
 
 function LiveDemoWidget() {
@@ -87,20 +87,20 @@ function LiveDemoWidget() {
       <div className="mkt-demo-header">
         <span className="mkt-live-dot" aria-hidden="true" />
         <span className="mkt-live-label">LIVE</span>
-        <span className="mkt-demo-clock">Q4 \u00b7 {mins}:{secs}</span>
+        <span className="mkt-demo-clock">Q4 - {mins}:{secs}</span>
         <span className="mkt-demo-sample-tag">Sample data</span>
       </div>
       <div className="mkt-demo-scoreboard">
         <div className="mkt-demo-team mkt-demo-team-home">
-          <span className="mkt-demo-team-abbr">VC</span>
-          <span className="mkt-demo-team-name">Valley Catholic</span>
+          <span className="mkt-demo-team-abbr">NRP</span>
+          <span className="mkt-demo-team-name">North Ridge Prep</span>
           <strong className="mkt-demo-score mkt-demo-score-home">{vcScore}</strong>
         </div>
-        <div className="mkt-demo-sep">\u2013</div>
+        <div className="mkt-demo-sep">-</div>
         <div className="mkt-demo-team mkt-demo-team-away">
           <strong className="mkt-demo-score">{oppScore}</strong>
-          <span className="mkt-demo-team-name">Tigard</span>
-          <span className="mkt-demo-team-abbr">TIG</span>
+          <span className="mkt-demo-team-name">Cedar Grove</span>
+          <span className="mkt-demo-team-abbr">CGR</span>
         </div>
       </div>
       <div
@@ -131,20 +131,20 @@ function LiveDemoWidget() {
 // ---- Public demo dashboard (no auth required) ----
 
 const DEMO_GAMES = [
-  { opponent: "Tigard",   loc: "home", result: "W", vc: 62, opp: 48, date: "Feb 14" },
-  { opponent: "La Salle", loc: "away", result: "W", vc: 55, opp: 51, date: "Feb 11" },
-  { opponent: "Tualatin", loc: "home", result: "L", vc: 44, opp: 58, date: "Feb 7"  },
-  { opponent: "OES",      loc: "away", result: "W", vc: 67, opp: 43, date: "Feb 4"  },
-  { opponent: "Jesuit",   loc: "home", result: "L", vc: 51, opp: 64, date: "Jan 31" },
+  { opponent: "Cedar Grove",   loc: "home", result: "W", vc: 62, opp: 48, date: "Feb 14" },
+  { opponent: "Westfield Tech",loc: "away", result: "W", vc: 55, opp: 51, date: "Feb 11" },
+  { opponent: "Pine Harbor",   loc: "home", result: "L", vc: 44, opp: 58, date: "Feb 7"  },
+  { opponent: "Maple Heights", loc: "away", result: "W", vc: 67, opp: 43, date: "Feb 4"  },
+  { opponent: "Riverton",      loc: "home", result: "L", vc: 51, opp: 64, date: "Jan 31" },
 ];
 
 const DEMO_PLAYERS = [
-  { name: "Cooper Bonnett",  num: "1",  ppg: 18.4, rpg: 4.2, apg: 5.8, fg: 44.1 },
-  { name: "Gavin Galan",     num: "3",  ppg: 12.3, rpg: 6.8, apg: 1.9, fg: 41.3 },
-  { name: "Kye Fixter",      num: "4",  ppg: 9.8,  rpg: 5.2, apg: 2.1, fg: 38.7 },
-  { name: "Alex Post",       num: "2",  ppg: 7.2,  rpg: 3.1, apg: 3.4, fg: 36.2 },
-  { name: "Marcos Mueller",  num: "5",  ppg: 6.4,  rpg: 2.8, apg: 2.1, fg: 35.1 },
-  { name: "Elijah Schaal",   num: "15", ppg: 2.8,  rpg: 4.1, apg: 0.8, fg: 51.2 },
+  { name: "Jaxon Reed",   num: "1",  ppg: 18.4, rpg: 4.2, apg: 5.8, fg: 44.1 },
+  { name: "Theo Lin",     num: "3",  ppg: 12.3, rpg: 6.8, apg: 1.9, fg: 41.3 },
+  { name: "Milo Hart",    num: "4",  ppg: 9.8,  rpg: 5.2, apg: 2.1, fg: 38.7 },
+  { name: "Elias Shaw",   num: "2",  ppg: 7.2,  rpg: 3.1, apg: 3.4, fg: 36.2 },
+  { name: "Rowan Pike",   num: "5",  ppg: 6.4,  rpg: 2.8, apg: 2.1, fg: 35.1 },
+  { name: "Nico Vale",    num: "15", ppg: 2.8,  rpg: 4.1, apg: 0.8, fg: 51.2 },
 ];
 
 const TH_ST: CSSProperties = {
@@ -156,38 +156,41 @@ export function DemoPage({ onNavigate }: { onNavigate: (path: string) => void })
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       <div className="mkt-demo-banner">
-        <span>\uD83C\uDFAE Demo mode \u00b7 sample Valley Catholic season data \u00b7 read-only</span>
+        <span>Demo mode - sample North Ridge Prep season data - read-only</span>
         <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>
-          Sign In for Real Data \u2192
+          Sign In for Real Data -&gt;
         </button>
       </div>
 
       <header className="mkt-demo-page-nav">
-        <button type="button" className="mkt-brand" onClick={() => onNavigate("/")}>
-          <span style={{ fontSize: "0.9rem", color: "rgba(232,234,240,0.55)" }}>\u2190</span>
+        <button type="button" className="mkt-brand" onClick={() => onNavigate("/")} aria-label="Go to home page">
+          <span style={{ fontSize: "0.9rem", color: "rgba(232,234,240,0.55)" }}>Home</span>
           <span className="mkt-brand-name">BTA Courtside</span>
         </button>
         <span className="mkt-demo-page-title">Demo Dashboard</span>
-        <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>Sign In</button>
+        <div className="mkt-demo-page-actions">
+          <button type="button" className="mkt-btn mkt-btn-ghost" onClick={() => onNavigate("/")}>Home</button>
+          <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>Sign In</button>
+        </div>
       </header>
 
       <div className="stats-page">
         <section className="stats-page-hero">
           <div>
-            <h1>Valley Catholic</h1>
-            <p className="stats-page-subtitle">2025\u201326 Season \u00b7 Sample Data</p>
+            <h1>North Ridge Prep</h1>
+            <p className="stats-page-subtitle">2025-26 Season - Sample Data</p>
           </div>
-          <span className="stats-page-status">Demo \u00b7 read-only</span>
+          <span className="stats-page-status">Demo - read-only</span>
         </section>
 
         <section className="stats-metric-grid">
           {[
             { label: "Record",     val: "12-6",  detail: "Win % 67%",             accent: true },
             { label: "PPG",        val: "58.3",  detail: "Opponent PPG 46.2" },
-            { label: "FG%",        val: "43.2%", detail: "3PT 32.1% \u00b7 FT 72.1%" },
+            { label: "FG%",        val: "43.2%", detail: "3PT 32.1% - FT 72.1%" },
             { label: "Rebounding", val: "28.4",  detail: "Boards per game" },
             { label: "Assists",    val: "14.2",  detail: "TO avg 10.8" },
-            { label: "Def Events", val: "9.9",   detail: "STL 7.1 \u00b7 BLK 2.8" },
+            { label: "Def Events", val: "9.9",   detail: "STL 7.1 - BLK 2.8" },
           ].map((c) => (
             <div key={c.label} className={`stats-metric-card${c.accent ? " accent-blue" : ""}`}>
               <span className="stats-metric-label">{c.label}</span>
@@ -213,9 +216,9 @@ export function DemoPage({ onNavigate }: { onNavigate: (path: string) => void })
                       <span>{g.date}</span>
                     </div>
                     <div className="stats-game-score-block">
-                      <strong>{g.vc}\u2013{g.opp}</strong>
+                      <strong>{g.vc}-{g.opp}</strong>
                       <span style={{ fontSize: "0.78rem", color: margin > 0 ? "#86efac" : "#fca5a5" }}>
-                        {g.result} \u00b7 {margin > 0 ? `+${margin}` : margin}
+                        {g.result} - {margin > 0 ? `+${margin}` : margin}
                       </span>
                     </div>
                   </div>

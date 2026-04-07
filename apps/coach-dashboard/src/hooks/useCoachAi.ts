@@ -214,7 +214,7 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       setAiChatStatus(
         payload.usedHistoricalContext
           ? "Answered with live game state plus historical team and player context."
-          : "Answered with live game context only \u2014 season stats unavailable."
+          : "Answered with live game context only - season stats unavailable."
       );
     } catch {
       setAiChatStatus("AI chat request failed. Realtime API may be unavailable.");

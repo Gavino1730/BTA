@@ -4330,6 +4330,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
   white-space: nowrap;
   text-decoration: none;
+  min-height: 40px;
 }
 .mkt-btn:active { transform: scale(0.97); }
 .mkt-btn-primary {
@@ -4825,6 +4826,11 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   gap: 1rem;
 }
 .mkt-demo-page-title { font-size: 0.88rem; color: rgba(232,234,240,0.45); }
+.mkt-demo-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .mkt-demo-page-cta {
   display: flex;
   align-items: center;
@@ -4840,6 +4846,31 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .mkt-demo-page-cta h2 { font-size: 1.35rem; font-weight: 750; letter-spacing: -0.025em; color: var(--text); margin: 0 0 0.3rem; }
 .mkt-demo-page-cta p  { font-size: 0.9rem; color: rgba(232,234,240,0.6); margin: 0; }
 
+@media (max-width: 1120px) {
+  .mkt-nav-inner {
+    gap: 1rem;
+    padding: 0 1rem;
+  }
+  .mkt-nav-links {
+    gap: 0;
+  }
+  .mkt-hero-inner {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  .mkt-hero-demo {
+    justify-content: flex-start;
+  }
+  .mkt-demo-widget {
+    max-width: 100%;
+  }
+  .mkt-section,
+  .mkt-final-cta {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 860px) {
   .mkt-hero-inner { grid-template-columns: 1fr; }
@@ -4850,7 +4881,134 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   .mkt-numbers-inner { grid-template-columns: repeat(2, 1fr); }
   .mkt-demo-cta-inner { flex-direction: column; align-items: flex-start; }
   .mkt-nav-links { display: none; }
+  .mkt-nav-inner {
+    min-height: 64px;
+    height: auto;
+    flex-wrap: wrap;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .mkt-nav-actions {
+    margin-left: auto;
+  }
   .mkt-demo-page-cta { flex-direction: column; align-items: flex-start; }
   .mkt-demo-banner { font-size: 0.78rem; }
+  .mkt-demo-banner,
+  .mkt-demo-page-nav {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  .mkt-demo-page-nav {
+    min-height: 58px;
+    height: auto;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    flex-wrap: wrap;
+  }
+  .mkt-demo-page-title {
+    order: 3;
+    width: 100%;
+    text-align: center;
+    font-size: 0.8rem;
+  }
   .mkt-footer-inner { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 640px) {
+  .mkt-page {
+    overflow-x: hidden;
+  }
+  .mkt-btn {
+    min-height: 44px;
+  }
+  .mkt-nav-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .mkt-nav-actions .mkt-btn {
+    width: 100%;
+  }
+  .mkt-demo-page-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .mkt-demo-page-actions .mkt-btn {
+    width: 100%;
+  }
+  .mkt-brand-name {
+    font-size: 0.96rem;
+  }
+  .mkt-h1 {
+    font-size: clamp(2rem, 8vw, 2.8rem);
+  }
+  .mkt-hero-sub {
+    font-size: 0.98rem;
+  }
+  .mkt-feature-grid {
+    grid-template-columns: 1fr;
+  }
+  .mkt-feature-card {
+    padding: 1.25rem;
+  }
+  .mkt-number-item {
+    padding: 1.2rem 0.75rem;
+  }
+  .mkt-number-item strong {
+    font-size: 1.35rem;
+  }
+  .mkt-demo-widget {
+    padding: 1rem;
+  }
+  .mkt-demo-score {
+    font-size: 1.65rem;
+  }
+  .mkt-demo-team-name {
+    font-size: 0.75rem;
+  }
+  .mkt-demo-box-head,
+  .mkt-demo-box-row {
+    grid-template-columns: 1fr 30px 30px 30px;
+  }
+  .mkt-demo-page-cta {
+    padding: 1.25rem;
+  }
+  .mkt-demo-page-cta h2 {
+    font-size: 1.15rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .mkt-hero,
+  .mkt-section,
+  .mkt-demo-cta,
+  .mkt-final-cta,
+  .mkt-footer {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
+  .mkt-hero-actions,
+  .mkt-trust-row {
+    width: 100%;
+  }
+  .mkt-hero-actions .mkt-btn {
+    width: 100%;
+  }
+  .mkt-numbers-inner {
+    grid-template-columns: 1fr;
+  }
+  .mkt-section-head {
+    margin-bottom: 2rem;
+  }
+  .mkt-section-head h2,
+  .mkt-final-cta-inner h2 {
+    font-size: 1.55rem;
+  }
+  .mkt-faq-question {
+    font-size: 0.9rem;
+  }
+  .mkt-demo-banner {
+    font-size: 0.72rem;
+  }
 }

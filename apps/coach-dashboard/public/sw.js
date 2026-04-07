@@ -2,7 +2,7 @@
 // Caches static assets for offline/poor-connectivity resilience.
 // API and Socket.IO calls always go to the network.
 
-const CACHE_NAME = "bta-coach-v1";
+const CACHE_NAME = "bta-coach-v2";
 
 const SHELL_URLS = ["/", "/index.html"];
 
@@ -40,6 +40,32 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // For document navigations, prefer fresh network HTML so deployments
+  // are reflected immediately and stale app shells don't linger.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match("/index.html").then((fallback) => (
+            fallback
+            || new Response("Offline", {
+              status: 503,
+              statusText: "Offline",
+              headers: { "Content-Type": "text/plain" },
+            })
+          ))
+        )
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const networkFetch = fetch(event.request)
@@ -50,12 +76,12 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => {
-          if (event.request.mode === "navigate") {
-            return caches.match("/index.html");
-          }
-          return undefined;
-        });
+        .catch(() =>
+          new Response("", {
+            status: 504,
+            statusText: "Gateway Timeout",
+          })
+        );
 
       return cached ?? networkFetch;
     })
