@@ -8,6 +8,13 @@ const run = (cmd) => {
 };
 
 try {
+  run("npm run validate:env -w @bta/realtime-api");
+} catch {
+  console.error("[ci-gate] Environment validation failed.");
+  process.exit(1);
+}
+
+try {
   run("npm run build");
 } catch {
   console.error("[ci-gate] Build failed.");

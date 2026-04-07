@@ -174,6 +174,7 @@ function createRateLimitMiddleware(maxRequests: number, windowMs: number) {
   };
 }
 const eventRateLimiter = createRateLimitMiddleware(100, 60000); // 100 events/min per IP
+const authRateLimiter = createRateLimitMiddleware(20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
 const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
   "substitutions",
@@ -2077,7 +2078,7 @@ app.get("/api/auth/session", (req, res) => {
   });
 });
 
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", authRateLimiter, (req, res) => {
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const fullName = sanitizeTextField(payload.fullName ?? payload.coachName, 120);
   const email = sanitizeTextField(payload.email ?? payload.coachEmail, 160).toLowerCase();
@@ -2154,7 +2155,7 @@ app.post("/api/auth/register", (req, res) => {
   res.status(201).json(buildAuthSessionResponse(schoolId, account, currentMember, token));
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", authRateLimiter, (req, res) => {
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const email = sanitizeTextField(payload.email, 160).toLowerCase();
   const password = String(payload.password ?? "").trim();

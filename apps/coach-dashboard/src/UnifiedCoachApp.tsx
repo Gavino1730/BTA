@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { App as LiveDashboardApp, type AppConnectionInfo } from "./App.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
@@ -34,8 +34,14 @@ function buildOperatorConsoleUrl(connectionId: string): string {
 }
 
 export function UnifiedCoachApp() {
-  const initialConnectionId = normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId")) || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id")) || generateConnectionCode();
-  const initialAuthSession = readStoredAuthSession();
+  // useRef for one-time initializers avoids re-running expensive localStorage
+  // reads and generateConnectionCode() on every render.
+  const initialConnectionId = useRef(
+    normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId"))
+    || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"))
+    || generateConnectionCode()
+  ).current;
+  const initialAuthSession = useRef(readStoredAuthSession()).current;
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => Boolean(initialAuthSession?.token));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);

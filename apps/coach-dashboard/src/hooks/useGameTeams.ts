@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { TeamStats, PlayerStats } from "@bta/game-state";
 import { emptyTeamStats, mergeTeamStats, mergePlayerStats, type GameState } from "../helpers/index.js";
 
@@ -91,7 +91,7 @@ export function useGameTeams(
     state?.homeTeamId,
   ]);
 
-  function canonicalTeamId(teamId: string): string {
+  const canonicalTeamId = useCallback((teamId: string): string => {
     if (canonicalSideIds.homeAliases.has(teamId)) {
       return canonicalSideIds.homeId;
     }
@@ -101,7 +101,7 @@ export function useGameTeams(
     }
 
     return teamId;
-  }
+  }, [canonicalSideIds]);
 
   const rawTeamIds = useMemo(() => {
     return [...new Set([
@@ -148,8 +148,8 @@ export function useGameTeams(
         ...target.activeLineup,
         ...(state?.activeLineupsByTeam?.[rawTeamId] ?? []),
       ])];
-      mergeTeamStats(target.teamStats, state?.teamStats?.[rawTeamId]);
-      mergePlayerStats(target.playerStats, state?.playerStatsByTeam?.[rawTeamId]);
+      target.teamStats = mergeTeamStats(target.teamStats, state?.teamStats?.[rawTeamId]);
+
       target.timeoutsUsed += state?.timeoutsByTeam?.[rawTeamId] ?? 0;
       // Sum fouls for the current period from teamFoulsByPeriod
       const periodFoulMap = state?.teamFoulsByPeriod?.[rawTeamId] ?? {};
@@ -158,7 +158,7 @@ export function useGameTeams(
     }
 
     return aggregated;
-  }, [rawTeamIds, setupNames.myTeamId, setupNames.vcSide, state]);
+  }, [canonicalTeamId, rawTeamIds, state]);
 
   const teams = useMemo(() => {
     const homeSlot = canonicalSideIds.homeId;
@@ -203,7 +203,7 @@ export function useGameTeams(
     )];
 
     return [...preferredUnique, ...observedFallback].slice(0, 2);
-  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.vcSide, setupNames.myTeamId, state?.awayTeamId, state?.homeTeamId]);
+  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, canonicalTeamId, setupNames.vcSide, setupNames.myTeamId, state?.awayTeamId, state?.homeTeamId]);
 
   return { canonicalSideIds, canonicalTeamId, rawTeamIds, aggregatedTeams, teams };
 }

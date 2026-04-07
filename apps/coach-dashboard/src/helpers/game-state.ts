@@ -66,20 +66,23 @@ export function mergeTeamStats(target: TeamStats, source?: TeamStats): TeamStats
     return target;
   }
 
-  target.shooting.fgAttempts += source.shooting.fgAttempts;
-  target.shooting.fgMade += source.shooting.fgMade;
-  target.shooting.fgAttempts3 += source.shooting.fgAttempts3;
-  target.shooting.fgMade3 += source.shooting.fgMade3;
-  target.shooting.ftAttempts += source.shooting.ftAttempts;
-  target.shooting.ftMade += source.shooting.ftMade;
-  target.shooting.points += source.shooting.points;
-  target.turnovers += source.turnovers;
-  target.fouls += source.fouls;
-  target.reboundsOff += source.reboundsOff;
-  target.reboundsDef += source.reboundsDef;
-  target.substitutions += source.substitutions;
-
-  return target;
+  return {
+    ...target,
+    shooting: {
+      fgAttempts: target.shooting.fgAttempts + source.shooting.fgAttempts,
+      fgMade: target.shooting.fgMade + source.shooting.fgMade,
+      fgAttempts3: target.shooting.fgAttempts3 + source.shooting.fgAttempts3,
+      fgMade3: target.shooting.fgMade3 + source.shooting.fgMade3,
+      ftAttempts: target.shooting.ftAttempts + source.shooting.ftAttempts,
+      ftMade: target.shooting.ftMade + source.shooting.ftMade,
+      points: target.shooting.points + source.shooting.points,
+    },
+    turnovers: target.turnovers + source.turnovers,
+    fouls: target.fouls + source.fouls,
+    reboundsOff: target.reboundsOff + source.reboundsOff,
+    reboundsDef: target.reboundsDef + source.reboundsDef,
+    substitutions: target.substitutions + source.substitutions,
+  };
 }
 
 export function mergePlayerStats(

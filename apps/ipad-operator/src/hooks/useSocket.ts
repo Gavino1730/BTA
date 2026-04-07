@@ -221,6 +221,7 @@ export function useSocket({
       socket.off("connect_error");
       socket.off("disconnect");
       socket.off("error");
+      socket.off("game:state");
       socket.off("game:insights");
       socket.off("game:deleted");
       socket.off("operator:link:updated");

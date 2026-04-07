@@ -41,7 +41,11 @@ export function useNewGameForm({
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const newId = generateGameId(newGameOpponent, today);
+    const baseId = generateGameId(newGameOpponent, today);
+    // Avoid reusing an already-ended game ID (e.g. tournament same-day rematch).
+    const newId = endedGameIdsRef.current?.has(baseId)
+      ? `${baseId}-${Date.now().toString(36).slice(-3)}`
+      : baseId;
     endedGameIdsRef.current?.delete(newId);
     const selectedTeam = rosterTeams.find((t) => t.id === newGameMyTeamId);
     const opponentName = newGameOpponent.trim();

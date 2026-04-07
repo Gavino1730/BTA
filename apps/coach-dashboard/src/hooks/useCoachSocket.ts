@@ -1,4 +1,4 @@
-import { type MutableRefObject, useEffect } from "react";
+import { type MutableRefObject, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { apiBase, API_KEY, apiKeyHeader, readStoredAuthSession, resolveActiveSchoolId } from "../platform.js";
 import {
@@ -45,6 +45,15 @@ export function useCoachSocket({
   setInsights,
   setRosterTeamsFromRemote,
 }: UseCoachSocketOptions): void {
+  // Keep a stable ref to clearActiveGame so the socket event handlers
+  // always call the latest version — the socket effect only re-runs when
+  // connectionId changes, so callbacks captured at setup time would have
+  // stale gameId/resetAiState closures from before the current game started.
+  const clearActiveGameRef = useRef(clearActiveGame);
+  useEffect(() => {
+    clearActiveGameRef.current = clearActiveGame;
+  });
+
   useEffect(() => {
     const authSession = readStoredAuthSession();
     const schoolId = resolveActiveSchoolId();
@@ -84,9 +93,9 @@ export function useCoachSocket({
     socket.on("disconnect", () => {
       setServerConnected(false);
       setDeviceConnected(false);
-      setState(null);
-      // Do not clear gameId — it is persisted to localStorage so the active
-      // game can be recovered when the socket or page reconnects.
+      // Preserve state so the scoreboard stays visible during brief reconnections.
+      // The server re-pushes game:state on reconnect, keeping data fresh.
+      setDashboardStatus("Reconnecting...");
     });
 
     socket.emit("join:coach", { connectionId, gameId: gameIdRef.current });
@@ -151,7 +160,7 @@ export function useCoachSocket({
 
       endedGameIdsRef.current.add(submittedGameId);
       if (gameIdRef.current === submittedGameId) {
-        clearActiveGame("Game ended. Start a new game when ready.");
+        clearActiveGameRef.current("Game ended. Start a new game when ready.");
       }
     });
 
@@ -168,6 +177,8 @@ export function useCoachSocket({
       stopPoll();
       socket.off("presence:status", handlePresence);
       socket.off("game:submitted");
+      socket.off("game:state");
+      socket.off("game:insights");
       socket.off("roster:teams");
       socket.disconnect();
     };

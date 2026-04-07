@@ -36,7 +36,6 @@ import {
   clockToSec,
 } from "./helpers/clock.js";
 import {
-  buildCoachViewUrl,
   generateGameId,
   isConnectionReadyForStart,
   normalizeConnectionId,
@@ -516,23 +515,6 @@ export function App() {
       />
     );
   }
-
-  const periodLabels = [
-    "Q1",
-    "Q2",
-    "Q3",
-    "Q4",
-    ...Array.from({ length: overtimeCount }, (_, index) => `OT${index + 1}`),
-  ];
-  const liveCoachUrl = buildCoachViewUrl(gameId, {
-    connectionId: appData.gameSetup.connectionId,
-    myTeamId: appData.gameSetup.myTeamId,
-    myTeamName: myTeam?.name,
-    opponentName: appData.gameSetup.opponent,
-    vcSide: appData.gameSetup.vcSide,
-    homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
-    awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
-  });
 
   return (
     <div

@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import type { PlayerStats, TeamStats } from "@bta/game-state";
 import type { AiSignalCard, Insight, RotationWatchNote } from "../helpers/index.js";
 
+// Module-level compiled regex — avoids recompiling on every render/loop iteration.
+const SUB_REGEX = /\bsub\b|lineup|\brest\b/i;
+const FOUL_REGEX = /foul|bonus/i;
+const EFFICIENCY_REGEX = /efficient|hot hand|shooting|scoring/i;
+
 interface TeamData {
   score: number;
   bonus: boolean;
@@ -47,7 +52,7 @@ export function useAiCards({
     const cards: AiSignalCard[] = [];
 
     for (const insight of [...aiInsights, ...rulesInsights]) {
-      if (insight.type === "sub_suggestion" || /\bsub\b|lineup|rest/i.test(`${insight.message} ${insight.explanation}`)) {
+      if (insight.type === "sub_suggestion" || SUB_REGEX.test(`${insight.message} ${insight.explanation}`)) {
         cards.push({
           id: `sub-${insight.id}`,
           title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
@@ -75,7 +80,7 @@ export function useAiCards({
     const cards: AiSignalCard[] = [];
 
     for (const insight of [...rulesInsights, ...aiInsights]) {
-      if (["foul_warning", "foul_trouble", "team_foul_warning"].includes(insight.type) || /foul|bonus/i.test(`${insight.message} ${insight.explanation}`)) {
+      if (["foul_warning", "foul_trouble", "team_foul_warning"].includes(insight.type) || FOUL_REGEX.test(`${insight.message} ${insight.explanation}`)) {
         cards.push({
           id: `foul-${insight.id}`,
           title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
@@ -92,7 +97,7 @@ export function useAiCards({
     const cards: AiSignalCard[] = [];
 
     for (const insight of [...rulesInsights, ...aiInsights]) {
-      if (["hot_hand", "shot_profile"].includes(insight.type) || /efficient|hot hand|shooting|scoring/i.test(`${insight.message} ${insight.explanation}`)) {
+      if (["hot_hand", "shot_profile"].includes(insight.type) || EFFICIENCY_REGEX.test(`${insight.message} ${insight.explanation}`)) {
         cards.push({
           id: `eff-${insight.id}`,
           title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),

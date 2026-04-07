@@ -54,20 +54,20 @@ export function useCoachSync({
         return;
       }
 
-      if (JSON.stringify(converted) === JSON.stringify(appData.teams)) {
-        return;
-      }
-
-      const hasSelectedTeam = converted.some((team) => team.id === appData.gameSetup.myTeamId);
-      const nextMyTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (converted[0]?.id ?? "");
-
-      const next: AppData = {
-        ...appData,
-        teams: converted,
-        gameSetup: { ...appData.gameSetup, myTeamId: nextMyTeamId },
-      };
-      setAppData(next);
-      saveAppData(next);
+      setAppData((current) => {
+        if (JSON.stringify(converted) === JSON.stringify(current.teams)) {
+          return current;
+        }
+        const hasSelectedTeam = converted.some((team) => team.id === current.gameSetup.myTeamId);
+        const nextMyTeamId = hasSelectedTeam ? current.gameSetup.myTeamId : (converted[0]?.id ?? "");
+        const next: AppData = {
+          ...current,
+          teams: converted,
+          gameSetup: { ...current.gameSetup, myTeamId: nextMyTeamId },
+        };
+        saveAppData(next);
+        return next;
+      });
     }
 
     void syncTeamsFromRealtime();
@@ -79,7 +79,8 @@ export function useCoachSync({
       active = false;
       clearInterval(intervalId);
     };
-  }, [appData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appData.gameSetup.apiUrl, appData.gameSetup.apiKey, appData.gameSetup.schoolId, appData.gameSetup.connectionId]);
 
   // ---- Connection-code re-sync ----
   useEffect(() => {

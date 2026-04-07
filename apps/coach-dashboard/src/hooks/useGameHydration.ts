@@ -3,6 +3,29 @@ import { normalizeTeamColor } from "@bta/shared-schema";
 import { apiBase, apiKeyHeader } from "../platform.js";
 import { type GameState, type Insight, type BoxScoreFilter } from "../helpers/index.js";
 
+/** Remove old game cache entries from localStorage, keeping the current game
+ *  and at most `keepCount` of the most recent other games. Game IDs are
+ *  date-prefixed (YYYY-MM-DD-slug) so alphabetical sort approximates age. */
+function pruneGameStateCache(currentGameId: string, keepCount = 5): void {
+  try {
+    const allIds = new Set<string>();
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      const match = /^gameState-(.+)$/.exec(key);
+      if (match) allIds.add(match[1]);
+    }
+    const otherIds = [...allIds].filter((id) => id !== currentGameId).sort();
+    const toDelete = otherIds.slice(0, Math.max(0, otherIds.length - keepCount));
+    for (const id of toDelete) {
+      localStorage.removeItem(`gameState-${id}`);
+      localStorage.removeItem(`gameInsights-${id}`);
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 interface SetupNames {
   myTeamId: string;
   myTeamName: string;
@@ -58,64 +81,33 @@ export function useGameHydration({
   resetAiState,
   setBoxScoreFilter,
 }: UseGameHydrationOptions): void {
-  // Reconcile gameId: auto-recover an active game or clear a stale one.
+  // Reconcile gameId: auto-recover an active game when none is tracked locally.
+  // When gameId is already set, the hydration effect below validates and loads
+  // state — no duplicate fetch needed here.
   useEffect(() => {
+    if (gameId || !connectionId) {
+      return;
+    }
+
     let cancelled = false;
 
     async function reconcileGameId() {
       try {
-        if (!gameId) {
-          if (!connectionId) {
-            return;
-          }
-
-          const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
-            headers: apiKeyHeader(),
-          });
-
-          if (!activeResponse.ok || cancelled) {
-            return;
-          }
-
-          const active = await activeResponse.json() as { gameId?: string };
-          if (cancelled || !active.gameId || endedGameIdsRef.current.has(active.gameId)) {
-            return;
-          }
-
-          setDashboardStatus("Recovered active game from server.");
-          setGameId(active.gameId);
-          return;
-        }
-
-        const stateResponse = await fetch(`${apiBase}/api/games/${gameId}/state`, {
-          headers: apiKeyHeader(),
-        });
-
-        if (cancelled || stateResponse.status !== 404) {
-          return;
-        }
-
         const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
           headers: apiKeyHeader(),
         });
 
-        if (cancelled) {
+        if (!activeResponse.ok || cancelled) {
           return;
         }
 
-        if (activeResponse.ok) {
-          const active = await activeResponse.json() as { gameId?: string };
-          if (active.gameId && active.gameId !== gameId) {
-            setDashboardStatus("Recovered active game from server.");
-            setGameId(active.gameId);
-          }
+        const active = await activeResponse.json() as { gameId?: string };
+        if (cancelled || !active.gameId || endedGameIdsRef.current.has(active.gameId)) {
           return;
         }
 
-        if (activeResponse.status === 404) {
-          endedGameIdsRef.current.add(gameId);
-          clearActiveGame("Cleared stale game session. Start a new game when ready.");
-        }
+        setDashboardStatus("Recovered active game from server.");
+        setGameId(active.gameId);
       } catch {
         // Keep local state when offline/unreachable.
       }
@@ -196,12 +188,19 @@ export function useGameHydration({
     setDashboardStatus("Loading new game...");
     setIsLoading(true);
 
+    let cancelled = false;
+
     async function hydrate() {
       // Fetch state and insights in parallel for faster load
       const [stateRes, insightRes] = await Promise.all([
         fetch(`${apiBase}/api/games/${gameId}/state`, { headers: apiKeyHeader() }),
         fetch(`${apiBase}/api/games/${gameId}/insights`, { headers: apiKeyHeader() })
       ]);
+
+      if (cancelled) {
+        setIsLoading(false);
+        return;
+      }
 
       // Handle game state
       try {
@@ -211,8 +210,37 @@ export function useGameHydration({
           setDashboardStatus("Loaded server game state");
           try {
             localStorage.setItem(`gameState-${gameId}`, JSON.stringify(payload));
+            pruneGameStateCache(gameId);
           } catch {
             // localStorage full or disabled, ignore
+          }
+        } else if (stateRes.status === 404) {
+          // Game no longer exists on server — try to find the current active game
+          // and switch to it, or clear the session if none exists.
+          try {
+            const activeRes = await fetch(`${apiBase}/api/games/active/state`, { headers: apiKeyHeader() });
+            if (activeRes.ok) {
+              const active = await activeRes.json() as { gameId?: string };
+              if (active.gameId && active.gameId !== gameId) {
+                setDashboardStatus("Recovered active game from server.");
+                setGameId(active.gameId);
+                setIsLoading(false);
+                return;
+              }
+            } else if (activeRes.status === 404) {
+              endedGameIdsRef.current.add(gameId);
+              clearActiveGame("Cleared stale game session. Start a new game when ready.");
+              return;
+            }
+          } catch { /* offline — fall through to cache */ }
+          const cachedState = localStorage.getItem(`gameState-${gameId}`);
+          if (cachedState) {
+            try {
+              setState(JSON.parse(cachedState) as GameState);
+              setDashboardStatus("Loaded cached game state (offline mode)");
+            } catch {
+              setDashboardStatus("Offline and no cached state available");
+            }
           }
         } else {
           const cachedState = localStorage.getItem(`gameState-${gameId}`);
@@ -278,5 +306,9 @@ export function useGameHydration({
     hydrate().catch(() => {
       setIsLoading(false);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [gameId]); // eslint-disable-line react-hooks/exhaustive-deps
 }
