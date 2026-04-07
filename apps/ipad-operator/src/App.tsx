@@ -434,7 +434,7 @@ function clearOperatorLocalCache(): void {
   keysToRemove.forEach((key) => localStorage.removeItem(key));
 }
 
-function loadAppData(): AppData {
+function loadAppData(skipCacheClear = false): AppData {
   // Check URL params first - a QR-code scan may carry config overrides.
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
@@ -461,7 +461,10 @@ function loadAppData(): AppData {
   if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
   if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
 
-  if (!urlSetup.connectionId) {
+  // Only clear the local cache on the initial app load (when called as useState initializer).
+  // Subsequent calls from startGame/endAndResetGame/etc. pass skipCacheClear=true so they
+  // never accidentally wipe pending events or settings that were manually entered.
+  if (!urlSetup.connectionId && !skipCacheClear) {
     clearOperatorLocalCache();
   }
 
@@ -1247,17 +1250,24 @@ export function App() {
         return;
       }
 
-      if (JSON.stringify(converted) === JSON.stringify(appData.teams)) {
-        return;
-      }
+      // Use functional updater to always merge against the latest state, avoiding
+      // stale-closure overwrites when socket events updated appData between the
+      // fetch start and the response arriving.
+      setAppData((current) => {
+        if (JSON.stringify(converted) === JSON.stringify(current.teams)) {
+          return current;
+        }
 
-      const hasSelectedTeam = converted.some((team) => team.id === appData.gameSetup.myTeamId);
-      const nextMyTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (converted[0]?.id ?? "");
+        const hasSelectedTeam = converted.some((team) => team.id === current.gameSetup.myTeamId);
+        const nextMyTeamId = hasSelectedTeam ? current.gameSetup.myTeamId : (converted[0]?.id ?? "");
 
-      persistData({
-        ...appData,
-        teams: converted,
-        gameSetup: { ...appData.gameSetup, myTeamId: nextMyTeamId },
+        const next = {
+          ...current,
+          teams: converted,
+          gameSetup: { ...current.gameSetup, myTeamId: nextMyTeamId },
+        };
+        saveAppData(next);
+        return next;
       });
     }
 
@@ -1271,7 +1281,10 @@ export function App() {
       clearInterval(intervalId);
     };
   }, [
-    appData,
+    appData.gameSetup.connectionId,
+    appData.gameSetup.apiUrl,
+    appData.gameSetup.apiKey,
+    appData.gameSetup.schoolId,
   ]);
 
   useEffect(() => {
@@ -1495,8 +1508,10 @@ export function App() {
 
   function lineupsEqual(left: string[], right: string[]): boolean {
     if (left.length !== right.length) return false;
-    for (let index = 0; index < left.length; index += 1) {
-      if (left[index] !== right[index]) return false;
+    const leftSorted = [...left].sort();
+    const rightSorted = [...right].sort();
+    for (let index = 0; index < leftSorted.length; index += 1) {
+      if (leftSorted[index] !== rightSorted[index]) return false;
     }
     return true;
   }
@@ -1943,7 +1958,7 @@ export function App() {
   }
 
   async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
-    const latest = loadAppData();
+    const latest = loadAppData(true);
     const apiUrl = latest.gameSetup.apiUrl?.trim();
     if (!apiUrl || !gid) {
       return false;
@@ -2212,9 +2227,11 @@ export function App() {
   }
 
   async function startGame(newGameId?: string) {
-    // Read fresh settings from localStorage - saveGameSetup writes there synchronously
+    // Read fresh settings from localStorage - persistData writes there synchronously
     // before this async function resolves, so we always get the latest values.
-    const latest = loadAppData();
+    // Pass skipCacheClear=true to avoid accidentally wiping manually-entered settings
+    // (e.g. when the operator typed their connection code instead of scanning a QR code).
+    const latest = loadAppData(true);
     const gid = newGameId ?? latest.gameSetup.gameId;
     let effectiveGameId = gid;
     let shouldResetEventTimeline = false;
@@ -2283,9 +2300,10 @@ export function App() {
 
   /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
   async function endAndResetGame() {
-    // Read fresh localStorage data so we always get the opponent name just saved by saveGameSetup()
-    // (React state updates are async, so appData.gameSetup.opponent may still be the old value here)
-    const latest = loadAppData();
+    // Read fresh localStorage data so we always get the opponent name just saved by persistData()
+    // (React state updates are async, so appData.gameSetup.opponent may still be the old value here).
+    // Pass skipCacheClear=true so we never wipe pending events during an active game flow.
+    const latest = loadAppData(true);
     if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
       const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
       if (!saved) {
@@ -2314,7 +2332,7 @@ export function App() {
 
   /** Prepare a fresh game after viewing post-game screen - returns to pre-game setup. */
   function handleNewGame() {
-    const latest = loadAppData();
+    const latest = loadAppData(true);
     const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
     const nextData: AppData = {
       ...latest,
