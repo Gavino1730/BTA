@@ -8,3 +8,4 @@ export { useAiCards } from "./useAiCards.js";
 export { useGameTeams, type AggregatedTeam, type CanonicalSideIds } from "./useGameTeams.js";
 export { useDisplayHelpers, type RosterLabels } from "./useDisplayHelpers.js";
 export { useGameMemos, type RotationContext } from "./useGameMemos.js";
+export { useEndGame } from "./useEndGame.js";

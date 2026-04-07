@@ -82,24 +82,41 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// CORS whitelist: allow only known app origins and explicitly configured deployments
+// CORS whitelist: allow only known app origins and explicitly configured deployments.
+// Entries in ALLOWED_ORIGINS may use a single '*' wildcard (e.g. https://bta-coach-*.vercel.app).
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",      // iPad operator dev
   "http://localhost:5174",      // Coach dashboard dev
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
 ];
-const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
+const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map(o => o.trim()).filter(Boolean);
 if (PROD_ORIGINS.length > 0) ALLOWED_ORIGINS.push(...PROD_ORIGINS);
+
+function originAllowed(origin: string): boolean {
+  for (const pattern of ALLOWED_ORIGINS) {
+    if (!pattern.includes("*")) {
+      if (origin === pattern) return true;
+    } else {
+      // Convert glob-style pattern (single * = any chars) to regex
+      const re = new RegExp(
+        "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".+") + "$"
+      );
+      if (re.test(origin)) return true;
+    }
+  }
+  return false;
+}
 
 app.use(cors({
   origin: (origin, callback) => {
     // In development, allow localhost variants; in production use whitelist
     if (process.env.NODE_ENV !== "production") {
       callback(null, true);
-    } else if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    } else if (!origin || originAllowed(origin)) {
       callback(null, true);
     } else {
+      console.warn(`[realtime-api] CORS blocked origin: ${origin}`);
       callback(new Error("CORS not allowed"));
     }
   },

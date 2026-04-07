@@ -1,5 +1,5 @@
 import type { GameEvent } from "@bta/shared-schema";
-import type { ChainPrompt, EventEditContext, Modal, OpponentTrackStat, Player, TeamSide } from "../types.js";
+import type { ChainPrompt, EventEditContext, Modal, NoticeTone, OpponentTrackStat, Player, TeamSide } from "../types.js";
 
 export interface UseGameActionsInput {
   modal: Modal | null;
@@ -16,12 +16,18 @@ export interface UseGameActionsInput {
   saveEditedEvent: (event: GameEvent, ctx: EventEditContext) => Promise<boolean>;
   isOpponentStatEnabled: (stat: OpponentTrackStat) => boolean;
   setActiveRosterPlayerId: (id: string | null) => void;
+  showInlineNotice: (message: string, tone?: NoticeTone, durationMs?: number) => void;
+  homeTeamName: string;
+  awayTeamName: string;
+  timeoutRemaining: { home: { full: number; short: number }; away: { full: number; short: number } };
+  inOvertimeNow: boolean;
 }
 
 export function useGameActions({
   modal, setModal, setChainPrompt, vcSideSetup, opponentSide, sequence,
   possessionTeamId, setPossessionOverrideTeamId, base, resolveTeamId,
   postEvent, saveEditedEvent, isOpponentStatEnabled, setActiveRosterPlayerId,
+  showInlineNotice, homeTeamName, awayTeamName, timeoutRemaining, inOvertimeNow,
 }: UseGameActionsInput) {
 
   function autoEmitPossession(teamId: string) {
@@ -32,6 +38,35 @@ export function useGameActions({
       teamId,
       type: "possession_start",
       possessedByTeamId: teamId,
+    } as GameEvent);
+  }
+
+  function setPossession(side: TeamSide) {
+    const teamId = resolveTeamId(side);
+    if (possessionTeamId === teamId) {
+      const teamName = side === "home" ? homeTeamName : awayTeamName;
+      showInlineNotice(`Possession is already set to ${teamName}.`, "warning", 2500);
+      return;
+    }
+    setPossessionOverrideTeamId(teamId);
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "possession_start",
+      possessedByTeamId: teamId,
+    } as GameEvent);
+  }
+
+  function takeTimeout(side: TeamSide, timeoutType: "full" | "short") {
+    const teamId = resolveTeamId(side);
+    const bucket = side === "home" ? timeoutRemaining.home : timeoutRemaining.away;
+    if (timeoutType === "short" && inOvertimeNow) return;
+    if (bucket[timeoutType] <= 0) return;
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "timeout",
+      timeoutType,
     } as GameEvent);
   }
 
@@ -317,6 +352,8 @@ export function useGameActions({
 
   return {
     autoEmitPossession,
+    setPossession,
+    takeTimeout,
     confirmShot,
     confirmFreeThrow,
     confirmStat,

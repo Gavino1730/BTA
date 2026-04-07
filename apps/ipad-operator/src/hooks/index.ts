@@ -4,6 +4,7 @@ export { useConfirmDialog } from "./useConfirmDialog.js";
 export { useNetworkStatus } from "./useNetworkStatus.js";
 export { useWakeLock } from "./useWakeLock.js";
 export { useClockTick } from "./useClockTick.js";
+export { useClockControls } from "./useClockControls.js";
 export { useEventQueue } from "./useEventQueue.js";
 export type { EventQueueDeps } from "./useEventQueue.js";
 export { useCoachSync, DEFAULT_CONNECTION_SYNC_STATUS } from "./useCoachSync.js";

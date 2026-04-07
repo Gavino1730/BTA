@@ -10,35 +10,20 @@ import { ScoringPanel } from "./ScoringPanel.js";
 import { RosterPanel } from "./RosterPanel.js";
 import { LiveCenterPanel } from "./LiveCenterPanel.js";
 import { InlineNoticeBar, AlertBanner, ConfirmDialogOverlay } from "./OperatorOverlays.js";
-import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived, useTeamSetup, useLineupSync } from "./hooks/index.js";
+import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useClockControls, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived, useTeamSetup, useLineupSync } from "./hooks/index.js";
 import {
-  getPeriodDefaultClock,
   normalizeTeamColor,
-  type GameEvent,
 } from "@bta/shared-schema";
 import { io } from "socket.io-client";
-import {
-  createTeamViaRealtime,
-  deletePlayerViaRealtime,
-  deleteTeamViaRealtime,
-  updatePlayerViaRealtime,
-  updateTeamViaRealtime,
-} from "./roster-sync.js";
-
 import {
   DEFAULT_API,
   DEFAULT_HOME_TEAM_COLOR,
   DEFAULT_AWAY_TEAM_COLOR,
   DEFAULT_SCHOOL_ID,
-  DEFAULT_STATS_DASHBOARD,
 } from "./constants.js";
 import type {
   AppData,
   ChainPrompt,
-  DashboardPlayerStat,
-  EventEditContext,
-  FeedEventSelection,
-  GameSetup,
   Modal,
   OperatorAlert,
   Team,
@@ -49,8 +34,6 @@ import {
 } from "./helpers/labels.js";
 import {
   clockToSec,
-  formatClockFromDigits,
-  formatClockFromSeconds,
 } from "./helpers/clock.js";
 import {
   apiHeaders,
@@ -192,6 +175,44 @@ export function App() {
     persistPhase,
   });
 
+  // ---- Network / Socket ----
+  useSocket({
+    gameId,
+    gamePhase,
+    gameSetup: appData.gameSetup,
+    socketRef,
+    setAppData,
+    setLiveAlerts,
+    setDismissedAlertIds,
+    setConnectionSyncStatus,
+    persistPhase,
+    showInlineNotice,
+  });
+
+  // Auto-clear live alerts after their display window
+  useEffect(() => {
+    if (liveAlertTimerRef.current !== null) {
+      window.clearTimeout(liveAlertTimerRef.current);
+      liveAlertTimerRef.current = null;
+    }
+    const visibleAlerts = liveAlerts.filter((alert) => !dismissedAlertIds.has(alert.id));
+    if (visibleAlerts.length === 0) { return; }
+    liveAlertTimerRef.current = window.setTimeout(() => {
+      setLiveAlerts([]);
+      setDismissedAlertIds(new Set());
+      liveAlertTimerRef.current = null;
+    }, getOperatorAlertAutoClearMs(visibleAlerts));
+    return () => {
+      if (liveAlertTimerRef.current !== null) {
+        window.clearTimeout(liveAlertTimerRef.current);
+        liveAlertTimerRef.current = null;
+      }
+    };
+  }, [dismissedAlertIds, liveAlerts]);
+
+  // ---- Screen wake lock (keep iPad awake during live game) ----
+  useWakeLock(gamePhase === "live");
+
   // ---- In-game roster state ----
   const [showRosterPanel, setShowRosterPanel] = useState(true);
   const [activeRosterPlayerId, setActiveRosterPlayerId] = useState<string | null>(null);
@@ -214,6 +235,17 @@ export function App() {
     homePlayers, awayPlayers, allPlayers,
     resolveTeamId, normalizeEventTeamId,
   } = useTeamSetup(appData);
+
+  // ---- Clock tick ----
+  useClockTick({
+    gamePhase,
+    clockRunning,
+    clockEnabled: appData.gameSetup.clockEnabled ?? true,
+    trackClock,
+    clockInput,
+    setClockInput,
+    setClockRunning,
+  });
 
   // ---- Event queue (hook) ----
   const {
@@ -386,7 +418,8 @@ export function App() {
   });
 
   const {
-    autoEmitPossession,
+    setPossession,
+    takeTimeout,
     confirmShot,
     confirmFreeThrow,
     confirmStat,
@@ -400,51 +433,15 @@ export function App() {
     modal, setModal, setChainPrompt, vcSideSetup, opponentSide, sequence,
     possessionTeamId: possessionTeamId ?? "", setPossessionOverrideTeamId, base, resolveTeamId,
     postEvent, saveEditedEvent, isOpponentStatEnabled, setActiveRosterPlayerId,
+    showInlineNotice, homeTeamName, awayTeamName, timeoutRemaining, inOvertimeNow,
   });
 
-  function setPossession(side: TeamSide) {
-    const teamId = resolveTeamId(side);
-    if (possessionTeamId === teamId) {
-      const teamName = side === "home" ? homeTeamName : awayTeamName;
-      showInlineNotice(`Possession is already set to ${teamName}.`, "warning", 2500);
-      return;
-    }
-    setPossessionOverrideTeamId(teamId);
-    void postEvent({
-      ...base(sequence),
-      teamId,
-      type: "possession_start",
-      possessedByTeamId: teamId,
-    });
-  }
-
-  function takeTimeout(side: TeamSide, timeoutType: "full" | "short") {
-    const teamId = resolveTeamId(side);
-    const bucket = side === "home" ? timeoutRemaining.home : timeoutRemaining.away;
-    if (timeoutType === "short" && inOvertimeNow) return;
-    if (bucket[timeoutType] <= 0) return;
-    void postEvent({
-      ...base(sequence),
-      teamId,
-      type: "timeout",
-      timeoutType,
-    });
-  }
-
-  function handleClockInput(rawValue: string) {
-    if (appData.gameSetup.clockEnabled === false) return;
-    setClockInput(formatClockFromDigits(rawValue));
-  }
-
-  function adjustClock(deltaSeconds: number) {
-    if (appData.gameSetup.clockEnabled === false) return;
-    setClockInput((current) => formatClockFromSeconds(clockToSec(current) + deltaSeconds));
-  }
-  function resetClockForPeriod() {
-    setClockRunning(false);
-    setClockInput(getPeriodDefaultClock(period));
-  }
-
+  const { handleClockInput, adjustClock, resetClockForPeriod } = useClockControls({
+    clockEnabled: appData.gameSetup.clockEnabled ?? true,
+    period,
+    setClockInput,
+    setClockRunning,
+  });
 
   // ================================================================
   //  SETTINGS

@@ -8,7 +8,7 @@ import { ScoreboardSection } from "./ScoreboardSection.js";
 import { BoxScoreSection } from "./BoxScoreSection.js";
 import { LineupUnitPanel } from "./LineupUnitPanel.js";
 import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, resolveActiveSchoolId } from "./platform.js";
-import { useRosterManager, useCoachAi, useCoachSocket, useGameHydration, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos } from "./hooks/index.js";
+import { useRosterManager, useCoachAi, useCoachSocket, useGameHydration, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos, useEndGame } from "./hooks/index.js";
 import {
   type GameState, type BoxScoreFilter,
   ACTIVE_GAME_KEY,
@@ -83,8 +83,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
 
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
-  const [isEndingGame, setIsEndingGame] = useState(false);
-  const [endGameStatus, setEndGameStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
@@ -243,7 +241,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     setInsights([]);
     resetAiState();
     setBoxScoreFilter([]);
-    setEndGameStatus("");
     setIsLoading(false);
     setActivePage("live");
     setDashboardStatus(statusMessage);
@@ -279,57 +276,12 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     setBoxScoreFilter,
   });
 
-  async function endGameFromDashboard(): Promise<void> {
-    if (!gameId || isEndingGame) {
-      return;
-    }
-
-    const endingGameId = gameId;
-    const shouldEnd = window.confirm("End this game now? This will finalize it and return the dashboard to Start New Game.");
-    if (!shouldEnd) {
-      return;
-    }
-
-    setIsEndingGame(true);
-    setEndGameStatus("Ending game...");
-    setDashboardStatus("Ending game...");
-
-    try {
-      const response = await fetch(`${apiBase}/api/games/${endingGameId}/submit`, {
-        method: "POST",
-        headers: apiKeyHeader(),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
-        const reason = payload.error ?? payload.message ?? `status ${response.status}`;
-        if (response.status === 404) {
-          // The dashboard can keep a stale gameId in local/session state after
-          // restarts or manual data resets. Treat "not found" as already ended.
-          endedGameIdsRef.current.add(endingGameId);
-          clearActiveGame("Server no longer has this game. Cleared local session.");
-          return;
-        }
-        const message = response.status === 403
-          ? `Could not end game: ${reason}. Your account needs write permissions.`
-          : response.status === 401
-            ? `Could not end game: ${reason}. Please sign in again.`
-            : `Could not end game: ${reason}.`;
-        setEndGameStatus(message);
-        setDashboardStatus(message);
-        return;
-      }
-
-      endedGameIdsRef.current.add(endingGameId);
-      clearActiveGame("Game ended. Start a new game when ready.");
-    } catch {
-      const message = "Could not reach realtime API to end game.";
-      setEndGameStatus(message);
-      setDashboardStatus(message);
-    } finally {
-      setIsEndingGame(false);
-    }
-  }
+  const { isEndingGame, endGameStatus, endGameFromDashboard } = useEndGame({
+    gameId,
+    endedGameIdsRef,
+    clearActiveGame,
+    setDashboardStatus,
+  });
 
   const { canonicalSideIds, canonicalTeamId, rawTeamIds, aggregatedTeams, teams } = useGameTeams(
     state,
