@@ -1887,6 +1887,43 @@ function getOperatorLinkSetup(schoolId: string, connectionId: string): OperatorL
   return operatorLinkByConnectionId.get(operatorLinkKey(schoolId, connectionId)) ?? null;
 }
 
+function getLatestOperatorLinkSetup(
+  schoolId: string,
+  options?: { gameId?: string }
+): { connectionId: string; setup: OperatorLinkSetup } | null {
+  const prefix = `${schoolId}:`;
+  const targetGameId = options?.gameId?.trim();
+  let latest: { connectionId: string; setup: OperatorLinkSetup; updatedAtMs: number } | null = null;
+
+  for (const [key, setup] of operatorLinkByConnectionId.entries()) {
+    if (!key.startsWith(prefix)) {
+      continue;
+    }
+    if (targetGameId && setup.gameId !== targetGameId) {
+      continue;
+    }
+
+    const updatedAtMs = Date.parse(setup.updatedAtIso);
+    const safeUpdatedAtMs = Number.isFinite(updatedAtMs) ? updatedAtMs : 0;
+    if (!latest || safeUpdatedAtMs >= latest.updatedAtMs) {
+      latest = {
+        connectionId: key.slice(prefix.length),
+        setup,
+        updatedAtMs: safeUpdatedAtMs,
+      };
+    }
+  }
+
+  if (!latest) {
+    return null;
+  }
+
+  return {
+    connectionId: latest.connectionId,
+    setup: latest.setup,
+  };
+}
+
 function clearOperatorLinksForSchool(schoolId: string): void {
   const prefix = `${schoolId}:`;
   for (const key of operatorLinkByConnectionId.keys()) {
@@ -3038,15 +3075,30 @@ app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (r
     })
     ?? undefined;
 
+  const hasField = (field: string): boolean => Object.prototype.hasOwnProperty.call(payload, field);
+  const mergeSanitizedTextField = (field: string, maxLength: number, fallback?: string): string | undefined => {
+    if (!hasField(field)) {
+      return fallback;
+    }
+    return sanitizeTextField(payload[field], maxLength) || undefined;
+  };
+
   const setup: OperatorLinkSetup = {
-    gameId: sanitizeTextField(payload.gameId, 120) || undefined,
-    myTeamId: sanitizeTextField(payload.myTeamId, 120) || undefined,
-    myTeamName: sanitizeTextField(payload.myTeamName, 120) || undefined,
-    opponentName: sanitizeTextField(payload.opponentName, 120) || undefined,
-    vcSide: payload.vcSide === "away" ? "away" : "home",
-    homeTeamColor: normalizeTeamColor(payload.homeTeamColor),
-    awayTeamColor: normalizeTeamColor(payload.awayTeamColor),
-    dashboardUrl: sanitizeTextField(payload.dashboardUrl, 320) || undefined,
+    gameId: mergeSanitizedTextField("gameId", 120, existing?.gameId),
+    myTeamId: mergeSanitizedTextField("myTeamId", 120, existing?.myTeamId),
+    myTeamName: mergeSanitizedTextField("myTeamName", 120, existing?.myTeamName),
+    opponentName: mergeSanitizedTextField("opponentName", 120, existing?.opponentName),
+    vcSide:
+      payload.vcSide === "away" || payload.vcSide === "home"
+        ? payload.vcSide
+        : (existing?.vcSide ?? "home"),
+    homeTeamColor: hasField("homeTeamColor")
+      ? normalizeTeamColor(payload.homeTeamColor)
+      : existing?.homeTeamColor,
+    awayTeamColor: hasField("awayTeamColor")
+      ? normalizeTeamColor(payload.awayTeamColor)
+      : existing?.awayTeamColor,
+    dashboardUrl: mergeSanitizedTextField("dashboardUrl", 320, existing?.dashboardUrl),
     updatedAtIso: new Date().toISOString(),
     operatorToken,
   };
@@ -3305,6 +3357,32 @@ app.get("/api/games/active/state", requireApiKey, (req, res) => {
   }
 
   res.json(activeState);
+});
+
+app.get("/api/games/active/setup", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const activeState = getActiveGameState({ schoolId });
+
+  if (!activeState) {
+    res.status(404).json({ error: "no active game" });
+    return;
+  }
+
+  const latestForActiveGame = getLatestOperatorLinkSetup(schoolId, { gameId: activeState.gameId });
+  const latestForSchool = getLatestOperatorLinkSetup(schoolId);
+  const resolved = latestForActiveGame ?? latestForSchool;
+
+  if (!resolved) {
+    res.status(404).json({ error: "no active setup" });
+    return;
+  }
+
+  const { operatorToken, ...publicSetup } = resolved.setup;
+  res.json({
+    connectionId: resolved.connectionId,
+    activeGameId: activeState.gameId,
+    setup: publicSetup,
+  });
 });
 
 app.get("/api/games/:gameId/state", requireApiKey, (req, res) => {

@@ -201,6 +201,111 @@ describe("operator pairing endpoints", () => {
     expect(body.teams[0]?.id).toBe("vc-varsity");
     expect(body.teams[0]?.players).toHaveLength(2);
   });
+
+  it("preserves existing setup fields when partial updates are published", async () => {
+    await resetSchool("pairing-partial-update");
+
+    const initialPut = await fetch(`${API_BASE}/api/operator-links/conn-partial-1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-partial-update" },
+      body: JSON.stringify({
+        gameId: "game-a",
+        myTeamId: "vc-varsity",
+        myTeamName: "Valley Catholic Varsity",
+        opponentName: "Central Christian",
+        vcSide: "home",
+        homeTeamColor: "#1d4ed8",
+        awayTeamColor: "#10b981",
+        dashboardUrl: "http://localhost:5173/live"
+      })
+    });
+    expect(initialPut.status).toBe(200);
+
+    const partialPut = await fetch(`${API_BASE}/api/operator-links/conn-partial-1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-partial-update" },
+      body: JSON.stringify({
+        gameId: "game-a"
+      })
+    });
+    expect(partialPut.status).toBe(200);
+
+    const getRes = await fetch(`${API_BASE}/api/operator-links/conn-partial-1`, {
+      headers: { "x-school-id": "pairing-partial-update" }
+    });
+    expect(getRes.status).toBe(200);
+
+    const body = await getRes.json() as {
+      setup: {
+        opponentName?: string;
+        homeTeamColor?: string;
+        awayTeamColor?: string;
+      };
+    };
+
+    expect(body.setup.opponentName).toBe("Central Christian");
+    expect(body.setup.homeTeamColor).toBe("#1d4ed8");
+    expect(body.setup.awayTeamColor).toBe("#10b981");
+  });
+
+  it("returns active game setup for cross-device recovery", async () => {
+    await resetSchool("pairing-active-setup");
+
+    const createGameRes = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-active-setup" },
+      body: JSON.stringify({
+        gameId: "active-setup-game",
+        homeTeamId: "vc",
+        awayTeamId: "opp",
+        opponentName: "Opponent"
+      })
+    });
+    expect(createGameRes.status).toBe(201);
+
+    const firstSetupRes = await fetch(`${API_BASE}/api/operator-links/conn-setup-old`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-active-setup" },
+      body: JSON.stringify({
+        gameId: "active-setup-game",
+        myTeamId: "vc",
+        myTeamName: "Valley Catholic",
+        opponentName: "Opponent",
+        vcSide: "home",
+        homeTeamColor: "#1d4ed8",
+        awayTeamColor: "#ef4444"
+      })
+    });
+    expect(firstSetupRes.status).toBe(200);
+
+    const secondSetupRes = await fetch(`${API_BASE}/api/operator-links/conn-setup-new`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-active-setup" },
+      body: JSON.stringify({
+        gameId: "active-setup-game",
+        myTeamId: "vc",
+        myTeamName: "Valley Catholic",
+        opponentName: "Opponent",
+        vcSide: "home",
+        homeTeamColor: "#1d4ed8",
+        awayTeamColor: "#22c55e"
+      })
+    });
+    expect(secondSetupRes.status).toBe(200);
+
+    const activeSetupRes = await fetch(`${API_BASE}/api/games/active/setup`, {
+      headers: { "x-school-id": "pairing-active-setup" }
+    });
+    expect(activeSetupRes.status).toBe(200);
+
+    const body = await activeSetupRes.json() as {
+      activeGameId?: string;
+      setup?: { awayTeamColor?: string };
+    };
+
+    expect(body.activeGameId).toBe("active-setup-game");
+    expect(body.setup?.awayTeamColor).toBe("#22c55e");
+  });
 });
 
 describe("unified stats endpoints", () => {
