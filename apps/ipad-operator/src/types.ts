@@ -98,6 +98,7 @@ export interface OperatorLinkResponse {
     homeTeamColor?: string;
     awayTeamColor?: string;
     dashboardUrl?: string;
+    startingLineup?: string[];
     updatedAtIso?: string;
   } | null;
   teams?: import("@bta/shared-schema").RosterTeam[];

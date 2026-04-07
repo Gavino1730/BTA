@@ -1859,6 +1859,7 @@ interface OperatorLinkSetup {
   homeTeamColor?: string;
   awayTeamColor?: string;
   dashboardUrl?: string;
+  startingLineup?: string[];
   updatedAtIso: string;
   operatorToken?: string;
 }
@@ -3140,6 +3141,9 @@ app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (r
       ? normalizeTeamColor(payload.awayTeamColor)
       : existing?.awayTeamColor,
     dashboardUrl: mergeSanitizedTextField("dashboardUrl", 320, existing?.dashboardUrl),
+    startingLineup: hasField("startingLineup") && Array.isArray(payload.startingLineup)
+      ? (payload.startingLineup as unknown[]).filter((id): id is string => typeof id === "string" && id.trim().length > 0).slice(0, 10)
+      : existing?.startingLineup,
     updatedAtIso: new Date().toISOString(),
     operatorToken,
   };

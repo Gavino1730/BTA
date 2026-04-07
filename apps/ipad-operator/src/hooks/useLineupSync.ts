@@ -36,6 +36,15 @@ export function useLineupSync({
       return;
     }
 
+    // Don't poll the server until we have a gameId from the coach sync.
+    // useCoachSync delivers the gameId via the operator link; polling active/state
+    // before that just generates repeated 404s.
+    if (!appData.gameSetup.gameId) {
+      setLineupLockedByLiveGame(false);
+      setLineupSyncStatus("");
+      return;
+    }
+
     let cancelled = false;
 
     async function syncActiveGameLockAndLineup() {

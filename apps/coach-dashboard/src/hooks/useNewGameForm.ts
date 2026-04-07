@@ -132,6 +132,7 @@ export function useNewGameForm({
             homeTeamColor: homeColor,
             awayTeamColor: awayColor,
             dashboardUrl: window.location.href,
+            startingLineup: selectedStartingLineup,
           }),
         });
       }

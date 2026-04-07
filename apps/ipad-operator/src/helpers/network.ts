@@ -124,9 +124,13 @@ export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkR
   const nextTeamId = snapshot.setup?.myTeamId?.trim() || current.gameSetup.myTeamId || convertedTeams[0]?.id || "";
   const selectedTeam = convertedTeams.find((team) => team.id === nextTeamId);
   const allowedPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
-  const safeStartingLineup = Array.isArray(current.gameSetup.startingLineup)
-    ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
-    : [];
+  const snapshotLineup = Array.isArray(snapshot.setup?.startingLineup) && snapshot.setup!.startingLineup!.length > 0
+    ? snapshot.setup!.startingLineup!.filter((playerId) => allowedPlayerIds.has(playerId))
+    : null;
+  const safeStartingLineup = snapshotLineup
+    ?? (Array.isArray(current.gameSetup.startingLineup)
+      ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
+      : []);
 
   const resolvedConnectionId = normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId);
 

@@ -1,4 +1,4 @@
-import { type MutableRefObject, useEffect } from "react";
+import { type MutableRefObject, useEffect, useRef } from "react";
 import { normalizeTeamColor } from "@bta/shared-schema";
 import { apiBase, apiKeyHeader } from "../platform.js";
 import { type GameState, type Insight, type BoxScoreFilter } from "../helpers/index.js";
@@ -81,11 +81,21 @@ export function useGameHydration({
   resetAiState,
   setBoxScoreFilter,
 }: UseGameHydrationOptions): void {
+  // Set to true when we've just determined there's no active game (e.g. both the
+  // specific gameId and active/state returned 404). Prevents reconcileGameId from
+  // firing a redundant active/state fetch immediately after clearActiveGame.
+  const skipNextReconcileRef = useRef(false);
+
   // Reconcile gameId: auto-recover an active game when none is tracked locally.
   // When gameId is already set, the hydration effect below validates and loads
   // state — no duplicate fetch needed here.
   useEffect(() => {
     if (gameId || !connectionId) {
+      return;
+    }
+
+    if (skipNextReconcileRef.current) {
+      skipNextReconcileRef.current = false;
       return;
     }
 
@@ -229,6 +239,7 @@ export function useGameHydration({
               }
             } else if (activeRes.status === 404) {
               endedGameIdsRef.current.add(gameId);
+              skipNextReconcileRef.current = true;
               clearActiveGame("Cleared stale game session. Start a new game when ready.");
               return;
             }
