@@ -139,13 +139,13 @@ html, body {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: clamp(0.8rem, 1.6vw, 1.2rem);
+  gap: clamp(0.95rem, 2vw, 1.4rem);
   margin-top: 0.4rem;
 }
 
 .classic-score-col {
   display: grid;
-  gap: clamp(0.72rem, 1.5vw, 1.05rem);
+  gap: clamp(0.85rem, 1.9vw, 1.2rem);
   justify-items: center;
   align-content: start;
 }
@@ -163,9 +163,9 @@ html, body {
 }
 
 .classic-score-btn {
-  width: min(100%, 11rem);
+  width: min(100%, 12.5rem);
   aspect-ratio: 1;
-  font-size: clamp(1.7rem, 2.8vw, 2.25rem);
+  font-size: clamp(1.95rem, 3.2vw, 2.6rem);
   font-weight: 500;
   text-transform: lowercase;
 }
@@ -318,7 +318,7 @@ html, body {
 
 .left-panel .circle {
   width: 100%;
-  max-width: 12rem;
+  max-width: 13rem;
 }
 
 /* ---- Circle buttons ---- */
@@ -709,12 +709,12 @@ html, body {
   gap: 0.45rem;
 }
 .timeout-btn {
-  min-height: clamp(44px, 5.4vh, 56px);
+  min-height: clamp(52px, 6.2vh, 64px);
   border-radius: 9px;
   border: none;
   background: rgba(255,255,255,0.08);
   color: rgba(232,234,240,0.88);
-  font-size: clamp(0.78rem, 1.5vw, 0.92rem);
+  font-size: clamp(0.9rem, 1.8vw, 1.05rem);
   font-weight: 800;
   cursor: pointer;
 }
@@ -4845,7 +4845,7 @@ html, body {
   }
 
   .left-panel .circle {
-    max-width: 10.25rem;
+    max-width: 12rem;
   }
 
   .panel-foot {

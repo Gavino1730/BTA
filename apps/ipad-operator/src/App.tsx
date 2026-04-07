@@ -1734,6 +1734,37 @@ export function App() {
       }
     });
 
+    // Sync authoritative game setup (opponent name, side) from server state.
+    // This ensures all operator iPads show the same team configuration regardless
+    // of their localStorage state at the time they joined.
+    socket.on("game:state", (statePayload: unknown) => {
+      if (!statePayload || typeof statePayload !== "object") return;
+      const serverState = statePayload as { opponentName?: string; homeTeamId?: string; awayTeamId?: string };
+      setAppData((current) => {
+        let changed = false;
+        const nextSetup = { ...current.gameSetup };
+        if (serverState.opponentName && serverState.opponentName !== current.gameSetup.opponent) {
+          nextSetup.opponent = serverState.opponentName;
+          changed = true;
+        }
+        // If the server confirms our team is on the opposite side from what we
+        // have locally, correct it so events use the right team IDs.
+        if (current.gameSetup.myTeamId) {
+          if (serverState.awayTeamId === current.gameSetup.myTeamId && current.gameSetup.vcSide !== "away") {
+            nextSetup.vcSide = "away";
+            changed = true;
+          } else if (serverState.homeTeamId === current.gameSetup.myTeamId && current.gameSetup.vcSide !== "home") {
+            nextSetup.vcSide = "home";
+            changed = true;
+          }
+        }
+        if (!changed) return current;
+        const next = { ...current, gameSetup: nextSetup };
+        saveAppData(next);
+        return next;
+      });
+    });
+
     socket.on("operator:link:updated", (payload: unknown) => {
       if (!payload || typeof payload !== "object") {
         return;
@@ -2206,6 +2237,11 @@ export function App() {
     const gid = newGameId ?? latest.gameSetup.gameId;
     let effectiveGameId = gid;
     let shouldResetEventTimeline = false;
+    // When joining an existing game the server's team IDs and opponent name are
+    // authoritative.  We capture them here so the operator uses the same IDs that
+    // are already in the game state — preventing phantom "third team" mismatches.
+    let serverOpponentName: string | undefined;
+    let serverVcSide: "home" | "away" | undefined;
 
     try {
       const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
@@ -2217,7 +2253,9 @@ export function App() {
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         if (res.status === 409) {
-          const activeGameId = parseActiveGameIdFromConflictResponse(body);
+          let parsed: { activeGameId?: string; activeState?: { gameId?: string; homeTeamId?: string; awayTeamId?: string; opponentName?: string } } = {};
+          try { parsed = JSON.parse(body); } catch { /* ignore */ }
+          const activeGameId = typeof parsed.activeGameId === "string" ? parsed.activeGameId : (typeof parsed.activeState?.gameId === "string" ? parsed.activeState.gameId : null);
           if (!activeGameId) {
             showInlineNotice(
               "Live server already has an active game in progress. Resume or submit that game before starting a new one.",
@@ -2226,7 +2264,25 @@ export function App() {
             return;
           }
 
+          if (!isConnectionReadyForStart(latest.gameSetup)) {
+            showInlineNotice(
+              "Another device has a live game. Enter and sync the coach connection code on this iPad before joining it.",
+              "warning",
+              7000,
+            );
+            return;
+          }
+
           effectiveGameId = activeGameId;
+          // Sync authoritative team data from the active game state
+          if (parsed.activeState) {
+            serverOpponentName = parsed.activeState.opponentName;
+            if (latest.gameSetup.myTeamId && parsed.activeState.awayTeamId === latest.gameSetup.myTeamId) {
+              serverVcSide = "away";
+            } else if (latest.gameSetup.myTeamId && parsed.activeState.homeTeamId === latest.gameSetup.myTeamId) {
+              serverVcSide = "home";
+            }
+          }
           showInlineNotice(
             `Live server already has an active game (${activeGameId}). Resuming that game instead.`,
             "warning",
@@ -2240,8 +2296,22 @@ export function App() {
           return;
         }
       } else {
-        // New games are 201 and should start from a clean local timeline.
-        shouldResetEventTimeline = res.status === 201;
+        // 200 means game already existed with same gameId — sync from server state.
+        // 201 means new game created — start from a clean local timeline.
+        if (res.status === 201) {
+          shouldResetEventTimeline = true;
+        } else {
+          // Existing game: read the server's authoritative state and sync opponent/side
+          try {
+            const serverState = await res.json() as { homeTeamId?: string; awayTeamId?: string; opponentName?: string };
+            serverOpponentName = serverState.opponentName;
+            if (latest.gameSetup.myTeamId && serverState.awayTeamId === latest.gameSetup.myTeamId) {
+              serverVcSide = "away";
+            } else if (latest.gameSetup.myTeamId && serverState.homeTeamId === latest.gameSetup.myTeamId) {
+              serverVcSide = "home";
+            }
+          } catch { /* keep local values */ }
+        }
       }
     } catch {
       showInlineNotice(
@@ -2253,9 +2323,17 @@ export function App() {
 
     // Merge new gameId into the latest persisted data to avoid overwriting settings
     // that were saved by saveGameSetup() just before this call.
+    // Also apply any authoritative server values for opponent name and side.
+    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined as number | undefined };
+    if (serverOpponentName) {
+      mergedSetup.opponent = serverOpponentName;
+    }
+    if (serverVcSide) {
+      mergedSetup.vcSide = serverVcSide;
+    }
     const nextData: AppData = {
       ...latest,
-      gameSetup: { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined },
+      gameSetup: mergedSetup,
     };
     setAppData(nextData);
     saveAppData(nextData);

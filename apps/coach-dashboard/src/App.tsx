@@ -896,6 +896,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       if (endedGameIdsRef.current.has(nextState.gameId)) {
         return;
       }
+      // Only accept state for the game this dashboard is tracking. Ignore
+      // broadcasts for other games the socket may have inadvertently joined
+      // (e.g. from a stale school-room broadcast or previous session).
+      const currentGameId = gameIdRef.current;
+      if (currentGameId && nextState.gameId !== currentGameId) {
+        return;
+      }
       stopPoll();
       setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
       setState((current) => mergeGameState(current, nextState));
@@ -941,6 +948,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     async function reconcileGameId() {
       try {
         if (!gameId) {
+          // Only auto-recover an active game if we have a valid connection code.
+          // Without a connection code, this dashboard is not paired to any operator
+          // and should NOT adopt whatever game happens to be active on the school.
+          if (!connectionId) {
+            return;
+          }
+
           const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
             headers: apiKeyHeader(),
           });
@@ -998,7 +1012,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     return () => {
       cancelled = true;
     };
-  }, [gameId]);
+  }, [connectionId, gameId]);
 
   useEffect(() => {
     if (!gameId) {
@@ -1479,6 +1493,9 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       "team-home",
       stateHomeId,
       myTeamOnHome,
+      // Bridge "evil" ↔ "team-evil" so events from older sessions still
+      // collapse to the correct side even if the ID format changed.
+      stateHomeId && !stateHomeId.startsWith("team-") ? `team-${stateHomeId}` : undefined,
     ].filter((value): value is string => Boolean(value)));
 
     const awayAliases = new Set<string>([
@@ -1486,6 +1503,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       "team-away",
       stateAwayId,
       myTeamOnAway,
+      stateAwayId && !stateAwayId.startsWith("team-") ? `team-${stateAwayId}` : undefined,
     ].filter((value): value is string => Boolean(value)));
 
     return {
@@ -2572,7 +2590,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
               const myTeamColor = normalizeTeamColor(selectedTeam?.teamColor) ?? "#4f8cff";
               const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
               const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
-              const oppSlug = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
+              const oppSlugBase = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
+              const oppSlug = `team-${oppSlugBase}`;
               const homeTeamId = newGameVcSide === "home" ? newGameMyTeamId : oppSlug;
               const awayTeamId = newGameVcSide === "away" ? newGameMyTeamId : oppSlug;
               const rosterPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
