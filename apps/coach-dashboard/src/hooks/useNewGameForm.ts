@@ -16,6 +16,7 @@ interface SetupNames {
 interface UseNewGameFormOptions {
   rosterTeams: RosterTeam[];
   endedGameIdsRef: React.RefObject<Set<string>>;
+  connectionId: string;
   setGameId: (id: string) => void;
   setSetupNames: (names: SetupNames) => void;
   setDashboardStatus: (status: string) => void;
@@ -24,6 +25,7 @@ interface UseNewGameFormOptions {
 export function useNewGameForm({
   rosterTeams,
   endedGameIdsRef,
+  connectionId,
   setGameId,
   setSetupNames,
   setDashboardStatus,
@@ -115,6 +117,25 @@ export function useNewGameForm({
         homeColor,
         awayColor,
       );
+
+      // Publish the operator link so the iPad can find this game via the connection code.
+      if (connectionId) {
+        void fetch(`${apiBase}/api/operator-links/${encodeURIComponent(connectionId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+          body: JSON.stringify({
+            gameId: createdGameId,
+            myTeamId: newGameMyTeamId,
+            myTeamName: selectedTeam?.name ?? "",
+            opponentName,
+            vcSide: newGameVcSide,
+            homeTeamColor: homeColor,
+            awayTeamColor: awayColor,
+            dashboardUrl: window.location.href,
+          }),
+        });
+      }
+
       setDashboardStatus("Game started.");
     } catch {
       setDashboardStatus("Could not start game because realtime API is unreachable.");

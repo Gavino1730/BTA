@@ -356,7 +356,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameOppColor, setNewGameOppColor,
     newGameStartingLineup, setNewGameStartingLineup,
     isLaunchingGame, launchGame,
-  } = useNewGameForm({ rosterTeams, endedGameIdsRef, setGameId, setSetupNames, setDashboardStatus });
+  } = useNewGameForm({ rosterTeams, endedGameIdsRef, connectionId, setGameId, setSetupNames, setDashboardStatus });
 
   // URL sync
   useEffect(() => {

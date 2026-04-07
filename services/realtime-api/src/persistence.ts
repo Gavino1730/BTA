@@ -523,6 +523,17 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
                 historical_context_fetched_at_ms,
                 updated_at
               ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, NOW())
+              ON CONFLICT (school_id, game_id) DO UPDATE SET
+                home_team_id = EXCLUDED.home_team_id,
+                away_team_id = EXCLUDED.away_team_id,
+                opponent_name = EXCLUDED.opponent_name,
+                opponent_team_id = EXCLUDED.opponent_team_id,
+                starting_lineup_by_team = EXCLUDED.starting_lineup_by_team,
+                ai_settings = EXCLUDED.ai_settings,
+                ai_context = EXCLUDED.ai_context,
+                historical_context_summary = EXCLUDED.historical_context_summary,
+                historical_context_fetched_at_ms = EXCLUDED.historical_context_fetched_at_ms,
+                updated_at = NOW()
             `,
             [
               schoolId,
@@ -553,6 +564,12 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
                   payload,
                   updated_at
                 ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+                ON CONFLICT (school_id, id) DO UPDATE SET
+                  game_id = EXCLUDED.game_id,
+                  sequence = EXCLUDED.sequence,
+                  timestamp_iso = EXCLUDED.timestamp_iso,
+                  payload = EXCLUDED.payload,
+                  updated_at = NOW()
               `,
               [
                 schoolId,
