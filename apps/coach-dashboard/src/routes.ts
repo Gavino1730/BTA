@@ -8,7 +8,8 @@ export type AppRoute =
   | "stats-players"
   | "stats-trends"
   | "stats-insights"
-  | "stats-settings";
+  | "stats-settings"
+  | "demo";
 
 const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/dashboard": "/live",
@@ -57,6 +58,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/stats") {
     return "stats-overview";
+  }
+  if (canonical === "/demo") {
+    return "demo";
   }
   return "live";
 }

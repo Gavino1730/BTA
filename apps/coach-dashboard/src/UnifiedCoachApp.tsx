@@ -4,7 +4,7 @@ import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
-import { MarketingPage } from "./MarketingPage.js";
+import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -98,7 +98,7 @@ export function UnifiedCoachApp() {
   }, []);
 
   useEffect(() => {
-    if (route === "marketing") {
+    if (route === "marketing" || route === "demo") {
       return;
     }
 
@@ -156,7 +156,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route === "marketing" || route === "login" || route === "setup") {
+    if (route === "marketing" || route === "login" || route === "setup" || route === "demo") {
       return;
     }
 
@@ -203,7 +203,7 @@ export function UnifiedCoachApp() {
   }, []);
 
   function navigate(nextPath: string) {
-    const isPublicPath = nextPath === "/" || nextPath === "/login";
+    const isPublicPath = nextPath === "/" || nextPath === "/login" || nextPath === "/demo";
 
     if (requiresSetup && !isAuthenticated && !isPublicPath && nextPath !== "/setup") {
       nextPath = "/login";
@@ -222,6 +222,10 @@ export function UnifiedCoachApp() {
 
   if (route === "marketing") {
     return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
+  }
+
+  if (route === "demo") {
+    return <DemoPage onNavigate={navigate} />;
   }
 
   if (route === "login") {

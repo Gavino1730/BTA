@@ -5,9 +5,12 @@ import {
   generateGameId,
   isConnectionReadyForStart,
   isLegacyStatsExportConfigured,
+  mergeCoachLinkSnapshot,
+  normalizeConnectionId,
 } from "../helpers/network.js";
 import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
-import { loadAppData, saveAppData } from "../helpers/storage.js";import type { AppData, GameSetup, Team, TeamSide } from "../types.js";
+import { loadAppData, saveAppData } from "../helpers/storage.js";
+import type { AppData, GameSetup, OperatorLinkResponse, Team, TeamSide } from "../types.js";
 
 export interface UseGameFlowInput {
   appData: AppData;
@@ -87,20 +90,77 @@ export function useGameFlow({
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
 
+  async function refreshOperatorAuthFromConnection(current: AppData): Promise<AppData> {
+    const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
+    if (!connectionId) {
+      return current;
+    }
+
+    try {
+      const response = await fetch(
+        `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
+        { headers: apiKeyHeader(current.gameSetup) },
+      );
+      if (!response.ok) {
+        return current;
+      }
+
+      const payload = (await response.json()) as OperatorLinkResponse;
+      const next = mergeCoachLinkSnapshot(current, payload);
+      if (next.gameSetup.apiKey !== current.gameSetup.apiKey) {
+        saveAppData(next);
+        setAppData(next);
+      }
+      return next;
+    } catch {
+      return current;
+    }
+  }
+
+  function hasWriteCredential(headers: Record<string, string>): boolean {
+    return Boolean(headers.Authorization || headers["x-api-key"]);
+  }
+
   async function startGame(newGameId?: string) {
-    const latest = loadAppData();
+    let latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
     let effectiveGameId = gid;
     let shouldResetEventTimeline = false;
     let serverOpponentName: string | undefined;
     let serverVcSide: "home" | "away" | undefined;
 
+    if (!latest.gameSetup.apiKey?.trim()) {
+      latest = await refreshOperatorAuthFromConnection(latest);
+    }
+
+    const requestHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
+    if (!hasWriteCredential(requestHeaders)) {
+      showInlineNotice(
+        "Live auth token is missing. Tap Sync Now on Ready to Track, then try Start Game again.",
+        "warning",
+        7000,
+      );
+      return;
+    }
+
     try {
-      const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
+      let res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
+        headers: requestHeaders,
         body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
       });
+
+      if (res.status === 401) {
+        latest = await refreshOperatorAuthFromConnection(latest);
+        const retryHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
+        if (hasWriteCredential(retryHeaders)) {
+          res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
+            method: "POST",
+            headers: retryHeaders,
+            body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
+          });
+        }
+      }
 
       if (!res.ok) {
         const body = await res.text().catch(() => "");

@@ -3075,10 +3075,29 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
     return;
   }
 
-  const setup = getOperatorLinkSetup(schoolId, connectionId);
+  let setup = getOperatorLinkSetup(schoolId, connectionId);
   if (!setup) {
     res.status(404).json({ error: "Connection code not found" });
     return;
+  }
+
+  if (!setup.operatorToken) {
+    const operatorToken = issueLocalAuthToken({
+      subject: `operator:${connectionId}`,
+      email: `operator-${connectionId.toLowerCase()}@system.bta`,
+      schoolId,
+      role: "operator",
+      expiresInHours: 24 * 90,
+    }) ?? undefined;
+
+    if (operatorToken) {
+      setup = {
+        ...setup,
+        operatorToken,
+        updatedAtIso: new Date().toISOString(),
+      };
+      operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
+    }
   }
 
   // The connection code itself is the shared secret between coach and operator.
