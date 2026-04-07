@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { App as LiveDashboardApp, type AppConnectionInfo } from "./App.js";
+import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
+import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -17,20 +18,61 @@ function normalizeConnectionId(value: string | null | undefined): string {
   return normalizeConnectionCode(value);
 }
 
-function buildOperatorConsoleUrl(connectionId: string): string {
-  const params = new URLSearchParams(window.location.search);
-  const storedConnectionId = normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"));
-  const resolvedConnectionId = normalizeConnectionId(params.get("connectionId")) || connectionId || storedConnectionId;
-  const schoolId = resolveActiveSchoolId();
-  if (resolvedConnectionId) {
-    params.set("connectionId", resolvedConnectionId);
-  }
-  if (schoolId) {
-    params.set("schoolId", schoolId);
-  } else {
-    params.delete("schoolId");
-  }
-  return `${operatorBase.replace(/\/+$/, "")}/?${params.toString()}`;
+interface ConnectedNavActionsProps {
+  onSignOut: () => void;
+  onShowTutorial: () => void;
+}
+
+function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsProps) {
+  const { connectionId, deviceConnected, serverConnected, operatorConsoleUrl } = useGameSession();
+  return (
+    <>
+      <a href={operatorConsoleUrl} className="coach-nav-ext-link">
+        Score Operator
+      </a>
+      <button
+        type="button"
+        className="coach-nav-ext-link"
+        onClick={onSignOut}
+      >
+        Sign Out
+      </button>
+      <button
+        type="button"
+        className="coach-nav-ext-link"
+        onClick={() => {
+          if (!connectionId) {
+            return;
+          }
+          void navigator.clipboard?.writeText(connectionId);
+        }}
+        title="Copy the 6-digit operator code"
+      >
+        Copy Code
+      </button>
+      <button
+        type="button"
+        onClick={onShowTutorial}
+        title="Help &amp; Tutorial"
+        aria-label="Open help and tutorial"
+        className="coach-nav-help-button"
+      >?</button>
+      <div
+        className={`connection-pill ${deviceConnected ? "online" : "offline"}`}
+        style={{ flexShrink: 0 }}
+        title={`Operator pairing code: ${connectionId}`}
+      >
+        <span className="connection-pill-dot" aria-hidden="true" />
+        <span className="connection-pill-status">
+          {deviceConnected ? "Live" : serverConnected ? "Waiting" : "Offline"}
+        </span>
+        <span className="connection-pill-sep" aria-hidden="true">·</span>
+        <span className="connection-pill-code" aria-label={`Code ${connectionId}`}>
+          {connectionId}
+        </span>
+      </div>
+    </>
+  );
 }
 
 export function UnifiedCoachApp() {
@@ -46,12 +88,6 @@ export function UnifiedCoachApp() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => Boolean(initialAuthSession?.token));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
-  const [connectionInfo, setConnectionInfo] = useState<AppConnectionInfo>({
-    deviceConnected: false,
-    serverConnected: false,
-    connectionId: initialConnectionId,
-    operatorConsoleUrl: buildOperatorConsoleUrl(initialConnectionId),
-  });
 
   useEffect(() => {
     const canonicalPath = canonicalizeCoachPath(window.location.pathname);
@@ -158,15 +194,6 @@ export function UnifiedCoachApp() {
     };
   }, []);
 
-  const handleConnectionChange = useCallback((info: AppConnectionInfo) => {
-    const normalizedConnectionId = normalizeConnectionId(info.connectionId) || generateConnectionCode();
-    setConnectionInfo({
-      ...info,
-      connectionId: normalizedConnectionId,
-      operatorConsoleUrl: info.operatorConsoleUrl || buildOperatorConsoleUrl(normalizedConnectionId),
-    });
-  }, []);
-
   const handleAuthSuccess = useCallback((setupComplete: boolean) => {
     setIsAuthenticated(true);
     setRequiresSetup(!setupComplete);
@@ -231,7 +258,6 @@ export function UnifiedCoachApp() {
   }
 
   const isLive = route === "live";
-  const operatorConsoleUrl = connectionInfo.operatorConsoleUrl || buildOperatorConsoleUrl(connectionInfo.connectionId);
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
     return (
@@ -248,7 +274,7 @@ export function UnifiedCoachApp() {
   }
 
   return (
-    <>
+    <GameSessionProvider>
       {showTutorial && (
         <TutorialOverlay onDismiss={() => setShowTutorial(false)} />
       )}
@@ -264,72 +290,26 @@ export function UnifiedCoachApp() {
             {navBtn("Settings", "stats-settings", "/stats/settings")}
           </ul>
           <div className="coach-nav-actions">
-            <a href={operatorConsoleUrl} className="coach-nav-ext-link">
-              Score Operator
-            </a>
-            <button
-              type="button"
-              className="coach-nav-ext-link"
-              onClick={() => {
+            <ConnectedNavActions
+              onSignOut={() => {
                 clearAuthSession();
                 setIsAuthenticated(false);
                 setRequiresSetup(true);
                 window.history.replaceState({}, "", "/login");
                 setRoute("login");
               }}
-            >
-              Sign Out
-            </button>
-            <button
-              type="button"
-              className="coach-nav-ext-link"
-              onClick={() => {
-                if (!connectionInfo.connectionId) {
-                  return;
-                }
-                void navigator.clipboard?.writeText(connectionInfo.connectionId);
-              }}
-              title="Copy the 6-digit operator code"
-            >
-              Copy Code
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowTutorial(true)}
-              title="Help &amp; Tutorial"
-              aria-label="Open help and tutorial"
-              className="coach-nav-help-button"
-            >?</button>
-            <div
-              className={`connection-pill ${connectionInfo.deviceConnected ? "online" : "offline"}`}
-              style={{ flexShrink: 0 }}
-              title={`Operator pairing code: ${connectionInfo.connectionId}`}
-            >
-              <span className="connection-pill-dot" aria-hidden="true" />
-              <span className="connection-pill-status">
-                {connectionInfo.deviceConnected ? "Live" : connectionInfo.serverConnected ? "Waiting" : "Offline"}
-              </span>
-              <span className="connection-pill-sep" aria-hidden="true">·</span>
-              <span className="connection-pill-code" aria-label={`Code ${connectionInfo.connectionId}`}>
-                {connectionInfo.connectionId}
-              </span>
-            </div>
+              onShowTutorial={() => setShowTutorial(true)}
+            />
           </div>
         </div>
       </nav>
-      {isLive && (
-        <LiveDashboardApp
-          onConnectionChange={handleConnectionChange}
-          showTutorial={false}
-          onDismissTutorial={() => setShowTutorial(false)}
-        />
-      )}
+      {isLive && <LivePage />}
       {route === "stats-overview" && <StatsOverviewPage />}
       {route === "stats-games" && <GamesPage />}
       {route === "stats-players" && <PlayersPage />}
       {route === "stats-trends" && <TrendsPage />}
       {route === "stats-insights" && <AiInsightsPage />}
       {route === "stats-settings" && <TeamSettingsPage />}
-    </>
+    </GameSessionProvider>
   );
 }

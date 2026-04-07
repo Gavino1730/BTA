@@ -63,7 +63,7 @@ export function useSocket({
       ? { [trackedTeamId]: startingLineup }
       : undefined;
     const payload = { connectionId, gameId, startingLineupByTeam };
-    const socketAuth: Record<string, string> = { schoolId: gameSetup.schoolId ?? DEFAULT_SCHOOL_ID };
+    const socketAuth: Record<string, string> = { schoolId: gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID };
     if (gameSetup.apiKey) {
       if (gameSetup.apiKey.startsWith("bta.")) {
         socketAuth.token = gameSetup.apiKey;
