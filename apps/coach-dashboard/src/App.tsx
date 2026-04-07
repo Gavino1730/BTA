@@ -1,23 +1,22 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TutorialOverlay } from "./TutorialOverlay.js";
-import { getPeriodDurationSeconds, normalizeTeamColor, type GameEvent, type Period } from "@bta/shared-schema";
-import type { PlayerStats, TeamStats, LineupUnitStats } from "@bta/game-state";
-import { aggregateLineupStats, computeLineupSegments } from "@bta/game-state";
+import { SetupGameCard } from "./SetupGameCard.js";
+import { AiTabPanel } from "./AiTabPanel.js";
+import { InsightsPanel } from "./InsightsPanel.js";
+import { RotationPanel } from "./RotationPanel.js";
+import { ScoreboardSection } from "./ScoreboardSection.js";
+import { BoxScoreSection } from "./BoxScoreSection.js";
+import { LineupUnitPanel } from "./LineupUnitPanel.js";
+import { normalizeTeamColor } from "@bta/shared-schema";
 import { io } from "socket.io-client";
-import {
-  formatFoulTroubleLabel,
-} from "./display.js";
 import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
-import { useRosterManager, useCoachAi, useNewGameForm } from "./hooks/index.js";
+import { useRosterManager, useCoachAi, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos } from "./hooks/index.js";
 import {
-  type GameState, type BoxScoreTeamTotals, type BoxScorePlayerLine, type BoxScoreFilter,
-  emptyTeamStats, mergeTeamStats, mergePlayerStats, mergeByTeamKeys, mergeLineupsByTeam, mergeGameState, emptyBoxScoreTotals,
-  type RosterPlayer, type RosterTeam,
+  type GameState, type BoxScoreFilter,
+  mergeGameState,
   ACTIVE_GAME_KEY,
   normalizeRosterTeams,
-  type Insight, type RotationWatchNote, type CoachInsightFocus, type AiSignalCard,
-  AI_FOCUS_OPTIONS,
-  toTitleCase, replaceToken, formatInsightTypeLabel, formatInsightAge, getRuleInsightImportanceClass, getRuleBadgeImportanceClass,
+  type Insight,
 } from "./helpers/index.js";
 
 interface PresenceStatus {
@@ -114,7 +113,9 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
-  const endedGameIdsRef = useRef<Set<string>>(new Set());
+  const endedGameIdsRef = useRef<Set<string>>(new Set<string>(
+    (() => { try { return JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[]; } catch { return []; } })()
+  ));
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
   const [activePage, setActivePage] = useState<"live" | "ai">(() => (sessionStorage.getItem("coach:live-tab") as "live" | "ai" | null) ?? "live");
   const [boxScoreFilter, setBoxScoreFilter] = useState<BoxScoreFilter>([]);
@@ -611,6 +612,18 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   }, [gameId]);
 
   function clearActiveGame(statusMessage: string): void {
+    // Persist the outgoing game ID so reconcileGameId won't restore it on the
+    // next page load (endedGameIdsRef is in-memory only; localStorage survives reloads).
+    if (gameId) {
+      endedGameIdsRef.current.add(gameId);
+      try {
+        const prev = JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[];
+        const updated = Array.from(new Set([...prev, gameId])).slice(-20);
+        localStorage.setItem("coach-ended-game-ids", JSON.stringify(updated));
+      } catch {
+        // ignore storage issues
+      }
+    }
     setGameId("");
     setState(null);
     setInsights([]);
@@ -674,563 +687,31 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     }
   }
 
-  const canonicalSideIds = useMemo(() => {
-    // The game state's homeTeamId / awayTeamId are the authoritative structural
-    // identifiers. URL params (myTeamId, vcSide) are display hints only.
-    // Using opponentTeamId in aliases caused both raw team IDs to collapse to
-    // the same canonical ID when VC plays away, doubling scores and merging
-    // player cards into a single slot.
-    const stateHomeId = state?.homeTeamId;
-    const stateAwayId = state?.awayTeamId;
-
-    const homeId = stateHomeId || (setupNames.vcSide === "home" ? (setupNames.myTeamId || "home") : "home");
-    const awayId = stateAwayId || (setupNames.vcSide === "away" ? (setupNames.myTeamId || "away") : "away");
-
-    // Only alias myTeamId to the side matching vcSide when state confirms
-    // that myTeamId is NOT already assigned to the opposite side. This prevents
-    // a stale/wrong vcSide in the URL from creating alias collisions.
-    const myId = setupNames.myTeamId || "";
-    const myTeamOnHome = myId && myId !== stateAwayId
-      ? (setupNames.vcSide === "home" ? myId : undefined)
-      : undefined;
-    const myTeamOnAway = myId && myId !== stateHomeId
-      ? (setupNames.vcSide === "away" ? myId : undefined)
-      : undefined;
-
-    const homeAliases = new Set<string>([
-      "home",
-      "team-home",
-      stateHomeId,
-      myTeamOnHome,
-      // Bridge "evil" â†” "team-evil" so events from older sessions still
-      // collapse to the correct side even if the ID format changed.
-      stateHomeId && !stateHomeId.startsWith("team-") ? `team-${stateHomeId}` : undefined,
-    ].filter((value): value is string => Boolean(value)));
-
-    const awayAliases = new Set<string>([
-      "away",
-      "team-away",
-      stateAwayId,
-      myTeamOnAway,
-      stateAwayId && !stateAwayId.startsWith("team-") ? `team-${stateAwayId}` : undefined,
-    ].filter((value): value is string => Boolean(value)));
-
-    return {
-      homeId,
-      awayId,
-      homeAliases,
-      awayAliases,
-    };
-  }, [
-    setupNames.myTeamId,
-    setupNames.vcSide,
-    state?.awayTeamId,
-    state?.homeTeamId,
-  ]);
-
-  function canonicalTeamId(teamId: string): string {
-    if (canonicalSideIds.homeAliases.has(teamId)) {
-      return canonicalSideIds.homeId;
-    }
-
-    if (canonicalSideIds.awayAliases.has(teamId)) {
-      return canonicalSideIds.awayId;
-    }
-
-    return teamId;
-  }
-
-  const rawTeamIds = useMemo(() => {
-    return [...new Set([
-      ...Object.keys(state?.scoreByTeam ?? {}),
-      ...Object.keys(state?.bonusByTeam ?? {}),
-      ...Object.keys(state?.possessionsByTeam ?? {}),
-      ...Object.keys(state?.activeLineupsByTeam ?? {}),
-      ...Object.keys(state?.teamStats ?? {}),
-      ...Object.keys(state?.playerStatsByTeam ?? {}),
-    ])];
-  }, [state]);
-
-  const aggregatedTeams = useMemo(() => {
-    const aggregated: Record<string, {
-      score: number;
-      bonus: boolean;
-      possessions: number;
-      activeLineup: string[];
-      teamStats: TeamStats;
-      playerStats: Record<string, PlayerStats>;
-      timeoutsUsed: number;
-      periodFouls: number;
-    }> = {};
-
-    function ensureTeam(teamId: string) {
-      aggregated[teamId] ??= {
-        score: 0,
-        bonus: false,
-        possessions: 0,
-        activeLineup: [],
-        teamStats: emptyTeamStats(),
-        playerStats: {},
-        timeoutsUsed: 0,
-        periodFouls: 0,
-      };
-
-      return aggregated[teamId];
-    }
-
-    for (const rawTeamId of rawTeamIds) {
-      const teamId = canonicalTeamId(rawTeamId);
-      const target = ensureTeam(teamId);
-      target.score += state?.scoreByTeam?.[rawTeamId] ?? 0;
-      target.bonus = target.bonus || (state?.bonusByTeam?.[rawTeamId] ?? false);
-      // Fall back to inferred possessions (FGA + turnovers) when operators don't log possession_start
-      const explicitPoss = state?.possessionsByTeam?.[rawTeamId] ?? 0;
-      const inferredPoss = explicitPoss > 0
-        ? 0
-        : (state?.teamStats?.[rawTeamId]?.shooting?.fgAttempts ?? 0)
-          + (state?.teamStats?.[rawTeamId]?.turnovers ?? 0);
-      target.possessions += explicitPoss + inferredPoss;
-      target.activeLineup = [...new Set([
-        ...target.activeLineup,
-        ...(state?.activeLineupsByTeam?.[rawTeamId] ?? []),
-      ])];
-      mergeTeamStats(target.teamStats, state?.teamStats?.[rawTeamId]);
-      mergePlayerStats(target.playerStats, state?.playerStatsByTeam?.[rawTeamId]);
-      target.timeoutsUsed += state?.timeoutsByTeam?.[rawTeamId] ?? 0;
-      // Sum fouls for the current period from teamFoulsByPeriod
-      const periodFoulMap = state?.teamFoulsByPeriod?.[rawTeamId] ?? {};
-      const currentPeriod = state?.currentPeriod ?? "Q1";
-      target.periodFouls += periodFoulMap[currentPeriod] ?? 0;
-    }
-
-    return aggregated;
-  }, [rawTeamIds, setupNames.myTeamId, setupNames.vcSide, state]);
-
-  const teams = useMemo(() => {
-    const homeSlot = canonicalSideIds.homeId;
-    // Guard: when both canonical IDs collapse to the same value (e.g. bad game
-    // setup where homeTeamId === awayTeamId), fall back to the raw state IDs so
-    // both team cards are always rendered.
-    const awaySlot =
-      canonicalSideIds.awayId !== canonicalSideIds.homeId
-        ? canonicalSideIds.awayId
-        : (state?.awayTeamId && state.awayTeamId !== state?.homeTeamId
-            ? state?.awayTeamId
-            : "away");
-
-    // When the live game state unambiguously places myTeamId on the opposite side
-    // from what vcSide says (e.g. the operator started the game with sides flipped),
-    // use the state-confirmed side for ordering so VC always appears at index 0.
-    // This prevents OES from getting the "YOUR TEAM" badge when the game was
-    // set up with VC as away but vcSide still says "home".
-    const vcIsConfirmedAway =
-      Boolean(setupNames.myTeamId) &&
-      Boolean(state?.awayTeamId) &&
-      setupNames.myTeamId === state?.awayTeamId;
-    const vcIsConfirmedHome =
-      Boolean(setupNames.myTeamId) &&
-      Boolean(state?.homeTeamId) &&
-      setupNames.myTeamId === state?.homeTeamId;
-    const effectiveVcSide = vcIsConfirmedAway ? "away" : vcIsConfirmedHome ? "home" : setupNames.vcSide;
-
-    // Always put our team (vc side) at index 0 so it renders on the left.
-    const preferred = (effectiveVcSide === "away" ? [awaySlot, homeSlot] : [homeSlot, awaySlot])
-      .filter((teamId): teamId is string => Boolean(teamId));
-    const preferredUnique = [...new Set(preferred)];
-
-    // Render exactly two team cards. Extra aggregated IDs can appear from stale
-    // aliases or historic payloads and should never create a third scoreboard team.
-    if (preferredUnique.length >= 2) {
-      return preferredUnique.slice(0, 2);
-    }
-
-    const observedFallback = [...new Set(
-      Object.keys(aggregatedTeams)
-        .map((teamId) => canonicalTeamId(teamId))
-        .filter((teamId): teamId is string => Boolean(teamId) && !preferredUnique.includes(teamId))
-    )];
-
-    return [...preferredUnique, ...observedFallback].slice(0, 2);
-  }, [aggregatedTeams, canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.vcSide, setupNames.myTeamId, state?.awayTeamId, state?.homeTeamId]);
-
-  const rosterLabels = useMemo(() => {
-    const teamNameById: Record<string, string> = {};
-    const playerNameByTeamAndId: Record<string, string> = {};
-    const playerNameById: Record<string, string> = {};
-
-    for (const team of rosterTeams) {
-      const teamDisplay = team.name.trim() || team.abbreviation.trim() || team.id;
-      teamNameById[team.id] = teamDisplay;
-
-      for (const player of team.players) {
-        const playerDisplay = player.name.trim() || (player.number.trim() ? `#${player.number.trim()}` : player.id);
-        playerNameByTeamAndId[`${team.id}:${player.id}`] = playerDisplay;
-
-        if (!playerNameById[player.id]) {
-          playerNameById[player.id] = playerDisplay;
-        }
-      }
-    }
-
-    return {
-      teamNameById,
-      playerNameByTeamAndId,
-      playerNameById,
-    };
-  }, [rosterTeams]);
-
-  const playersByTeamId = useMemo(() => {
-    const byTeamId: Record<string, RosterPlayer[]> = {};
-    for (const team of rosterTeams) {
-      byTeamId[team.id] = team.players;
-    }
-    return byTeamId;
-  }, [rosterTeams]);
-
-  const teamColorById = useMemo(() => {
-    const map: Record<string, string> = {};
-    // Seed with operator-provided URL colors so they apply even without a roster entry
-    if (setupNames.homeColor) map[canonicalSideIds.homeId] = setupNames.homeColor;
-    if (setupNames.awayColor) map[canonicalSideIds.awayId] = setupNames.awayColor;
-    // rosterTeams colors take priority over operator URL defaults
-    for (const team of rosterTeams) {
-      if (team.teamColor) map[team.id] = team.teamColor;
-    }
-    return map;
-  }, [rosterTeams, setupNames.homeColor, setupNames.awayColor, canonicalSideIds.homeId, canonicalSideIds.awayId]);
-
-  function displayTeamName(teamId: string): string {
-    const canonicalId = canonicalTeamId(teamId);
-    // Prefer the live game-state opponent name over the URL param - the URL may carry
-    // a stale value from a previous game that was bookmarked or scanned weeks ago.
-    const opponentName = state?.opponentName || setupNames.opponentName || "";
-
-    // When myTeamId is available in the URL it is the definitive check -
-    // do NOT mix in teams[0] which depends on vcSide and can mislabel both
-    // slots as "our team" when vcSide is wrong.  Fall back to vcSide-based
-    // heuristics only when myTeamId was not provided.
-    // Three-way check when myTeamId is set:
-    //   1. Direct ID match
-    //   2. Canonical ID equals myTeamId (edge case)
-    //   3. myTeamId resolves to the same canonical slot (covers old games where
-    //      events were sent with a different ID, e.g. "team-usa" vs "team-vc")
-    const ourRawSideId = setupNames.vcSide === "away" ? state?.awayTeamId : state?.homeTeamId;
-    const isOurTeam = setupNames.myTeamId !== ""
-      ? (teamId === setupNames.myTeamId ||
-         canonicalId === setupNames.myTeamId ||
-         canonicalTeamId(setupNames.myTeamId) === canonicalId)
-      : ((teams.length > 0 && teamId === teams[0]) ||
-         (Boolean(ourRawSideId) && teamId === ourRawSideId));
-
-    if (isOurTeam) {
-      // Only return myTeamName if it doesn't duplicate the opponent name - if both would
-      // show the same label, prefer a roster label or a title-cased fallback so the two
-      // sections are visually distinct.
-      const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
-      if (setupNames.myTeamName && setupNames.myTeamName !== opponentName) return setupNames.myTeamName;
-      if (rosterLabel) return rosterLabel;
-      // Do not fall back to myTeamName when it equals opponentName â€” that would show
-      // two cards with the same label.  Instead use the canonical-ID fallback below.
-      const fallback = canonicalId.replace(/^team[-_]/i, "");
-      return toTitleCase(fallback);
-    }
-
-    if (opponentName) return opponentName;
-
-    const rosterLabel = rosterLabels.teamNameById[canonicalId] ?? rosterLabels.teamNameById[teamId];
-    if (rosterLabel) return rosterLabel;
-
-    const fallback = canonicalId.replace(/^team[-_]/i, "");
-    return toTitleCase(fallback);
-  }
-
-  function displayPlayerName(teamId: string, playerId: string): string {
-    const canonicalId = canonicalTeamId(teamId);
-    const normalizedPlayerId = playerId.toLowerCase();
-    const normalizedTeamId = teamId.toLowerCase();
-    const normalizedCanonicalId = canonicalId.toLowerCase();
-    const teamLevelAliases = new Set<string>([
-      "home-team",
-      "away-team",
-      "team-home",
-      "team-away",
-      normalizedTeamId,
-      normalizedCanonicalId,
-      `${normalizedTeamId}-team`,
-      `${normalizedCanonicalId}-team`,
-    ]);
-
-    if (teamLevelAliases.has(normalizedPlayerId)) {
-      return displayTeamName(teamId);
-    }
-
-    return rosterLabels.playerNameByTeamAndId[`${canonicalId}:${playerId}`]
-      ?? rosterLabels.playerNameByTeamAndId[`${teamId}:${playerId}`]
-      ?? rosterLabels.playerNameById[playerId]
-      ?? playerId;
-  }
-
-  function getScoreboardLineup(teamId: string): { playerIds: string[]; isEstimated: boolean } {
-    const canonicalId = canonicalTeamId(teamId);
-    // Fall back to canonical-keyed bucket when teamId is a side-alias like "away".
-    const teamBucket = aggregatedTeams[teamId] ?? aggregatedTeams[canonicalId];
-    // Exclude any player ID that is itself a team identifier (e.g. "team-oes" leaking
-    // into the active lineup from starting-lineup initialization).
-    const knownTeamIds = new Set([
-      "home", "away", "home-team", "away-team", "team-home", "team-away",
-      ...rawTeamIds,
-      ...Object.keys(aggregatedTeams),
-      // Also exclude "<teamId>-team" pseudo-IDs emitted by the operator when
-      // tracking opponent shots without a specific player selected.
-      ...rawTeamIds.map((id) => `${id}-team`),
-      ...Object.keys(aggregatedTeams).map((id) => `${id}-team`),
-    ].map((id) => id.toLowerCase()));
-    const isRealPlayer = (pid: string) => Boolean(pid) && !knownTeamIds.has(pid.toLowerCase());
-    const liveLineup = [...new Set(teamBucket?.activeLineup ?? [])].filter(isRealPlayer);
-    if (liveLineup.length >= 5) {
-      return { playerIds: liveLineup.slice(0, 5), isEstimated: false };
-    }
-
-    const statEntries = Object.entries(teamBucket?.playerStats ?? {});
-    const activeByStats = statEntries
-      .filter(([, statLine]) => {
-        const touches =
-          statLine.points
-          + statLine.fgAttempts
-          + statLine.ftAttempts
-          + statLine.reboundsOff
-          + statLine.reboundsDef
-          + statLine.assists
-          + statLine.steals
-          + statLine.blocks
-          + statLine.turnovers
-          + statLine.fouls;
-        return touches > 0;
-      })
-      .sort((left, right) => {
-        const leftTouches =
-          left[1].points
-          + left[1].fgAttempts
-          + left[1].ftAttempts
-          + left[1].reboundsOff
-          + left[1].reboundsDef
-          + left[1].assists
-          + left[1].steals
-          + left[1].blocks
-          + left[1].turnovers
-          + left[1].fouls;
-        const rightTouches =
-          right[1].points
-          + right[1].fgAttempts
-          + right[1].ftAttempts
-          + right[1].reboundsOff
-          + right[1].reboundsDef
-          + right[1].assists
-          + right[1].steals
-          + right[1].blocks
-          + right[1].turnovers
-          + right[1].fouls;
-        return rightTouches - leftTouches;
-      })
-      .map(([playerId]) => playerId);
-
-    const rosterOrder = (playersByTeamId[canonicalId] ?? playersByTeamId[teamId] ?? []).map((player) => player.id);
-    const combined = [...new Set([...liveLineup, ...activeByStats, ...rosterOrder])].filter(isRealPlayer).slice(0, 5);
-
-    return {
-      playerIds: combined,
-      isEstimated: combined.length > liveLineup.length,
-    };
-  }
-
-  function prettifyInsightText(
-    text: string,
-    relatedTeamId?: string,
-    relatedPlayerId?: string
-  ): string {
-    let formatted = text;
-
-    const teamIdsToNormalize = new Set<string>([
-      ...teams,
-      ...rawTeamIds,
-      state?.homeTeamId ?? "",
-      state?.awayTeamId ?? "",
-      state?.opponentTeamId ?? "",
-      relatedTeamId ?? "",
-    ].filter(Boolean));
-
-    for (const teamId of teamIdsToNormalize) {
-      formatted = replaceToken(formatted, teamId, displayTeamName(teamId));
-    }
-
-    if (relatedTeamId && relatedPlayerId) {
-      formatted = replaceToken(
-        formatted,
-        relatedPlayerId,
-        displayPlayerName(relatedTeamId, relatedPlayerId)
-      );
-    }
-
-    for (const [playerId, playerName] of Object.entries(rosterLabels.playerNameById)) {
-      formatted = replaceToken(formatted, playerId, playerName);
-    }
-
-    return formatted;
-  }
-
-  const leadersByTeam = useMemo(() => {
-    return Object.fromEntries(
-      teams.map((teamId) => {
-        const canonId = canonicalTeamId(teamId);
-        const td = aggregatedTeams[teamId] ?? aggregatedTeams[canonId];
-        const players = Object.values(td?.playerStats ?? {});
-        const scoringLeader = players
-          .filter((player) => player.points > 0)
-          .slice()
-          .sort((left, right) => right.points - left.points || left.playerId.localeCompare(right.playerId))[0];
-        const foulLeader = players
-          .filter((player) => player.fouls > 0)
-          .slice()
-          .sort((left, right) => right.fouls - left.fouls || left.playerId.localeCompare(right.playerId))[0];
-
-        return [teamId, { scoringLeader, foulLeader }];
-      })
-    ) as Record<
-      string,
-      {
-        scoringLeader?: PlayerStats;
-        foulLeader?: PlayerStats;
-      }
-    >;
-  }, [aggregatedTeams, teams]);
-
-  const coachedTeamId = useMemo(() => {
-    if (setupNames.myTeamId) {
-      return canonicalTeamId(setupNames.myTeamId);
-    }
-
-    // When myTeamId isn't in the URL, prefer the team whose starting lineup is
-    // seeded in the game state - avoids defaulting to the opponent's (home) slot.
-    const lineupEntry = Object.entries(state?.activeLineupsByTeam ?? {})
-      .find(([, lineup]) => lineup.length > 0);
-    if (lineupEntry) {
-      return canonicalTeamId(lineupEntry[0]);
-    }
-
-    return setupNames.vcSide === "away" ? canonicalSideIds.awayId : canonicalSideIds.homeId;
-  }, [canonicalSideIds.awayId, canonicalSideIds.homeId, setupNames.myTeamId, setupNames.vcSide, state?.activeLineupsByTeam]);
-
-  /** Lineup unit +/- â€” null when not enough data to compute (no starting lineup and no subs). */
-  const lineupUnitStats = useMemo((): LineupUnitStats[] | null => {
-    if (!coachedTeamId || !state?.events?.length) return null;
-    const oppId = state?.opponentTeamId
-      ?? (coachedTeamId === canonicalSideIds.homeId ? canonicalSideIds.awayId : canonicalSideIds.homeId);
-    // Resolve starting lineup, accounting for possible raw key variants
-    let startingLineup: string[] = state?.startingLineupByTeam?.[coachedTeamId] ?? [];
-    if (startingLineup.length === 0) {
-      const rawKey = Object.keys(state?.startingLineupByTeam ?? {}).find(k => canonicalTeamId(k) === coachedTeamId);
-      if (rawKey) startingLineup = state.startingLineupByTeam![rawKey] ?? [];
-    }
-    const hasSubs = state.events.some(e => e.type === 'substitution' && canonicalTeamId(e.teamId) === coachedTeamId);
-    if (startingLineup.length === 0 && !hasSubs) return null;
-    const segments = computeLineupSegments(state.events, coachedTeamId, oppId, startingLineup);
-    return aggregateLineupStats(segments);
-  }, [coachedTeamId, canonicalSideIds.awayId, canonicalSideIds.homeId, state?.events, state?.opponentTeamId, state?.startingLineupByTeam]);
-
-  const rotationContext = useMemo(() => {
-    if (!coachedTeamId) {
-      return null;
-    }
-
-    const teamId = coachedTeamId;
-    const liveOnCourt = [...new Set(aggregatedTeams[teamId]?.activeLineup ?? [])].filter(Boolean);
-    const playerStats = aggregatedTeams[teamId]?.playerStats ?? {};
-    const rosterTeam = rosterTeams.find((team) => team.id === canonicalTeamId(teamId) || team.id === teamId);
-
-    const activeByStats = Object.values(playerStats)
-      .map((player) => ({
-        playerId: player.playerId,
-        activityScore: (
-          player.points
-          + player.fgAttempts
-          + player.ftAttempts
-          + player.reboundsOff
-          + player.reboundsDef
-          + player.assists
-          + player.steals
-          + player.blocks
-          + player.turnovers
-          + player.fouls
-        )
-      }))
-      .filter((player) => player.activityScore > 0)
-      .sort((left, right) => right.activityScore - left.activityScore)
-      .map((player) => player.playerId);
-
-    const rosterOrder = rosterTeam?.players.map((player) => player.id) ?? [];
-
-    // Build team-level alias set so we never show a team ID as a player chip.
-    const teamAliasSet = new Set<string>([
-      ...Array.from(canonicalSideIds.homeAliases).map((s) => s.toLowerCase()),
-      ...Array.from(canonicalSideIds.awayAliases).map((s) => s.toLowerCase()),
-    ]);
-    const isValidPlayerId = (id: string) => id && !teamAliasSet.has(id.toLowerCase());
-
-    const onCourt = [...new Set([...liveOnCourt, ...activeByStats, ...rosterOrder])]
-      .filter(isValidPlayerId)
-      .slice(0, 5);
-    const isEstimatedLineup = liveOnCourt.length < 5 && onCourt.length > liveOnCourt.length;
-
-    const knownPlayerIds = new Set<string>([
-      ...onCourt,
-      ...Object.keys(playerStats).filter(isValidPlayerId),
-      ...rosterOrder.filter(isValidPlayerId),
-    ]);
-
-    const bench = [...knownPlayerIds].filter((playerId) => !onCourt.includes(playerId));
-
-    const watchNotes: RotationWatchNote[] = onCourt.flatMap((playerId) => {
-      const stats = playerStats[playerId];
-      if (!stats) {
-        return [];
-      }
-
-      const notes: RotationWatchNote[] = [];
-      if (stats.fouls >= 4) {
-        notes.push({
-          playerId,
-          level: "high",
-          reason: `Foul-out risk (${stats.fouls} fouls)`
-        });
-      } else if (stats.fouls === 3) {
-        notes.push({
-          playerId,
-          level: "medium",
-          reason: "Foul pressure (3 fouls)"
-        });
-      }
-
-      if (stats.turnovers >= 3) {
-        notes.push({
-          playerId,
-          level: "medium",
-          reason: `${stats.turnovers} turnovers in current sample`
-        });
-      }
-
-      return notes;
-    });
-
-    return {
-      teamId,
-      onCourt,
-      bench,
-      watchNotes,
-      isEstimatedLineup,
-      liveCount: liveOnCourt.length,
-    };
-  }, [aggregatedTeams, canonicalTeamId, coachedTeamId, rosterTeams]);
-
+  const { canonicalSideIds, canonicalTeamId, rawTeamIds, aggregatedTeams, teams } = useGameTeams(
+    state,
+    setupNames,
+  );
+
+  const { rosterLabels, playersByTeamId, teamColorById, displayTeamName, displayPlayerName, getScoreboardLineup, prettifyInsightText } = useDisplayHelpers({
+    rosterTeams,
+    setupNames,
+    state,
+    teams,
+    rawTeamIds,
+    aggregatedTeams,
+    canonicalTeamId,
+    canonicalSideIds,
+  });
+
+  const { leadersByTeam, coachedTeamId, lineupUnitStats, rotationContext } = useGameMemos({
+    teams,
+    aggregatedTeams,
+    canonicalTeamId,
+    canonicalSideIds,
+    state,
+    setupNames,
+    rosterTeams,
+  });
   const aiInsights = useMemo(
     () => insights.filter((insight) => insight.type === "ai_coaching"),
     [insights]
@@ -1262,223 +743,23 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     }
   }, [activePage, gameId, promptPreview]);
 
-  const boxScorePeriods = useMemo(() => {
-    const periods = [...new Set((state?.events ?? []).map((event) => event.period))];
-    const periodRank = (period: string): number => {
-      if (period === "Q1") return 1;
-      if (period === "Q2") return 2;
-      if (period === "Q3") return 3;
-      if (period === "Q4") return 4;
-      const otMatch = /^OT(\d+)$/.exec(period);
-      if (otMatch) return 4 + Number(otMatch[1]);
-      return 99;
-    };
+  const { boxScorePeriods, filteredBoxScoreEvents, boxScoreByTeam } = useBoxScore(
+    state?.events ?? [],
+    boxScoreFilter,
+    canonicalTeamId,
+    teams,
+  );
 
-    return periods.sort((left, right) => periodRank(left) - periodRank(right));
-  }, [state?.events]);
-
-  const filteredBoxScoreEvents = useMemo(() => {
-    const events = state?.events ?? [];
-    if (boxScoreFilter.length === 0) return events;
-    const filterSet = new Set(boxScoreFilter);
-    return events.filter((event) => filterSet.has(event.period));
-  }, [boxScoreFilter, state?.events]);
-
-  const boxScoreByTeam = useMemo(() => {
-    const byTeam: Record<string, { totals: BoxScoreTeamTotals; players: Record<string, BoxScorePlayerLine> }> = {};
-
-    function ensureTeam(teamId: string) {
-      byTeam[teamId] ??= { totals: emptyBoxScoreTotals(), players: {} };
-      return byTeam[teamId];
-    }
-
-    function ensurePlayer(teamId: string, playerId: string) {
-      const team = ensureTeam(teamId);
-      team.players[playerId] ??= {
-        ...emptyBoxScoreTotals(),
-        playerId,
-        teamId,
-      };
-      return team.players[playerId];
-    }
-
-    for (const event of filteredBoxScoreEvents) {
-      const teamId = canonicalTeamId(event.teamId);
-      const team = ensureTeam(teamId);
-
-      switch (event.type) {
-        case "shot_attempt": {
-          team.totals.fgAttempts += 1;
-          const player = ensurePlayer(teamId, event.playerId);
-          player.fgAttempts += 1;
-
-          if (event.made) {
-            team.totals.fgMade += 1;
-            team.totals.points += event.points;
-            player.fgMade += 1;
-            player.points += event.points;
-          }
-          break;
-        }
-        case "free_throw_attempt": {
-          team.totals.ftAttempts += 1;
-          const player = ensurePlayer(teamId, event.playerId);
-          player.ftAttempts += 1;
-          if (event.made) {
-            team.totals.ftMade += 1;
-            team.totals.points += 1;
-            player.ftMade += 1;
-            player.points += 1;
-          }
-          break;
-        }
-        case "rebound": {
-          if (event.offensive) {
-            team.totals.reboundsOff += 1;
-          } else {
-            team.totals.reboundsDef += 1;
-          }
-          const player = ensurePlayer(teamId, event.playerId);
-          if (event.offensive) {
-            player.reboundsOff += 1;
-          } else {
-            player.reboundsDef += 1;
-          }
-          break;
-        }
-        case "assist": {
-          team.totals.assists += 1;
-          const player = ensurePlayer(teamId, event.playerId);
-          player.assists += 1;
-          break;
-        }
-        case "steal": {
-          team.totals.steals += 1;
-          const player = ensurePlayer(teamId, event.playerId);
-          player.steals += 1;
-          break;
-        }
-        case "block": {
-          team.totals.blocks += 1;
-          const player = ensurePlayer(teamId, event.playerId);
-          player.blocks += 1;
-          break;
-        }
-        case "turnover": {
-          team.totals.turnovers += 1;
-          if (event.playerId) {
-            const player = ensurePlayer(teamId, event.playerId);
-            player.turnovers += 1;
-          }
-          break;
-        }
-        case "foul": {
-          team.totals.fouls += 1;
-          const player = ensurePlayer(teamId, event.playerId);
-          player.fouls += 1;
-          break;
-        }
-      }
-    }
-
-    for (const teamId of teams) {
-      ensureTeam(teamId);
-    }
-
-    return byTeam;
-  }, [canonicalTeamId, filteredBoxScoreEvents, teams]);
-
-  const aiSubSuggestionCards = useMemo(() => {
-    const cards: AiSignalCard[] = [];
-
-    for (const insight of [...aiInsights, ...rulesInsights]) {
-      if (insight.type === "sub_suggestion" || /\bsub\b|lineup|rest/i.test(`${insight.message} ${insight.explanation}`)) {
-        cards.push({
-          id: `sub-${insight.id}`,
-          title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
-          detail: prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId),
-          tone: insight.confidence === "high" ? "high" : "medium",
-        });
-      }
-    }
-
-    if (cards.length === 0 && rotationContext?.watchNotes.some((note) => note.level === "high")) {
-      for (const note of rotationContext.watchNotes.filter((entry) => entry.level === "high").slice(0, 2)) {
-        cards.push({
-          id: `fallback-sub-${note.playerId}`,
-          title: `Consider a sub for ${displayPlayerName(rotationContext.teamId, note.playerId)}`,
-          detail: note.reason,
-          tone: "high",
-        });
-      }
-    }
-
-    return cards.slice(0, 4);
-  }, [aiInsights, displayPlayerName, prettifyInsightText, rotationContext, rulesInsights]);
-
-  const aiFoulAlertCards = useMemo(() => {
-    const cards: AiSignalCard[] = [];
-
-    for (const insight of [...rulesInsights, ...aiInsights]) {
-      if (["foul_warning", "foul_trouble", "team_foul_warning"].includes(insight.type) || /foul|bonus/i.test(`${insight.message} ${insight.explanation}`)) {
-        cards.push({
-          id: `foul-${insight.id}`,
-          title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
-          detail: prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId),
-          tone: insight.confidence === "high" ? "high" : "medium",
-        });
-      }
-    }
-
-    return cards.slice(0, 5);
-  }, [aiInsights, prettifyInsightText, rulesInsights]);
-
-  const aiEfficiencyCards = useMemo(() => {
-    const cards: AiSignalCard[] = [];
-
-    for (const insight of [...rulesInsights, ...aiInsights]) {
-      if (["hot_hand", "shot_profile"].includes(insight.type) || /efficient|hot hand|shooting|scoring/i.test(`${insight.message} ${insight.explanation}`)) {
-        cards.push({
-          id: `eff-${insight.id}`,
-          title: prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId),
-          detail: prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId),
-          tone: insight.confidence === "high" ? "high" : "default",
-        });
-      }
-    }
-
-    if (coachedTeamId) {
-      const efficientPlayers = Object.values(aggregatedTeams[coachedTeamId]?.playerStats ?? {})
-        .filter((player) => player.fgAttempts >= 4 && player.fgMade / Math.max(player.fgAttempts, 1) >= 0.55)
-        .sort((left, right) => right.points - left.points || right.fgMade - left.fgMade)
-        .slice(0, 3);
-
-      for (const player of efficientPlayers) {
-        const fgPct = Math.round((player.fgMade / Math.max(player.fgAttempts, 1)) * 100);
-        cards.push({
-          id: `eff-live-${player.playerId}`,
-          title: `${displayPlayerName(coachedTeamId, player.playerId)} is producing efficiently`,
-          detail: `${player.points} pts on ${player.fgMade}/${player.fgAttempts} FG (${fgPct}%), plus ${player.assists} ast and ${player.reboundsOff + player.reboundsDef} reb.`,
-          tone: player.points >= 12 ? "high" : "default",
-        });
-      }
-    }
-
-    return cards.slice(0, 5);
-  }, [aggregatedTeams, aiInsights, coachedTeamId, displayPlayerName, prettifyInsightText, rulesInsights]);
-
-  const aiQuickQuestions = useMemo(() => {
-    if (aiChatSuggestions.length > 0) {
-      return aiChatSuggestions;
-    }
-
-    return [
-      "Who should we sub next and why?",
-      "Which player is most efficient right now?",
-      "Are we in team foul trouble soon?",
-      "What should be our next coaching adjustment?",
-    ];
-  }, [aiChatSuggestions]);
+  const { aiSubSuggestionCards, aiFoulAlertCards, aiEfficiencyCards, aiQuickQuestions } = useAiCards({
+    aiInsights,
+    rulesInsights,
+    rotationContext,
+    aggregatedTeams,
+    coachedTeamId,
+    aiChatSuggestions,
+    displayPlayerName,
+    prettifyInsightText,
+  });
 
   async function refreshAiBenchCalls() {
     if (!gameId || isRefreshingAiInsights) {
@@ -1524,955 +805,135 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           <button className={activePage === "live" ? "nav-active" : ""} onClick={() => { setActivePage("live"); sessionStorage.setItem("coach:live-tab", "live"); }}>Scoreboard</button>
           <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => { setActivePage("ai"); sessionStorage.setItem("coach:live-tab", "ai"); }}>AI Insights</button>
         </div>
-      {!gameId && activePage === "ai" && (
-        <div className="idle-screen">
-          <div className="idle-screen-icon">||</div>
-          <p className="idle-screen-title">No Active Game</p>
-          <p className="idle-screen-sub">Start a game on the Live tab to enable AI insights.</p>
-        </div>
-      )}
-      {!gameId && activePage === "live" && (
-        <section className="card settings-section-card">
-          <div className="stats-page-card-head">
-            <div>
-              <h3>Start New Game</h3>
-              <p className="settings-section-desc">Set up your game connection, then give the operator your pairing code to begin live tracking.</p>
-            </div>
-          </div>
-
-          {/* Your Team */}
-          <div style={{ marginBottom: "1rem" }}>
-            <p className="settings-section-label">Your Team</p>
-            {rosterTeams.length === 0 && (
-              <p className="settings-section-desc">No teams yet â€” add one in <strong>Settings</strong> first.</p>
-            )}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
-              {rosterTeams.map(t => {
-                const isSelected = newGameMyTeamId === t.id;
-                const color = normalizeTeamColor(t.teamColor) ?? "#4f8cff";
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className="shell-nav-link"
-                    style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
-                    onClick={() => {
-                      setNewGameMyTeamId(t.id);
-                      setNewGameStartingLineup([]);
-                    }}
-                  >
-                    {t.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Starting lineup */}
-          <div style={{ marginBottom: "1rem" }}>
-            <p className="settings-section-label">Starting Lineup (required)</p>
-            <p className="settings-section-desc" style={{ marginTop: "0.35rem" }}>
-              Select exactly 5 players for tip-off. Selected: {newGameStartingLineup.length}/5
-            </p>
-            {(() => {
-              const selectedTeam = rosterTeams.find((team) => team.id === newGameMyTeamId);
-              if (!newGameMyTeamId) {
-                return <p className="settings-section-desc" style={{ marginTop: "0.5rem" }}>Pick your team first.</p>;
-              }
-              if (!selectedTeam || selectedTeam.players.length === 0) {
-                return <p className="settings-section-desc" style={{ marginTop: "0.5rem" }}>No players on this roster yet. Add players in Settings.</p>;
-              }
-
-              return (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.6rem" }}>
-                  {selectedTeam.players.map((player) => {
-                    const isSelected = newGameStartingLineup.includes(player.id);
-                    const isDisabled = !isSelected && newGameStartingLineup.length >= 5;
-                    return (
-                      <button
-                        key={player.id}
-                        type="button"
-                        className="shell-nav-link"
-                        disabled={isDisabled}
-                        onClick={() => {
-                          setNewGameStartingLineup((previous) => {
-                            if (previous.includes(player.id)) {
-                              return previous.filter((playerId) => playerId !== player.id);
-                            }
-                            if (previous.length >= 5) {
-                              return previous;
-                            }
-                            return [...previous, player.id];
-                          });
-                        }}
-                        style={isSelected
-                          ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" }
-                          : undefined}
-                        title={`${player.number} ${player.name}`}
-                      >
-                        #{player.number} {player.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Opponent + Side */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", alignItems: "end", marginBottom: "1rem" }}>
-            <div>
-              <p className="settings-section-label">Opponent</p>
-              <input
-                value={newGameOpponent}
-                onChange={e => setNewGameOpponent(e.target.value)}
-                placeholder="e.g. Knappa"
-                style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
-              />
-            </div>
-            <div>
-              <p className="settings-section-label">Side</p>
-              <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
-                <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("home")} style={newGameVcSide === "home" ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" } : undefined}>Home</button>
-                <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("away")} style={newGameVcSide === "away" ? { borderColor: "#f87171", color: "#f87171", background: "rgba(248,113,113,0.1)" } : undefined}>Away</button>
-              </div>
-            </div>
-          </div>
-
-          {/* Opponent color */}
-          <div style={{ marginBottom: "1.5rem" }}>
-            <p className="settings-section-label">Opponent Jersey Color</p>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem", alignItems: "center" }}>
-              {["#f87171","#f59e0b","#22c55e","#4f8cff","#a855f7","#14b8a6","#ffffff"].map(color => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => setNewGameOppColor(color)}
-                  style={{ width: 28, height: 28, borderRadius: "50%", background: color, border: newGameOppColor === color ? "2px solid white" : "2px solid rgba(255,255,255,0.2)", cursor: "pointer", flexShrink: 0 }}
-                  title={color}
-                />
-              ))}
-              <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} style={{ height: 28, width: 36, borderRadius: 8, padding: "0 2px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.2)", background: "transparent" }} />
-            </div>
-          </div>
-
-          {/* Launch button */}
-          <button
-            type="button"
-            className="shell-nav-link shell-nav-link-active"
-            disabled={!newGameMyTeamId || !newGameOpponent.trim() || newGameStartingLineup.length !== 5 || isLaunchingGame}
-            style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim() || newGameStartingLineup.length !== 5 || isLaunchingGame) ? 0.45 : 1 }}
-            onClick={() => void launchGame()}
-          >
-            {isLaunchingGame ? "Starting..." : "Launch Game"}
-          </button>
-          {newGameStartingLineup.length !== 5 && (
-            <p className="settings-section-desc" style={{ marginBottom: "1rem" }}>
-              Select all 5 starters to launch the game.
-            </p>
-          )}
-          <p className="settings-section-desc">{dashboardStatus}</p>
-
-          {/* Pairing code */}
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
-            <div className="stats-page-card-head" style={{ paddingBottom: "0.75rem" }}>
-              <div>
-                <h3 style={{ fontSize: "0.95rem" }}>Operator Pairing Code</h3>
-                <p className="settings-section-desc">Have the iPad operator enter this code to sync setup.</p>
-              </div>
-              <div className="settings-header-actions">
-                <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionId)}>Copy Code</button>
-                <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionId(generateConnectionCode())}>New Code</button>
-              </div>
-            </div>
-            <div className="settings-pairing-display">
-              <span className="settings-pairing-code">{connectionId}</span>
-              <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
-            </div>
-          </div>
-        </section>
-      )}
-      {gameId && activePage === "live" && <>
-      <section className="card settings-section-card">
-        <div className="stats-page-card-head">
-          <div>
-            <h3>Live Game Controls</h3>
-            <p className="settings-section-desc">Game ID: {gameId}</p>
-          </div>
-          <div className="settings-header-actions">
-            <button
-              type="button"
-              className="shell-nav-link danger-btn"
-              onClick={() => void endGameFromDashboard()}
-              disabled={isEndingGame}
-            >
-              {isEndingGame ? "Ending..." : "End Game"}
-            </button>
-          </div>
-        </div>
-        {endGameStatus ? <p className="settings-section-desc">{endGameStatus}</p> : null}
-      </section>
-
-      <section className="card">
-        <h2>Scoreboard</h2>
-        {isLoading && (
-          <div className="loading-indicator">
-            <div className="loading-spinner" />
-            <p className="loading-text">{dashboardStatus}</p>
+        {!gameId && activePage === "ai" && (
+          <div className="idle-screen">
+            <div className="idle-screen-icon">||</div>
+            <p className="idle-screen-title">No Active Game</p>
+            <p className="idle-screen-sub">Start a game on the Live tab to enable AI insights.</p>
           </div>
         )}
-        {teams.length === 0 ? <p>No live game state yet.</p> : null}
-        <div className="scoreboard">
-          {teams.map((teamId, index) => {
-            const scoreboardLineup = getScoreboardLineup(teamId);
-            const teamColor = teamColorById[canonicalTeamId(teamId)];
-            const td = aggregatedTeams[teamId] ?? aggregatedTeams[canonicalTeamId(teamId)];
-            const fgMade = td?.teamStats.shooting.fgMade ?? 0;
-            const fgAtt = td?.teamStats.shooting.fgAttempts ?? 0;
-            const fgMade3 = td?.teamStats.shooting.fgMade3 ?? 0;
-            const fgAtt3 = td?.teamStats.shooting.fgAttempts3 ?? 0;
-            const ftMade = td?.teamStats.shooting.ftMade ?? 0;
-            const ftAtt = td?.teamStats.shooting.ftAttempts ?? 0;
-            const fgPct = fgAtt > 0 ? Math.round((fgMade / fgAtt) * 100) : null;
-            const ftPct = ftAtt > 0 ? Math.round((ftMade / ftAtt) * 100) : null;
-            const efgPct = fgAtt > 0 ? Math.round(((fgMade + 0.5 * fgMade3) / fgAtt) * 100) : null;
-            const score = td?.score ?? 0;
-            const possessions = td?.possessions ?? 0;
-            const ppp = possessions >= 5 ? (score / possessions).toFixed(2) : null;
-            const ftRate = fgAtt > 0 ? Math.round((ftAtt / fgAtt) * 100) : null;
-            const totalFouls = td?.teamStats.fouls ?? 0;
-            const periodFouls = td?.periodFouls ?? 0;
-            const timeoutsUsed = td?.timeoutsUsed ?? 0;
-            const TOTAL_TIMEOUTS = 5;
-            const timeoutsLeft = Math.max(0, TOTAL_TIMEOUTS - timeoutsUsed);
-            const inBonus = td?.bonus ?? false;
-            const rebounds = (td?.teamStats.reboundsOff ?? 0) + (td?.teamStats.reboundsDef ?? 0);
-            const foulUrgency = periodFouls >= 5 ? "foul-danger" : periodFouls >= 4 ? "foul-warn" : periodFouls >= 3 ? "foul-caution" : "";
-            return (
-              <article
-                key={teamId}
-                className={`score-item ${index === 0 ? "score-item-home" : "score-item-away"}`}
-                style={teamColor ? {
-                  background: `linear-gradient(180deg, ${teamColor}40, ${teamColor}18)`,
-                  borderColor: `${teamColor}99`,
-                } : undefined}
-              >
-                {/* Header */}
-                <header className="score-item-header">
-                  <div className="score-item-title">
-                    <h3>{displayTeamName(teamId)}</h3>
-                    {index === 0 && <span className="your-team-badge">YOUR TEAM</span>}
-                  </div>
-                  <div className="score-block">
-                    <p className="score">{td?.score ?? 0}</p>
-                    <span className="score-period-label">{state?.currentPeriod ?? "-"}</span>
-                  </div>
-                </header>
-
-                {/* Fouls + Bonus + Timeouts row */}
-                <div className="sb-urgency-row">
-                  <div className={`sb-foul-block ${foulUrgency}`}>
-                    <span className="sb-urgency-label">FOULS</span>
-                    <div className="sb-foul-pips">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <span
-                          key={i}
-                          className={`sb-foul-pip ${i < periodFouls ? "sb-foul-pip-on" : ""} ${periodFouls >= 5 && i < periodFouls ? "sb-foul-pip-danger" : periodFouls >= 4 && i < periodFouls ? "sb-foul-pip-warn" : ""}`}
-                        />
-                      ))}
-                      <span className="sb-foul-count">{periodFouls}/5</span>
-                    </div>
-                    <span className="sb-foul-game-total">{totalFouls} game</span>
-                  </div>
-
-                  <div className={`sb-bonus-block ${inBonus ? "sb-bonus-on" : ""}`}>
-                    <span className="sb-urgency-label">BONUS</span>
-                    <span className="sb-bonus-value">{inBonus ? "IN BONUS" : "OFF"}</span>
-                  </div>
-
-                  <div className="sb-timeout-block">
-                    <span className="sb-urgency-label">TIMEOUTS</span>
-                    <div className="sb-timeout-pips">
-                      {Array.from({ length: TOTAL_TIMEOUTS }).map((_, i) => (
-                        <span
-                          key={i}
-                          className={`sb-timeout-pip ${i < timeoutsLeft ? "sb-timeout-pip-on" : "sb-timeout-pip-used"}`}
-                        />
-                      ))}
-                    </div>
-                    <span className="sb-timeout-count">{timeoutsLeft} left</span>
-                  </div>
-                </div>
-
-                {/* Quick-stat grid */}
-                <div className="sb-stat-grid">
-                  <div className="sb-stat-cell">
-                    <span className="sb-stat-label">FG</span>
-                    <span className="sb-stat-value">{fgMade}/{fgAtt}</span>
-                    {fgPct !== null && <span className="sb-stat-pct">{fgPct}%</span>}
-                  </div>
-                  <div className="sb-stat-cell" title="Effective field goal % â€” weights 3-pointers: (FGM + 0.5Ã—3PM) / FGA">
-                    <span className="sb-stat-label">eFG%</span>
-                    <span className="sb-stat-value">{efgPct !== null ? `${efgPct}%` : "â€”"}</span>
-                    <span className="sb-stat-pct">{fgMade3}/{fgAtt3} 3PT</span>
-                  </div>
-                  <div className="sb-stat-cell">
-                    <span className="sb-stat-label">FT</span>
-                    <span className="sb-stat-value">{ftMade}/{ftAtt}</span>
-                    {ftPct !== null && <span className="sb-stat-pct">{ftPct}%</span>}
-                  </div>
-                  <div className="sb-stat-cell">
-                    <span className="sb-stat-label">REB</span>
-                    <span className="sb-stat-value">{rebounds}</span>
-                    <span className="sb-stat-pct">{td?.teamStats.reboundsOff ?? 0}O / {td?.teamStats.reboundsDef ?? 0}D</span>
-                  </div>
-                  <div className="sb-stat-cell">
-                    <span className="sb-stat-label">TO</span>
-                    <span className="sb-stat-value">{td?.teamStats.turnovers ?? 0}</span>
-                  </div>
-                  <div className="sb-stat-cell" title="Points per possession">
-                    <span className="sb-stat-label">PPP</span>
-                    <span className="sb-stat-value">{ppp ?? "â€”"}</span>
-                    <span className="sb-stat-pct">{possessions} poss</span>
-                  </div>
-                  <div className="sb-stat-cell" title="Free throw attempts per field goal attempt">
-                    <span className="sb-stat-label">FT Rate</span>
-                    <span className="sb-stat-value">{ftRate !== null ? `${ftRate}%` : "â€”"}</span>
-                    <span className="sb-stat-pct">{ftAtt} FTA</span>
-                  </div>
-                </div>
-
-                {/* Lineup */}
-                <div className="sb-lineup-row">
-                  <span className="sb-section-label">ON COURT</span>
-                  <div className="sb-lineup-chips">
-                    {scoreboardLineup.playerIds.length > 0
-                      ? scoreboardLineup.playerIds.map((playerId) => (
-                          <span key={playerId} className="sb-player-chip">
-                            {displayPlayerName(teamId, playerId)}
-                          </span>
-                        ))
-                      : <span className="sb-lineup-empty">not set</span>}
-                    {scoreboardLineup.isEstimated && <span className="sb-estimated-tag">est.</span>}
-                  </div>
-                </div>
-
-                {/* Leaders */}
-                <div className="sb-leaders-row">
-                  {leadersByTeam[teamId]?.scoringLeader ? (
-                    <div className="sb-leader-item sb-leader-scorer">
-                      <span className="sb-leader-icon">*</span>
-                      <span>
-                        {displayPlayerName(teamId, leadersByTeam[teamId].scoringLeader.playerId)}
-                        <strong> {leadersByTeam[teamId].scoringLeader?.points} pts</strong>
-                      </span>
-                    </div>
-                  ) : null}
-                  {leadersByTeam[teamId]?.foulLeader ? (
-                    <div className={`sb-leader-item sb-leader-fouls ${leadersByTeam[teamId].foulLeader.fouls >= 4 ? "sb-leader-fouls-danger" : ""}`}>
-                      <span className="sb-leader-icon">!</span>
-                      <span>
-                        {formatFoulTroubleLabel(
-                          displayPlayerName(teamId, leadersByTeam[teamId].foulLeader.playerId),
-                          leadersByTeam[teamId].foulLeader.fouls
-                        )}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-        {teams.length >= 2 ? (() => {
-          const homeData = aggregatedTeams[canonicalSideIds.homeId];
-          const awayData = aggregatedTeams[canonicalSideIds.awayId];
-          if (!homeData || !awayData) return null;
-          const homeAssists = Object.values(homeData.playerStats).reduce((s, p) => s + (p.assists ?? 0), 0);
-          const awayAssists = Object.values(awayData.playerStats).reduce((s, p) => s + (p.assists ?? 0), 0);
-          type CompRow = { label: string; home: number | string; away: number | string; higherBetter?: boolean; lowerBetter?: boolean };
-          const rows: CompRow[] = [
-            { label: "Score", home: homeData.score, away: awayData.score, higherBetter: true },
-            {
-              label: "FG",
-              home: `${homeData.teamStats.shooting.fgMade}-${homeData.teamStats.shooting.fgAttempts}`,
-              away: `${awayData.teamStats.shooting.fgMade}-${awayData.teamStats.shooting.fgAttempts}`,
-              higherBetter: true,
-            },
-            {
-              label: "FT",
-              home: `${homeData.teamStats.shooting.ftMade}-${homeData.teamStats.shooting.ftAttempts}`,
-              away: `${awayData.teamStats.shooting.ftMade}-${awayData.teamStats.shooting.ftAttempts}`,
-              higherBetter: true,
-            },
-            { label: "REB", home: homeData.teamStats.reboundsOff + homeData.teamStats.reboundsDef, away: awayData.teamStats.reboundsOff + awayData.teamStats.reboundsDef, higherBetter: true },
-            { label: "AST", home: homeAssists, away: awayAssists, higherBetter: true },
-            { label: "TO",  home: homeData.teamStats.turnovers, away: awayData.teamStats.turnovers, lowerBetter: true },
-            { label: "PF",  home: homeData.teamStats.fouls,     away: awayData.teamStats.fouls,     lowerBetter: true },
-          ];
-          return (
-            <section key="team-comparison" className="card team-comparison-card">
-              <h2>Team Comparison</h2>
-              <table className="team-comparison-table">
-                <thead>
-                  <tr>
-                    <th className="tc-stat-col">Stat</th>
-                    <th>{displayTeamName(canonicalSideIds.homeId)}</th>
-                    <th>{displayTeamName(canonicalSideIds.awayId)}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => {
-                    const hNum = typeof row.home === "number" ? row.home : null;
-                    const aNum = typeof row.away === "number" ? row.away : null;
-                    let hClass = "";
-                    let aClass = "";
-                    if (hNum !== null && aNum !== null) {
-                      if (row.higherBetter) {
-                        if (hNum > aNum) hClass = "tc-lead";
-                        else if (aNum > hNum) aClass = "tc-lead";
-                      } else if (row.lowerBetter && hNum !== aNum) {
-                        if (hNum < aNum) hClass = "tc-lead";
-                        else aClass = "tc-lead";
-                      }
-                    }
-                    return (
-                      <tr key={row.label}>
-                        <td className="tc-stat-col">{row.label}</td>
-                        <td className={hClass}>{row.home}</td>
-                        <td className={aClass}>{row.away}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </section>
-          );
-        })() : null}
-
-      <section className="card box-score-card">
-        <div className="box-score-header">
-          <h2>Box Score</h2>
-            {boxScorePeriods.length > 1 ? (
-              <div className="replay-scrubber" aria-label="Game timeline scrubber">
-                {boxScorePeriods.map((period, idx) => {
-                  const isLivePeriod = period === state?.currentPeriod;
-                  const activeUpToIdx = boxScoreFilter.length > 0
-                    ? Math.max(...boxScoreFilter.map((f) => boxScorePeriods.indexOf(f)))
-                    : boxScorePeriods.length - 1;
-                  const inRange = idx <= activeUpToIdx;
-                  const isSelected = boxScoreFilter.length > 0 && idx === activeUpToIdx;
-                  return (
-                    <>
-                      {idx > 0 && (
-                        <div
-                          key={`seg-${period}`}
-                          className={`replay-scrubber-segment${inRange ? " scrubber-segment-active" : ""}`}
-                        />
-                      )}
-                      <button
-                        key={period}
-                        type="button"
-                        className={`replay-scrubber-stop${isLivePeriod ? " scrubber-stop-live" : ""}${isSelected ? " scrubber-stop-selected" : inRange ? " scrubber-stop-active" : ""}`}
-                        title={`${boxScoreFilter.length > 0 && idx === activeUpToIdx ? "Showing up to " : "View up to "}${period}`}
-                        onClick={() => {
-                          const upTo = boxScorePeriods.slice(0, idx + 1);
-                          setBoxScoreFilter(upTo.length === boxScorePeriods.length ? [] : upTo);
-                        }}
-                      >
-                        <span className="scrubber-stop-dot" />
-                        <span className="scrubber-stop-label">{period}</span>
-                        {isLivePeriod && <span className="scrubber-live-pip" aria-label="Live" />}
-                      </button>
-                    </>
-                  );
-                })}
-              </div>
-            ) : null}
-
-          <div className="box-score-filter-group" aria-label="Box score filter">
-            <button
-              type="button"
-              className={`box-score-filter-chip${boxScoreFilter.length === 0 ? " box-score-filter-chip-active" : ""}`}
-              onClick={() => setBoxScoreFilter([])}
-            >Full Game</button>
-            {boxScorePeriods.map((period) => (
-              <button
-                key={period}
-                type="button"
-                className={`box-score-filter-chip${boxScoreFilter.includes(period) ? " box-score-filter-chip-active" : ""}`}
-                onClick={() => setBoxScoreFilter(prev =>
-                  prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
-                )}
-              >{period}</button>
-            ))}
-          </div>
-        </div>
-
-        {teams.map((teamId) => {
-          const teamTotals = boxScoreByTeam[teamId]?.totals ?? emptyBoxScoreTotals();
-          const teamIdLower = teamId.toLowerCase();
-          const playerLines = Object.values(boxScoreByTeam[teamId]?.players ?? {})
-            .filter((line) => {
-              // Skip team-level placeholder IDs that appear when no specific player is selected.
-              const nId = line.playerId.toLowerCase();
-              return nId !== "home" && nId !== "away"
-                && nId !== "home-team" && nId !== "away-team"
-                && nId !== "team-home" && nId !== "team-away"
-                && nId !== teamIdLower;
-            })
-            .map((line) => {
-              // Search all roster teams by player ID to handle canonical team ID mismatches.
-              const rosterPlayer = rosterTeams.flatMap((t) => t.players).find((p) => p.id === line.playerId);
-              return {
-                ...line,
-                name: rosterPlayer?.name ?? displayPlayerName(teamId, line.playerId),
-                number: rosterPlayer?.number ?? "",
-              };
-            })
-            .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));
-
-          // Determine if this is the opponent team (not our team)
-          const canonicalId = canonicalTeamId(teamId);
-          const ourRawSideId = setupNames.vcSide === "away" ? state?.awayTeamId : state?.homeTeamId;
-          const isOurTeam = setupNames.myTeamId !== ""
-            ? (teamId === setupNames.myTeamId ||
-               canonicalId === setupNames.myTeamId ||
-               canonicalTeamId(setupNames.myTeamId) === canonicalId)
-            : ((teams.length > 0 && teamId === teams[0]) ||
-               (Boolean(ourRawSideId) && teamId === ourRawSideId));
-          const isOpponent = !isOurTeam;
-
-          // Show team totals unless it's opponent with tracked players
-          const showTeamTotals = !isOpponent || (isOpponent && playerLines.length === 0);
-
-          return (
-            <section key={`box-${teamId}`} className="box-score-team-section">
-              <h3>{displayTeamName(teamId)}</h3>
-              <div className="box-score-table-wrap">
-                <table className="box-score-table">
-                  <thead>
-                    <tr>
-                      <th>Player</th>
-                      <th>PTS</th>
-                      <th>FG</th>
-                      <th>FT</th>
-                      <th>REB</th>
-                      <th>AST</th>
-                      <th>STL</th>
-                      <th>BLK</th>
-                      <th>TO</th>
-                      <th>PF</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {playerLines.length === 0 ? (
-                      <tr>
-                        <td colSpan={10} className="box-score-empty">
-                          No players added.
-                        </td>
-                      </tr>
-                    ) : (
-                      playerLines.map((line) => {
-                        const rebounds = line.reboundsDef + line.reboundsOff;
-                        const playerLabel = line.number ? `${line.number} ${line.name}` : line.name;
-                        return (
-                          <tr
-                            key={`${teamId}-${line.playerId}`}
-                            className={line.fouls >= 4 ? "foul-row-danger" : line.fouls >= 3 ? "foul-row-warning" : undefined}
-                          >
-                            <td>{playerLabel}</td>
-                            <td>{line.points}</td>
-                            <td>{line.fgMade}-{line.fgAttempts}</td>
-                            <td>{line.ftMade}-{line.ftAttempts}</td>
-                            <td>{rebounds}</td>
-                            <td>{line.assists}</td>
-                            <td>{line.steals}</td>
-                            <td>{line.blocks}</td>
-                            <td>{line.turnovers}</td>
-                            <td>
-                              <span className={`foul-badge${line.fouls >= 5 ? " foul-badge-out" : line.fouls >= 4 ? " foul-badge-danger" : line.fouls >= 3 ? " foul-badge-warn" : " foul-badge-safe"}`}>
-                                {line.fouls}{line.fouls >= 5 ? " OUT" : line.fouls >= 4 ? " !" : ""}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                  {showTeamTotals ? (
-                    <tfoot>
-                      <tr>
-                        <td>Team Totals</td>
-                        <td>{teamTotals.points}</td>
-                        <td>{teamTotals.fgMade}-{teamTotals.fgAttempts}</td>
-                        <td>{teamTotals.ftMade}-{teamTotals.ftAttempts}</td>
-                        <td>{teamTotals.reboundsDef + teamTotals.reboundsOff}</td>
-                        <td>{teamTotals.assists}</td>
-                        <td>{teamTotals.steals}</td>
-                        <td>{teamTotals.blocks}</td>
-                        <td>{teamTotals.turnovers}</td>
-                        <td>{teamTotals.fouls}</td>
-                      </tr>
-                    </tfoot>
-                  ) : null}
-                </table>
-              </div>
-            </section>
-          );
-        })}
-      </section>
-
-      {lineupUnitStats && lineupUnitStats.length > 0 && (
-        <section className="card">
-          <h2>Lineup +/-</h2>
-          <p className="insight-context-note" style={{ marginBottom: "0.75rem" }}>
-            Points scored for / against while each 5-man unit was on the floor.
-          </p>
-          <div className="lineup-unit-list">
-            {lineupUnitStats.map((unit) => {
-              const pmClass = unit.plusMinus > 0 ? "lineup-pm-pos" : unit.plusMinus < 0 ? "lineup-pm-neg" : "lineup-pm-zero";
-              return (
-                <div key={unit.lineupKey} className="lineup-unit-row">
-                  <div className="lineup-unit-players">
-                    {unit.playerIds.map((pid) => (
-                      <span key={pid} className="lineup-unit-chip">
-                        {displayPlayerName(coachedTeamId, pid)}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="lineup-unit-scores">
-                    <span className="lineup-unit-score-for">{unit.pointsFor}</span>
-                    <span className="lineup-unit-score-sep">â€“</span>
-                    <span className="lineup-unit-score-against">{unit.pointsAgainst}</span>
-                    <span className={`lineup-unit-pm ${pmClass}`}>
-                      {unit.plusMinus > 0 ? `+${unit.plusMinus}` : unit.plusMinus}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      <section className="card">
-        <h2>Live Insights</h2>
-        {!hasGameStarted ? (
-          <p className="insight-context-note">Game has not started yet. Insights will appear once play begins.</p>
-        ) : null}
-
-        {hasGameStarted && insights.length === 0 ? (
-          <p className="insight-context-note">No live calls yet. Capture a few more possessions.</p>
-        ) : null}
-        {aiInsights.length > 0 || (hasGameStarted && gameId) || aiRefreshError ? (
+        {!gameId && activePage === "live" && (
+          <SetupGameCard
+            rosterTeams={rosterTeams}
+            newGameMyTeamId={newGameMyTeamId}
+            setNewGameMyTeamId={setNewGameMyTeamId}
+            newGameOpponent={newGameOpponent}
+            setNewGameOpponent={setNewGameOpponent}
+            newGameVcSide={newGameVcSide}
+            setNewGameVcSide={setNewGameVcSide}
+            newGameOppColor={newGameOppColor}
+            setNewGameOppColor={setNewGameOppColor}
+            newGameStartingLineup={newGameStartingLineup}
+            setNewGameStartingLineup={setNewGameStartingLineup}
+            isLaunchingGame={isLaunchingGame}
+            launchGame={launchGame}
+            dashboardStatus={dashboardStatus}
+            connectionId={connectionId}
+            setConnectionId={setConnectionId}
+          />
+        )}
+        {gameId && activePage === "live" && (
           <>
-            <div className="insight-subhead-row">
-              <h3 className="insight-subhead">AI Bench Calls</h3>
-              <button
-                className="secondary insight-refresh-button"
-                onClick={() => void refreshAiBenchCalls()}
-                disabled={!gameId || isRefreshingAiInsights}
-              >
-                {isRefreshingAiInsights ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
-            {aiRefreshError ? <p className="insight-context-note insight-context-note-error">{aiRefreshError}</p> : null}
-            {aiInsights.length > 0 ? (
-              <div className="insight-list">
-                {aiInsights.map((insight) => (
-                  <article key={insight.id} className="insight-item insight-item-ai">
-                    <div className="insight-title-row">
-                      <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                      <div className="insight-title-meta">
-                        <span className="insight-badge insight-badge-ai">AI</span>
-                        <span className="insight-age">{formatInsightAge(insight.createdAtIso)}</span>
-                      </div>
-                    </div>
-                    <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
-                    <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="insight-context-note">Refresh AI bench calls to load the latest suggestions.</p>
-            )}
-          </>
-        ) : null}
-
-        {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness", "depth_warning"].includes(i.type)).length > 0 ? (
-          <>
-            <h3 className="insight-subhead insight-subhead-urgent">
-              <span>Urgent Coaching Calls</span>
-              <span className="insight-count-badge insight-count-badge-urgent">
-                {rulesInsights.filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness", "depth_warning"].includes(i.type)).length}
-              </span>
-            </h3>
-            <div className="insight-list-stack">
-              {rulesInsights
-                .filter(i => ["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness", "depth_warning"].includes(i.type))
-                .map((insight) => (
-                  <article
-                    key={insight.id}
-                    className={`insight-item ${getRuleInsightImportanceClass(insight)}`}
+            <section className="card settings-section-card">
+              <div className="stats-page-card-head">
+                <div>
+                  <h3>Live Game Controls</h3>
+                  <p className="settings-section-desc">Game ID: {gameId}</p>
+                </div>
+                <div className="settings-header-actions">
+                  <button
+                    type="button"
+                    className="shell-nav-link danger-btn"
+                    onClick={() => void endGameFromDashboard()}
+                    disabled={isEndingGame}
                   >
-                    <div className="insight-title-row">
-                      <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                      <div className="insight-title-meta">
-                        <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
-                          RULE
-                        </span>
-                        <span className="insight-age">{formatInsightAge(insight.createdAtIso)}</span>
-                      </div>
-                    </div>
-                    <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
-                    <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
-                  </article>
-                ))}
-            </div>
-          </>
-        ) : null}
-
-        {rulesInsights.filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type)).length > 0 ? (
-          <>
-            <h3 className="insight-subhead insight-subhead-important">System Alerts</h3>
-            <div className="insight-list">
-              {rulesInsights
-                .filter(i => !["sub_suggestion", "timeout_suggestion", "foul_warning", "foul_trouble", "team_foul_warning", "ot_awareness"].includes(i.type))
-                .slice(0, 5)
-                .map((insight) => (
-                  <article
-                    key={insight.id}
-                    className={`insight-item ${getRuleInsightImportanceClass(insight)}`}
+                    {isEndingGame ? "Ending..." : "End Game"}
+                  </button>
+                  <button
+                    type="button"
+                    className="shell-nav-link"
+                    onClick={() => void clearActiveGame("Disconnected.")}
                   >
-                    <div className="insight-title-row">
-                      <h3>{formatInsightTypeLabel(insight.type)}</h3>
-                      <div className="insight-title-meta">
-                        <span className={`insight-badge insight-badge-rules ${getRuleBadgeImportanceClass(insight)}`}>
-                          RULE
-                        </span>
-                        <span className="insight-age">{formatInsightAge(insight.createdAtIso)}</span>
-                      </div>
-                    </div>
-                    <p>{prettifyInsightText(insight.message, insight.relatedTeamId, insight.relatedPlayerId)}</p>
-                    <small>{prettifyInsightText(insight.explanation, insight.relatedTeamId, insight.relatedPlayerId)}</small>
-                  </article>
-                ))}
-            </div>
-          </>
-        ) : null}
-      </section>
-
-      <section className="card">
-        <h2>On-Court Rotation</h2>
-        {!rotationContext ? <p>No lineup data yet.</p> : null}
-        <div className="rotation-grid">
-          {rotationContext ? (
-            <article key={rotationContext.teamId} className="rotation-card">
-              <h3>{displayTeamName(rotationContext.teamId)}</h3>
-
-              <p className="rotation-label">Currently in game</p>
-              {rotationContext.onCourt.length === 0 ? (
-                <p className="text-muted">No active lineup reported.</p>
-              ) : (
-                <>
-                  {rotationContext.isEstimatedLineup ? (
-                    <p className="rotation-estimate-note">
-                      Live lineup feed currently has {rotationContext.liveCount}. Filled remaining spots from activity/roster context.
-                    </p>
-                  ) : null}
-                  <div className="rotation-chip-row">
-                    {rotationContext.onCourt.map((playerId) => (
-                      <span key={`${rotationContext.teamId}-on-${playerId}`} className="rotation-chip rotation-chip-on">
-                        {displayPlayerName(rotationContext.teamId, playerId)}
-                      </span>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <p className="rotation-label">Sub context</p>
-              {rotationContext.watchNotes.length === 0 ? (
-                <p className="text-muted">No urgent substitution pressure detected.</p>
-              ) : (
-                <div className="stack-list">
-                  {rotationContext.watchNotes.map((note) => (
-                    <p key={`${rotationContext.teamId}-${note.playerId}-${note.reason}`} className={`rotation-note rotation-note-${note.level}`}>
-                      <strong>{displayPlayerName(rotationContext.teamId, note.playerId)}:</strong> {note.reason}
-                    </p>
-                  ))}
+                    Leave Session
+                  </button>
                 </div>
-              )}
-
-              <p className="rotation-label">Available bench</p>
-              {rotationContext.bench.length === 0 ? (
-                <p className="text-muted">No bench list available from roster/state.</p>
-              ) : (
-                <div className="rotation-chip-row">
-                  {rotationContext.bench.map((playerId) => (
-                    <span key={`${rotationContext.teamId}-bench-${playerId}`} className="rotation-chip">
-                      {displayPlayerName(rotationContext.teamId, playerId)}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </article>
-          ) : null}
-        </div>
-      </section>
-
-      </>
-      }
-
-      {gameId && activePage === "ai" && <>
-      <section className="card ai-page-hero">
-        <div>
-          <p className="eyebrow">Game Intelligence</p>
-          <h2>AI Bench Assistant</h2>
-          <p className="text-muted">Live Q&amp;A, sub recommendations, foul danger, and hot-hand context powered by the current game plus previous-game player trends.</p>
-        </div>
-        <div className="ai-page-actions">
-          <button
-            className="secondary insight-refresh-button"
-            onClick={() => void refreshAiBenchCalls()}
-            disabled={!gameId || isRefreshingAiInsights}
-          >
-            {isRefreshingAiInsights ? "Refreshing..." : "Refresh AI Insights"}
-          </button>
-          <button className="secondary" onClick={() => void loadPromptPreview()} disabled={!gameId}>
-            Refresh Context
-          </button>
-        </div>
-      </section>
-
-      <section className="ai-page-layout">
-        <div className="card ai-chat-card">
-          <div className="ai-chat-header">
-            <div>
-              <h2>In-Game Chat</h2>
-              <p className="text-muted">Ask what adjustment to make right now, who should sub, which player is efficient, or what foul risk is building.</p>
-            </div>
-          </div>
-
-          <div className="ai-quick-question-row">
-            {aiQuickQuestions.map((question) => (
-              <button
-                key={question}
-                className="secondary ai-quick-question"
-                onClick={() => void sendAiChat(question)}
-                disabled={!gameId || isSendingAiChat}
-              >
-                {question}
-              </button>
-            ))}
-          </div>
-
-          <div className="ai-chat-thread">
-            {aiChatMessages.length === 0 ? (
-              <p className="ai-chat-empty">No chat yet. Start with a question about subs, foul trouble, efficiency, or late-game decisions.</p>
-            ) : (
-              aiChatMessages.map((message) => (
-                <article key={message.id} className={`ai-chat-bubble ai-chat-bubble-${message.role}`}>
-                  <div className="ai-chat-bubble-label">{message.role === "assistant" ? "Assistant" : "Coach"}</div>
-                  <p>{message.content}</p>
-                </article>
-              ))
-            )}
-          </div>
-
-          <form
-            className="ai-chat-compose"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void sendAiChat();
-            }}
-          >
-            <textarea
-              value={aiChatInput}
-              onChange={(event) => setAiChatInput(event.target.value)}
-              placeholder="Ask AI a live coaching question..."
+              </div>
+              {endGameStatus ? <p className="settings-section-desc">{endGameStatus}</p> : null}
+            </section>
+            <ScoreboardSection
+              isLoading={isLoading}
+              dashboardStatus={dashboardStatus}
+              teams={teams}
+              aggregatedTeams={aggregatedTeams}
+              canonicalTeamId={canonicalTeamId}
+              teamColorById={teamColorById}
+              getScoreboardLineup={getScoreboardLineup}
+              displayTeamName={displayTeamName}
+              displayPlayerName={displayPlayerName}
+              leadersByTeam={leadersByTeam}
+              canonicalSideIds={canonicalSideIds}
+              currentPeriod={state?.currentPeriod}
             />
-            <div className="ai-chat-compose-row">
-              <p className="text-muted ai-chat-status">{aiChatStatus}</p>
-              <button type="submit" disabled={!gameId || isSendingAiChat}>
-                {isSendingAiChat ? "Asking..." : "Ask AI"}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <div className="ai-page-sidebar">
-          <section className="card ai-signal-card-wrap">
-            <h2>Suggested Subs</h2>
-            {aiSubSuggestionCards.length === 0 ? (
-              <p className="text-muted">No immediate sub recommendation right now.</p>
-            ) : (
-              <div className="ai-signal-list">
-                {aiSubSuggestionCards.map((card) => (
-                  <article key={card.id} className={`ai-signal-card ai-signal-card-${card.tone}`}>
-                    <h3>{card.title}</h3>
-                    <p>{card.detail}</p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="card ai-signal-card-wrap">
-            <h2>Foul And Bonus Alerts</h2>
-            {aiFoulAlertCards.length === 0 ? (
-              <p className="text-muted">No major foul or bonus pressure right now.</p>
-            ) : (
-              <div className="ai-signal-list">
-                {aiFoulAlertCards.map((card) => (
-                  <article key={card.id} className={`ai-signal-card ai-signal-card-${card.tone}`}>
-                    <h3>{card.title}</h3>
-                    <p>{card.detail}</p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="card ai-signal-card-wrap">
-            <h2>Hot Hand And Efficiency</h2>
-            {aiEfficiencyCards.length === 0 ? (
-              <p className="text-muted">No clear efficiency edge yet.</p>
-            ) : (
-              <div className="ai-signal-list">
-                {aiEfficiencyCards.map((card) => (
-                  <article key={card.id} className={`ai-signal-card ai-signal-card-${card.tone}`}>
-                    <h3>{card.title}</h3>
-                    <p>{card.detail}</p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="card ai-signal-card-wrap">
-            <h2>Historical Context</h2>
-            <p className="text-muted">{promptPreviewStatus}</p>
-            {historicalPromptContext && historicalPromptContext.toLowerCase().includes("unavailable") && (
-              <p className="text-muted" style={{ color: "var(--color-warning, #d97706)", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
-                âš  Season stats unavailable â€” AI insights rely on live game data only.
-              </p>
-            )}
-            <div className="ai-history-context">
-              {historicalPromptContext && !historicalPromptContext.toLowerCase().includes("unavailable")
-                ? historicalPromptContext
-                : "Historical team and player context will appear here after the AI context refreshes."}
-            </div>
-          </section>
-        </div>
-      </section>
-      </>}
-
-      {/* Game settings now live in the main Settings page within the coach dashboard. */}
-
-    </div>
+            <BoxScoreSection
+              teams={teams}
+              boxScorePeriods={boxScorePeriods}
+              boxScoreFilter={boxScoreFilter}
+              setBoxScoreFilter={setBoxScoreFilter}
+              boxScoreByTeam={boxScoreByTeam}
+              currentPeriod={state?.currentPeriod}
+              displayTeamName={displayTeamName}
+              displayPlayerName={displayPlayerName}
+              rosterTeams={rosterTeams}
+              canonicalTeamId={canonicalTeamId}
+              myTeamId={setupNames.myTeamId}
+              vcSide={setupNames.vcSide}
+              stateHomeTeamId={state?.homeTeamId}
+              stateAwayTeamId={state?.awayTeamId}
+            />
+            <LineupUnitPanel
+              lineupUnitStats={lineupUnitStats}
+              coachedTeamId={coachedTeamId}
+              displayPlayerName={displayPlayerName}
+            />
+            <InsightsPanel
+              gameId={gameId}
+              hasGameStarted={hasGameStarted}
+              insightsCount={insights.length}
+              aiInsights={aiInsights}
+              rulesInsights={rulesInsights}
+              aiRefreshError={aiRefreshError}
+              isRefreshingAiInsights={isRefreshingAiInsights}
+              refreshAiBenchCalls={refreshAiBenchCalls}
+              prettifyInsightText={prettifyInsightText}
+            />
+            <RotationPanel
+              rotationContext={rotationContext}
+              displayTeamName={displayTeamName}
+              displayPlayerName={displayPlayerName}
+            />
+          </>
+        )}
+        {gameId && activePage === "ai" && (
+          <AiTabPanel
+            gameId={gameId}
+            isRefreshingAiInsights={isRefreshingAiInsights}
+            refreshAiBenchCalls={refreshAiBenchCalls}
+            loadPromptPreview={loadPromptPreview}
+            aiQuickQuestions={aiQuickQuestions}
+            sendAiChat={sendAiChat}
+            isSendingAiChat={isSendingAiChat}
+            aiChatMessages={aiChatMessages}
+            aiChatInput={aiChatInput}
+            setAiChatInput={setAiChatInput}
+            aiChatStatus={aiChatStatus}
+            aiSubSuggestionCards={aiSubSuggestionCards}
+            aiFoulAlertCards={aiFoulAlertCards}
+            aiEfficiencyCards={aiEfficiencyCards}
+            promptPreviewStatus={promptPreviewStatus}
+            historicalPromptContext={historicalPromptContext}
+          />
+        )}
+      </div>
     </>
   );
 }
