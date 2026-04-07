@@ -24,6 +24,7 @@ import {
   createGame,
   deleteGame,
   submitGame,
+  isGameSubmitted,
   deleteEvent,
   getGameAiContext,
   getGameAiPromptPreview,
@@ -3759,6 +3760,10 @@ io.on("connection", (socket) => {
 
     socket.join(gameId);
     socket.join(gameRoom(socketSchoolId, gameId));
+    if (isGameSubmitted(gameId, { schoolId: socketSchoolId })) {
+      socket.emit("game:submitted", { gameId });
+      return;
+    }
     const state = getGameState(gameId, { schoolId: socketSchoolId });
     if (state) {
       socket.emit("game:state", state);
@@ -3775,11 +3780,15 @@ io.on("connection", (socket) => {
     if (gameId) {
       socket.join(gameId);
       socket.join(gameRoom(socketSchoolId, gameId));
-      const state = getGameState(gameId, { schoolId: socketSchoolId });
-      if (state) {
-        socket.emit("game:state", state);
-        socket.emit("game:insights", getGameInsights(gameId, { schoolId: socketSchoolId }));
-        void refreshAndBroadcastInsights(socketSchoolId, gameId);
+      if (isGameSubmitted(gameId, { schoolId: socketSchoolId })) {
+        socket.emit("game:submitted", { gameId });
+      } else {
+        const state = getGameState(gameId, { schoolId: socketSchoolId });
+        if (state) {
+          socket.emit("game:state", state);
+          socket.emit("game:insights", getGameInsights(gameId, { schoolId: socketSchoolId }));
+          void refreshAndBroadcastInsights(socketSchoolId, gameId);
+        }
       }
     }
 

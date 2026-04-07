@@ -6,11 +6,18 @@ import {
   type AiPromptPreview,
   type AiChatMessage,
   type AiChatResponse,
+  type Insight,
   defaultCoachAiSettings,
   extractHistoricalContextFromPrompt,
 } from "../helpers/index.js";
 
-export function useCoachAi({ gameId }: { gameId: string }) {
+interface UseCoachAiOptions {
+  gameId: string;
+  setInsights: (insights: Insight[]) => void;
+  setDashboardStatus: (status: string) => void;
+}
+
+export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoachAiOptions) {
   const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
@@ -243,6 +250,42 @@ export function useCoachAi({ gameId }: { gameId: string }) {
     setAiRefreshError("");
   }
 
+  async function refreshAiBenchCalls(): Promise<void> {
+    if (!gameId || isRefreshingAiInsights) {
+      return;
+    }
+
+    // Debounce: ignore refresh requests within 2 seconds of the last request
+    const now = Date.now();
+    const lastRefresh = (aiRefreshDebounceRef.current as unknown as number) || 0;
+    if (now - lastRefresh < 2000) {
+      return;
+    }
+    aiRefreshDebounceRef.current = (now as unknown as ReturnType<typeof setTimeout>);
+
+    setIsRefreshingAiInsights(true);
+    setAiRefreshError("");
+
+    try {
+      const query = new URLSearchParams({ force: "1" });
+      const response = await fetch(`${apiBase}/api/games/${gameId}/insights?${query.toString()}`, {
+        headers: apiKeyHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Insight refresh failed with status ${response.status}`);
+      }
+
+      const payload = (await response.json()) as Insight[];
+      setInsights(payload);
+      setDashboardStatus("AI bench calls refreshed");
+    } catch {
+      setAiRefreshError("Could not refresh AI bench calls right now.");
+    } finally {
+      setIsRefreshingAiInsights(false);
+    }
+  }
+
   return {
     aiRefreshDebounceRef,
     isRefreshingAiInsights, setIsRefreshingAiInsights,
@@ -263,5 +306,6 @@ export function useCoachAi({ gameId }: { gameId: string }) {
     sendAiChat,
     toggleFocusInsight,
     resetAiState,
+    refreshAiBenchCalls,
   };
 }

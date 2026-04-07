@@ -8,24 +8,13 @@ import { ScoreboardSection } from "./ScoreboardSection.js";
 import { BoxScoreSection } from "./BoxScoreSection.js";
 import { LineupUnitPanel } from "./LineupUnitPanel.js";
 import { normalizeTeamColor } from "@bta/shared-schema";
-import { io } from "socket.io-client";
-import { apiBase, API_KEY, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
-import { useRosterManager, useCoachAi, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos } from "./hooks/index.js";
+import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, operatorBase, resolveActiveSchoolId } from "./platform.js";
+import { useRosterManager, useCoachAi, useCoachSocket, useNewGameForm, useBoxScore, useAiCards, useGameTeams, useDisplayHelpers, useGameMemos } from "./hooks/index.js";
 import {
   type GameState, type BoxScoreFilter,
-  mergeGameState,
   ACTIVE_GAME_KEY,
-  normalizeRosterTeams,
   type Insight,
 } from "./helpers/index.js";
-
-interface PresenceStatus {
-  deviceId: string | null;
-  connectionId?: string | null;
-  online: boolean;
-  gameId: string | null;
-  lastSeenIso: string | null;
-}
 
 interface ActiveSetupResponse {
   activeGameId?: string;
@@ -122,9 +111,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
 
   // AI settings, prompt preview, and chat managed by hook
   const {
-    aiRefreshDebounceRef,
-    isRefreshingAiInsights, setIsRefreshingAiInsights,
-    aiRefreshError, setAiRefreshError,
+    isRefreshingAiInsights,
+    aiRefreshError,
     aiSettings,
     aiSettingsDraft, setAiSettingsDraft,
     aiSettingsStatus,
@@ -136,8 +124,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     isSendingAiChat,
     aiChatSuggestions, setAiChatSuggestions,
     historicalPromptContext,
-    saveAiSettings, loadPromptPreview, sendAiChat, toggleFocusInsight, resetAiState,
-  } = useCoachAi({ gameId });
+    saveAiSettings, loadPromptPreview, sendAiChat, toggleFocusInsight, resetAiState, refreshAiBenchCalls,
+  } = useCoachAi({ gameId, setInsights, setDashboardStatus });
   const operatorConsoleUrl = useMemo(() => {
     const params = new URLSearchParams();
     const schoolId = resolveActiveSchoolId();
@@ -251,132 +239,44 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     }
   }, [connectionId, gameId]);
 
-  useEffect(() => {
-    const authSession = readStoredAuthSession();
-    const schoolId = resolveActiveSchoolId();
-    const socket = io(apiBase, {
-      auth: {
-        ...(schoolId ? { schoolId } : {}),
-        ...(API_KEY ? { apiKey: API_KEY } : {}),
-        ...(authSession?.token ? { token: authSession.token } : {}),
-      },
-      extraHeaders: apiKeyHeader()
-    });
-
-    // Poll the presence channel every 5s so the coach dashboard can recover
-    // quickly if the operator console reconnects after a temporary network interruption.
-    let pollInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
-      if (socket.connected) {
-        socket.emit("join:coach", { connectionId, gameId: gameIdRef.current });
-      }
-    }, 5000);
-
-    function stopPoll() {
-      if (pollInterval !== null) {
-        clearInterval(pollInterval);
-        pollInterval = null;
+  function clearActiveGame(statusMessage: string): void {
+    // Persist the outgoing game ID so reconcileGameId won't restore it on the
+    // next page load (endedGameIdsRef is in-memory only; localStorage survives reloads).
+    if (gameId) {
+      endedGameIdsRef.current.add(gameId);
+      try {
+        const prev = JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[];
+        const updated = Array.from(new Set([...prev, gameId])).slice(-20);
+        localStorage.setItem("coach-ended-game-ids", JSON.stringify(updated));
+      } catch {
+        // ignore storage issues
       }
     }
+    setGameId("");
+    setState(null);
+    setInsights([]);
+    resetAiState();
+    setBoxScoreFilter([]);
+    setEndGameStatus("");
+    setIsLoading(false);
+    setActivePage("live");
+    setDashboardStatus(statusMessage);
+  }
 
-    socket.on("connect", () => {
-      setServerConnected(true);
-      const recoveredGameId = gameIdRef.current;
-      socket.emit("join:coach", { connectionId, gameId: recoveredGameId });
-      if (recoveredGameId && !endedGameIdsRef.current.has(recoveredGameId)) {
-        socket.emit("join:game", recoveredGameId);
-      }
-    });
+  useCoachSocket({
+    connectionId,
+    gameIdRef,
+    endedGameIdsRef,
+    clearActiveGame,
+    setGameId,
+    setState,
+    setServerConnected,
+    setDeviceConnected,
+    setDashboardStatus,
+    setInsights,
+    setRosterTeamsFromRemote,
+  });
 
-    socket.on("disconnect", () => {
-      setServerConnected(false);
-      setDeviceConnected(false);
-      setState(null);
-      // Do not clear gameId â€” it is persisted to localStorage so the active
-      // game can be recovered when the socket or page reconnects.
-    });
-
-    socket.emit("join:coach", { connectionId, gameId: gameIdRef.current });
-
-    function handlePresence(status: PresenceStatus) {
-      if (!status) {
-        return;
-      }
-
-      if (!connectionId || status.connectionId !== connectionId) {
-        return;
-      }
-
-      setDeviceConnected(status.online);
-      const activeGameId = status.gameId;
-      if (status.online && activeGameId) {
-        if (endedGameIdsRef.current.has(activeGameId)) {
-          setDashboardStatus("Game ended. Start a new game when ready.");
-          return;
-        }
-        setGameId((current) => (current === activeGameId ? current : activeGameId));
-        socket.emit("join:game", activeGameId);
-      } else {
-        // Only reset to "waiting" state when no game has been launched by the coach.
-        // If the coach already has a game open, keep it â€” the operator may just be
-        // between actions or not yet connected.
-        setGameId((current) => {
-          if (current) return current;
-          return "";
-        });
-        setDashboardStatus(`Waiting for connection ${connectionId}`);
-      }
-    }
-
-    socket.on("presence:status", handlePresence);
-
-    socket.on("game:state", (nextState: GameState) => {
-      if (endedGameIdsRef.current.has(nextState.gameId)) {
-        return;
-      }
-      // Only accept state for the game this dashboard is tracking. Ignore
-      // broadcasts for other games the socket may have inadvertently joined
-      // (e.g. from a stale school-room broadcast or previous session).
-      const currentGameId = gameIdRef.current;
-      if (currentGameId && nextState.gameId !== currentGameId) {
-        return;
-      }
-      stopPoll();
-      setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
-      setState((current) => mergeGameState(current, nextState));
-      setDashboardStatus("Live state synced");
-    });
-
-    socket.on("game:submitted", (payload: unknown) => {
-      const submittedGameId = typeof (payload as { gameId?: unknown })?.gameId === "string"
-        ? (payload as { gameId: string }).gameId
-        : "";
-      if (!submittedGameId) {
-        return;
-      }
-
-      endedGameIdsRef.current.add(submittedGameId);
-      if (gameIdRef.current === submittedGameId) {
-        clearActiveGame("Game ended. Start a new game when ready.");
-      }
-    });
-
-    socket.on("game:insights", (nextInsights: Insight[]) => {
-      setInsights(nextInsights);
-    });
-
-    socket.on("roster:teams", (nextTeams: unknown) => {
-      const teams = normalizeRosterTeams(nextTeams);
-      setRosterTeamsFromRemote(teams);
-    });
-
-    return () => {
-      stopPoll();
-      socket.off("presence:status", handlePresence);
-      socket.off("game:submitted");
-      socket.off("roster:teams");
-      socket.disconnect();
-    };
-  }, [connectionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -607,30 +507,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     });
   }, [gameId]);
 
-  function clearActiveGame(statusMessage: string): void {
-    // Persist the outgoing game ID so reconcileGameId won't restore it on the
-    // next page load (endedGameIdsRef is in-memory only; localStorage survives reloads).
-    if (gameId) {
-      endedGameIdsRef.current.add(gameId);
-      try {
-        const prev = JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[];
-        const updated = Array.from(new Set([...prev, gameId])).slice(-20);
-        localStorage.setItem("coach-ended-game-ids", JSON.stringify(updated));
-      } catch {
-        // ignore storage issues
-      }
-    }
-    setGameId("");
-    setState(null);
-    setInsights([]);
-    resetAiState();
-    setBoxScoreFilter([]);
-    setEndGameStatus("");
-    setIsLoading(false);
-    setActivePage("live");
-    setDashboardStatus(statusMessage);
-  }
-
   async function endGameFromDashboard(): Promise<void> {
     if (!gameId || isEndingGame) {
       return;
@@ -756,42 +632,6 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     displayPlayerName,
     prettifyInsightText,
   });
-
-  async function refreshAiBenchCalls() {
-    if (!gameId || isRefreshingAiInsights) {
-      return;
-    }
-
-    // Debounce: ignore refresh requests within 2 seconds of the last request
-    const now = Date.now();
-    const lastRefresh = (aiRefreshDebounceRef.current as unknown as number) || 0;
-    if (now - lastRefresh < 2000) {
-      return;
-    }
-    aiRefreshDebounceRef.current = (now as unknown as ReturnType<typeof setTimeout>);
-
-    setIsRefreshingAiInsights(true);
-    setAiRefreshError("");
-
-    try {
-      const query = new URLSearchParams({ force: "1" });
-      const response = await fetch(`${apiBase}/api/games/${gameId}/insights?${query.toString()}`, {
-        headers: apiKeyHeader()
-      });
-
-      if (!response.ok) {
-        throw new Error(`Insight refresh failed with status ${response.status}`);
-      }
-
-      const payload = (await response.json()) as Insight[];
-      setInsights(payload);
-      setDashboardStatus("AI bench calls refreshed");
-    } catch {
-      setAiRefreshError("Could not refresh AI bench calls right now.");
-    } finally {
-      setIsRefreshingAiInsights(false);
-    }
-  }
 
   return (
     <>

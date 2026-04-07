@@ -46,7 +46,7 @@ interface Result {
   allEvents: FeedItem[];
   allEventObjs: GameEvent[];
   scores: Scores;
-  pTotals: RunningTotals;
+  pTotals: Record<string, RunningTotals>;
   homeTeamStats: ReturnType<typeof computeTeamStats>;
   awayTeamStats: ReturnType<typeof computeTeamStats>;
   periodTeamFouls: PeriodFouls;

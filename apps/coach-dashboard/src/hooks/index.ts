@@ -1,5 +1,6 @@
 export { useRosterManager } from "./useRosterManager.js";
 export { useCoachAi } from "./useCoachAi.js";
+export { useCoachSocket } from "./useCoachSocket.js";
 export { useNewGameForm } from "./useNewGameForm.js";
 export { useBoxScore } from "./useBoxScore.js";
 export { useAiCards } from "./useAiCards.js";

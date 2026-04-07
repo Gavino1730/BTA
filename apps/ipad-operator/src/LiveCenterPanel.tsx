@@ -33,7 +33,7 @@ interface LiveCenterPanelProps {
   // Events / feed
   allEvents: FeedItem[];
   allPlayers: Player[];
-  pTotals: RunningTotals;
+  pTotals: Record<string, RunningTotals>;
   foulAlerts: Player[];
   // Period
   period: string;

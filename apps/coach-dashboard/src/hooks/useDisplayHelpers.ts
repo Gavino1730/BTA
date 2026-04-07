@@ -47,7 +47,7 @@ export function useDisplayHelpers({
   displayTeamName: (teamId: string) => string;
   displayPlayerName: (teamId: string, playerId: string) => string;
   getScoreboardLineup: (teamId: string) => { playerIds: string[]; isEstimated: boolean };
-  prettifyInsightText: (text: string, relatedTeamId?: string, relatedPlayerId?: string) => string;
+  prettifyInsightText: (text: string, relatedTeamId?: string | null, relatedPlayerId?: string | null) => string;
 } {
   const rosterLabels: RosterLabels = useMemo(() => {
     const teamNameById: Record<string, string> = {};
@@ -230,8 +230,8 @@ export function useDisplayHelpers({
 
   function prettifyInsightText(
     text: string,
-    relatedTeamId?: string,
-    relatedPlayerId?: string
+    relatedTeamId?: string | null,
+    relatedPlayerId?: string | null
   ): string {
     let formatted = text;
 

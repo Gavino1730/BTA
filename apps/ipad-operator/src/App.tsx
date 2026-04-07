@@ -70,6 +70,7 @@ import {
   saveAppData,
   uid,
 } from "./helpers/storage.js";
+import { sanitizeLineup, lineupsEqual } from "./helpers/lineup.js";
 
 function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsView: SettingsView } {
   const h = hash.replace(/^#\/?/, "");
@@ -274,18 +275,6 @@ export function App() {
   // Ref for auto-save interval - always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
-  function sanitizeLineup(lineup: unknown): string[] {
-    if (!Array.isArray(lineup)) return [];
-    return [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5);
-  }
-
-  function lineupsEqual(left: string[], right: string[]): boolean {
-    if (left.length !== right.length) return false;
-    for (let index = 0; index < left.length; index += 1) {
-      if (left[index] !== right[index]) return false;
-    }
-    return true;
-  }
 
 
   // ---- Team identities ----

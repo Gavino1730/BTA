@@ -2450,6 +2450,10 @@ export function submitGame(gameId: string, scope?: TenantScope): boolean {
   return true;
 }
 
+export function isGameSubmitted(gameId: string, scope?: TenantScope): boolean {
+  return getSession(gameId, scope)?.submitted === true;
+}
+
 export function deleteGame(gameId: string, scope?: TenantScope): boolean {
   const removed = sessions.delete(buildGameSessionKey(gameId, resolveSchoolId(scope)));
   if (removed) {

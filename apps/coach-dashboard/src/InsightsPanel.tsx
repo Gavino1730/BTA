@@ -25,7 +25,7 @@ interface Props {
   aiRefreshError: string;
   isRefreshingAiInsights: boolean;
   refreshAiBenchCalls: () => Promise<void>;
-  prettifyInsightText: (text: string, relatedTeamId?: string, relatedPlayerId?: string) => string;
+  prettifyInsightText: (text: string, relatedTeamId?: string | null, relatedPlayerId?: string | null) => string;
 }
 
 export function InsightsPanel({
