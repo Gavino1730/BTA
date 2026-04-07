@@ -3,6 +3,16 @@
  * Centralized to avoid duplication and divergence
  */
 
+/**
+ * Generate a canonical team ID slug from a team name.
+ * Both operator and coach must produce identical IDs for the same name.
+ * Format: "team-{lowercase-slug}" e.g. "team-evil", "team-central-catholic"
+ */
+export function canonicalTeamId(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
+  return `team-${slug}`;
+}
+
 /** Validate and normalize team color hex code. Expands 3-char shorthand to 6-char form. */
 export function normalizeTeamColor(value: unknown): string | undefined {
   if (typeof value !== "string") {

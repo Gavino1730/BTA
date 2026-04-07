@@ -1,997 +1,90 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
+import { SettingsScreen } from "./SettingsScreen.js";
+import { PreGameScreen } from "./PreGameScreen.js";
+import { PostGameScreen } from "./PostGameScreen.js";
+import { GameSummaryModal } from "./GameSummaryModal.js";
+import { ModalRouter, ChainPromptBar } from "./ModalRouter.js";
+import { ScoringPanel } from "./ScoringPanel.js";
+import { RosterPanel } from "./RosterPanel.js";
+import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS } from "./hooks/index.js";
 import {
   getPeriodDefaultClock,
   isOvertimePeriod,
   normalizeTeamColor,
-  type FoulType,
   type GameEvent,
-  type RosterTeam,
-  type ShotZone,
-  type TurnoverType
 } from "@bta/shared-schema";
 import { io } from "socket.io-client";
 import {
-  buildAuthHeaders,
-  convertRosterTeamToAppTeam,
   createTeamViaRealtime,
   deletePlayerViaRealtime,
   deleteTeamViaRealtime,
-  fetchTeamsFromRealtime,
   updatePlayerViaRealtime,
   updateTeamViaRealtime,
 } from "./roster-sync.js";
 
-const defaultHost = window.location.hostname || "localhost";
-const defaultOrigin = window.location.origin || `http://${defaultHost}`;
-
-function isLocalNetworkHost(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase();
-  return normalized === "localhost"
-    || normalized === "0.0.0.0"
-    || normalized === "::1"
-    || normalized === "[::1]"
-    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
-    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
-    || normalized.endsWith(".local")
-    || !normalized.includes(".");
-}
-
-function resolveDefaultAppBase(hostname: string, origin: string, port: number): string {
-  if (isLocalNetworkHost(hostname)) {
-    return `http://${hostname}:${port}`;
-  }
-
-  return origin.replace(/\/+$/, "") || `https://${hostname}`;
-}
-
-const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
-const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
-const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD
-  ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : "");
-const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID ?? "").toString().trim();
-const STORE = "operator-console";
-const OPERATOR_ID_KEY = "operator-console:operator-id";
-const APP_DATA_KEY = "shared-app-data-v3";
-const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
-const DEFAULT_AWAY_TEAM_COLOR = "#f87171";
-const OPERATOR_ALERT_AUTOCLEAR_MS = 12000;
-const OPERATOR_ALERT_AUTOCLEAR_URGENT_MS = 20000;
-const OPPONENT_TRACK_STAT_OPTIONS = [
-  "points",
-  "free_throws",
-  "def_reb",
-  "off_reb",
-  "turnover",
-  "steal",
-  "assist",
-  "block",
-  "foul",
-] as const;
-type OpponentTrackStat = (typeof OPPONENT_TRACK_STAT_OPTIONS)[number];
-
-const TWO_POINT_ZONES = ["rim", "paint", "midrange"] as const;
-const THREE_POINT_ZONES = ["corner_three", "above_break_three"] as const;
-const FOUL_TYPE_OPTIONS: readonly FoulType[] = ["personal", "shooting", "offensive", "technical", "flagrant"] as const;
-const TURNOVER_TYPE_OPTIONS: readonly TurnoverType[] = ["bad_pass", "traveling", "double_dribble", "out_of_bounds", "offensive_foul", "steal", "other"] as const;
-
-function defaultZoneForPoints(points: 2 | 3): ShotZone {
-  return points === 3 ? "above_break_three" : "paint";
-}
-
-function zoneLabel(zone: ShotZone): string {
-  switch (zone) {
-    case "rim": return "Rim";
-    case "paint": return "Paint";
-    case "midrange": return "Mid";
-    case "corner_three": return "Corner 3";
-    case "above_break_three": return "AB 3";
-    default: return zone;
-  }
-}
-
-function foulTypeLabel(foulType: FoulType): string {
-  switch (foulType) {
-    case "personal": return "Personal";
-    case "shooting": return "Shooting";
-    case "offensive": return "Offensive";
-    case "technical": return "Technical";
-    case "flagrant": return "Flagrant";
-    default: return foulType;
-  }
-}
-
-function turnoverTypeLabel(turnoverType: TurnoverType): string {
-  switch (turnoverType) {
-    case "bad_pass": return "Bad Pass";
-    case "traveling": return "Travel";
-    case "double_dribble": return "Double Dribble";
-    case "out_of_bounds": return "Out of Bounds";
-    case "offensive_foul": return "Offensive Foul";
-    case "steal": return "Steal";
-    case "other": return "Other";
-    default: return turnoverType;
-  }
-}
-
-const DEFAULT_OPPONENT_TRACK_STATS: OpponentTrackStat[] = [...OPPONENT_TRACK_STAT_OPTIONS];
-
-function normalizeOpponentTrackStats(value: string[] | undefined): OpponentTrackStat[] {
-  if (!value || value.length === 0) return [...DEFAULT_OPPONENT_TRACK_STATS];
-  const normalized = value
-    .map((x) => x.trim())
-    .filter((x): x is OpponentTrackStat => (OPPONENT_TRACK_STAT_OPTIONS as readonly string[]).includes(x));
-  return normalized.length > 0 ? Array.from(new Set(normalized)) : [...DEFAULT_OPPONENT_TRACK_STATS];
-}
-
-const TEAM_COLOR_OPTIONS = [
-  "#4f8cff",
-  "#22c55e",
-  "#f59e0b",
-  "#a855f7",
-  "#ef4444",
-  "#14b8a6",
-] as const;
-
-type FeedbackTone = "event" | "undo" | "warning";
-
-function getAudioContextCtor(): (new () => AudioContext) | undefined {
-  return window.AudioContext
-    ?? (window as Window & { webkitAudioContext?: new () => AudioContext }).webkitAudioContext;
-}
-
-/** Returns auth headers when a key is configured.
- *  - Local auth tokens (bta.*) are sent as `Authorization: Bearer`.
- *  - Plain API keys are sent as `x-api-key`. */
-function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Record<string, string> {
-  return buildAuthHeaders(setup, { allowBearerToken: true });
-}
-/** Returns RequestInit for a plain GET request, adding the API key header when configured. */
-function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
-  return { headers: apiKeyHeader(setup) };
-}
-
-function normalizeUrlBase(url: string | undefined): string {
-  return (url ?? "").trim().replace(/\/+$/, "");
-}
-
-function isLegacyExportTargetReachableFromCurrentHost(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const appIsLocal = isLocalNetworkHost(window.location.hostname);
-
-    // Prevent mixed-content failures on hosted HTTPS deployments.
-    if (window.location.protocol === "https:" && parsed.protocol !== "https:") {
-      return false;
-    }
-
-    // Hosted deployments should not try to call a local/private endpoint by default.
-    if (!appIsLocal && isLocalNetworkHost(parsed.hostname)) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
-  const apiBase = normalizeUrlBase(setup.apiUrl);
-  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
-  if (!dashboardBase) return false;
-  if (dashboardBase === apiBase) return false;
-  return isLegacyExportTargetReachableFromCurrentHost(dashboardBase);
-}
-
-function buildAiContextFromSetup(setup: GameSetup): {
-  clockEnabled: boolean;
-  opponentStatsLimited: boolean;
-  opponentTrackedStats: string[];
-} {
-  const opponentTrackedStats = normalizeOpponentTrackStats(setup.opponentTrackStats);
-  const limitedSet = new Set<OpponentTrackStat>(["points", "foul"]);
-  const opponentStatsLimited = opponentTrackedStats.every((stat) => limitedSet.has(stat));
-
-  return {
-    clockEnabled: (setup.clockEnabled ?? true) && (setup.trackClock ?? true),
-    opponentStatsLimited,
-    opponentTrackedStats
-  };
-}
-
-function buildCoachViewUrl(
-  gameId: string,
-  setup: {
-    connectionId?: string;
-    myTeamId?: string;
-    myTeamName?: string;
-    opponentName?: string;
-    vcSide?: "home" | "away";
-    homeTeamColor?: string;
-    awayTeamColor?: string;
-    schoolId?: string;
-  }
-): string {
-  const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
-  const params = new URLSearchParams();
-  const normalizedConnectionId = normalizeConnectionId(setup.connectionId);
-  const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
-  if (normalizedConnectionId) {
-    params.set("connectionId", normalizedConnectionId);
-  }
-  if (schoolId) params.set("schoolId", schoolId);
-  if (gameId) params.set("gameId", gameId);
-  if (setup.myTeamId) params.set("myTeamId", setup.myTeamId);
-  if (setup.myTeamName) params.set("myTeamName", setup.myTeamName);
-  if (setup.opponentName) params.set("opponentName", setup.opponentName);
-  if (setup.vcSide) params.set("vcSide", setup.vcSide);
-  if (setup.homeTeamColor) params.set("homeColor", setup.homeTeamColor);
-  if (setup.awayTeamColor) params.set("awayColor", setup.awayTeamColor);
-  return `${base}/?${params.toString()}`;
-}
-
-function normalizeConnectionId(value: string | null | undefined): string {
-  return (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 40);
-}
-
-type TeamSide = "home" | "away";
-type SettingsView = "menu" | "game-setup" | "ipad-tips";
-
-export interface Player {
-  id: string;
-  number: string;
-  name: string;
-  position: string;
-  height?: string;   // e.g. "6'2\""
-  grade?: string;    // e.g. "11"
-}
-
-export interface Team {
-  id: string;
-  name: string;
-  abbreviation: string;
-  teamColor?: string;
-  players: Player[];
-}
-
-export interface GameSetup {
-  gameId: string;
-  connectionId?: string;
-  syncedConnectionId?: string;
-  myTeamId: string;      // the team you are tracking
-  apiUrl: string;        // Realtime API (http://<laptop-ip>:4000)
-  apiKey?: string;       // shared secret sent as x-api-key header
-  schoolId?: string;
-  opponent: string;
-  vcSide: "home" | "away";
-  dashboardUrl: string;
-  clockVisible?: boolean;
-  clockEnabled?: boolean;
-  trackClock?: boolean;
-  trackPossession?: boolean;
-  trackTimeouts?: boolean;
-  opponentTrackStats?: OpponentTrackStat[];
-  homeTeamColor?: string;
-  awayTeamColor?: string;
-  statsGameId?: number;  // returned by dashboard on first successful submit
-  startingLineup?: string[];  // player IDs in the starting lineup
-  /** @deprecated use myTeamId + vcSide instead */
-  homeTeamId?: string;
-  /** @deprecated use myTeamId + vcSide instead */
-  awayTeamId?: string;
-}
-
-export interface AppData {
-  teams: Team[];
-  gameSetup: GameSetup;
-}
-
-interface OperatorLinkResponse {
-  connectionId: string;
-  operatorToken?: string;
-  setup?: {
-    gameId?: string;
-    myTeamId?: string;
-    myTeamName?: string;
-    opponentName?: string;
-    vcSide?: "home" | "away";
-    homeTeamColor?: string;
-    awayTeamColor?: string;
-    dashboardUrl?: string;
-    updatedAtIso?: string;
-  } | null;
-  teams?: RosterTeam[];
-}
-
-const DEFAULT_CONNECTION_SYNC_STATUS = "Paste the coach connection code to sync roster, team setup, and keep a local backup on this iPad.";
-
-function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse): AppData {
-  const convertedTeams = Array.isArray(snapshot.teams)
-    ? snapshot.teams.map(convertRosterTeamToAppTeam)
-    : current.teams;
-  const nextSide = snapshot.setup?.vcSide === "away"
-    ? "away"
-    : snapshot.setup?.vcSide === "home"
-      ? "home"
-      : (current.gameSetup.vcSide ?? "home");
-  const nextTeamId = snapshot.setup?.myTeamId?.trim() || current.gameSetup.myTeamId || convertedTeams[0]?.id || "";
-  const selectedTeam = convertedTeams.find((team) => team.id === nextTeamId);
-  const allowedPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
-  const safeStartingLineup = Array.isArray(current.gameSetup.startingLineup)
-    ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
-    : [];
-
-  const resolvedConnectionId = normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId);
-
-  return {
-    ...current,
-    teams: convertedTeams,
-    gameSetup: {
-      ...current.gameSetup,
-      connectionId: resolvedConnectionId || undefined,
-      syncedConnectionId: resolvedConnectionId || undefined,
-      gameId: snapshot.setup?.gameId?.trim() || current.gameSetup.gameId,
-      myTeamId: nextTeamId,
-      opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
-      vcSide: nextSide,
-      dashboardUrl: snapshot.setup?.dashboardUrl?.trim() || current.gameSetup.dashboardUrl,
-      homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor) ?? current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR,
-      awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor) ?? current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR,
-      startingLineup: safeStartingLineup,
-      // Auto-receive auth token from the server — no manual API key entry needed
-      apiKey: snapshot.operatorToken ?? current.gameSetup.apiKey,
-    },
-  };
-}
-
-function isConnectionReadyForStart(setup: { connectionId?: string; syncedConnectionId?: string }): boolean {
-  const connectionId = normalizeConnectionId(setup.connectionId);
-  const syncedConnectionId = normalizeConnectionId(setup.syncedConnectionId);
-  return Boolean(connectionId) && connectionId === syncedConnectionId;
-}
-
-const DEFAULT_DATA: AppData = {
-  teams: [],
-  gameSetup: {
-    gameId: "game-1",
-    myTeamId: "",
-    apiUrl: DEFAULT_API,
-    schoolId: DEFAULT_SCHOOL_ID,
-    opponent: "",
-    vcSide: "home",
-    dashboardUrl: DEFAULT_STATS_DASHBOARD,
-    clockVisible: true,
-    clockEnabled: true,
-    trackClock: true,
-    trackPossession: true,
-    trackTimeouts: true,
-    opponentTrackStats: [...DEFAULT_OPPONENT_TRACK_STATS],
-    homeTeamColor: DEFAULT_HOME_TEAM_COLOR,
-    awayTeamColor: DEFAULT_AWAY_TEAM_COLOR,
-  },
-};
-
-function withStandardizedTeams(data: AppData): AppData {
-  const teams = data.teams;
-  const hasSelectedTeam = teams.some((t) => t.id === data.gameSetup.myTeamId);
-  const gameSetup = hasSelectedTeam
-    ? data.gameSetup
-    : { ...data.gameSetup, myTeamId: "" };
-  return { ...data, teams, gameSetup };
-}
-
-// ---- Storage helpers ----
-function isValidApiUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    // Only allow http and https protocols
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return false;
-    }
-    // Ensure hostname is not empty
-    return parsed.hostname.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function clearOperatorLocalCache(): void {
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (key === APP_DATA_KEY || key.startsWith(`${STORE}:`) || key.startsWith("operator-console:")) {
-      keysToRemove.push(key);
-    }
-  }
-  keysToRemove.forEach((key) => localStorage.removeItem(key));
-}
-
-function loadAppData(): AppData {
-  // Check URL params first - a QR-code scan may carry config overrides.
-  const qp = new URLSearchParams(window.location.search);
-  const urlSetup: Partial<GameSetup> = {};
-  
-  // Validate API URL from QR code - only allow whitelisted or same-origin URLs
-  const qrApiUrl = qp.get("apiUrl");
-  if (qrApiUrl && isValidApiUrl(qrApiUrl)) {
-    urlSetup.apiUrl = qrApiUrl;
-  }
-  
-  if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
-  if (qp.get("schoolId"))    urlSetup.schoolId    = qp.get("schoolId")!;
-  if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
-  if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
-  if (qp.get("connectionId")) urlSetup.connectionId = normalizeConnectionId(qp.get("connectionId"));
-  if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;
-  if (qp.get("vcSide") === "home" || qp.get("vcSide") === "away") urlSetup.vcSide = qp.get("vcSide") as "home" | "away";
-  if (qp.get("clockVisible") === "1" || qp.get("clockVisible") === "0") urlSetup.clockVisible = qp.get("clockVisible") === "1";
-  if (qp.get("clockEnabled") === "1" || qp.get("clockEnabled") === "0") urlSetup.clockEnabled = qp.get("clockEnabled") === "1";
-  if (qp.get("trackClock") === "1" || qp.get("trackClock") === "0") urlSetup.trackClock = qp.get("trackClock") === "1";
-  if (qp.get("trackPossession") === "1" || qp.get("trackPossession") === "0") urlSetup.trackPossession = qp.get("trackPossession") === "1";
-  if (qp.get("trackTimeouts") === "1" || qp.get("trackTimeouts") === "0") urlSetup.trackTimeouts = qp.get("trackTimeouts") === "1";
-  if (qp.get("opponentTrackStats")) urlSetup.opponentTrackStats = normalizeOpponentTrackStats((qp.get("opponentTrackStats") ?? "").split(","));
-  if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
-  if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
-
-  if (!urlSetup.connectionId) {
-    clearOperatorLocalCache();
-  }
-
-  try {
-    const s = localStorage.getItem(APP_DATA_KEY);
-    if (s) {
-      const parsed = JSON.parse(s) as AppData;
-      const gs = { ...DEFAULT_DATA.gameSetup, ...parsed.gameSetup };
-      // Migrate old saves that used homeTeamId/awayTeamId instead of myTeamId
-      if (!gs.myTeamId) {
-        const side = gs.vcSide ?? "home";
-        const legacyId = side === "home" ? (gs as GameSetup).homeTeamId : (gs as GameSetup).awayTeamId;
-        if (legacyId) gs.myTeamId = legacyId;
-      }
-      gs.connectionId = normalizeConnectionId(gs.connectionId);
-      gs.syncedConnectionId = normalizeConnectionId(gs.syncedConnectionId);
-      gs.trackClock = gs.trackClock ?? true;
-      gs.schoolId = gs.schoolId?.trim() || DEFAULT_SCHOOL_ID;
-      gs.trackPossession = gs.trackPossession ?? true;
-      gs.trackTimeouts = gs.trackTimeouts ?? true;
-      gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
-      gs.homeTeamColor = normalizeTeamColor(gs.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR;
-      gs.awayTeamColor = normalizeTeamColor(gs.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR;
-      return withStandardizedTeams({
-        ...DEFAULT_DATA,
-        ...parsed,
-        // Deep-merge gameSetup so new fields get their defaults for old saves
-        gameSetup: { ...gs, ...urlSetup },
-      });
-    }
-  } catch { /* empty */ }
-  return withStandardizedTeams({ ...DEFAULT_DATA, gameSetup: { ...DEFAULT_DATA.gameSetup, ...urlSetup } });
-}
-function saveAppData(d: AppData) { localStorage.setItem(APP_DATA_KEY, JSON.stringify(d)); }
-function pendingKey(gid: string) { return `${STORE}:${gid}:pending`; }
-function seqKey(gid: string) { return `${STORE}:${gid}:seq`; }
-function loadPending(gid: string): GameEvent[] {
-  try { const s = localStorage.getItem(pendingKey(gid)); return s ? JSON.parse(s) as GameEvent[] : []; } catch { return []; }
-}
-function savePending(gid: string, evts: GameEvent[]) { localStorage.setItem(pendingKey(gid), JSON.stringify(evts)); }
-function loadSeq(gid: string) { const s = localStorage.getItem(seqKey(gid)); return s ? +s : 1; }
-function saveSeq(gid: string, seq: number) { localStorage.setItem(seqKey(gid), String(seq)); }
-function uid() { return `id-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
-
-function normalizeOperatorId(value: string | null | undefined): string | null {
-  const normalized = (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "")
-    .slice(0, 40);
-  return normalized.length > 0 ? normalized : null;
-}
-
-function createOperatorId(): string {
-  return `op-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function getOrCreateOperatorId(): string {
-  try {
-    const existing = normalizeOperatorId(localStorage.getItem(OPERATOR_ID_KEY));
-    if (existing) {
-      return existing;
-    }
-    const created = createOperatorId();
-    localStorage.setItem(OPERATOR_ID_KEY, created);
-    return created;
-  } catch {
-    // Fail open if storage is unavailable (private mode/restrictions).
-    return createOperatorId();
-  }
-}
-
-// ---- Utilities ----
-function clockToSec(clock: string): number {
-  const colonIdx = clock.indexOf(":");
-  if (colonIdx === -1) return Number(clock) || 0;
-  const m = Number(clock.slice(0, colonIdx)) || 0;
-  const s = Number(clock.slice(colonIdx + 1)) || 0;
-  return m * 60 + s;
-}
-
-// Parse raw numpad string (digits + optional single dot for tenths) -> formatted clock string
-function formatClockFromPadInput(raw: string): string {
-  if (!raw) return "0:00";
-  const dotIdx = raw.indexOf(".");
-  if (dotIdx !== -1) {
-    // decimal mode: everything before dot = whole seconds, after = tenths
-    const secStr = raw.slice(0, dotIdx) || "0";
-    const tenthStr = raw.slice(dotIdx + 1).slice(0, 1) || "0";
-    const sec = Math.min(59, parseInt(secStr, 10) || 0);
-    const tenth = parseInt(tenthStr, 10) || 0;
-    return `0:${String(sec).padStart(2, "0")}.${tenth}`;
-  }
-  // no dot: treat as MMSS-style digits
-  return formatClockFromDigits(raw);
-}
-
-function formatClockFromSeconds(totalSeconds: number): string {
-  const safe = Math.max(0, totalSeconds);
-  if (safe < 60) {
-    const tenthsTotal = Math.floor((safe * 10) + 1e-6);
-    const s = Math.floor(tenthsTotal / 10);
-    const t = tenthsTotal % 10;
-    return `0:${String(s).padStart(2, "0")}.${t}`;
-  }
-  const whole = Math.floor(safe + 1e-6);
-  const m = Math.floor(whole / 60);
-  const s = whole % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function formatClockFromDigits(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 4);
-  if (!digits) return "0:00";
-  const minuteDigits = digits.length <= 2 ? "0" : digits.slice(0, -2);
-  const secondDigits = digits.length <= 2 ? digits : digits.slice(-2);
-  const m = Number.parseInt(minuteDigits || "0", 10) || 0;
-  const s = Number.parseInt(secondDigits || "0", 10) || 0;
-  return formatClockFromSeconds((m * 60) + Math.min(s, 59));
-}
-
-function playerDisplayName(id: string, allPlayers: Player[]): string {
-  const p = allPlayers.find(x => x.id === id);
-  return p ? `#${p.number} ${p.name}` : id;
-}
-
-interface RunningTotals {
-  points: number; fgm: number; fga: number; threePm: number; threePa: number;
-  ftm: number; fta: number;
-  oreb: number; dreb: number; ast: number; stl: number; blk: number; to: number; fouls: number;
-}
-function computePlayerTotals(events: GameEvent[]): Record<string, RunningTotals> {
-  const map: Record<string, RunningTotals> = {};
-  function get(id: string) {
-    if (!map[id]) map[id] = { points: 0, fgm: 0, fga: 0, threePm: 0, threePa: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
-    return map[id];
-  }
-  for (const e of events) {
-    if (e.type === "shot_attempt") {
-      const t = get(e.playerId);
-      t.fga++;
-      if (e.points === 3) t.threePa++;
-      if (e.made) {
-        t.fgm++;
-        t.points += e.points;
-        if (e.points === 3) t.threePm++;
-      }
-    } else if (e.type === "free_throw_attempt") {
-      const t = get(e.playerId);
-      t.fta++;
-      if (e.made) {
-        t.ftm++;
-        t.points += 1;
-      }
-    } else if (e.type === "rebound") {
-      const t = get(e.playerId);
-      if (e.offensive) t.oreb++; else t.dreb++;
-    } else if (e.type === "assist") {
-      get(e.playerId).ast++;
-    } else if (e.type === "steal") {
-      get(e.playerId).stl++;
-    } else if (e.type === "block") {
-      get(e.playerId).blk++;
-    } else if (e.type === "turnover") {
-      if (e.playerId) get(e.playerId).to++;
-    } else if (e.type === "foul") {
-      get(e.playerId).fouls++;
-    }
-  }
-  return map;
-}
-function computeScores(events: GameEvent[], homeTeamId: string, awayTeamId: string) {
-  const s = { home: 0, away: 0 };
-  for (const e of events) {
-    if (e.type === "shot_attempt" && e.made) {
-      if (e.teamId === homeTeamId) s.home += e.points;
-      if (e.teamId === awayTeamId) s.away += e.points;
-    }
-    if (e.type === "free_throw_attempt" && e.made) {
-      if (e.teamId === homeTeamId) s.home += 1;
-      if (e.teamId === awayTeamId) s.away += 1;
-    }
-  }
-  return s;
-}
-
-function generateGameId(opponent: string, date: string): string {
-  const slug = (opponent || "game").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "game";
-  const d = date || new Date().toISOString().slice(0, 10);
-  return `${d}-${slug}`;
-}
-
-function computePlusMinus(events: GameEvent[], vcTeamId: string): Record<string, number> {
-  const pm: Record<string, number> = {};
-  const vcLineup = new Set<string>();
-  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
-  for (const e of sorted) {
-    if (e.type === "substitution") {
-      if (e.teamId === vcTeamId) { vcLineup.delete(e.playerOutId); vcLineup.add(e.playerInId); }
-    } else if (e.type === "shot_attempt" || e.type === "free_throw_attempt" || e.type === "rebound" ||
-               e.type === "foul" || e.type === "assist" || e.type === "steal" || e.type === "block") {
-      if (e.teamId === vcTeamId) vcLineup.add(e.playerId);
-    } else if (e.type === "turnover" && e.playerId) {
-      if (e.teamId === vcTeamId) vcLineup.add(e.playerId);
-    }
-    if ((e.type === "shot_attempt" && e.made) || (e.type === "free_throw_attempt" && e.made)) {
-      const points = e.type === "shot_attempt" ? e.points : 1;
-      const delta = e.teamId === vcTeamId ? points : -points;
-      for (const pid of vcLineup) pm[pid] = (pm[pid] ?? 0) + delta;
-    }
-  }
-  return pm;
-}
-
-function computeCurrentLineup(events: GameEvent[], teamId: string, startingLineup: string[], allTeamPlayers: Player[]): { onCourt: Player[], bench: Player[] } {
-  const onCourt = new Set<string>(startingLineup);
-  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
-  
-  for (const e of sorted) {
-    if (e.type === "substitution" && e.teamId === teamId) {
-      onCourt.delete(e.playerOutId);
-      onCourt.add(e.playerInId);
-    }
-  }
-
-  const onCourtPlayers = allTeamPlayers.filter(p => onCourt.has(p.id));
-  const benchPlayers = allTeamPlayers.filter(p => !onCourt.has(p.id));
-  
-  return { onCourt: onCourtPlayers, bench: benchPlayers };
-}
-
-
-function describeEvent(
-  event: GameEvent,
-  homeTeamName: string,
-  awayTeamName: string,
-  allPlayers: Player[],
-  pTotals: Record<string, RunningTotals>,
-  homeTeamId = "home",
-  awayTeamId = "away"
-) {
-  const tn = (id: string) => id === homeTeamId ? homeTeamName : id === awayTeamId ? awayTeamName : id;
-  const pn = (id: string) => {
-    if (id === "home-team" || id === "team-home" || id === `${homeTeamId}-team`) return homeTeamName;
-    if (id === "away-team" || id === "team-away" || id === `${awayTeamId}-team`) return awayTeamName;
-    return playerDisplayName(id, allPlayers);
-  };
-  switch (event.type) {
-    case "shot_attempt": {
-      const t = pTotals[event.playerId];
-      const fgStr = event.points === 3
-        ? (t ? `${t.threePm}-${t.threePa} 3pt` : "3pt")
-        : (t ? `${t.fgm}-${t.fga} fg` : `${event.points}pt`);
-      const ptsStr = t ? `${t.points}pts` : "";
-      return {
-        main: event.made ? `${event.points}pt` : `${event.points}pt miss`,
-        detail: `${pn(event.playerId)}  ${ptsStr} ${fgStr}`.trim(),
-        accent: event.made ? "teal" : "red",
-      };
-    }
-    case "free_throw_attempt": {
-      const t = pTotals[event.playerId];
-      const ftStr = t ? `${t.ftm}-${t.fta} ft` : "ft";
-      const ptsStr = t ? `${t.points}pts` : "";
-      return {
-        main: event.made ? "ft" : "ft miss",
-        detail: `${pn(event.playerId)}  ${ptsStr} ${ftStr}`.trim(),
-        accent: event.made ? "teal" : "red",
-      };
-    }
-    case "foul":
-      return { main: "foul", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "red" };
-    case "turnover":
-      return { main: "turnover", detail: `${tn(event.teamId)}${event.playerId ? `  ${pn(event.playerId)}` : ""}`, accent: "red" };
-    case "rebound":
-      return { main: event.offensive ? "off reb" : "def reb", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "white" };
-    case "assist":
-      return { main: "assist", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "teal" };
-    case "steal":
-      return { main: "steal", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "teal" };
-    case "block":
-      return { main: "block", detail: `${tn(event.teamId)}  ${pn(event.playerId)}`, accent: "teal" };
-    case "substitution":
-      return {
-        main: `${pn(event.playerOutId)} -> ${pn(event.playerInId)}`,
-        detail: tn(event.teamId),
-        accent: "white",
-      };
-    case "possession_start":
-      return { main: "possession", detail: tn(event.possessedByTeamId), accent: "white" };
-    case "timeout":
-      return {
-        main: event.timeoutType === "full" ? "timeout 60" : "timeout 30",
-        detail: tn(event.teamId),
-        accent: "white",
-      };
-    case "period_transition":
-      return { main: `${event.newPeriod} start`, detail: "", accent: "teal" };
-    default:
-      return { main: (event as GameEvent).type, detail: "", accent: "white" };
-  }
-}
-
-function getEventSectionLabel(event: GameEvent): string {
-  switch (event.type) {
-    case "shot_attempt":
-      return "Shot";
-    case "free_throw_attempt":
-      return "FT";
-    case "foul":
-      return "Foul";
-    case "turnover":
-      return "TO";
-    case "rebound":
-      return "Reb";
-    case "assist":
-      return "Ast";
-    case "steal":
-      return "Stl";
-    case "block":
-      return "Blk";
-    case "substitution":
-      return "Sub";
-    case "possession_start":
-      return "Poss";
-    case "timeout":
-      return "Timeout";
-    case "period_transition":
-      return "Period";
-    default:
-      return "Event";
-  }
-}
-
-function getEventTeamBucket(
-  event: GameEvent,
-  homeTeamId: string,
-  awayTeamId: string,
-): "home" | "away" | "neutral" {
-  if (event.type === "period_transition") return "neutral";
-  const eventTeamId = event.type === "possession_start" ? event.possessedByTeamId : event.teamId;
-  if (eventTeamId === homeTeamId) return "home";
-  if (eventTeamId === awayTeamId) return "away";
-  return "neutral";
-}
-
-function getEventTeamSide(eventTeamId: string, homeTeamId: string, awayTeamId: string): TeamSide | null {
-  if (eventTeamId === homeTeamId) return "home";
-  if (eventTeamId === awayTeamId) return "away";
-  return null;
-}
-
-function upsertSortedEvent(events: GameEvent[], nextEvent: GameEvent): GameEvent[] {
-  return [...events.filter((event) => event.id !== nextEvent.id), nextEvent]
-    .sort((left, right) => left.sequence - right.sequence);
-}
-
-function removeEventById(events: GameEvent[], eventId: string): GameEvent[] {
-  return events.filter((event) => event.id !== eventId);
-}
-
-function formatPct(made: number, attempts: number): string {
-  if (attempts <= 0) return "0%";
-  return `${Math.round((made / attempts) * 100)}%`;
-}
-
-interface SharedLiveInsight {
-  id: string;
-  type: string;
-  message: string;
-  explanation: string;
-  confidence: "low" | "medium" | "high";
-  relatedTeamId?: string;
-  relatedPlayerId?: string;
-}
-
-function playerNameFromId(playerId: string | undefined, players: Player[]): string {
-  if (!playerId) return "Team";
-  const match = players.find((p) => p.id === playerId);
-  return match?.name ?? playerId;
-}
-
-// ---- Dashboard stats helpers (legacy export + summaries) ----
-
-function abbreviateName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length < 2) return fullName;
-  return `${parts[0][0]} ${parts.slice(1).join(" ")}`;
-}
-
-interface DashboardPlayerStat {
-  number: number; name: string;
-  height?: string; grade?: string;
-  fg_made: number; fg_att: number; fg_pct: string;
-  fg3_made: number; fg3_att: number; fg3_pct: string;
-  ft_made: number; ft_att: number; ft_pct: string;
-  oreb: number; dreb: number; fouls: number;
-  stl: number; to: number; blk: number; asst: number;
-  pts: number; plus_minus: number;
-}
-
-function computeDashboardPlayerStats(events: GameEvent[], players: Player[], vcTeamId: string): DashboardPlayerStat[] {
-  const map: Record<string, {
-    fg_made: number; fg_att: number; fg3_made: number; fg3_att: number;
-    ft_made: number; ft_att: number; pts: number;
-    oreb: number; dreb: number; ast: number; stl: number; blk: number; to: number; fouls: number;
-  }> = {};
-
-  function get(id: string) {
-    if (!map[id]) map[id] = { fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0,
-      ft_made: 0, ft_att: 0, pts: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
-    return map[id];
-  }
-
-  for (const e of events) {
-    if (e.type === "shot_attempt") {
-      const t = get(e.playerId);
-      t.fg_att++;
-      if (e.points === 3) t.fg3_att++;
-      if (e.made) { t.fg_made++; t.pts += e.points; if (e.points === 3) t.fg3_made++; }
-    } else if (e.type === "free_throw_attempt") {
-      const t = get(e.playerId);
-      t.ft_att++;
-      if (e.made) { t.ft_made++; t.pts += 1; }
-    } else if (e.type === "rebound") {
-      const t = get(e.playerId); if (e.offensive) t.oreb++; else t.dreb++;
-    } else if (e.type === "assist")  { get(e.playerId).ast++;   }
-    else if (e.type === "steal")     { get(e.playerId).stl++;   }
-    else if (e.type === "block")     { get(e.playerId).blk++;   }
-    else if (e.type === "turnover" && e.playerId) { get(e.playerId).to++; }
-    else if (e.type === "foul")      { get(e.playerId).fouls++; }
-  }
-
-  const pct = (made: number, att: number) => att > 0 ? `${Math.round(made / att * 100)}%` : "-";
-  const plusMinus = computePlusMinus(events, vcTeamId);
-
-  return players
-    .map(p => {
-      const t = map[p.id] ?? { fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0,
-        ft_made: 0, ft_att: 0, pts: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, to: 0, fouls: 0 };
-      return {
-        number: parseInt(p.number, 10) || 0,
-        name: abbreviateName(p.name),
-        height: p.height,
-        grade: p.grade,
-        fg_made: t.fg_made, fg_att: t.fg_att, fg_pct: pct(t.fg_made, t.fg_att),
-        fg3_made: t.fg3_made, fg3_att: t.fg3_att, fg3_pct: pct(t.fg3_made, t.fg3_att),
-        ft_made: t.ft_made, ft_att: t.ft_att, ft_pct: pct(t.ft_made, t.ft_att),
-        oreb: t.oreb, dreb: t.dreb, fouls: t.fouls,
-        stl: t.stl, to: t.to, blk: t.blk, asst: t.ast,
-        pts: t.pts, plus_minus: plusMinus[p.id] ?? 0,
-      };
-    })
-    .filter(p =>
-      p.fg_att > 0 || p.ft_att > 0 || p.oreb > 0 || p.dreb > 0 ||
-      p.stl > 0 || p.blk > 0 || p.to > 0 || p.fouls > 0 || p.asst > 0
-    );
-}
-
-function computeTeamStats(events: GameEvent[], teamId: string) {
-  let fg = 0, fga = 0, fg3 = 0, fg3a = 0, ft = 0, fta = 0;
-  let oreb = 0, dreb = 0, asst = 0, to = 0, stl = 0, blk = 0, fouls = 0;
-  for (const e of events) {
-    if (e.teamId !== teamId) continue;
-    if (e.type === "shot_attempt") {
-      fga++; if (e.points === 3) fg3a++; if (e.made) { fg++; if (e.points === 3) fg3++; }
-    } else if (e.type === "free_throw_attempt") {
-      fta++; if (e.made) ft++;
-    } else if (e.type === "rebound")  { if (e.offensive) oreb++; else dreb++; }
-    else if (e.type === "assist")     { asst++;  }
-    else if (e.type === "steal")      { stl++;   }
-    else if (e.type === "block")      { blk++;   }
-    else if (e.type === "turnover")   { to++;    }
-    else if (e.type === "foul")       { fouls++; }
-  }
-  return { fg, fga, fg3, fg3a, ft, fta, oreb, dreb, reb: oreb + dreb, asst, to, stl, blk, fouls };
-}
-
-// ---- Modal types ----
-type Modal =
-  | { kind: "shot"; teamId: TeamSide; points: 2 | 3; made: boolean; zone: ShotZone; editContext?: EventEditContext }
-  | { kind: "freeThrow"; teamId: TeamSide; made: boolean; editContext?: EventEditContext }
-  | {
-      kind: "stat";
-      stat: "def_reb" | "off_reb" | "turnover" | "steal" | "assist" | "block" | "foul";
-      teamId: TeamSide;
-      foulType?: FoulType;
-      turnoverType?: TurnoverType;
-      editContext?: EventEditContext;
-    }
-  | { kind: "assist2"; teamId: TeamSide; assistPlayerId: string }
-  | { kind: "assist3"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string }
-  | { kind: "sub1"; teamId: TeamSide; playerOutId?: string; playerInId?: string; editContext?: EventEditContext }
-  | { kind: "sub2"; teamId: TeamSide; playerOutId: string; editContext?: EventEditContext }
-  | { kind: "assistEdit"; teamId: TeamSide; assistPlayerId: string; scorerPlayerId: string; editContext: EventEditContext }
-  | { kind: "timeoutEdit"; teamId: TeamSide; timeoutType: "full" | "short"; editContext: EventEditContext }
-  | { kind: "possessionEdit"; teamId: TeamSide; editContext: EventEditContext }
-  | { kind: "periodTransitionEdit"; newPeriod: string; editContext: EventEditContext }
-  // Chain-assist: passer picker after a made basket was already logged
-  | { kind: "chain-assist"; teamId: TeamSide; scorerPlayerId: string };
-
-// Contextual chain prompt that appears after key events to suggest the next action.
-type ChainPrompt =
-  | { kind: "after-made-shot"; forTeam: TeamSide; points: 2 | 3; scorerPlayerId: string }
-  | { kind: "after-missed-shot"; forTeam: TeamSide }
-  | { kind: "after-turnover"; fromTeam: TeamSide }
-  | { kind: "after-ft-miss"; forTeam: TeamSide };
-
-interface EventEditContext {
-  eventId: string;
-  originalEvent: GameEvent;
-  pending: boolean;
-}
-
-interface FeedEventSelection {
-  event: GameEvent;
-  pending: boolean;
-}
-
-type NoticeTone = "info" | "success" | "warning" | "error";
-
-interface InlineNotice {
-  id: number;
-  tone: NoticeTone;
-  message: string;
-}
-
-interface OperatorAlert {
-  id: string;
-  type: string;
-  priority: "urgent" | "important" | "info";
-  message: string;
-  explanation: string;
-}
-
-function getOperatorAlertAutoClearMs(alerts: OperatorAlert[]): number {
-  return alerts.some((alert) => alert.priority === "urgent")
-    ? OPERATOR_ALERT_AUTOCLEAR_URGENT_MS
-    : OPERATOR_ALERT_AUTOCLEAR_MS;
-}
-
-interface ConfirmDialogState {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  cancelLabel: string;
-  tone: "default" | "danger";
-  resolve: (value: boolean) => void;
-}
+import {
+  DEFAULT_API,
+  DEFAULT_HOME_TEAM_COLOR,
+  DEFAULT_AWAY_TEAM_COLOR,
+  DEFAULT_SCHOOL_ID,
+  DEFAULT_STATS_DASHBOARD,
+} from "./constants.js";
+import type {
+  AppData,
+  ChainPrompt,
+  DashboardPlayerStat,
+  EventEditContext,
+  FeedEventSelection,
+  GameSetup,
+  Modal,
+  OperatorAlert,
+  Player,
+  RunningTotals,
+  Team,
+} from "./types.js";
+import type { OpponentTrackStat, SettingsView, TeamSide } from "./types.js";
+import {
+  clockToSec,
+  formatClockFromDigits,
+  formatClockFromPadInput,
+  formatClockFromSeconds,
+} from "./helpers/clock.js";
+import {
+  computePlayerTotals,
+  computeScores,
+  describeEvent,
+  getEventSectionLabel,
+  getEventTeamBucket,
+} from "./helpers/events.js";
+import {
+  getOperatorAlertAutoClearMs,
+} from "./helpers/labels.js";
+import {
+  apiHeaders,
+  apiKeyHeader,
+  buildCoachViewUrl,
+  generateGameId,
+  isConnectionReadyForStart,
+  normalizeConnectionId,
+  normalizeOpponentTrackStats,
+  normalizeUrlBase,
+} from "./helpers/network.js";
+import {
+  abbreviateName,
+  computeTeamStats,
+  playerDisplayName,
+} from "./helpers/players.js";
+import {
+  clearOperatorLocalCache,
+  DEFAULT_DATA,
+  getOrCreateOperatorId,
+  loadAppData,
+  loadPending,
+  saveAppData,
+  uid,
+} from "./helpers/storage.js";
 
 function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsView: SettingsView } {
   const h = hash.replace(/^#\/?/, "");
@@ -1008,130 +101,8 @@ function viewToHash(v: "game" | "settings", sv: SettingsView): string {
 }
 
 export function App() {
-  const feedbackAudioRef = useRef<AudioContext | null>(null);
-  const feedbackUnlockedRef = useRef(false);
+  const { triggerFeedback, unlockFeedbackAudio } = useFeedback();
   const operatorId = useMemo(() => getOrCreateOperatorId(), []);
-
-  function ensureFeedbackAudioContext(): AudioContext | null {
-    if (feedbackAudioRef.current) {
-      return feedbackAudioRef.current;
-    }
-    const AudioContextCtor = getAudioContextCtor();
-    if (!AudioContextCtor) {
-      return null;
-    }
-    try {
-      const ctx = new AudioContextCtor();
-      feedbackAudioRef.current = ctx;
-      return ctx;
-    } catch {
-      return null;
-    }
-  }
-
-  async function unlockFeedbackAudio(): Promise<boolean> {
-    const ctx = ensureFeedbackAudioContext();
-    if (!ctx) {
-      return false;
-    }
-    try {
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
-      if (ctx.state !== "running") {
-        return false;
-      }
-
-      // Prime audio on first user gesture so Safari allows subsequent playback.
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0.00001;
-      osc.frequency.value = 440;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.01);
-
-      feedbackUnlockedRef.current = true;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function playFeedbackTone(tone: FeedbackTone) {
-    const ctx = ensureFeedbackAudioContext();
-    if (!ctx || ctx.state !== "running") {
-      return;
-    }
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "triangle";
-
-    const now = ctx.currentTime;
-    let frequency = 780;
-    let duration = 0.05;
-    let volume = 0.03;
-
-    if (tone === "undo") {
-      frequency = 500;
-      duration = 0.06;
-      volume = 0.028;
-    } else if (tone === "warning") {
-      frequency = 360;
-      duration = 0.08;
-      volume = 0.03;
-    }
-
-    osc.frequency.setValueAtTime(frequency, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(volume, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + duration + 0.01);
-  }
-
-  function triggerFeedback(tone: FeedbackTone, vibrateMs = 0) {
-    if (feedbackUnlockedRef.current) {
-      playFeedbackTone(tone);
-    } else {
-      void unlockFeedbackAudio().then((ready) => {
-        if (ready) playFeedbackTone(tone);
-      });
-    }
-
-    if (vibrateMs > 0) {
-      try { navigator.vibrate?.(vibrateMs); } catch { /* empty */ }
-    }
-  }
-
-  useEffect(() => {
-    const unlock = () => {
-      if (feedbackUnlockedRef.current) return;
-      void unlockFeedbackAudio();
-    };
-
-    window.addEventListener("pointerdown", unlock, { passive: true });
-    window.addEventListener("touchstart", unlock, { passive: true });
-
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("touchstart", unlock);
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      const ctx = feedbackAudioRef.current;
-      if (!ctx) return;
-      void ctx.close().catch(() => {});
-      feedbackAudioRef.current = null;
-    };
-  }, []);
 
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
@@ -1140,137 +111,6 @@ export function App() {
     setAppData(next);
     saveAppData(next);
   }
-
-  async function syncFromCoachCode(connectionCode = appData.gameSetup.connectionId, options?: { silent?: boolean }): Promise<boolean> {
-    const normalizedConnectionId = normalizeConnectionId(connectionCode);
-    if (!normalizedConnectionId) {
-      setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
-      return false;
-    }
-
-    setConnectionSyncStatus(`Syncing ${normalizedConnectionId} from the coach dashboard...`);
-
-    try {
-      const response = await fetch(
-        `${appData.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(normalizedConnectionId)}`,
-        apiHeaders(appData.gameSetup),
-      );
-
-      if (response.status === 404) {
-        // Invalid/unpublished code: clear linked team/setup so stale local values cannot masquerade as synced data.
-        setAppData((current) => {
-          const next: AppData = {
-            ...current,
-            gameSetup: {
-              ...current.gameSetup,
-              connectionId: normalizedConnectionId,
-              syncedConnectionId: undefined,
-              myTeamId: "",
-              opponent: "",
-              startingLineup: [],
-            },
-          };
-          saveAppData(next);
-          return next;
-        });
-        setConnectionSyncStatus("Code saved locally. Waiting for the coach dashboard to publish the linked team and roster.");
-        if (!options?.silent) {
-          showInlineNotice("That code is saved on this iPad. Open the coach dashboard live page or try Sync again in a moment.", "warning", 5000);
-        }
-        return false;
-      }
-
-      if (!response.ok) {
-        throw new Error(`Sync failed (${response.status})`);
-      }
-
-      const payload = await response.json() as OperatorLinkResponse;
-      let syncedTeamName = "team";
-
-      setAppData((current) => {
-        const next = mergeCoachLinkSnapshot(current, payload);
-        syncedTeamName = next.teams.find((team) => team.id === next.gameSetup.myTeamId)?.name ?? payload.setup?.myTeamName?.trim() ?? "team";
-        saveAppData(next);
-        return next;
-      });
-
-      setConnectionSyncStatus(`Synced ${syncedTeamName} roster and game setup. This iPad will keep the latest copy saved locally if it disconnects.`);
-      if (!options?.silent) {
-        showInlineNotice(`Synced ${syncedTeamName} from the coach dashboard.`, "success", 2500);
-      }
-      return true;
-    } catch {
-      setConnectionSyncStatus("Coach sync is temporarily offline. The last synced roster and lineup stay saved locally on this iPad.");
-      if (!options?.silent) {
-        showInlineNotice("Could not reach the coach session right now. Your last synced data is still saved locally.", "warning", 6000);
-      }
-      return false;
-    }
-  }
-
-  useEffect(() => {
-    let active = true;
-
-    async function syncTeamsFromRealtime() {
-      // Keep brand-new/incognito sessions empty until a coach connection code is entered.
-      const normalizedConnectionId = normalizeConnectionId(appData.gameSetup.connectionId);
-      if (!normalizedConnectionId) {
-        return;
-      }
-
-      const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
-      const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
-      const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
-      const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
-      const converted = remoteTeams.map(convertRosterTeamToAppTeam);
-
-      if (!active || converted.length === 0) {
-        return;
-      }
-
-      if (JSON.stringify(converted) === JSON.stringify(appData.teams)) {
-        return;
-      }
-
-      const hasSelectedTeam = converted.some((team) => team.id === appData.gameSetup.myTeamId);
-      const nextMyTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (converted[0]?.id ?? "");
-
-      persistData({
-        ...appData,
-        teams: converted,
-        gameSetup: { ...appData.gameSetup, myTeamId: nextMyTeamId },
-      });
-    }
-
-    void syncTeamsFromRealtime();
-    const intervalId = setInterval(() => {
-      void syncTeamsFromRealtime();
-    }, 5000);
-
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
-  }, [
-    appData,
-  ]);
-
-  useEffect(() => {
-    const normalizedConnectionId = normalizeConnectionId(appData.gameSetup.connectionId);
-    if (!normalizedConnectionId) {
-      setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
-      return;
-    }
-
-    void syncFromCoachCode(normalizedConnectionId, { silent: true });
-    const intervalId = window.setInterval(() => {
-      void syncFromCoachCode(normalizedConnectionId, { silent: true });
-    }, 15000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, appData.gameSetup.schoolId]);
 
   // ---- Navigation state ----
   const [view, setView] = useState<"game" | "settings">(() => parseViewFromHash(window.location.hash).view);
@@ -1298,15 +138,8 @@ export function App() {
 
   // ---- Game session state ----
   const gameId = appData.gameSetup.gameId;
-  const [sequence, setSequence] = useState(() => loadSeq(loadAppData().gameSetup.gameId));
-  const [online, setOnline] = useState(() => navigator.onLine);
-  const [pendingEvents, setPendingEvents] = useState<GameEvent[]>(() => loadPending(loadAppData().gameSetup.gameId));
-  const [submittedEvents, setSubmittedEvents] = useState<GameEvent[]>([]);
-  // Guards: prevent concurrent flush calls and back off after server-side failures
-  const isFlushingRef = useRef(false);
-  const flushBackoffUntilRef = useRef(0);
+  const online = useNetworkStatus();
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
-  const sequenceRef = useRef(1);
 
   // ---- In-game UI state ----
   const [period, setPeriod] = useState("Q1" as string);
@@ -1315,8 +148,7 @@ export function App() {
   const [dismissedTimeoutId, setDismissedTimeoutId] = useState<string | null>(null);
   const [clockPadOpen, setClockPadOpen] = useState(false);
   const [clockPadDigits, setClockPadDigits] = useState("");
-  const [summaryClockPadOpen, setSummaryClockPadOpen] = useState(false);
-  const [summaryClockPadDigits, setSummaryClockPadDigits] = useState("");
+
   const [gameMoment, setGameMoment] = useState<string>("");
   const [preGameNotes, setPreGameNotes] = useState<string>(() => localStorage.getItem("operator-console:pregame-notes") ?? "");
   const [modal, setModal] = useState<Modal | null>(null);
@@ -1327,27 +159,17 @@ export function App() {
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [showGameSummary, setShowGameSummary] = useState(false);
   const [possessionOverrideTeamId, setPossessionOverrideTeamId] = useState<string | null | undefined>(undefined);
-  const [summaryTab, setSummaryTab] = useState<"teams" | "players">("teams");
-  const [summaryPeriodFilter, setSummaryPeriodFilter] = useState<string[]>([]);
-  const [summaryAiInsights, setSummaryAiInsights] = useState<string[] | null>(null);
-  const [summaryAiLoading, setSummaryAiLoading] = useState(false);
-  const [summaryPlayerAiInsights, setSummaryPlayerAiInsights] = useState<string[] | null>(null);
-  const [summaryPlayerAiLoading, setSummaryPlayerAiLoading] = useState(false);
+
   const [submitStatus, setSubmitStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
-  const [inlineNotice, setInlineNotice] = useState<InlineNotice | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const { inlineNotice, showInlineNotice, dismissInlineNotice } = useInlineNotice();
+  const { confirmDialog, requestConfirm, resolveConfirm } = useConfirmDialog();
   const [liveAlerts, setLiveAlerts] = useState<OperatorAlert[]>([]);
   const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
-  const noticeTimerRef = useRef<number | null>(null);
   const liveAlertTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setPossessionOverrideTeamId(undefined);
   }, [gameId]);
-
-  useEffect(() => {
-    sequenceRef.current = sequence;
-  }, [sequence]);
 
   const [submitMessage, setSubmitMessage] = useState<string>("Ready to save final stats to the dashboard.");
   const [postGameNameInput, setPostGameNameInput] = useState("");
@@ -1368,6 +190,7 @@ export function App() {
   const [selectedStarters, setSelectedStarters] = useState<Set<string>>(new Set());
   const [lineupLockedByLiveGame, setLineupLockedByLiveGame] = useState(false);
   const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
+  const { syncFromCoachCode } = useCoachSync({ appData, setAppData, setConnectionSyncStatus, showInlineNotice });
 
   useEffect(() => {
     if (gamePhase !== "pre-game") {
@@ -1489,61 +312,6 @@ export function App() {
     return true;
   }
 
-  function dismissInlineNotice() {
-    setInlineNotice(null);
-    if (noticeTimerRef.current != null) {
-      window.clearTimeout(noticeTimerRef.current);
-      noticeTimerRef.current = null;
-    }
-  }
-
-  function showInlineNotice(message: string, tone: NoticeTone = "error", timeoutMs = 7000) {
-    if (noticeTimerRef.current != null) {
-      window.clearTimeout(noticeTimerRef.current);
-      noticeTimerRef.current = null;
-    }
-    setInlineNotice({ id: Date.now(), tone, message });
-    if (timeoutMs > 0) {
-      noticeTimerRef.current = window.setTimeout(() => {
-        setInlineNotice(null);
-        noticeTimerRef.current = null;
-      }, timeoutMs);
-    }
-  }
-
-  async function requestConfirm(options: {
-    title: string;
-    message: string;
-    confirmLabel?: string;
-    cancelLabel?: string;
-    tone?: "default" | "danger";
-  }): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      setConfirmDialog({
-        title: options.title,
-        message: options.message,
-        confirmLabel: options.confirmLabel ?? "Confirm",
-        cancelLabel: options.cancelLabel ?? "Cancel",
-        tone: options.tone ?? "default",
-        resolve,
-      });
-    });
-  }
-
-  function resolveConfirm(result: boolean) {
-    if (!confirmDialog) return;
-    confirmDialog.resolve(result);
-    setConfirmDialog(null);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (noticeTimerRef.current != null) {
-        window.clearTimeout(noticeTimerRef.current);
-      }
-    };
-  }, []);
-
   // ---- Derived: home/away teams ----
   // myTeamId is the team we are tracking; side determines which slot they fill.
   const myTeam = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
@@ -1577,40 +345,6 @@ export function App() {
   }
 
   // ---- Game moment options for context (pre-game, quarters, halftime, timeout, end of game) ----
-  function getGameMomentOptions(): Array<{ value: string; label: string }> {
-    const opts: Array<{ value: string; label: string }> = [
-      { value: "start-of-game", label: "Start of Game" },
-    ];
-    
-    // Add quarter starts/ends based on period
-    const totalQuarters = Math.max(4, (period?.replace("OT", "") ? 4 : 0));
-    for (let i = 1; i <= totalQuarters; i++) {
-      opts.push({ value: `start-of-q${i}`, label: `Start of Q${i}` });
-    }
-    
-    // Halftime (between Q2 and Q3)
-    opts.push({ value: "halftime", label: "Halftime" });
-    
-    // End of quarters
-    for (let i = 1; i <= totalQuarters; i++) {
-      opts.push({ value: `end-of-q${i}`, label: `End of Q${i}` });
-    }
-    
-    // Overtime
-    const ot = parseInt(period?.replace("OT", "") || "0", 10);
-    if (ot > 0) {
-      for (let i = 1; i <= ot; i++) {
-        opts.push({ value: `ot${i}`, label: `OT${i}` });
-      }
-    }
-    
-    // Game situations
-    opts.push({ value: "timeout", label: "Timeout" });
-    opts.push({ value: "end-of-game", label: "End of Game" });
-    
-    return opts;
-  }
-
   const liveHomeSideLabel = `${homeTeamName} (home)`;
   const liveAwaySideLabel = `${awayTeamName} (away)`;
   const homePlayers = homeTeam?.players ?? [];
@@ -1631,204 +365,18 @@ export function App() {
   }
 
   // ---- Network ----
-  useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
-  }, []);
-
-  useEffect(() => {
-    if (gamePhase !== "live") {
-      return;
-    }
-
-    const connectionId = normalizeConnectionId(appData.gameSetup.connectionId);
-    if (!connectionId) {
-      return;
-    }
-    const startingLineup = Array.isArray(appData.gameSetup.startingLineup)
-      ? [...new Set(appData.gameSetup.startingLineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5)
-      : [];
-    const trackedTeamId = appData.gameSetup.vcSide === "away"
-      ? (appData.gameSetup.myTeamId || "team-away")
-      : (appData.gameSetup.myTeamId || "team-home");
-    const startingLineupByTeam = startingLineup.length > 0
-      ? { [trackedTeamId]: startingLineup }
-      : undefined;
-    const payload = { connectionId, gameId, startingLineupByTeam };
-    const socketAuth: Record<string, string> = { schoolId: appData.gameSetup.schoolId ?? DEFAULT_SCHOOL_ID };
-    if (appData.gameSetup.apiKey) {
-      if (appData.gameSetup.apiKey.startsWith("bta.")) {
-        socketAuth.token = appData.gameSetup.apiKey;
-      } else {
-        socketAuth.apiKey = appData.gameSetup.apiKey;
-      }
-    }
-    const socket = io(appData.gameSetup.apiUrl, {
-      auth: socketAuth,
-      extraHeaders: apiKeyHeader(appData.gameSetup),
-      // Be explicit about reconnection so the iPad always retries after
-      // Safari suspends the tab or the screen turns off.
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
-    });
-    socketRef.current = socket;
-
-    const register = () => {
-      socket.emit("operator:register", payload);
-    };
-
-    socket.on("connect", register);
-
-    // When the iPad wakes up / user switches back to Safari, proactively
-    // reconnect if the socket dropped while the page was hidden.
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible" && !socket.connected) {
-        socket.connect();
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    
-    // Error handlers for socket failures
-    socket.on("connect_error", (error: unknown) => {
-      const msg = error instanceof Error ? error.message : "Connection error";
-      showInlineNotice(`Server connection failed: ${msg}. Retrying...`, "error");
-    });
-    
-    socket.on("disconnect", (reason: string) => {
-      if (reason !== "io client namespace disconnect") {
-        showInlineNotice(`Disconnected from server (${reason}). Check your connection.`, "warning");
-      }
-    });
-    
-    socket.on("error", (error: unknown) => {
-      const msg = error instanceof Error
-        ? error.message
-        : typeof error === "object" && error !== null && "message" in error
-          ? String((error as Record<string, unknown>).message)
-          : typeof error === "object" && error !== null && "error" in error
-            ? String((error as Record<string, unknown>).error)
-            : String(error);
-      showInlineNotice(`Server error: ${msg}`, "error");
-    });
-
-    socket.on("game:insights", (payload: unknown) => {
-      if (!Array.isArray(payload)) return;
-      const alerts: OperatorAlert[] = (payload as Array<Record<string, unknown>>)
-        .filter((i) => i.priority === "urgent" || i.priority === "important")
-        .map((i) => ({
-          id: String(i.id ?? ""),
-          type: String(i.type ?? ""),
-          priority: (i.priority === "urgent" ? "urgent" : "important") as "urgent" | "important",
-          message: String(i.message ?? ""),
-          explanation: String(i.explanation ?? ""),
-        }))
-        .filter((i) => i.id && i.message);
-      if (alerts.length > 0) {
-        setDismissedAlertIds(new Set());
-        setLiveAlerts(alerts);
-      }
-    });
-
-    // Sync authoritative game setup (opponent name, side) from server state.
-    // This ensures all operator iPads show the same team configuration regardless
-    // of their localStorage state at the time they joined.
-    socket.on("game:state", (statePayload: unknown) => {
-      if (!statePayload || typeof statePayload !== "object") return;
-      const serverState = statePayload as { opponentName?: string; homeTeamId?: string; awayTeamId?: string };
-      setAppData((current) => {
-        let changed = false;
-        const nextSetup = { ...current.gameSetup };
-        if (serverState.opponentName && serverState.opponentName !== current.gameSetup.opponent) {
-          nextSetup.opponent = serverState.opponentName;
-          changed = true;
-        }
-        // If the server confirms our team is on the opposite side from what we
-        // have locally, correct it so events use the right team IDs.
-        if (current.gameSetup.myTeamId) {
-          if (serverState.awayTeamId === current.gameSetup.myTeamId && current.gameSetup.vcSide !== "away") {
-            nextSetup.vcSide = "away";
-            changed = true;
-          } else if (serverState.homeTeamId === current.gameSetup.myTeamId && current.gameSetup.vcSide !== "home") {
-            nextSetup.vcSide = "home";
-            changed = true;
-          }
-        }
-        if (!changed) return current;
-        const next = { ...current, gameSetup: nextSetup };
-        saveAppData(next);
-        return next;
-      });
-    });
-
-    socket.on("operator:link:updated", (payload: unknown) => {
-      if (!payload || typeof payload !== "object") {
-        return;
-      }
-      const snapshot = payload as OperatorLinkResponse;
-      if (normalizeConnectionId(snapshot.connectionId) !== connectionId) {
-        return;
-      }
-
-      setAppData((current) => {
-        const next = mergeCoachLinkSnapshot(current, snapshot);
-        saveAppData(next);
-        return next;
-      });
-      setConnectionSyncStatus("Coach updates received. The latest team and roster info are saved locally on this iPad.");
-    });
-
-    socket.on("roster:teams", (payload: unknown) => {
-      if (!Array.isArray(payload)) {
-        return;
-      }
-
-      const nextTeams = (payload as RosterTeam[]).map(convertRosterTeamToAppTeam);
-      setAppData((current) => {
-        const hasSelectedTeam = nextTeams.some((team) => team.id === current.gameSetup.myTeamId);
-        const nextMyTeamId = hasSelectedTeam ? current.gameSetup.myTeamId : (nextTeams[0]?.id ?? "");
-        const allowedPlayerIds = new Set((nextTeams.find((team) => team.id === nextMyTeamId)?.players ?? []).map((player) => player.id));
-        const startingLineup = Array.isArray(current.gameSetup.startingLineup)
-          ? current.gameSetup.startingLineup.filter((playerId) => allowedPlayerIds.has(playerId))
-          : [];
-        const next = {
-          ...current,
-          teams: nextTeams,
-          gameSetup: { ...current.gameSetup, myTeamId: nextMyTeamId, startingLineup },
-        };
-        saveAppData(next);
-        return next;
-      });
-    });
-
-    register();
-
-    const heartbeat = setInterval(() => {
-      if (socket.connected) {
-        socket.emit("operator:heartbeat", payload);
-      }
-    }, 10000);
-
-    return () => {
-      clearInterval(heartbeat);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      socket.off("connect", register);
-      socket.off("connect_error");
-      socket.off("disconnect");
-      socket.off("error");
-      socket.off("game:insights");
-      socket.off("operator:link:updated");
-      socket.off("roster:teams");
-      socket.disconnect();
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-    };
-  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.connectionId, gameId, gamePhase]);
+  useSocket({
+    gameId,
+    gamePhase,
+    gameSetup: appData.gameSetup,
+    socketRef,
+    setAppData,
+    setLiveAlerts,
+    setDismissedAlertIds,
+    setConnectionSyncStatus,
+    persistPhase,
+    showInlineNotice,
+  });
 
   useEffect(() => {
     if (liveAlertTimerRef.current !== null) {
@@ -1855,670 +403,65 @@ export function App() {
     };
   }, [dismissedAlertIds, liveAlerts]);
 
-  useEffect(() => {
-    const localPending = loadPending(gameId).map(normalizeEventTeamId);
-    const localSeq = loadSeq(gameId);
-    setPendingEvents(localPending);
-    setSequence(localSeq);
-    async function hydrate() {
-      try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
-        if (!res.ok) {
-          // Don't wipe submitted events on error - keep local state
-          return;
-        }
-        const events = ((await res.json()) as GameEvent[]).map(normalizeEventTeamId);
-        setSubmittedEvents(events);
-        const highest = events.reduce((m, e) => Math.max(m, e.sequence), 0);
-        const next = Math.max(localSeq, highest + 1);
-        setSequence(next);
-        saveSeq(gameId, next);
-
-        const stateRes = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/state`, apiHeaders(appData.gameSetup));
-        if (stateRes.ok) {
-          const statePayload = await stateRes.json() as {
-            events?: unknown[];
-            activeLineupsByTeam?: Record<string, string[]>;
-          };
-          const trackedTeamId = appData.gameSetup.vcSide === "away"
-            ? (appData.gameSetup.myTeamId || "team-away")
-            : (appData.gameSetup.myTeamId || "team-home");
-          const serverLineup = sanitizeLineup(statePayload.activeLineupsByTeam?.[trackedTeamId]);
-          if (serverLineup.length > 0) {
-            setAppData((current) => {
-              const currentLineup = sanitizeLineup(current.gameSetup.startingLineup ?? []);
-              if (lineupsEqual(currentLineup, serverLineup)) {
-                return current;
-              }
-              const nextData = {
-                ...current,
-                gameSetup: {
-                  ...current.gameSetup,
-                  startingLineup: serverLineup,
-                },
-              };
-              saveAppData(nextData);
-              return nextData;
-            });
+  // ---- Event queue (hook) ----
+  const {
+    pendingEvents, setPendingEvents,
+    submittedEvents, setSubmittedEvents,
+    sequence, setSequence,
+    postEvent, undoLast,
+    flushQueue, reconnectAndResubmit,
+    resetTimeline,
+  } = useEventQueue({
+    gameId,
+    gamePhase,
+    gameSetup: appData.gameSetup,
+    socketRef,
+    normalizeEventTeamId,
+    showInlineNotice,
+    triggerFeedback,
+    ensureRealtimeGameExists,
+    onHydrateState(statePayload) {
+      const trackedTeamId = appData.gameSetup.vcSide === "away"
+        ? (appData.gameSetup.myTeamId || "team-away")
+        : (appData.gameSetup.myTeamId || "team-home");
+      const serverLineup = sanitizeLineup(statePayload.activeLineupsByTeam?.[trackedTeamId]);
+      if (serverLineup.length > 0) {
+        setAppData((current) => {
+          const currentLineup = sanitizeLineup(current.gameSetup.startingLineup ?? []);
+          if (lineupsEqual(currentLineup, serverLineup)) {
+            return current;
           }
-          const hasStarted = Array.isArray(statePayload.events) && statePayload.events.length > 0;
-          setLineupLockedByLiveGame(hasStarted);
-        }
-      } catch {
-        // Hydration failed (offline) - keep local pending queue intact
+          const nextData = {
+            ...current,
+            gameSetup: {
+              ...current.gameSetup,
+              startingLineup: serverLineup,
+            },
+          };
+          saveAppData(nextData);
+          return nextData;
+        });
       }
-    }
-    void hydrate();
-  }, [gameId]);
-
-  useEffect(() => { savePending(gameId, pendingEvents); }, [gameId, pendingEvents]);
-  useEffect(() => { saveSeq(gameId, sequence); }, [gameId, sequence]);
-
-  function buildRealtimeGameRegistrationPayload(activeSetup: GameSetup, gid: string): {
-    gameId: string;
-    homeTeamId: string;
-    awayTeamId: string;
-    opponentName: string;
-    opponentTeamId: string;
-    startingLineupByTeam?: Record<string, string[]>;
-    aiContext: {
-      clockEnabled: boolean;
-      opponentStatsLimited: boolean;
-      opponentTrackedStats: string[];
-      preGameNotes?: string;
-    };
-  } {
-    const vcSide = activeSetup.vcSide ?? "home";
-    const opponentName = activeSetup.opponent?.trim() || "";
-    const opponentTeamId = opponentName
-      ? `team-${opponentName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`
-      : "opponent";
-    const homeTeamId = vcSide === "home"
-      ? activeSetup.myTeamId || "team-home"
-      : opponentTeamId;
-    const awayTeamId = vcSide === "away"
-      ? activeSetup.myTeamId || "team-away"
-      : opponentTeamId;
-    const trackedTeamId = vcSide === "home" ? homeTeamId : awayTeamId;
-    const startingLineup = Array.isArray(activeSetup.startingLineup)
-      ? [...new Set(activeSetup.startingLineup.map((playerId) => String(playerId).trim()).filter(Boolean))].slice(0, 5)
-      : [];
-    const startingLineupByTeam = startingLineup.length > 0
-      ? { [trackedTeamId]: startingLineup }
-      : undefined;
-
-    return {
-      gameId: gid,
-      homeTeamId,
-      awayTeamId,
-      opponentName,
-      opponentTeamId,
-      startingLineupByTeam,
-      aiContext: {
-        ...buildAiContextFromSetup(activeSetup),
-        preGameNotes: preGameNotes.trim() || undefined,
-      },
-    };
-  }
+      const hasStarted = Array.isArray(statePayload.events) && statePayload.events.length > 0;
+      setLineupLockedByLiveGame(hasStarted);
+    },
+  });
 
   async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
     const latest = loadAppData();
     const apiUrl = latest.gameSetup.apiUrl?.trim();
-    if (!apiUrl || !gid) {
-      return false;
-    }
-
+    if (!apiUrl || !gid) return false;
     try {
       const res = await fetch(`${apiUrl}/api/games`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
-        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid)),
+        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
       });
       return res.ok;
     } catch {
       return false;
     }
   }
-
-  function parseActiveGameIdFromConflictResponse(bodyText: string): string | null {
-    if (!bodyText) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(bodyText) as { activeGameId?: unknown };
-      if (typeof parsed.activeGameId !== "string") {
-        return null;
-      }
-      const activeGameId = parsed.activeGameId.trim();
-      return activeGameId.length > 0 ? activeGameId : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function submitEvent(event: GameEvent): Promise<boolean> {
-    const normalizedEvent = normalizeEventTeamId(event);
-    try {
-      const submitWithCurrentPayload = () => fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(normalizedEvent),
-      });
-
-      let res = await submitWithCurrentPayload();
-      if (!res.ok) {
-        const firstErrorBody = (await res.text().catch(() => "")).trim();
-        const missingGame = res.status === 404 || /game not found/i.test(firstErrorBody);
-        if (missingGame && await ensureRealtimeGameExists(gameId)) {
-          res = await submitWithCurrentPayload();
-        }
-      }
-
-      if (!res.ok) {
-        const responseBody = (await res.text().catch(() => "")).trim();
-        const details = responseBody ? ` ${responseBody}` : "";
-        const errorMsg = `Submit failed (${res.status}).${details}`;
-        showInlineNotice(errorMsg, "error", 10000);
-        return false;
-      }
-      setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
-      setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
-      return true;
-    } catch (err) {
-      const errorMsg = "Network error. Event queued offline - will sync when reconnected.";
-      showInlineNotice(errorMsg, "warning", 10000);
-      setPendingEvents(cur => {
-        if (cur.some(p => p.id === normalizedEvent.id)) return cur;
-        return [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence);
-      });
-      return false;
-    }
-  }
-
-  async function flushQueue() {
-    // Bail out if another flush is already running or we're in a server-error backoff window
-    if (isFlushingRef.current) return;
-    if (Date.now() < flushBackoffUntilRef.current) return;
-    if (!navigator.onLine || pendingEvents.length === 0) return;
-    isFlushingRef.current = true;
-    let successCount = 0;
-    let serverErrorCount = 0;
-    try {
-      for (const evt of pendingEvents) {
-        const ok = await submitEvent(evt);
-        if (ok) {
-          successCount++;
-        } else {
-          // Count failures that were not pure network errors (submitEvent always catches those)
-          // A false return from a non-network path means a server-side rejection
-          serverErrorCount++;
-        }
-        // Continue trying remaining events even if one fails
-      }
-    } finally {
-      isFlushingRef.current = false;
-    }
-    if (serverErrorCount > 0 && successCount === 0) {
-      // All attempts failed with a server error — back off 30 s before next automatic retry
-      flushBackoffUntilRef.current = Date.now() + 30_000;
-    }
-    if (successCount > 0) {
-      flushBackoffUntilRef.current = 0; // clear any prior backoff on partial success
-      try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(appData.gameSetup));
-        if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
-      } catch { /* empty */ }
-      showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
-    }
-  }
-
-  async function reconnectAndResubmit() {
-    socketRef.current?.connect();
-    if (!navigator.onLine) {
-      showInlineNotice("Still offline. Check Wi-Fi and tap again to retry.", "warning", 3200);
-      return;
-    }
-    if (pendingEvents.length === 0) {
-      showInlineNotice("Connection looks good. No pending events to resubmit.", "info", 2200);
-      return;
-    }
-    await flushQueue();
-  }
-
-  useEffect(() => { if (online) void flushQueue(); }, [online]);
-
-  // Periodic flush: if events are still pending and we appear online, retry every 15s.
-  // Covers the case where navigator.onLine never re-fired (common on iOS with spotty wifi).
-  // isFlushingRef and flushBackoffUntilRef prevent concurrent or rapid hammering.
-  useEffect(() => {
-    if (gamePhase !== "live") return;
-    const interval = setInterval(() => {
-      if (navigator.onLine && pendingEvents.length > 0 && !isFlushingRef.current && Date.now() >= flushBackoffUntilRef.current) void flushQueue();
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [gamePhase, pendingEvents.length]);
-
-  // Persist pre-game notes
-  useEffect(() => {
-    localStorage.setItem("operator-console:pregame-notes", preGameNotes);
-  }, [preGameNotes]);
-
-  // Keep screen awake during a live game
-  useEffect(() => {
-    if (gamePhase !== "live") return;
-    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
-    let lock: WakeLockSentinel | null = null;
-    async function acquire() {
-      try {
-        lock = await (navigator as Navigator & { wakeLock: { request(type: string): Promise<WakeLockSentinel> } }).wakeLock.request("screen");
-      } catch { /* device may not support it */ }
-    }
-    void acquire();
-    function reacquire() { if (document.visibilityState === "visible") void acquire(); }
-    document.addEventListener("visibilitychange", reacquire);
-    return () => {
-      document.removeEventListener("visibilitychange", reacquire);
-      lock?.release().catch(() => {});
-    };
-  }, [gamePhase]);
-
-  // Warn before leaving with unsubmitted events
-  useEffect(() => {
-    if (gamePhase !== "live") return;
-    function handleBeforeUnload(e: BeforeUnloadEvent) {
-      if (pendingEvents.length === 0) return;
-      e.preventDefault();
-    }
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [gamePhase, pendingEvents.length]);
-
-  useEffect(() => {
-    if (gamePhase !== "live" || !gameId) {
-      return;
-    }
-
-    const payload = {
-      ...buildAiContextFromSetup(appData.gameSetup),
-      gameMoment: gameMoment || undefined,
-      preGameNotes: preGameNotes.trim() || undefined,
-    };
-    void fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/ai-context`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-      body: JSON.stringify(payload),
-    }).catch(() => {
-      // Fail open: insights continue with last known context if API is temporarily unreachable.
-    });
-  }, [
-    appData.gameSetup.apiKey,
-    appData.gameSetup.apiUrl,
-    appData.gameSetup.clockEnabled,
-    appData.gameSetup.opponentTrackStats,
-    appData.gameSetup.trackClock,
-    gameId,
-    gamePhase,
-    gameMoment,
-    preGameNotes,
-  ]);
-
-  useEffect(() => {
-    if (gamePhase !== "live" || !clockRunning || appData.gameSetup.clockEnabled === false || trackClock === false) return;
-    const currentSeconds = clockToSec(clockInput);
-    const step = currentSeconds <= 60 ? 0.1 : 1;
-    const delayMs = step === 0.1 ? 100 : 1000;
-    const id = setTimeout(() => {
-      setClockInput((current) => {
-        const sec = clockToSec(current);
-        if (sec <= step) {
-          setClockRunning(false);
-          return formatClockFromSeconds(0);
-        }
-        const next = Math.max(0, Math.round((sec - step) * 10) / 10);
-        return formatClockFromSeconds(next);
-      });
-    }, delayMs);
-    return () => clearTimeout(id);
-  }, [clockRunning, gamePhase, appData.gameSetup.clockEnabled, clockInput, trackClock]);
-
-  useEffect(() => {
-    if ((appData.gameSetup.clockEnabled === false || trackClock === false) && clockRunning) {
-      setClockRunning(false);
-    }
-  }, [appData.gameSetup.clockEnabled, clockRunning, trackClock]);
-
-  async function postEvent(event: GameEvent) {
-    const reservedSequence = sequenceRef.current;
-    const next = reservedSequence + 1;
-    sequenceRef.current = next;
-    setSequence(next);
-    saveSeq(gameId, next);
-    const eventWithReservedSequence = normalizeEventTeamId({ ...event, sequence: reservedSequence });
-    // Optimistic update: add to pending immediately so score updates instantly
-    setPendingEvents(cur => [...cur, eventWithReservedSequence].sort((a, b) => a.sequence - b.sequence));
-    triggerFeedback("event", 30);
-    // Then submit in background
-    await submitEvent(eventWithReservedSequence);
-  }
-
-  async function undoLast() {
-    // Try to undo the most recent event (submitted or pending)
-    const lastSubmitted = [...submittedEvents].sort((a, b) => b.sequence - a.sequence)[0];
-    const lastPending = [...pendingEvents].sort((a, b) => b.sequence - a.sequence)[0];
-    // Pick whichever has the higher sequence
-    const last = !lastSubmitted ? lastPending
-      : !lastPending ? lastSubmitted
-      : lastPending.sequence > lastSubmitted.sequence ? lastPending : lastSubmitted;
-    if (!last) {
-      showInlineNotice("Nothing to undo.", "info", 2000);
-      return;
-    }
-
-    // Remove from pending queue immediately — no confirmation needed
-    setPendingEvents(cur => cur.filter(e => e.id !== last.id));
-    // If it is already submitted to the API, delete it there
-    if (submittedEvents.some(e => e.id === last.id)) {
-      const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${last.id}`, { method: "DELETE", headers: apiKeyHeader(appData.gameSetup) });
-      if (res.ok) {
-        setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
-      } else {
-        showInlineNotice("Could not remove event from server. It may sync on reconnect.", "warning", 4000);
-      }
-    }
-    triggerFeedback("undo", 20);
-    showInlineNotice("Last event undone.", "success", 2500);
-  }
-
-  async function startGame(newGameId?: string) {
-    // Read fresh settings from localStorage - saveGameSetup writes there synchronously
-    // before this async function resolves, so we always get the latest values.
-    const latest = loadAppData();
-    const gid = newGameId ?? latest.gameSetup.gameId;
-    let effectiveGameId = gid;
-    let shouldResetEventTimeline = false;
-    // When joining an existing game the server's team IDs and opponent name are
-    // authoritative.  We capture them here so the operator uses the same IDs that
-    // are already in the game state — preventing phantom "third team" mismatches.
-    let serverOpponentName: string | undefined;
-    let serverVcSide: "home" | "away" | undefined;
-
-    try {
-      const res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
-        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid)),
-      });
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        if (res.status === 409) {
-          let parsed: { activeGameId?: string; activeState?: { gameId?: string; homeTeamId?: string; awayTeamId?: string; opponentName?: string } } = {};
-          try { parsed = JSON.parse(body); } catch { /* ignore */ }
-          const activeGameId = typeof parsed.activeGameId === "string" ? parsed.activeGameId : (typeof parsed.activeState?.gameId === "string" ? parsed.activeState.gameId : null);
-          if (!activeGameId) {
-            showInlineNotice(
-              "Live server already has an active game in progress. Resume or submit that game before starting a new one.",
-              "error"
-            );
-            return;
-          }
-
-          if (!isConnectionReadyForStart(latest.gameSetup)) {
-            showInlineNotice(
-              "Another device has a live game. Enter and sync the coach connection code on this iPad before joining it.",
-              "warning",
-              7000,
-            );
-            return;
-          }
-
-          effectiveGameId = activeGameId;
-          // Sync authoritative team data from the active game state
-          if (parsed.activeState) {
-            serverOpponentName = parsed.activeState.opponentName;
-            if (latest.gameSetup.myTeamId && parsed.activeState.awayTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "away";
-            } else if (latest.gameSetup.myTeamId && parsed.activeState.homeTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "home";
-            }
-          }
-          showInlineNotice(
-            `Live server already has an active game (${activeGameId}). Resuming that game instead.`,
-            "warning",
-            6000,
-          );
-        } else {
-          showInlineNotice(
-            `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
-            "error"
-          );
-          return;
-        }
-      } else {
-        // 200 means game already existed with same gameId — sync from server state.
-        // 201 means new game created — start from a clean local timeline.
-        if (res.status === 201) {
-          shouldResetEventTimeline = true;
-        } else {
-          // Existing game: read the server's authoritative state and sync opponent/side
-          try {
-            const serverState = await res.json() as { homeTeamId?: string; awayTeamId?: string; opponentName?: string };
-            serverOpponentName = serverState.opponentName;
-            if (latest.gameSetup.myTeamId && serverState.awayTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "away";
-            } else if (latest.gameSetup.myTeamId && serverState.homeTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "home";
-            }
-          } catch { /* keep local values */ }
-        }
-      }
-    } catch {
-      showInlineNotice(
-        `Could not reach the live server at ${latest.gameSetup.apiUrl}. Make sure the realtime API is running, then go to Settings > Game Setup and tap Start Game again.`,
-        "error"
-      );
-      return;
-    }
-
-    // Merge new gameId into the latest persisted data to avoid overwriting settings
-    // that were saved by saveGameSetup() just before this call.
-    // Also apply any authoritative server values for opponent name and side.
-    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined as number | undefined };
-    if (serverOpponentName) {
-      mergedSetup.opponent = serverOpponentName;
-    }
-    if (serverVcSide) {
-      mergedSetup.vcSide = serverVcSide;
-    }
-    const nextData: AppData = {
-      ...latest,
-      gameSetup: mergedSetup,
-    };
-    setAppData(nextData);
-    saveAppData(nextData);
-    if (shouldResetEventTimeline) {
-      setPendingEvents([]);
-      setSubmittedEvents([]);
-      setSequence(1);
-      savePending(effectiveGameId, []);
-      saveSeq(effectiveGameId, 1);
-    }
-    persistPhase("live");
-  }
-
-  /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
-  async function endAndResetGame() {
-    // Read fresh localStorage data so we always get the opponent name just saved by saveGameSetup()
-    // (React state updates are async, so appData.gameSetup.opponent may still be the old value here)
-    const latest = loadAppData();
-    if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
-      const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
-      if (!saved) {
-        return false;
-      }
-    }
-    const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
-    await startGame(newId);
-    return true;
-  }
-
-  /** End game from the live view - opens post-game review screen without auto-submitting. */
-  async function endGame() {
-    const ok = await requestConfirm({
-      title: "End game now?",
-      message: "This moves to post-game review. You can still re-save stats from the post-game screen.",
-      confirmLabel: "End Game",
-      tone: "danger",
-    });
-    if (!ok) return;
-
-    setSubmitStatus("idle");
-    setSubmitMessage("Review game details, then tap Submit Game to publish stats to the dashboard.");
-    persistPhase("post-game");
-  }
-
-  /** Prepare a fresh game after viewing post-game screen - returns to pre-game setup. */
-  function handleNewGame() {
-    const latest = loadAppData();
-    const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
-    const nextData: AppData = {
-      ...latest,
-      gameSetup: { ...latest.gameSetup, gameId: newId, statsGameId: undefined },
-    };
-    persistData(nextData);
-    setPendingEvents([]);
-    setSubmittedEvents([]);
-    setSequence(1);
-    savePending(newId, []);
-    saveSeq(newId, 1);
-    setGameDate(new Date().toISOString().slice(0, 10));
-    setSubmitStatus("idle");
-    setSubmitMessage("Ready to publish final stats.");
-    persistPhase("pre-game");
-  }
-
-  async function submitToDashboard(overrides?: { opponent?: string; date?: string; homeScore?: number; awayScore?: number }) {
-    const vcSide = appData.gameSetup.vcSide ?? "home";
-    const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
-    const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "";
-
-    if (!opponent) {
-      const message = "Enter the opponent name in Game Setup before submitting.";
-      setSubmitMessage(message);
-      showInlineNotice("Enter the opponent name in Game Setup (Settings > Game Setup) before submitting.", "warning");
-      return false;
-    }
-
-    const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
-    if (!vcTeam) {
-      const message = "Tracked team is not configured. Check Game Setup in Settings.";
-      setSubmitMessage(message);
-      showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
-      return false;
-    }
-
-    if (!isLegacyStatsExportConfigured(appData.gameSetup)) {
-      setSubmitStatus("success");
-      setSubmitMessage("Live stats are already available in the coach dashboard.");
-      setTimeout(() => {
-        setSubmitStatus("idle");
-        setSubmitMessage("Ready to publish final stats.");
-      }, 4000);
-      return true;
-    }
-
-    setSubmitStatus("pending");
-    setSubmitMessage(`Saving final stats to ${dashboardUrl}...`);
-
-    // Format date to match Stats dashboard convention: "Dec 3, 2025"
-    const effectiveDate = overrides?.date || gameDate;
-    const dateParts = new Date(effectiveDate + "T12:00:00").toLocaleDateString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
-    });
-
-    const computedVcScore = scores[vcSide];
-    const computedOppScore = scores[oppSide];
-    const vcScore = vcSide === "home"
-      ? (overrides?.homeScore ?? computedVcScore)
-      : (overrides?.awayScore ?? computedVcScore);
-    const oppScore = vcSide === "home"
-      ? (overrides?.awayScore ?? computedOppScore)
-      : (overrides?.homeScore ?? computedOppScore);
-    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
-    const teamStats = computeTeamStats(allEventObjs, vcTeamId);
-
-    // Full roster for the dashboard to upsert - keyed by jersey number so it
-    // correctly updates existing players instead of creating abbreviated duplicates.
-    const rosterPayload = vcTeam.players.map(p => ({
-      number: parseInt(p.number, 10) || 0,
-      name: p.name,
-      position: p.position || undefined,
-      height: p.height || undefined,
-      grade: p.grade || undefined,
-    }));
-
-    const payload: Record<string, unknown> = {
-      date: dateParts,
-      opponent,
-      location: vcSide,
-      vc_score: vcScore,
-      opp_score: oppScore,
-      team_stats: teamStats,
-      player_stats: playerStats,
-      roster: rosterPayload,
-    };
-    // Include stored statsGameId so the dashboard upserts instead of duplicating
-    if (appData.gameSetup.statsGameId != null) {
-      payload.gameId = appData.gameSetup.statsGameId;
-    }
-
-    try {
-      const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json().catch(() => ({})) as { message?: string; gameId?: number; error?: string };
-      if (res.ok) {
-        // Store the assigned gameId so future re-submits overwrite instead of duplicate
-        if (result.gameId != null && result.gameId !== appData.gameSetup.statsGameId) {
-          persistData({
-            ...appData,
-            gameSetup: { ...appData.gameSetup, statsGameId: result.gameId },
-          });
-        }
-        setSubmitStatus("success");
-        setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
-        setTimeout(() => {
-          setSubmitStatus("idle");
-          setSubmitMessage("Ready to publish final stats.");
-        }, 4000);
-        return true;
-      } else {
-        const errorMessage = result.error || result.message || `Request failed with status ${res.status}.`;
-        console.error("Dashboard ingest error:", errorMessage);
-        setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
-        showInlineNotice(
-          `Could not save final stats to the legacy stats export endpoint. ${errorMessage} Check Settings > Game Setup > Legacy Stats Export URL and make sure that service is running.`,
-          "error"
-        );
-        setSubmitStatus("error");
-        return false;
-      }
-    } catch (err) {
-      console.error("Could not reach Stats dashboard:", err);
-      setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
-      showInlineNotice(
-        `Could not reach the legacy stats export endpoint at ${dashboardUrl}. Start that service or update Settings > Game Setup > Legacy Stats Export URL, then retry.`,
-        "error"
-      );
-      setSubmitStatus("error");
-      return false;
-    }
-  }
-
   // ---- Computed values ----
   const allEvents = useMemo(() => [
     ...submittedEvents.map(e => ({ event: e, pending: false })),
@@ -2528,12 +471,6 @@ export function App() {
   const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
   const scores = useMemo(() => computeScores(allEventObjs, homeTeamId, awayTeamId), [allEventObjs, homeTeamId, awayTeamId]);
   const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
-  const summaryBoxScoreTotals = useMemo(() => {
-    if (summaryPeriodFilter.length === 0) return pTotals;
-    const filterSet = new Set(summaryPeriodFilter);
-    const filtered = allEventObjs.filter(e => filterSet.has(e.period));
-    return computePlayerTotals(filtered);
-  }, [summaryPeriodFilter, allEventObjs, pTotals]);
   const homeTeamStats = useMemo(() => computeTeamStats(allEventObjs, homeTeamId), [allEventObjs, homeTeamId]);
   const awayTeamStats = useMemo(() => computeTeamStats(allEventObjs, awayTeamId), [allEventObjs, awayTeamId]);
   const periodTeamFouls = useMemo(() => {
@@ -2693,7 +630,6 @@ export function App() {
     }
     return current;
   }, [trackedPlayers, pTotals]);
-  const activeSummaryInsights = summaryAiInsights ?? [];
   const maxOtInEvents = useMemo(() => {
     return allEventObjs.reduce((maxOt, event) => {
       if (!isOvertimePeriod(event.period)) return maxOt;
@@ -2701,14 +637,6 @@ export function App() {
       return Number.isFinite(otNumber) ? Math.max(maxOt, otNumber) : maxOt;
     }, 0);
   }, [allEventObjs]);
-
-  function getPeriodOrder(label: string): number {
-    const qMatch = /^Q([1-4])$/.exec(label);
-    if (qMatch) return Number.parseInt(qMatch[1], 10);
-    const otMatch = /^OT(\d+)$/.exec(label);
-    if (otMatch) return 100 + Number.parseInt(otMatch[1], 10);
-    return 0;
-  }
 
   const furthestReachedPeriodOrder = useMemo(() => {
     let maxOrder = getPeriodOrder(period);
@@ -2720,209 +648,6 @@ export function App() {
     }
     return maxOrder;
   }, [allEventObjs, period]);
-
-  async function changePeriod(nextPeriod: string) {
-    if (nextPeriod === period) return;
-
-    const currentOrder = getPeriodOrder(period);
-    const nextOrder = getPeriodOrder(nextPeriod);
-    if (nextOrder > currentOrder + 1) {
-      showInlineNotice(`You must complete ${period} before jumping to ${nextPeriod}. Periods must advance one at a time.`, "warning", 3200);
-      return;
-    }
-
-    if (nextOrder < furthestReachedPeriodOrder) {
-      const ok = await requestConfirm({
-        title: `Move back to ${nextPeriod}?`,
-        message: "You already advanced to a later period. Going backward can make the game flow confusing and should only be used for corrections.",
-        confirmLabel: `Move to ${nextPeriod}`,
-      });
-      if (!ok) {
-        showInlineNotice("Period change canceled to keep game flow clear.", "warning", 2800);
-        return;
-      }
-    }
-
-    const endSeq = sequence;
-    void postEvent({
-      ...base(endSeq),
-      teamId: homeTeamId,
-      type: "period_transition",
-      newPeriod: nextPeriod,
-    });
-    setClockRunning(false);
-    setPeriod(nextPeriod);
-    setClockInput(getPeriodDefaultClock(nextPeriod));
-  }
-
-  useEffect(() => {
-    const currentOt = isOvertimePeriod(period) ? Number.parseInt(period.slice(2), 10) : 0;
-    setOvertimeCount((current) => Math.max(current, maxOtInEvents, Number.isFinite(currentOt) ? currentOt : 0));
-  }, [maxOtInEvents, period]);
-
-  async function deleteOvertimePeriod(periodLabel: string) {
-    if (!isOvertimePeriod(periodLabel)) return;
-
-    const pendingToRemove = pendingEvents.filter((event) => event.period === periodLabel);
-    const submittedToRemove = submittedEvents.filter((event) => event.period === periodLabel);
-
-    if (submittedToRemove.length > 0 && !navigator.onLine) {
-      showInlineNotice("Cannot delete overtime while offline because submitted events must be removed from the API first.", "warning");
-      return;
-    }
-
-    setPendingEvents((current) => current.filter((event) => event.period !== periodLabel));
-
-    const failedDeletes: string[] = [];
-    for (const event of submittedToRemove) {
-      try {
-        const res = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${event.id}`, {
-          method: "DELETE",
-          headers: apiKeyHeader(appData.gameSetup),
-        });
-        if (!res.ok) {
-          failedDeletes.push(event.id);
-        }
-      } catch {
-        failedDeletes.push(event.id);
-      }
-    }
-
-    if (failedDeletes.length > 0) {
-      const failed = new Set(failedDeletes);
-      setSubmittedEvents((current) => current.filter((event) => event.period !== periodLabel || failed.has(event.id)));
-      showInlineNotice(`Could not delete ${failedDeletes.length} submitted OT events from the server. Remaining OT events were kept.`, "error");
-      return;
-    }
-
-    setSubmittedEvents((current) => current.filter((event) => event.period !== periodLabel));
-    const nextCount = Number.parseInt(periodLabel.slice(2), 10) - 1;
-    setOvertimeCount(Math.max(0, nextCount));
-
-    if (period === periodLabel) {
-      setPeriod("Q4");
-      setClockInput(getPeriodDefaultClock("Q4"));
-    }
-
-    if (pendingToRemove.length + submittedToRemove.length > 0) {
-      setSubmitMessage(`Deleted ${periodLabel} and removed ${pendingToRemove.length + submittedToRemove.length} events.`);
-    } else {
-      setSubmitMessage(`Deleted ${periodLabel}.`);
-    }
-  }
-
-  function addOvertimePeriod() {
-    const next = overtimeCount + 1;
-    const label = `OT${next}`;
-    setOvertimeCount(next);
-    void changePeriod(label);
-  }
-
-  async function fetchOpenAiSummaryInsights() {
-    const trackedSide: TeamSide = vcSideSetup;
-    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
-
-    // Pre-game guard: 0-0 score in Q1 with minimal events
-    const totalScore = scores.home + scores.away;
-    if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
-      setSummaryAiInsights(null);
-      return;
-    }
-
-    setSummaryAiLoading(true);
-    try {
-      const res = await fetch(`${apiUrl}/api/games/${gameId}/insights`, {
-        method: "GET",
-        headers: { ...apiKeyHeader(appData.gameSetup) },
-      });
-
-      if (!res.ok) {
-        setSummaryAiInsights(null);
-        return;
-      }
-
-      const insights = await res.json() as SharedLiveInsight[];
-      if (!Array.isArray(insights) || insights.length === 0) {
-        setSummaryAiInsights(null);
-        return;
-      }
-
-      const lines = insights
-        .filter((insight) => insight.type === "ai_coaching" || insight.confidence !== "low")
-        .slice(0, 7)
-        .map((insight) => {
-          const base = insight.message?.trim() || insight.explanation?.trim() || "No insight text available.";
-          const why = insight.explanation?.trim() || "";
-          const compact = why && !base.includes(why) ? `${base} - ${why}` : base;
-          return compact;
-        });
-
-      setSummaryAiInsights(lines.length > 0 ? lines : null);
-    } catch {
-      setSummaryAiInsights(null);
-    } finally {
-      setSummaryAiLoading(false);
-    }
-  }
-
-  async function fetchPlayerAiInsights() {
-    if (trackedPlayers.length === 0) return;
-    const trackedSide: TeamSide = vcSideSetup;
-    const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
-    const trackedTeamId = trackedSide === "home" ? homeTeamId : awayTeamId;
-
-    // Pre-game guard
-    const totalScore = scores.home + scores.away;
-    if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
-      setSummaryPlayerAiInsights(null);
-      return;
-    }
-
-    setSummaryPlayerAiLoading(true);
-    try {
-      const res = await fetch(`${apiUrl}/api/games/${gameId}/insights`, {
-        method: "GET",
-        headers: { ...apiKeyHeader(appData.gameSetup) },
-      });
-      if (!res.ok) { setSummaryPlayerAiInsights(null); return; }
-
-      const insights = await res.json() as SharedLiveInsight[];
-      if (!Array.isArray(insights) || insights.length === 0) {
-        setSummaryPlayerAiInsights(null);
-        return;
-      }
-
-      const playerLines = insights
-        .filter((insight) => {
-          if (!insight.relatedTeamId || insight.relatedTeamId !== trackedTeamId) {
-            return false;
-          }
-          return insight.type === "hot_hand"
-            || insight.type === "foul_trouble"
-            || insight.type === "foul_warning"
-            || insight.type === "sub_suggestion"
-            || (insight.type === "ai_coaching" && Boolean(insight.relatedPlayerId));
-        })
-        .slice(0, 7)
-        .map((insight) => {
-          const playerName = playerNameFromId(insight.relatedPlayerId, trackedPlayers);
-          const core = insight.message?.trim() || insight.explanation?.trim() || "No player guidance available.";
-          const withPlayer = insight.relatedPlayerId ? `${playerName}: ${core}` : core;
-          return withPlayer;
-        });
-
-      if (playerLines.length > 0) {
-        setSummaryPlayerAiInsights(playerLines);
-        return;
-      }
-
-      setSummaryPlayerAiInsights(null);
-    } catch {
-      setSummaryPlayerAiInsights(null);
-    } finally {
-      setSummaryPlayerAiLoading(false);
-    }
-  }
 
   // Keep the ref current so the interval always has the latest values
   useEffect(() => {
@@ -2942,139 +667,21 @@ export function App() {
     setPostGameAwayScoreInput(String(scores.away));
   }, [gamePhase, appData.gameSetup.gameId, appData.gameSetup.opponent, gameDate, scores.home, scores.away]);
 
-  function parseScoreInput(value: string, fallback: number) {
-    const n = Number.parseInt(value, 10);
-    if (!Number.isFinite(n) || n < 0) return fallback;
-    return n;
-  }
-
-  function applyPostGameEdits() {
-    const name = postGameNameInput.trim() || appData.gameSetup.gameId;
-    const opponent = postGameOpponentInput.trim();
-    const date = postGameDateInput || gameDate;
-    setGameDate(date);
-    persistData({
-      ...appData,
-      gameSetup: {
-        ...appData.gameSetup,
-        gameId: name,
-        opponent,
-      },
-    });
-    return {
-      gameId: name,
-      opponent,
-      date,
-      homeScore: parseScoreInput(postGameHomeScoreInput, scores.home),
-      awayScore: parseScoreInput(postGameAwayScoreInput, scores.away),
-    };
-  }
-
-  function resetGameStateFor(gameIdToReset: string) {
-    setPendingEvents([]);
-    setSubmittedEvents([]);
-    setSequence(1);
-    savePending(gameIdToReset, []);
-    saveSeq(gameIdToReset, 1);
-    setSubmitStatus("idle");
-    setSubmitMessage("Ready to save final stats to the dashboard.");
-  }
-
-  function resetFromPostGame() {
-    const edits = applyPostGameEdits();
-    const baseId = edits.gameId || generateGameId(edits.opponent, edits.date);
-    const freshId = `${baseId}-reset-${Date.now().toString().slice(-4)}`;
-    persistData({
-      ...appData,
-      gameSetup: {
-        ...appData.gameSetup,
-        gameId: freshId,
-        opponent: edits.opponent,
-        statsGameId: undefined,
-      },
-    });
-    resetGameStateFor(freshId);
-    persistPhase("pre-game");
-  }
-
-  async function discardFromPostGame() {
-    const ok = await requestConfirm({
-      title: "Discard this finished game?",
-      message: "This clears tracked events and returns to pre-game setup.",
-      confirmLabel: "Discard Game",
-      tone: "danger",
-    });
-    if (!ok) return;
-
-    // Delete from the realtime API
-    const apiUrl = appData.gameSetup.apiUrl?.trim();
-    if (apiUrl && gameId) {
-      try {
-        await fetch(`${apiUrl}/api/games/${encodeURIComponent(gameId)}`, {
-          method: "DELETE",
-          headers: apiKeyHeader(appData.gameSetup),
-        });
-      } catch {
-        // Keep discarding locally even if API cleanup fails.
-      }
-    }
-
-    // Also delete from legacy stats export if a stats game ID was assigned
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim();
-    const savedStatsGameId = appData.gameSetup.statsGameId;
-    if (dashboardUrl && savedStatsGameId != null) {
-      try {
-        await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
-          method: "DELETE",
-          headers: apiKeyHeader(appData.gameSetup),
-        });
-      } catch {
-        // Keep discarding locally even if dashboard cleanup fails.
-      }
-    }
-
-    const edits = applyPostGameEdits();
-    const freshId = generateGameId(edits.opponent, new Date().toISOString().slice(0, 10));
-    persistData({
-      ...appData,
-      gameSetup: {
-        ...appData.gameSetup,
-        gameId: freshId,
-        opponent: "",
-        statsGameId: undefined,
-      },
-    });
-    setGameDate(new Date().toISOString().slice(0, 10));
-    resetGameStateFor(freshId);
-    persistPhase("pre-game");
-  }
-
-  async function submitGameToRealtimeApi(): Promise<boolean> {
-    const apiUrl = appData.gameSetup.apiUrl?.trim();
-    if (!apiUrl || !gameId) return true; // Nothing to do without API config
-    try {
-      const res = await fetch(`${apiUrl}/api/games/${encodeURIComponent(gameId)}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-      });
-      if (!res.ok && res.status !== 404) {
-        // 404 is OK - game may have been discarded already
-        return false;
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  // Auto-save interval is disabled - games are only published to the stats
-  // dashboard when the operator explicitly taps "Submit Game" on the
-  // post-game screen.  The ref and ctx are kept so legacy export (if
-  // configured) can still be triggered manually.
-  useEffect(() => {
-    const id = setInterval(() => { /* auto-save disabled */ }, 3 * 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
+  const {
+    startGame, endAndResetGame, endGame, handleNewGame,
+    submitToDashboard, applyPostGameEdits, resetGameStateFor,
+    resetFromPostGame, discardFromPostGame, submitGameToRealtimeApi,
+  } = useGameFlow({
+    appData, setAppData, gameId, gameDate, setGameDate,
+    allEventObjs, scores, homeTeam, awayTeam, vcTeamId, vcSideSetup,
+    preGameNotes,
+    postGameNameInput, postGameOpponentInput, postGameDateInput,
+    postGameHomeScoreInput, postGameAwayScoreInput,
+    persistData, persistPhase, resetTimeline,
+    ensureRealtimeGameExists,
+    setSubmitStatus, setSubmitMessage,
+    showInlineNotice, requestConfirm,
+  });
 
   // ---- Event builder ----
   function base(seq: number) {
@@ -3088,218 +695,6 @@ export function App() {
       clockSecondsRemaining: clockToSec(clockInput),
       operatorId,
     };
-  }
-
-  function buildEditModalForEvent(target: FeedEventSelection): Modal | null {
-    const editContext: EventEditContext = {
-      eventId: target.event.id,
-      originalEvent: target.event,
-      pending: target.pending,
-    };
-
-    switch (target.event.type) {
-      case "shot_attempt": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return {
-          kind: "shot",
-          teamId: teamSide,
-          points: target.event.points,
-          made: target.event.made,
-          zone: target.event.zone,
-          editContext
-        };
-      }
-      case "free_throw_attempt": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return { kind: "freeThrow", teamId: teamSide, made: target.event.made, editContext };
-      }
-      case "rebound": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return { kind: "stat", stat: target.event.offensive ? "off_reb" : "def_reb", teamId: teamSide, editContext };
-      }
-      case "turnover":
-      case "foul":
-      case "steal":
-      case "block": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        const stat = target.event.type === "turnover"
-          ? "turnover"
-          : target.event.type === "foul"
-            ? "foul"
-            : target.event.type;
-        return {
-          kind: "stat",
-          stat,
-          teamId: teamSide,
-          foulType: target.event.type === "foul" ? target.event.foulType : undefined,
-          turnoverType: target.event.type === "turnover" ? target.event.turnoverType : undefined,
-          editContext
-        };
-      }
-      case "assist": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return {
-          kind: "assistEdit",
-          teamId: teamSide,
-          assistPlayerId: target.event.playerId,
-          scorerPlayerId: target.event.scorerPlayerId,
-          editContext,
-        };
-      }
-      case "substitution": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return { kind: "sub1", teamId: teamSide, editContext };
-      }
-      case "timeout": {
-        const teamSide = getEventTeamSide(target.event.teamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return { kind: "timeoutEdit", teamId: teamSide, timeoutType: target.event.timeoutType, editContext };
-      }
-      case "possession_start": {
-        const teamSide = getEventTeamSide(target.event.possessedByTeamId, homeTeamId, awayTeamId);
-        if (!teamSide) return null;
-        return { kind: "possessionEdit", teamId: teamSide, editContext };
-      }
-      case "period_transition":
-        return { kind: "periodTransitionEdit", newPeriod: target.event.newPeriod, editContext };
-      default:
-        return null;
-    }
-  }
-
-  async function saveEditedEvent(nextEvent: GameEvent, editContext: EventEditContext): Promise<boolean> {
-    const normalizedEvent = normalizeEventTeamId(nextEvent);
-
-    if (editContext.pending) {
-      setPendingEvents((current) => upsertSortedEvent(current, normalizedEvent));
-      setModal(null);
-      showInlineNotice("Event updated.", "success", 2200);
-      return true;
-    }
-
-    if (!navigator.onLine) {
-      showInlineNotice("Reconnect to edit submitted events.", "error");
-      return false;
-    }
-
-    try {
-      const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(normalizedEvent),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        showInlineNotice(`Could not update event${errorText ? `: ${errorText}` : "."}`, "error");
-        return false;
-      }
-
-      const payload = await response.json().catch(() => null) as { event?: GameEvent } | null;
-      const savedEvent = normalizeEventTeamId(payload?.event ?? normalizedEvent);
-      setSubmittedEvents((current) => upsertSortedEvent(current, savedEvent));
-      setPendingEvents((current) => removeEventById(current, savedEvent.id));
-      setModal(null);
-      showInlineNotice("Event updated.", "success", 2200);
-      return true;
-    } catch {
-      showInlineNotice("Could not reach the live server to update this event.", "error");
-      return false;
-    }
-  }
-
-  async function deleteEventRecord(target: FeedEventSelection): Promise<boolean> {
-    if (target.pending) {
-      setPendingEvents((current) => removeEventById(current, target.event.id));
-      setModal(null);
-      showInlineNotice("Event deleted.", "success", 2200);
-      return true;
-    }
-
-    if (!navigator.onLine) {
-      showInlineNotice("Reconnect to delete submitted events.", "error");
-      return false;
-    }
-
-    try {
-      const response = await fetch(`${appData.gameSetup.apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
-        method: "DELETE",
-        headers: apiKeyHeader(appData.gameSetup),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        showInlineNotice(`Could not delete event${errorText ? `: ${errorText}` : "."}`, "error");
-        return false;
-      }
-
-      setSubmittedEvents((current) => removeEventById(current, target.event.id));
-      setPendingEvents((current) => removeEventById(current, target.event.id));
-      setModal(null);
-      showInlineNotice("Event deleted.", "success", 2200);
-      return true;
-    } catch {
-      showInlineNotice("Could not reach the live server to delete this event.", "error");
-      return false;
-    }
-  }
-
-  function openFeedEventEditor(target: FeedEventSelection) {
-    const nextModal = buildEditModalForEvent(target);
-    if (!nextModal) {
-      showInlineNotice("That event cannot be edited from the feed yet.", "warning", 3200);
-      return;
-    }
-
-    setModal(nextModal);
-  }
-
-  function getModalEditContext(activeModal: Modal | null): EventEditContext | null {
-    if (!activeModal) return null;
-    switch (activeModal.kind) {
-      case "shot":
-      case "freeThrow":
-      case "stat":
-      case "sub1":
-      case "sub2":
-        return activeModal.editContext ?? null;
-      case "assistEdit":
-      case "timeoutEdit":
-      case "possessionEdit":
-      case "periodTransitionEdit":
-        return activeModal.editContext;
-      default:
-        return null;
-    }
-  }
-
-  function renderEditDeleteAction(editContext: EventEditContext | null) {
-    if (!editContext) return null;
-    return (
-      <div className="modal-edit-actions">
-        <button
-          className="modal-delete-btn"
-          onClick={async () => {
-            const ok = await requestConfirm({
-              title: "Delete event?",
-              message: "This removes the selected event from the game log.",
-              confirmLabel: "Delete Event",
-              tone: "danger",
-            });
-            if (!ok) return;
-            void deleteEventRecord({ event: editContext.originalEvent, pending: editContext.pending });
-          }}
-        >
-          Delete Event
-        </button>
-      </div>
-    );
   }
 
   // Auto-dismiss chain prompt after 12 seconds
@@ -3325,264 +720,43 @@ export function App() {
   function closeModal() { setModal(null); }
   function dismissChain() { setChainPrompt(null); }
 
-  /** Silently emit a possession_start event if possession would actually change. */
-  function autoEmitPossession(teamId: string) {
-    if (possessionTeamId === teamId) return;
-    setPossessionOverrideTeamId(teamId);
-    void postEvent({
-      ...base(sequence),
-      teamId,
-      type: "possession_start",
-      possessedByTeamId: teamId,
-    });
-  }
+  const {
+    buildEditModalForEvent, saveEditedEvent, deleteEventRecord,
+    openFeedEventEditor, getModalEditContext,
+  } = useEventEditor({
+    homeTeamId, awayTeamId, gameId,
+    apiUrl: appData.gameSetup.apiUrl,
+    apiSetup: appData.gameSetup,
+    setModal, showInlineNotice, setPendingEvents, setSubmittedEvents,
+    normalizeEventTeamId,
+  });
 
-  function confirmShot(playerId: string) {
-    if (!modal || modal.kind !== "shot") return;
-    if (modal.teamId === opponentSide && !isOpponentStatEnabled("points")) {
-      closeModal();
-      return;
-    }
-    if (modal.editContext) {
-      void saveEditedEvent({
-        ...modal.editContext.originalEvent,
-        teamId: resolveTeamId(modal.teamId),
-        type: "shot_attempt",
-        playerId,
-        made: modal.made,
-        points: modal.points,
-        zone: modal.zone,
-      } as GameEvent, modal.editContext);
-      return;
-    }
-    const shotTeam = modal.teamId;
-    const shotMade = modal.made;
-    const shotPoints = modal.points;
-    void postEvent({
-      ...base(sequence),
-      teamId: resolveTeamId(shotTeam),
-      type: "shot_attempt",
-      playerId,
-      made: shotMade,
-      points: shotPoints,
-      zone: modal.zone,
-    } as GameEvent);
-    closeModal();
-    // Chain: auto-possession + contextual next prompt
-    if (shotMade) {
-      // Ball changes hands — auto-give possession to opponent
-      const oppTeamId = resolveTeamId(shotTeam === "home" ? "away" : "home");
-      autoEmitPossession(oppTeamId);
-      // Only prompt for assist on our tracked team's scored baskets
-      if (shotTeam === vcSideSetup) {
-        setChainPrompt({ kind: "after-made-shot", forTeam: shotTeam, points: shotPoints, scorerPlayerId: playerId });
-      }
-    } else {
-      setChainPrompt({ kind: "after-missed-shot", forTeam: shotTeam });
-    }
-  }
+  const { changePeriod, deleteOvertimePeriod, addOvertimePeriod } = usePeriodControl({
+    period, setPeriod, sequence, base, homeTeamId, postEvent,
+    setClockRunning, setClockInput, showInlineNotice, requestConfirm,
+    overtimeCount, setOvertimeCount, maxOtInEvents, furthestReachedPeriodOrder,
+    pendingEvents, setPendingEvents, submittedEvents, setSubmittedEvents,
+    apiUrl: appData.gameSetup.apiUrl,
+    apiSetup: appData.gameSetup,
+    gameId, setSubmitMessage,
+  });
 
-  function confirmFreeThrow(playerId: string) {
-    if (!modal || modal.kind !== "freeThrow") return;
-    if (modal.teamId === opponentSide && !isOpponentStatEnabled("free_throws")) {
-      closeModal();
-      return;
-    }
-    if (modal.editContext) {
-      void saveEditedEvent({
-        ...modal.editContext.originalEvent,
-        teamId: resolveTeamId(modal.teamId),
-        type: "free_throw_attempt",
-        playerId,
-        made: modal.made,
-        attemptNumber: 1,
-        totalAttempts: 1,
-      } as GameEvent, modal.editContext);
-      return;
-    }
-    const ftTeam = modal.teamId;
-    const ftMade = modal.made;
-    void postEvent({
-      ...base(sequence),
-      teamId: resolveTeamId(ftTeam),
-      type: "free_throw_attempt",
-      playerId,
-      made: ftMade,
-      attemptNumber: 1,
-      totalAttempts: 1,
-    } as GameEvent);
-    closeModal();
-    // Chain: if made, give possession to opponent; if missed, prompt for rebound
-    if (ftMade) {
-      const oppTeamId = resolveTeamId(ftTeam === "home" ? "away" : "home");
-      autoEmitPossession(oppTeamId);
-    } else {
-      setChainPrompt({ kind: "after-ft-miss", forTeam: ftTeam });
-    }
-  }
-
-  function confirmStat(playerId: string) {
-    if (!modal || modal.kind !== "stat") return;
-    if (modal.teamId === opponentSide && !isOpponentStatEnabled(modal.stat as OpponentTrackStat)) {
-      closeModal();
-      return;
-    }
-    const b = base(sequence);
-    const { stat } = modal;
-    const teamId = resolveTeamId(modal.teamId);
-    const otherSide: TeamSide = modal.teamId === "home" ? "away" : "home";
-    const otherTeamId = resolveTeamId(otherSide);
-    let event: GameEvent | null = null;
-    if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: false };
-    if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId, offensive: true  };
-    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId, foulType: modal.foulType ?? "personal" };
-    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId, turnoverType: modal.turnoverType ?? "bad_pass" };
-    if (stat === "steal") {
-      if (modal.editContext) {
-        void saveEditedEvent({
-          ...modal.editContext.originalEvent,
-          teamId,
-          type: "steal",
-          playerId,
-        } as GameEvent, modal.editContext);
-        return;
-      }
-      const stealEvent: GameEvent = { ...b, teamId, type: "steal", playerId };
-      void postEvent(stealEvent);
-
-      const isOpponentTurnover = otherSide === opponentSide;
-      const shouldTrackOpponentTurnover = !isOpponentTurnover || isOpponentStatEnabled("turnover");
-      if (shouldTrackOpponentTurnover) {
-        const turnoverEvent: GameEvent = {
-          ...base(sequence + 1),
-          teamId: otherTeamId,
-          type: "turnover",
-          playerId: otherTeamId,
-          turnoverType: "steal",
-          // Supports both full roster ids and team-level fallback ids.
-          forcedByPlayerId: playerId,
-        };
-        void postEvent(turnoverEvent);
-      }
-      // Auto-set possession to the stealing team
-      autoEmitPossession(teamId);
-      closeModal();
-      return;
-    }
-    if (stat === "block")    event = { ...b, teamId, type: "block",    playerId };
-    if (stat === "assist")   { setModal({ kind: "assist2", teamId: modal.teamId, assistPlayerId: playerId }); return; }
-    if (event && modal.editContext) {
-      void saveEditedEvent({
-        ...modal.editContext.originalEvent,
-        ...event,
-        id: modal.editContext.originalEvent.id,
-        gameId: modal.editContext.originalEvent.gameId,
-        sequence: modal.editContext.originalEvent.sequence,
-        timestampIso: modal.editContext.originalEvent.timestampIso,
-        operatorId: modal.editContext.originalEvent.operatorId,
-        period: modal.editContext.originalEvent.period,
-        clockSecondsRemaining: modal.editContext.originalEvent.clockSecondsRemaining,
-      } as GameEvent, modal.editContext);
-      return;
-    }
-    if (event) void postEvent(event as GameEvent);
-    // Chain: auto-possession after rebounding or turnovers
-    if (!modal.editContext) {
-      if (stat === "def_reb") {
-        // Defensive rebound → rebounding team gets possession
-        autoEmitPossession(teamId);
-      } else if (stat === "off_reb") {
-        // Offensive rebound → same team keeps possession
-        autoEmitPossession(teamId);
-      } else if (stat === "turnover") {
-        // Turnover → other team gets possession, prompt for steal
-        autoEmitPossession(otherTeamId);
-        setChainPrompt({ kind: "after-turnover", fromTeam: modal.teamId });
-      }
-    }
-    closeModal();
-  }
-
-  function confirmAssistScorer(scorerPlayerId: string) {
-    if (!modal || modal.kind !== "assist2") return;
-    setModal({ kind: "assist3", teamId: modal.teamId, assistPlayerId: modal.assistPlayerId, scorerPlayerId });
-  }
-
-  async function confirmAssistPoints(points: 2 | 3) {
-    if (!modal || modal.kind !== "assist3") return;
-    const seq = sequence;
-    const teamId = resolveTeamId(modal.teamId);
-
-    await postEvent({
-      ...base(seq),
-      teamId,
-      type: "shot_attempt",
-      playerId: modal.scorerPlayerId,
-      made: true,
-      points,
-      zone: points === 3 ? "above_break_three" : "paint",
-      assistedByPlayerId: modal.assistPlayerId,
-    } as GameEvent);
-
-    void postEvent({
-      ...base(seq + 1),
-      teamId,
-      type: "assist",
-      playerId: modal.assistPlayerId,
-      scorerPlayerId: modal.scorerPlayerId,
-    });
-    closeModal();
-  }
-
-  function confirmSubOut(playerOutId: string) {
-    if (!modal || modal.kind !== "sub1") return;
-    if (modal.playerInId) {
-      if (modal.editContext) {
-        void saveEditedEvent({
-          ...modal.editContext.originalEvent,
-          teamId: resolveTeamId(modal.teamId),
-          type: "substitution",
-          playerOutId,
-          playerInId: modal.playerInId,
-        } as GameEvent, modal.editContext);
-        return;
-      }
-      void postEvent({
-        ...base(sequence),
-        teamId: resolveTeamId(modal.teamId),
-        type: "substitution",
-        playerOutId,
-        playerInId: modal.playerInId,
-      });
-      closeModal();
-      return;
-    }
-    setModal({ kind: "sub2", teamId: modal.teamId, playerOutId, editContext: modal.editContext });
-  }
-
-  function confirmSubIn(playerInId: string) {
-    if (!modal || (modal.kind !== "sub2" && modal.kind !== "sub1")) return;
-    const playerOutId = modal.kind === "sub2" ? modal.playerOutId : modal.playerOutId;
-    if (!playerOutId) return;
-    if (modal.editContext) {
-      void saveEditedEvent({
-        ...modal.editContext.originalEvent,
-        teamId: resolveTeamId(modal.teamId),
-        type: "substitution",
-        playerOutId,
-        playerInId,
-      } as GameEvent, modal.editContext);
-      return;
-    }
-    void postEvent({
-      ...base(sequence),
-      teamId: resolveTeamId(modal.teamId),
-      type: "substitution",
-      playerOutId,
-      playerInId,
-    });
-    closeModal();
-  }
+  const {
+    autoEmitPossession,
+    confirmShot,
+    confirmFreeThrow,
+    confirmStat,
+    confirmAssistScorer,
+    confirmAssistPoints,
+    confirmSubOut,
+    confirmSubIn,
+    handlePlayerQuickShot,
+    handlePlayerQuickStat,
+  } = useGameActions({
+    modal, setModal, setChainPrompt, vcSideSetup, opponentSide, sequence,
+    possessionTeamId, setPossessionOverrideTeamId, base, resolveTeamId,
+    postEvent, saveEditedEvent, isOpponentStatEnabled, setActiveRosterPlayerId,
+  });
 
   function setPossession(side: TeamSide) {
     const teamId = resolveTeamId(side);
@@ -3622,694 +796,11 @@ export function App() {
     if (appData.gameSetup.clockEnabled === false) return;
     setClockInput((current) => formatClockFromSeconds(clockToSec(current) + deltaSeconds));
   }
-
-  /** Player-first quick shot from the roster panel — skips the player-picker modal. */
-  function handlePlayerQuickShot(player: Player, points: 2 | 3, made: boolean) {
-    setActiveRosterPlayerId(null);
-    const teamId = resolveTeamId(vcSideSetup);
-    void postEvent({
-      ...base(sequence),
-      teamId,
-      type: "shot_attempt",
-      playerId: player.id,
-      made,
-      points,
-      zone: points === 3 ? "above_break_three" : "paint",
-    } as GameEvent);
-    if (made) {
-      const oppTeamId = resolveTeamId(vcSideSetup === "home" ? "away" : "home");
-      autoEmitPossession(oppTeamId);
-      setChainPrompt({ kind: "after-made-shot", forTeam: vcSideSetup, points, scorerPlayerId: player.id });
-    } else {
-      setChainPrompt({ kind: "after-missed-shot", forTeam: vcSideSetup });
-    }
-  }
-
-  /** Player-first quick stat from the roster panel — posts simple stats directly, opens modal for assist. */
-  function handlePlayerQuickStat(player: Player, stat: "foul" | "def_reb" | "off_reb" | "turnover" | "steal" | "block" | "assist") {
-    const teamId = resolveTeamId(vcSideSetup);
-    setActiveRosterPlayerId(null);
-    const b = base(sequence);
-    if (stat === "assist") {
-      setModal({ kind: "assist2", teamId: vcSideSetup, assistPlayerId: player.id });
-      return;
-    }
-    if (stat === "steal") {
-      void postEvent({ ...b, teamId, type: "steal", playerId: player.id } as GameEvent);
-      const otherTeamId = resolveTeamId(vcSideSetup === "home" ? "away" : "home");
-      if (isOpponentStatEnabled("turnover")) {
-        void postEvent({ ...base(sequence + 1), teamId: otherTeamId, type: "turnover", playerId: otherTeamId, turnoverType: "steal", forcedByPlayerId: player.id } as GameEvent);
-      }
-      autoEmitPossession(teamId);
-      return;
-    }
-    let event: GameEvent | null = null;
-    if (stat === "foul")     event = { ...b, teamId, type: "foul",     playerId: player.id, foulType: "personal"  } as GameEvent;
-    if (stat === "def_reb")  event = { ...b, teamId, type: "rebound",  playerId: player.id, offensive: false      } as GameEvent;
-    if (stat === "off_reb")  event = { ...b, teamId, type: "rebound",  playerId: player.id, offensive: true       } as GameEvent;
-    if (stat === "turnover") event = { ...b, teamId, type: "turnover", playerId: player.id, turnoverType: "bad_pass" } as GameEvent;
-    if (stat === "block")    event = { ...b, teamId, type: "block",    playerId: player.id                        } as GameEvent;
-    if (event) void postEvent(event);
-  }
-
   function resetClockForPeriod() {
     setClockRunning(false);
     setClockInput(getPeriodDefaultClock(period));
   }
 
-  // ---- Modal render ----
-  function renderModal() {
-    if (!modal) return null;
-    const teamPlayers = (side: TeamSide) => side === "home" ? homePlayers : awayPlayers;
-    const tLabel = (side: TeamSide) => side === "home" ? homeTeamName : awayTeamName;
-
-    if (modal.kind === "shot" || modal.kind === "freeThrow") {
-      const allTeamPlayers = teamPlayers(modal.teamId);
-      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
-      const players = lineup.onCourt;
-      const allowTeamOnlyForOpponent = modal.teamId === opponentSide && allTeamPlayers.length === 0;
-      const selectedTeamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
-      const modalTitle = modal.editContext
-        ? `Edit ${modal.kind === "shot" ? `${modal.points}pt` : "FT"} - ${tLabel(modal.teamId)}`
-        : `${modal.kind === "shot" ? `${modal.points}pt` : "FT"} - ${tLabel(modal.teamId)}`;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">{modalTitle}</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext ?? null)}
-            <div className="made-miss-row">
-              <button className={`toggle-btn ${modal.made ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, made: true })}>Made</button>
-              <button className={`toggle-btn ${!modal.made ? "t-red" : ""}`} onClick={() => setModal({ ...modal, made: false })}>Miss</button>
-            </div>
-            {modal.kind === "shot" && (
-              <div className="shot-zone-row">
-                {(modal.points === 3 ? THREE_POINT_ZONES : TWO_POINT_ZONES).map((zone) => (
-                  <button
-                    key={zone}
-                    className={`zone-btn ${modal.zone === zone ? "active" : ""}`}
-                    onClick={() => setModal({ ...modal, zone })}
-                  >
-                    {zoneLabel(zone)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="player-list">
-              {players.length === 0 && !allowTeamOnlyForOpponent && <p className="no-players">No players on court yet</p>}
-              {players.map(p => (
-                <button key={p.id} className="player-row" onClick={() => (modal.kind === "shot" ? confirmShot(p.id) : confirmFreeThrow(p.id))}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                  {p.position && <span className="ppos">{p.position}</span>}
-                  {pTotals[p.id]?.fouls ? (
-                    <span className={`pfoul${pTotals[p.id].fouls >= 5 ? " pfoul-out" : pTotals[p.id].fouls >= 4 ? " pfoul-warn" : ""}`}>
-                      {pTotals[p.id].fouls}f{pTotals[p.id].fouls >= 5 ? " OUT" : ""}
-                    </span>
-                  ) : null}
-                  {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
-                </button>
-              ))}
-              {allowTeamOnlyForOpponent && (
-                <button
-                  className="player-row team-row opponent-team-only-row"
-                  style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
-                  onClick={() => (modal.kind === "shot" ? confirmShot(resolveTeamId(modal.teamId)) : confirmFreeThrow(resolveTeamId(modal.teamId)))}
-                >
-                  {tLabel(modal.teamId)}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "stat") {
-      const statLabels: Record<string, string> = {
-        def_reb: "Def Rebound", off_reb: "Off Rebound", turnover: "Turnover",
-        steal: "Steal", assist: "Assist - pick passer", block: "Block", foul: "Foul",
-      };
-      const trackedSide = vcSideSetup;
-      const allowOpponentForStat = isOpponentStatEnabled(modal.stat as OpponentTrackStat);
-      const trackedAllPlayers = teamPlayers(trackedSide);
-      const trackedLineup = computeCurrentLineup(allEventObjs, resolveTeamId(trackedSide), appData.gameSetup.startingLineup ?? [], trackedAllPlayers);
-      const trackedPlayers = trackedLineup.onCourt;
-      const isTrackedSelection = modal.teamId === trackedSide;
-      const trackedTeamColor = trackedSide === "home" ? homeTeamColor : awayTeamColor;
-      const opponentTeamColor = opponentSide === "home" ? homeTeamColor : awayTeamColor;
-      const selectedTeamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div>
-                <span className="modal-title">{modal.editContext ? `Edit ${statLabels[modal.stat]}` : statLabels[modal.stat]}</span>
-                <div className="modal-team-toggle">
-                  <button
-                    className={isTrackedSelection ? "team-color-active" : ""}
-                    style={isTrackedSelection ? { background: `${trackedTeamColor}26`, borderColor: trackedTeamColor, color: trackedTeamColor } : undefined}
-                    onClick={() => setModal({ ...modal, teamId: trackedSide })}
-                  >{vcSideSetup === "home" ? homeTeamName : awayTeamName}</button>
-                  <button
-                    className={!isTrackedSelection ? "team-color-active" : ""}
-                    style={!isTrackedSelection ? { background: `${opponentTeamColor}26`, borderColor: opponentTeamColor, color: opponentTeamColor } : undefined}
-                    onClick={() => {
-                      if (allowOpponentForStat) setModal({ ...modal, teamId: opponentSide });
-                    }}
-                    disabled={!allowOpponentForStat}
-                    title={allowOpponentForStat ? undefined : "Opponent tracking for this stat is disabled in Settings"}
-                  >{vcSideSetup === "home" ? awayTeamName : homeTeamName}</button>
-                </div>
-              </div>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext ?? null)}
-            {modal.stat === "foul" && (
-              <div className="modal-subtype-row">
-                {FOUL_TYPE_OPTIONS.map((foulType) => (
-                  <button
-                    key={foulType}
-                    className={`modal-subtype-btn ${(modal.foulType ?? "personal") === foulType ? "active" : ""}`}
-                    onClick={() => setModal({ ...modal, foulType })}
-                  >
-                    {foulTypeLabel(foulType)}
-                  </button>
-                ))}
-              </div>
-            )}
-            {modal.stat === "turnover" && (
-              <div className="modal-subtype-row">
-                {TURNOVER_TYPE_OPTIONS.map((turnoverType) => (
-                  <button
-                    key={turnoverType}
-                    className={`modal-subtype-btn ${(modal.turnoverType ?? "bad_pass") === turnoverType ? "active" : ""}`}
-                    onClick={() => setModal({ ...modal, turnoverType })}
-                  >
-                    {turnoverTypeLabel(turnoverType)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="player-list">
-              {isTrackedSelection ? (
-                <>
-                  {trackedPlayers.length === 0 && <p className="no-players">No players on court yet</p>}
-                  {trackedPlayers.map(p => (
-                    <button key={p.id} className="player-row" onClick={() => confirmStat(p.id)}>
-                      <span className="pnum">#{p.number}</span>
-                      <span className="pname">{p.name}</span>
-                      {p.position && <span className="ppos">{p.position}</span>}
-                      {pTotals[p.id]?.fouls ? (
-                        <span className={`pfoul${pTotals[p.id].fouls >= 5 ? " pfoul-out" : pTotals[p.id].fouls >= 4 ? " pfoul-warn" : ""}`}>
-                          {pTotals[p.id].fouls}f{pTotals[p.id].fouls >= 5 ? " OUT" : ""}
-                        </span>
-                      ) : null}
-                      {pTotals[p.id]?.points ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
-                    </button>
-                  ))}
-                </>
-              ) : (
-                <p className="no-players">Opponent tracked as team only.</p>
-              )}
-              {!isTrackedSelection && (
-                <button
-                  className="player-row team-row opponent-team-only-row"
-                  style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
-                  onClick={() => confirmStat(`${modal.teamId}-team`)}
-                >
-                  {tLabel(modal.teamId)}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "assistEdit") {
-      const allTeamPlayers = teamPlayers(modal.teamId);
-      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
-      const players = lineup.onCourt;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Edit Assist - {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext)}
-            <div className="modal-subtitle">Select the passer, then the scorer.</div>
-            <div className="player-list">
-              {players.length === 0 && <p className="no-players">No players on court yet</p>}
-              {players.map((player) => (
-                <button
-                  key={`assist-passer-${player.id}`}
-                  className={`player-row${modal.assistPlayerId === player.id ? " player-row-selected" : ""}`}
-                  onClick={() => setModal({ ...modal, assistPlayerId: player.id })}
-                >
-                  <span className="pnum">#{player.number}</span>
-                  <span className="pname">Passer: {player.name}</span>
-                </button>
-              ))}
-            </div>
-            <div className="player-list">
-              {players.map((player) => (
-                <button
-                  key={`assist-scorer-${player.id}`}
-                  className={`player-row${modal.scorerPlayerId === player.id ? " player-row-selected" : ""}`}
-                  onClick={() => setModal({ ...modal, scorerPlayerId: player.id })}
-                >
-                  <span className="pnum">#{player.number}</span>
-                  <span className="pname">Scorer: {player.name}</span>
-                </button>
-              ))}
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
-              <button
-                className="confirm-btn confirm-btn-primary"
-                onClick={() => {
-                  void saveEditedEvent({
-                    ...modal.editContext.originalEvent,
-                    teamId: resolveTeamId(modal.teamId),
-                    type: "assist",
-                    playerId: modal.assistPlayerId,
-                    scorerPlayerId: modal.scorerPlayerId,
-                  } as GameEvent, modal.editContext);
-                }}
-              >
-                Save Assist
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "assist2") {
-      const allTeamPlayers = teamPlayers(modal.teamId);
-      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
-      const players = lineup.onCourt.filter(p => p.id !== modal.assistPlayerId);
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Assist - pick scorer</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            <div className="player-list">
-              {players.length === 0 && <p className="no-players">No players on court yet</p>}
-              {players.map(p => (
-                <button key={p.id} className="player-row" onClick={() => confirmAssistScorer(p.id)}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                  {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].points} pts</span> : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "assist3") {
-      const players = teamPlayers(modal.teamId);
-      const scorer = players.find((p) => p.id === modal.scorerPlayerId);
-      const passer = players.find((p) => p.id === modal.assistPlayerId);
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Assist - pick points</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            <div className="modal-subtitle">
-              {passer ? `Passer: #${passer.number} ${passer.name}` : "Passer selected"}
-            </div>
-            <div className="modal-subtitle">
-              {scorer ? `Scorer: #${scorer.number} ${scorer.name}` : "Scorer selected"}
-            </div>
-            <div className="event-pills" style={{ marginTop: 12, display: "flex", gap: "1.5rem", justifyContent: "center" }}>
-              <button className="circle teal" style={{ width: 120, height: 120, fontSize: "1.6rem" }} onClick={() => { void confirmAssistPoints(2); }}>2pt</button>
-              <button className="circle teal" style={{ width: 120, height: 120, fontSize: "1.6rem" }} onClick={() => { void confirmAssistPoints(3); }}>3pt</button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "chain-assist") {
-      const allTeamPlayers = teamPlayers(modal.teamId);
-      const lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allTeamPlayers);
-      // Exclude the scorer from the passer list
-      const passers = lineup.onCourt.filter(p => p.id !== modal.scorerPlayerId);
-      const scorer = allTeamPlayers.find(p => p.id === modal.scorerPlayerId);
-      const teamColor = modal.teamId === "home" ? homeTeamColor : awayTeamColor;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Assist – who passed to {scorer ? `#${scorer.number} ${scorer.name}` : "scorer"}?</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            <div className="player-list">
-              {passers.length === 0 && <p className="no-players">No other players on court</p>}
-              {passers.map(p => (
-                <button key={p.id} className="player-row" onClick={() => {
-                  void postEvent({
-                    ...base(sequence),
-                    teamId: resolveTeamId(modal.teamId),
-                    type: "assist",
-                    playerId: p.id,
-                    scorerPlayerId: modal.scorerPlayerId,
-                  } as GameEvent);
-                  closeModal();
-                }}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                  {pTotals[p.id] ? <span className="ppts">{pTotals[p.id].ast > 0 ? `${pTotals[p.id].ast} ast` : ""}</span> : null}
-                </button>
-              ))}
-            </div>
-            <div style={{ padding: "0.5rem 1.2rem 1rem" }}>
-              <button
-                style={{ width: "100%", padding: "0.8rem", borderRadius: "0.5rem", background: "transparent", border: `1px solid ${teamColor}40`, color: "rgba(232,234,240,0.6)", cursor: "pointer", fontSize: "0.9rem" }}
-                onClick={closeModal}
-              >
-                No assist – unassisted basket
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "sub1") {
-      const players = teamPlayers(modal.teamId);
-      const currentLineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], players);
-      
-      // If playerOutId is provided, skip directly to selecting who to sub in
-      if (modal.playerOutId) {
-          const subInPlayers = currentLineup.bench;
-        return (
-          <div className="modal-overlay" onClick={closeModal}>
-            <div className="modal" onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} for {players.find(p => p.id === modal.playerOutId)?.name} - {tLabel(modal.teamId)}</span>
-                <button className="modal-close" onClick={closeModal}>X</button>
-              </div>
-              {renderEditDeleteAction(modal.editContext ?? null)}
-              <div className="player-list">
-                {subInPlayers.map(p => (
-                  <button key={p.id} className="player-row" onClick={() => confirmSubIn(p.id)}>
-                    <span className="pnum">#{p.number}</span>
-                    <span className="pname">{p.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // Otherwise show who's on court to choose who to sub out
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">{modal.editContext ? "Edit Sub Out" : "Sub Out"} - {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext ?? null)}
-            <div className="player-list">
-              {currentLineup.onCourt.length > 0 ? (
-                currentLineup.onCourt.map(p => (
-                  <button key={p.id} className="player-row" onClick={() => confirmSubOut(p.id)}>
-                    <span className="pnum">#{p.number}</span>
-                    <span className="pname">{p.name}</span>
-                    {pTotals[p.id] && <span className="ppts">{pTotals[p.id].points}pts</span>}
-                  </button>
-                ))
-              ) : (
-                <p className="no-players">No players on court yet</p>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "sub2") {
-      const allSub2Players = teamPlayers(modal.teamId);
-      const sub2Lineup = computeCurrentLineup(allEventObjs, resolveTeamId(modal.teamId), appData.gameSetup.startingLineup ?? [], allSub2Players);
-      const players = sub2Lineup.bench;
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">{modal.editContext ? "Edit Sub In" : "Sub In"} - {tLabel(modal.teamId)}</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext ?? null)}
-            <div className="player-list">
-              {players.map(p => (
-                <button key={p.id} className="player-row" onClick={() => confirmSubIn(p.id)}>
-                  <span className="pnum">#{p.number}</span>
-                  <span className="pname">{p.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "timeoutEdit") {
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Edit Timeout</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext)}
-            <div className="confirm-message">Update the team and timeout length for this stoppage.</div>
-            <div className="modal-team-toggle" style={{ padding: "0 1.2rem" }}>
-              <button className={modal.teamId === "home" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "home" })}>{homeTeamName}</button>
-              <button className={modal.teamId === "away" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "away" })}>{awayTeamName}</button>
-            </div>
-            <div className="made-miss-row" style={{ padding: "0.9rem 1.2rem 0" }}>
-              <button className={`toggle-btn ${modal.timeoutType === "full" ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, timeoutType: "full" })}>Full</button>
-              <button className={`toggle-btn ${modal.timeoutType === "short" ? "t-red" : ""}`} onClick={() => setModal({ ...modal, timeoutType: "short" })}>Short</button>
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
-              <button
-                className="confirm-btn confirm-btn-primary"
-                onClick={() => {
-                  void saveEditedEvent({
-                    ...modal.editContext.originalEvent,
-                    teamId: resolveTeamId(modal.teamId),
-                    type: "timeout",
-                    timeoutType: modal.timeoutType,
-                  } as GameEvent, modal.editContext);
-                }}
-              >
-                Save Timeout
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "possessionEdit") {
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Edit Possession</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext)}
-            <div className="confirm-message">Choose which team should own this possession event.</div>
-            <div className="modal-team-toggle" style={{ padding: "0 1.2rem" }}>
-              <button className={modal.teamId === "home" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "home" })}>{homeTeamName}</button>
-              <button className={modal.teamId === "away" ? "team-color-active" : ""} onClick={() => setModal({ ...modal, teamId: "away" })}>{awayTeamName}</button>
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
-              <button
-                className="confirm-btn confirm-btn-primary"
-                onClick={() => {
-                  const teamId = resolveTeamId(modal.teamId);
-                  void saveEditedEvent({
-                    ...modal.editContext.originalEvent,
-                    teamId,
-                    type: "possession_start",
-                    possessedByTeamId: teamId,
-                  } as GameEvent, modal.editContext);
-                }}
-              >
-                Save Possession
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (modal.kind === "periodTransitionEdit") {
-      const availablePeriods = [
-        "Q1",
-        "Q2",
-        "Q3",
-        "Q4",
-        ...Array.from({ length: overtimeCount }, (_, index) => `OT${index + 1}`),
-      ];
-      return (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal modal-confirm" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Edit Period Start</span>
-              <button className="modal-close" onClick={closeModal}>X</button>
-            </div>
-            {renderEditDeleteAction(modal.editContext)}
-            <div className="confirm-message">Pick the period that should start at this point in the feed.</div>
-            <div className="period-row" style={{ borderTop: "none", paddingTop: 0 }}>
-              {availablePeriods.map((label) => (
-                <button
-                  key={label}
-                  className={`period-btn${modal.newPeriod === label ? " period-on" : ""}`}
-                  onClick={() => setModal({ ...modal, newPeriod: label })}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn-cancel" onClick={closeModal}>Cancel</button>
-              <button
-                className="confirm-btn confirm-btn-primary"
-                onClick={() => {
-                  void saveEditedEvent({
-                    ...modal.editContext.originalEvent,
-                    type: "period_transition",
-                    newPeriod: modal.newPeriod,
-                    period: modal.newPeriod,
-                  } as GameEvent, modal.editContext);
-                }}
-              >
-                Save Period
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return null;
-  }
-
-  function renderChainPrompt() {
-    if (!chainPrompt) return null;
-    const myTeamName = vcSideSetup === "home" ? homeTeamName : awayTeamName;
-    const oppTeamName = vcSideSetup === "home" ? awayTeamName : homeTeamName;
-    const myTeamColor = vcSideSetup === "home" ? homeTeamColor : awayTeamColor;
-    const oppTeamColor = vcSideSetup === "home" ? awayTeamColor : homeTeamColor;
-
-    if (chainPrompt.kind === "after-made-shot") {
-      const teamName = chainPrompt.forTeam === vcSideSetup ? myTeamName : oppTeamName;
-      const teamColor = chainPrompt.forTeam === vcSideSetup ? myTeamColor : oppTeamColor;
-      return (
-        <div className="chain-prompt">
-          <span className="chain-prompt-label">
-            {teamName} <span className="chain-prompt-made">+{chainPrompt.points}</span> · Add assist?
-          </span>
-          <div className="chain-prompt-actions">
-            <button
-              className="chain-btn chain-btn-primary"
-              style={{ borderColor: teamColor, color: teamColor }}
-              onClick={() => {
-                setChainPrompt(null);
-                setModal({ kind: "chain-assist", teamId: chainPrompt.forTeam, scorerPlayerId: chainPrompt.scorerPlayerId });
-              }}
-            >
-              Assist
-            </button>
-            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
-          </div>
-        </div>
-      );
-    }
-
-    if (chainPrompt.kind === "after-missed-shot" || chainPrompt.kind === "after-ft-miss") {
-      const isMy = chainPrompt.forTeam === vcSideSetup;
-      const label = chainPrompt.kind === "after-ft-miss" ? "FT miss · Rebound?" : "Miss · Rebound?";
-      return (
-        <div className="chain-prompt">
-          <span className="chain-prompt-label">{label}</span>
-          <div className="chain-prompt-actions">
-            <button
-              className="chain-btn chain-btn-primary"
-              style={{ borderColor: myTeamColor, color: myTeamColor }}
-              onClick={() => {
-                setChainPrompt(null);
-                // Off reb if the shooting team is my team, def reb if opponent missed
-                const rebStat = isMy ? "off_reb" : "def_reb";
-                setModal({ kind: "stat", stat: rebStat, teamId: vcSideSetup });
-              }}
-            >
-              {myTeamName} Reb
-            </button>
-            <button
-              className="chain-btn chain-btn-secondary"
-              style={{ borderColor: oppTeamColor, color: oppTeamColor }}
-              onClick={() => {
-                setChainPrompt(null);
-                // Def reb for opponent if shooting team is my team, off reb if opponent missed
-                const rebStat = isMy ? "def_reb" : "off_reb";
-                setModal({ kind: "stat", stat: rebStat, teamId: opponentSide });
-              }}
-            >
-              {oppTeamName} Reb
-            </button>
-            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
-          </div>
-        </div>
-      );
-    }
-
-    if (chainPrompt.kind === "after-turnover") {
-      // fromTeam turned it over, the OTHER team now has possession — prompt for steal
-      const stealTeamSide: TeamSide = chainPrompt.fromTeam === "home" ? "away" : "home";
-      const stealTeamName = stealTeamSide === vcSideSetup ? myTeamName : oppTeamName;
-      const stealTeamColor = stealTeamSide === vcSideSetup ? myTeamColor : oppTeamColor;
-      return (
-        <div className="chain-prompt">
-          <span className="chain-prompt-label">Turnover · Was it a steal?</span>
-          <div className="chain-prompt-actions">
-            <button
-              className="chain-btn chain-btn-primary"
-              style={{ borderColor: stealTeamColor, color: stealTeamColor }}
-              onClick={() => {
-                setChainPrompt(null);
-                setModal({ kind: "stat", stat: "steal", teamId: stealTeamSide });
-              }}
-            >
-              Steal – {stealTeamName}
-            </button>
-            <button className="chain-btn chain-btn-skip" onClick={dismissChain}>Skip</button>
-          </div>
-        </div>
-      );
-    }
-
-    return null;
-  }
 
   function renderInlineNotice() {
     if (!inlineNotice) return null;
@@ -4412,347 +903,63 @@ export function App() {
 
   // ---- PRE-GAME SCREEN ----
   if (gamePhase === "pre-game") {
-    const savedLineup = appData.gameSetup.startingLineup ?? [];
-    const lineupIsSet = savedLineup.length > 0;
-    const hasConnectionId = !!normalizeConnectionId(appData.gameSetup.connectionId);
-    const hasSyncedConnection = isConnectionReadyForStart(appData.gameSetup);
-    const canStart = hasSyncedConnection && !!appData.gameSetup.myTeamId;
-    const lineupLockedMessage = lineupLockedByLiveGame
-      ? "Lineup is locked because this game is already live on another device."
-      : "";
-    const myTeamDisplay = myTeam?.name ?? null;
-
-    const handleStarterToggle = (playerId: string) => {
-      const next = new Set(selectedStarters);
-      if (next.has(playerId)) {
-        next.delete(playerId);
-      } else {
-          if (next.size >= 5) return;
-          next.add(playerId);
-      }
-      setSelectedStarters(next);
-    };
-
-    const handleSaveLineup = () => {
-      if (lineupLockedByLiveGame) {
-        showInlineNotice("Lineup is locked. This game has already started.", "warning", 4000);
-        return;
-      }
-      persistData({
-        ...appData,
-        gameSetup: {
-          ...appData.gameSetup,
-          startingLineup: Array.from(selectedStarters),
-        },
-      });
-      setShowLineupSetup(false);
-    };
-
     return (
-      <div className="pregame-screen">
-        {renderInlineNotice()}
-        {renderConfirmDialog()}
-        <div className="pregame-card">
-          <div className="pregame-header">
-            <span className="pregame-eyebrow">Operator Console</span>
-            <h1 className="pregame-title">Ready to Track</h1>
-          </div>
-
-          <div className="pregame-device-id">
-            <div className="pregame-device-field">
-              <label className="pregame-device-label">Connection Code</label>
-              <input
-                className="pregame-device-input"
-                value={appData.gameSetup.connectionId ?? ""}
-                onChange={(event) => {
-                  const nextConnectionId = normalizeConnectionId(event.target.value);
-                  const nextConnectionChanged = nextConnectionId !== normalizeConnectionId(appData.gameSetup.connectionId);
-                  setConnectionSyncStatus(nextConnectionId
-                    ? `Connection code ${nextConnectionId} saved locally. Syncing coach setup...`
-                    : DEFAULT_CONNECTION_SYNC_STATUS);
-                  persistData({
-                    ...appData,
-                    gameSetup: {
-                      ...appData.gameSetup,
-                      connectionId: nextConnectionId || undefined,
-                      syncedConnectionId: nextConnectionChanged ? undefined : appData.gameSetup.syncedConnectionId,
-                      myTeamId: nextConnectionChanged ? "" : appData.gameSetup.myTeamId,
-                      opponent: nextConnectionChanged ? "" : appData.gameSetup.opponent,
-                      startingLineup: nextConnectionChanged ? [] : appData.gameSetup.startingLineup,
-                    },
-                  });
-                }}
-                placeholder="Enter 6-digit coach code"
-                aria-label="Connection code"
-              />
-            </div>
-            <button
-              type="button"
-              className="pregame-device-copy-btn"
-              onClick={() => {
-                void syncFromCoachCode(undefined, { silent: false });
-              }}
-              title="Pull roster and game setup from the coach dashboard"
-            >
-              Sync Now
-            </button>
-          </div>
-          <p className="pregame-settings-hint">{connectionSyncStatus}</p>
-
-          <div className="pregame-opponent-row">
-            <div className="pregame-team my-team">
-              {myTeamDisplay ?? <span className="pregame-no-team">No team</span>}
-            </div>
-            <div className="pregame-vs">vs</div>
-            <div className="pregame-team opp-team">
-              {opponentName
-                ? <span>{opponentName}</span>
-                : <span className="pregame-no-team">Opponent TBD</span>}
-            </div>
-          </div>
-
-          {!hasConnectionId && (
-            <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
-          )}
-          {hasConnectionId && !hasSyncedConnection && (
-            <p className="pregame-error">This connection code is not synced yet. Tap Sync Now to validate and load the linked team.</p>
-          )}
-          {hasConnectionId && !appData.gameSetup.myTeamId && (
-            <p className="pregame-error">Tap Sync Now to pull team and game setup from the coach dashboard.</p>
-          )}
-
-          {myTeam && !showLineupSetup && (
-            <button
-              className={`pregame-lineup-btn${lineupIsSet ? " lineup-is-set" : ""}${!lineupIsSet ? " lineup-required" : ""}`}
-              disabled={lineupLockedByLiveGame}
-              onClick={() => {
-                if (lineupLockedByLiveGame) return;
-                setSelectedStarters(new Set(savedLineup));
-                setShowLineupSetup(true);
-              }}>
-              {lineupIsSet
-                ? `Edit Starting Lineup (${savedLineup.length}/5)`
-                : "Set Starting Lineup"}
-            </button>
-          )}
-
-          {lineupLockedByLiveGame && (
-            <p className="pregame-settings-hint">{lineupLockedMessage}</p>
-          )}
-
-          {showLineupSetup && myTeam && (
-            <div className="pregame-lineup-setup">
-              <div className="lineup-setup-head">
-                <div>
-                  <h3 className="lineup-setup-title">Select Starting Lineup</h3>
-                  <p className="lineup-setup-subtitle">Choose 5 players to begin the game.</p>
-                </div>
-                <button
-                  type="button"
-                  className="lineup-cancel-btn"
-                  onClick={() => setShowLineupSetup(false)}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="lineup-setup-status">{selectedStarters.size}/5 selected</div>
-              <div className="lineup-player-grid">
-                {myTeam.players.map(p => (
-                  <button
-                    key={p.id}
-                    className={`lineup-player-btn${selectedStarters.has(p.id) ? " lineup-player-selected" : ""}`}
-                    onClick={() => handleStarterToggle(p.id)}
-                    disabled={lineupLockedByLiveGame || (selectedStarters.size >= 5 && !selectedStarters.has(p.id))}>
-                    <span className="lineup-player-num">#{p.number}</span>
-                    <span className="lineup-player-name">{p.name}</span>
-                    {selectedStarters.has(p.id) && <span className="lineup-player-badge">*</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="lineup-setup-actions">
-                <button className="lineup-clear-btn" disabled={lineupLockedByLiveGame} onClick={() => setSelectedStarters(new Set())}>
-                  Clear
-                </button>
-                <button className="lineup-save-btn" disabled={lineupLockedByLiveGame} onClick={handleSaveLineup}>
-                  Save Lineup ({selectedStarters.size}/5)
-                </button>
-              </div>
-            </div>
-          )}
-
-          <button
-            className="pregame-start-btn"
-            disabled={!canStart}
-            onClick={async () => {
-              // Start with the coach-linked game ID stored in setup to keep every operator on one game.
-              await startGame();
-            }}>
-            Start Game
-          </button>
-
-          <div className="pregame-settings-callout">
-            <button
-              className="pregame-settings-link"
-              onClick={() => navigateView("settings", "game-setup")}>
-              Open Advanced Settings
-            </button>
-            <p className="pregame-settings-hint">API URL, clock, and opponent tracking options.</p>
-          </div>
-        </div>
-      </div>
+      <PreGameScreen
+        appData={appData}
+        myTeam={myTeam}
+        opponentName={opponentName}
+        connectionSyncStatus={connectionSyncStatus}
+        selectedStarters={selectedStarters}
+        showLineupSetup={showLineupSetup}
+        lineupLockedByLiveGame={lineupLockedByLiveGame}
+        onPersist={persistData}
+        onSetConnectionSyncStatus={setConnectionSyncStatus}
+        onSetSelectedStarters={setSelectedStarters}
+        onSetShowLineupSetup={setShowLineupSetup}
+        onSyncFromCoachCode={syncFromCoachCode}
+        onStartGame={startGame}
+        onNavigate={navigateView}
+        showInlineNotice={showInlineNotice}
+        inlineNoticeNode={renderInlineNotice()}
+        confirmDialogNode={renderConfirmDialog()}
+      />
     );
   }
 
   // ---- POST-GAME SCREEN ----
   if (gamePhase === "post-game") {
-    const editedHomeScore = parseScoreInput(postGameHomeScoreInput, scores.home);
-    const editedAwayScore = parseScoreInput(postGameAwayScoreInput, scores.away);
-    const coachUrl = buildCoachViewUrl(gameId, {
-      connectionId: appData.gameSetup.connectionId,
-      myTeamId: appData.gameSetup.myTeamId,
-      myTeamName: myTeam?.name,
-      opponentName: appData.gameSetup.opponent,
-      vcSide: appData.gameSetup.vcSide,
-      homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
-      awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
-    });
     return (
-      <div className="postgame-screen">
-        {renderInlineNotice()}
-        {renderConfirmDialog()}
-        <div className="postgame-card">
-          <div className="postgame-header">
-            <span className="postgame-eyebrow">Game Over</span>
-            <h1 className="postgame-title">Finalize game details</h1>
-          </div>
-
-          <div className="postgame-edit-grid">
-            <label className="postgame-field">
-              <span className="postgame-field-label">Game Name</span>
-              <input
-                className="postgame-input"
-                value={postGameNameInput}
-                onChange={e => setPostGameNameInput(e.target.value)}
-                placeholder="Game name"
-              />
-            </label>
-            <label className="postgame-field">
-              <span className="postgame-field-label">Date</span>
-              <input
-                type="date"
-                className="postgame-input"
-                value={postGameDateInput}
-                onChange={e => setPostGameDateInput(e.target.value)}
-              />
-            </label>
-            <label className="postgame-field postgame-field-wide">
-              <span className="postgame-field-label">Opponent</span>
-              <input
-                className="postgame-input"
-                value={postGameOpponentInput}
-                onChange={e => setPostGameOpponentInput(e.target.value)}
-                placeholder="Opponent name"
-              />
-            </label>
-          </div>
-
-          <div className="postgame-score">
-            <div className="postgame-score-team">
-              <span className="postgame-score-name">{homeTeamName}</span>
-              <input
-                className="postgame-score-input"
-                inputMode="numeric"
-                value={postGameHomeScoreInput}
-                onChange={e => setPostGameHomeScoreInput(e.target.value.replace(/[^0-9]/g, ""))}
-              />
-            </div>
-            <div className="postgame-score-sep">-</div>
-            <div className="postgame-score-team">
-              <span className="postgame-score-name">{awayTeamName}</span>
-              <input
-                className="postgame-score-input"
-                inputMode="numeric"
-                value={postGameAwayScoreInput}
-                onChange={e => setPostGameAwayScoreInput(e.target.value.replace(/[^0-9]/g, ""))}
-              />
-            </div>
-          </div>
-
-          <button
-            className="postgame-apply-btn"
-            onClick={() => {
-              applyPostGameEdits();
-              setSubmitMessage("Updated game details.");
-            }}>
-            Save Name/Date/Score Changes
-          </button>
-
-          <div className={`submit-banner submit-banner-${submitStatus}`} role="status">
-            {submitMessage}
-          </div>
-
-          <a
-            className="coach-connect-btn"
-            href={coachUrl}
-            target="_blank"
-            rel="noreferrer">
-            Open Dashboard
-          </a>
-
-          <button
-            className="postgame-retry-btn"
-            onClick={async () => {
-              const edits = applyPostGameEdits();
-              setSubmitStatus("pending");
-              setSubmitMessage("Submitting game to dashboard...");
-              const apiOk = await submitGameToRealtimeApi();
-              // Also run legacy export if configured
-              const legacyOk = await submitToDashboard({
-                opponent: edits.opponent,
-                date: edits.date,
-                homeScore: editedHomeScore,
-                awayScore: editedAwayScore,
-              });
-              if (apiOk) {
-                setSubmitStatus("success");
-                setSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
-                setTimeout(() => {
-                  setSubmitStatus("idle");
-                  setSubmitMessage("Game has been submitted to the dashboard.");
-                }, 4000);
-              } else if (!legacyOk) {
-                setSubmitStatus("error");
-                setSubmitMessage("Submit failed. Check your connection and try again.");
-              }
-            }}
-            disabled={submitStatus === "pending"}>
-            {submitStatus === "pending" ? "Submitting..." : "Submit Game"}
-          </button>
-
-          <button
-            className="postgame-reset-btn"
-            onClick={async () => {
-              const ok = await requestConfirm({
-                title: "Reset this game and start over?",
-                message: "This keeps your settings but clears all tracked events and creates a fresh game id.",
-                confirmLabel: "Reset Game",
-                tone: "danger",
-              });
-              if (!ok) return;
-              resetFromPostGame();
-            }}>
-            Reset This Game
-          </button>
-
-          <button className="postgame-discard-btn" onClick={discardFromPostGame}>
-            Discard This Game
-          </button>
-
-          <button className="postgame-new-btn" onClick={handleNewGame}>
-            Start New Game
-          </button>
-        </div>
-      </div>
+      <PostGameScreen
+        appData={appData}
+        gameId={gameId}
+        myTeam={myTeam}
+        homeTeamName={homeTeamName}
+        awayTeamName={awayTeamName}
+        scores={scores}
+        postGameNameInput={postGameNameInput}
+        postGameDateInput={postGameDateInput}
+        postGameOpponentInput={postGameOpponentInput}
+        postGameHomeScoreInput={postGameHomeScoreInput}
+        postGameAwayScoreInput={postGameAwayScoreInput}
+        submitStatus={submitStatus}
+        submitMessage={submitMessage}
+        onSetPostGameNameInput={setPostGameNameInput}
+        onSetPostGameDateInput={setPostGameDateInput}
+        onSetPostGameOpponentInput={setPostGameOpponentInput}
+        onSetPostGameHomeScoreInput={setPostGameHomeScoreInput}
+        onSetPostGameAwayScoreInput={setPostGameAwayScoreInput}
+        onSetSubmitStatus={setSubmitStatus}
+        onSetSubmitMessage={setSubmitMessage}
+        onApplyPostGameEdits={applyPostGameEdits}
+        onSubmitGameToRealtimeApi={submitGameToRealtimeApi}
+        onSubmitToDashboard={submitToDashboard}
+        onRequestConfirm={requestConfirm}
+        onResetFromPostGame={resetFromPostGame}
+        onDiscardFromPostGame={discardFromPostGame}
+        onHandleNewGame={handleNewGame}
+        inlineNoticeNode={renderInlineNotice()}
+        confirmDialogNode={renderConfirmDialog()}
+      />
     );
   }
 
@@ -4786,297 +993,88 @@ export function App() {
       {renderInlineNotice()}
       {renderAlertBanner()}
       {renderConfirmDialog()}
-      {renderModal()}
-      {!modal && renderChainPrompt()}
+      <ModalRouter
+        modal={modal}
+        team={{
+          vcSideSetup,
+          opponentSide,
+          homeTeamName,
+          awayTeamName,
+          homeTeamColor,
+          awayTeamColor,
+          homePlayers,
+          awayPlayers,
+        }}
+        game={{
+          allEventObjs,
+          pTotals,
+          startingLineup: appData.gameSetup.startingLineup ?? [],
+          overtimeCount,
+          resolveTeamId,
+          isOpponentStatEnabled,
+        }}
+        callbacks={{
+          setModal,
+          confirmShot,
+          confirmFreeThrow,
+          confirmStat,
+          confirmAssistScorer,
+          confirmAssistPoints,
+          confirmSubOut,
+          confirmSubIn,
+          saveEditedEvent,
+          deleteEventRecord,
+          requestConfirm,
+          postEvent,
+          base,
+          sequence,
+        }}
+      />
+      {!modal && (
+        <ChainPromptBar
+          chainPrompt={chainPrompt}
+          vcSideSetup={vcSideSetup}
+          opponentSide={opponentSide}
+          homeTeamName={homeTeamName}
+          awayTeamName={awayTeamName}
+          homeTeamColor={homeTeamColor}
+          awayTeamColor={awayTeamColor}
+          onDismiss={dismissChain}
+          setModal={setModal}
+        />
+      )}
       {showGameSummary && (
-        <div className="modal-overlay" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>
-          <div className="modal summary-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header summary-header">
-              <div className="summary-header-main">
-                <span className="modal-title">Game Summary</span>
-                {/* Scoreboard strip: editable quarter + clock + live scores */}
-                <div className="summary-top-strip">
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">Qtr</span>
-                    <select
-                      className="summary-top-value"
-                      value={period}
-                      onChange={e => { void changePeriod(e.target.value); }}
-                      style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
-                    >
-                      {periodLabels.map(lbl => (
-                        <option key={lbl} value={lbl} disabled={getPeriodOrder(lbl) > getPeriodOrder(period) + 1} style={{ background: "#302f68" }}>{lbl}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">Clock</span>
-                    <button
-                      className="summary-top-clock-input summary-top-clock clock-inp-display"
-                      onClick={() => { setSummaryClockPadDigits(""); setSummaryClockPadOpen(v => !v); }}>
-                      {summaryClockPadOpen ? formatClockFromPadInput(summaryClockPadDigits) : clockInput}
-                    </button>
-                    {summaryClockPadOpen && (
-                      <div className="clock-numpad-overlay" onClick={() => setSummaryClockPadOpen(false)}>
-                        <div className="clock-numpad" onClick={e => e.stopPropagation()}>
-                          <div className="clock-numpad-preview">{formatClockFromPadInput(summaryClockPadDigits)}</div>
-                          <div className="clock-numpad-grid">
-                            {([1,2,3,4,5,6,7,8,9,".",0,"DEL"] as (number|string)[]).map((k, i) => (
-                              <button
-                                key={i}
-                                className="clock-numpad-key"
-                                onClick={() => {
-                                  if (k === "DEL") {
-                                    setSummaryClockPadDigits(d => d.slice(0, -1));
-                                  } else if (k === ".") {
-                                    setSummaryClockPadDigits(d => d.includes(".") ? d : d + ".");
-                                  } else {
-                                    setSummaryClockPadDigits(d => {
-                                      const dotIdx = d.indexOf(".");
-                                      if (dotIdx !== -1) { return d.length > dotIdx + 1 ? d : d + String(k); }
-                                      return (d + String(k)).slice(0, 4);
-                                    });
-                                  }
-                                }}>
-                                {k}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="clock-numpad-actions">
-                            <button className="clock-numpad-cancel" onClick={() => setSummaryClockPadOpen(false)}>Cancel</button>
-                            <button className="clock-numpad-set" onClick={() => {
-                              setClockInput(formatClockFromPadInput(summaryClockPadDigits));
-                              setSummaryClockPadOpen(false);
-                            }}>Set</button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">Moment</span>
-                    <select
-                      className="summary-top-value"
-                      value={gameMoment}
-                      onChange={e => setGameMoment(e.target.value)}
-                      style={{ background: "transparent", color: "inherit", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
-                    >
-                      <option value="" style={{ background: "#302f68" }}>-</option>
-                      {getGameMomentOptions().map(opt => (
-                        <option key={opt.value} value={opt.value} style={{ background: "#302f68" }}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">Score</span>
-                    <div className="summary-top-dual">
-                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? homeTeamAbbr : awayTeamAbbr} {vcSideSetup === "home" ? scores.home : scores.away}</span>
-                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? awayTeamAbbr : homeTeamAbbr} {vcSideSetup === "home" ? scores.away : scores.home}</span>
-                    </div>
-                  </div>
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">Fouls</span>
-                    <div className="summary-top-dual">
-                      {vcSideSetup === "home" ? (<>
-                        <span className={`summary-top-dual-row${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>{homeTeamAbbr} {periodTeamFouls.home}</span>
-                        <span className={`summary-top-dual-row${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>{awayTeamAbbr} {periodTeamFouls.away}</span>
-                      </>) : (<>
-                        <span className={`summary-top-dual-row${periodTeamFouls.away >= 5 ? " foul-count-danger" : periodTeamFouls.away === 4 ? " foul-count-warn" : ""}`}>{awayTeamAbbr} {periodTeamFouls.away}</span>
-                        <span className={`summary-top-dual-row${periodTeamFouls.home >= 5 ? " foul-count-danger" : periodTeamFouls.home === 4 ? " foul-count-warn" : ""}`}>{homeTeamAbbr} {periodTeamFouls.home}</span>
-                      </>)}
-                    </div>
-                  </div>
-                  <div className="summary-top-item">
-                    <span className="summary-top-label">TO Left</span>
-                    <div className="summary-top-dual">
-                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? homeTeamAbbr : awayTeamAbbr} {vcSideSetup === "home" ? totalTimeoutsLeft.home : totalTimeoutsLeft.away}</span>
-                      <span className="summary-top-dual-row">{vcSideSetup === "home" ? awayTeamAbbr : homeTeamAbbr} {vcSideSetup === "home" ? totalTimeoutsLeft.away : totalTimeoutsLeft.home}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <button className="modal-close" onClick={() => { setShowGameSummary(false); setSummaryTab("teams"); setSummaryPlayerAiInsights(null); }}>X</button>
-            </div>
-
-            {/* Tab bar */}
-            <div className="summary-tab-bar">
-              <button
-                className={`summary-tab-btn${summaryTab === "teams" ? " active" : ""}`}
-                onClick={() => setSummaryTab("teams")}
-              >Teams</button>
-              <button
-                className={`summary-tab-btn${summaryTab === "players" ? " active" : ""}`}
-                onClick={() => {
-                  setSummaryTab("players");
-                  if (!summaryPlayerAiInsights && !summaryPlayerAiLoading) {
-                    void fetchPlayerAiInsights();
-                  }
-                }}
-              >Players{foulAlerts.length > 0 ? ` ! ${foulAlerts.length}` : ""}</button>
-            </div>
-
-            <div className="summary-body">
-              {/* Teams tab */}
-              {summaryTab === "teams" && (<>
-                <div className="summary-stats-grid">
-                  {(() => {
-                    const myStats = vcSideSetup === "home" ? homeTeamStats : awayTeamStats;
-                    const myName = vcSideSetup === "home" ? homeTeamName : awayTeamName;
-                    const oppStats = vcSideSetup === "home" ? awayTeamStats : homeTeamStats;
-                    const oppName = vcSideSetup === "home" ? awayTeamName : homeTeamName;
-                    const renderCard = (name: string, stats: typeof homeTeamStats) => (
-                      <div className="summary-stat-card">
-                        <h3>{name}</h3>
-                        <div className="summary-stat-row"><span>FG</span><strong>{stats.fg}-{stats.fga} ({formatPct(stats.fg, stats.fga)})</strong></div>
-                        <div className="summary-stat-row"><span>3PT</span><strong>{stats.fg3}-{stats.fg3a}</strong></div>
-                        <div className="summary-stat-row"><span>FT</span><strong>{stats.ft}-{stats.fta}</strong></div>
-                        <div className="summary-stat-row"><span>REB</span><strong>{stats.reb}</strong></div>
-                        <div className="summary-stat-row"><span>AST / TO</span><strong>{stats.asst} / {stats.to}</strong></div>
-                        <div className="summary-stat-row"><span>STL / BLK</span><strong>{stats.stl} / {stats.blk}</strong></div>
-                      </div>
-                    );
-                    return <>{renderCard(myName, myStats)}{renderCard(oppName, oppStats)}</>;
-                  })()}
-                </div>
-
-                <div className="summary-highlights">
-                  <h3>AI Insights</h3>
-                  {summaryAiLoading && <p className="summary-ai-status">Generating insights...</p>}
-                  <div className="summary-ai-sections">
-                    {!summaryAiLoading && activeSummaryInsights.length === 0 && (
-                      <p className="summary-ai-status">No insights yet. Capture a few more possessions.</p>
-                    )}
-                    {activeSummaryInsights.map((insight, index) => (
-                      <div key={index} className="insight-section">
-                        <p className="insight-text">{insight}</p>
-                      </div>
-                    ))}
-                  </div>
-                  {!summaryAiLoading && (
-                    <button
-                      className="summary-ai-refresh-btn"
-                      onClick={() => { setSummaryAiInsights(null); void fetchOpenAiSummaryInsights(); }}
-                    >Refresh</button>
-                  )}
-                </div>
-              </>)}
-
-              {/* Players tab */}
-              {summaryTab === "players" && (<>
-                {/* Period filter pills */}
-                <div className="summary-period-filter">
-                  <button
-                    className={`summary-period-pill${summaryPeriodFilter.length === 0 ? " active" : ""}`}
-                    onClick={() => setSummaryPeriodFilter([])}
-                  >Full</button>
-                  {(["Q1", "Q2", "Q3", "Q4", ...Array.from({ length: overtimeCount }, (_, i) => `OT${i + 1}`)]).map(p => (
-                    <button
-                      key={p}
-                      className={`summary-period-pill${summaryPeriodFilter.includes(p) ? " active" : ""}`}
-                      onClick={() => setSummaryPeriodFilter(prev => {
-                        if (prev.includes(p)) {
-                          const next = prev.filter(x => x !== p);
-                          return next;
-                        }
-                        return [...prev, p];
-                      })}
-                    >{p}</button>
-                  ))}
-                </div>
-                {trackedPlayers.length === 0 ? (
-                  <p className="summary-no-players">No tracked players - add a roster to see individual stats.</p>
-                ) : (
-                  <div className="summary-player-list">
-                    {/* header row */}
-                    <div className="summary-player-header">
-                      <span className="sph-name">Player</span>
-                      <span className="sph-stat">PTS</span>
-                      <span className="sph-stat">FG</span>
-                      <span className="sph-stat">3P</span>
-                      <span className="sph-stat">FT</span>
-                      <span className="sph-stat">REB</span>
-                      <span className="sph-stat">AST</span>
-                      <span className="sph-stat">STL</span>
-                      <span className="sph-stat">BLK</span>
-                      <span className="sph-stat">TO</span>
-                      <span className="sph-stat">FL</span>
-                    </div>
-                    {[...trackedPlayers]
-                      .sort((a, b) => (summaryBoxScoreTotals[b.id]?.points ?? 0) - (summaryBoxScoreTotals[a.id]?.points ?? 0))
-                      .map(p => {
-                        const t = summaryBoxScoreTotals[p.id];
-                        const pts = t?.points ?? 0;
-                        const fgm = t?.fgm ?? 0;
-                        const fga = t?.fga ?? 0;
-                        const tpm = t?.threePm ?? 0;
-                        const tpa = t?.threePa ?? 0;
-                        const ftm = t?.ftm ?? 0;
-                        const fta = t?.fta ?? 0;
-                        const reb = (t?.oreb ?? 0) + (t?.dreb ?? 0);
-                        const ast = t?.ast ?? 0;
-                        const stl = t?.stl ?? 0;
-                        const blk = t?.blk ?? 0;
-                        const turnovers = t?.to ?? 0;
-                        const fouls = t?.fouls ?? 0;
-                        const foulColor = fouls >= 5 ? "#ff3b30" : fouls === 4 ? "#ff9500" : fouls === 3 ? "#ffcc00" : fouls > 0 ? "rgba(232,234,240,0.75)" : "rgba(232,234,240,0.35)";
-                        const isTopScorer = trackedTopScorer && p.name === trackedTopScorer.name && pts > 0;
-                        const hasFoulAlert = fouls >= 4;
-                        return (
-                          <div
-                            key={p.id}
-                            className={`summary-player-row${hasFoulAlert ? " foul-alert-row" : ""}${isTopScorer ? " top-scorer-row" : ""}`}
-                          >
-                            <span className="spr-name">
-                              {p.number != null ? <span className="spr-num">#{p.number}</span> : null}
-                              {p.name}
-                              {isTopScorer && <span className="spr-badge spr-badge-pts">Top</span>}
-                              {fouls >= 5 && <span className="spr-badge spr-badge-out">OUT</span>}
-                            </span>
-                            <span className="spr-stat spr-pts">{pts}</span>
-                            <span className="spr-stat">{fgm}-{fga}</span>
-                            <span className="spr-stat">{tpm}-{tpa}</span>
-                            <span className="spr-stat">{ftm}-{fta}</span>
-                            <span className="spr-stat">{reb}</span>
-                            <span className="spr-stat">{ast}</span>
-                            <span className="spr-stat">{stl}</span>
-                            <span className="spr-stat">{blk}</span>
-                            <span className={`spr-stat${turnovers >= 3 ? " spr-to-warn" : ""}`}>{turnovers}</span>
-                            <span className="spr-stat spr-fouls" style={{ color: foulColor }}>{fouls}</span>
-                          </div>
-                        );
-                      })
-                    }
-                  </div>
-                )}
-
-                {/* Player-focused AI suggestions */}
-                <div className="summary-highlights">
-                  <h3>Player Suggestions</h3>
-                  {summaryPlayerAiLoading && <p className="summary-ai-status">Generating player insights...</p>}
-                  {!summaryPlayerAiLoading && trackedPlayers.length === 0 && (
-                    <p className="summary-ai-status">Add a roster to get player-specific suggestions.</p>
-                  )}
-                  <div className="summary-ai-sections">
-                    {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (summaryPlayerAiInsights ?? []).length === 0 && (
-                      <p className="summary-ai-status">No suggestions yet - capture more possessions or check your connection.</p>
-                    )}
-                    {(summaryPlayerAiInsights ?? []).map((insight, index) => (
-                      <div key={index} className="insight-section">
-                        <p className="insight-text">{insight}</p>
-                      </div>
-                    ))}
-                  </div>
-                  {!summaryPlayerAiLoading && trackedPlayers.length > 0 && (
-                    <button
-                      className="summary-ai-refresh-btn"
-                      onClick={() => { setSummaryPlayerAiInsights(null); void fetchPlayerAiInsights(); }}
-                    >Refresh</button>
-                  )}
-                </div>
-              </>)}
-            </div>
-          </div>
-        </div>
+        <GameSummaryModal
+          onClose={() => setShowGameSummary(false)}
+          period={period}
+          overtimeCount={overtimeCount}
+          clockInput={clockInput}
+          setClockInput={setClockInput}
+          changePeriod={changePeriod}
+          getPeriodOrder={getPeriodOrder}
+          gameMoment={gameMoment}
+          setGameMoment={setGameMoment}
+          vcSideSetup={vcSideSetup}
+          homeTeamName={homeTeamName}
+          awayTeamName={awayTeamName}
+          homeTeamAbbr={homeTeamAbbr}
+          awayTeamAbbr={awayTeamAbbr}
+          scores={scores}
+          homeTeamStats={homeTeamStats}
+          awayTeamStats={awayTeamStats}
+          periodTeamFouls={periodTeamFouls}
+          totalTimeoutsLeft={totalTimeoutsLeft}
+          trackedPlayers={trackedPlayers}
+          trackedTopScorer={trackedTopScorer}
+          foulAlerts={foulAlerts}
+          pTotals={pTotals}
+          allEventObjs={allEventObjs}
+          gameSetup={appData.gameSetup}
+          gameId={gameId}
+          gamePhase={gamePhase}
+          homeTeamId={homeTeamId}
+          awayTeamId={awayTeamId}
+        />
       )}
       {(!online || pendingEvents.length > 0) && (
         <button className="offline-badge pending-badge" onClick={() => void reconnectAndResubmit()}>
@@ -5087,72 +1085,18 @@ export function App() {
       )}
 
       {/* LEFT: Scoring */}
-      <div className="panel left-panel">
-        <div className="shot-grid">
-          {(() => {
-            const myName    = vcSideSetup === "home" ? homeTeamName : awayTeamName;
-            const oppName   = vcSideSetup === "home" ? awayTeamName : homeTeamName;
-            const myTO      = timeoutRemaining[vcSideSetup];
-            const oppTO     = timeoutRemaining[opponentSide];
-            const myColorClass = vcSideSetup === "home" ? "teal" : "red";
-            const oppColorClass = opponentSide === "home" ? "teal" : "red";
-            const canTrackOppPoints = isOpponentStatEnabled("points");
-            const canTrackOppFt = isOpponentStatEnabled("free_throws");
-            return (<>
-              {trackTimeouts && (
-                <>
-                  <div className="shot-timeout-title">Record Timeout</div>
-                  <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
-                    <div className="shot-timeout-counts">{myName}: {myTO.short} short · {myTO.full} full left</div>
-                    <div className="timeout-btn-row">
-                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>Use 30s</button>
-                      <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>Use 60s</button>
-                    </div>
-                  </div>
-                  <div className={`shot-timeout-cell shot-timeout-cell-${opponentSide}`}>
-                    <div className="shot-timeout-counts">{oppName}: {oppTO.short} short · {oppTO.full} full left</div>
-                    <div className="timeout-btn-row">
-                      <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>Use 30s</button>
-                      <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>Use 60s</button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="classic-score-grid" role="group" aria-label="Scoring controls by team">
-                <div className="classic-score-col">
-                  <div className="shot-grid-team-label shot-grid-team-label-my" title={`Scoring for ${myName}`}>{myName}</div>
-                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) })}>2pt</button>
-                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) })}>3pt</button>
-                  <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>1pt</button>
-                </div>
-
-                <div className="classic-score-col">
-                  <div className="shot-grid-team-label shot-grid-team-label-opp" title={`Scoring for ${oppName}`}>{oppName}</div>
-                  <button
-                    className={`circle classic-score-btn ${oppColorClass}`}
-                    disabled={!canTrackOppPoints}
-                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true, zone: defaultZoneForPoints(2) })}
-                    title={canTrackOppPoints ? `Add 2PT for ${oppName}` : "Enable opponent points tracking in settings"}
-                  >2pt</button>
-                  <button
-                    className={`circle classic-score-btn ${oppColorClass}`}
-                    disabled={!canTrackOppPoints}
-                    onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true, zone: defaultZoneForPoints(3) })}
-                    title={canTrackOppPoints ? `Add 3PT for ${oppName}` : "Enable opponent points tracking in settings"}
-                  >3pt</button>
-                  <button
-                    className={`circle classic-score-btn ${oppColorClass}`}
-                    disabled={!canTrackOppFt}
-                    onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}
-                    title={canTrackOppFt ? `Add FT for ${oppName}` : "Enable opponent free throw tracking in settings"}
-                  >1pt</button>
-                </div>
-              </div>
-            </>);
-          })()}
-        </div>
-      </div>
+      <ScoringPanel
+        vcSideSetup={vcSideSetup}
+        opponentSide={opponentSide}
+        homeTeamName={homeTeamName}
+        awayTeamName={awayTeamName}
+        timeoutRemaining={timeoutRemaining}
+        inOvertimeNow={inOvertimeNow}
+        trackTimeouts={trackTimeouts}
+        isOpponentStatEnabled={isOpponentStatEnabled}
+        setModal={setModal}
+        takeTimeout={takeTimeout}
+      />
 
       {/* CENTER: Feed */}
       <div className="panel center-panel">
@@ -5373,7 +1317,7 @@ export function App() {
               </div>
               <div className="clock-admin-row">
                 <button className="clock-admin-toggle" onClick={() => setShowClockAdmin(v => !v)}>
-                  {showClockAdmin ? "▲ Clock Settings" : "▼ Clock Settings"}
+                  {showClockAdmin ? "â–² Clock Settings" : "â–¼ Clock Settings"}
                 </button>
                 {showClockAdmin && (
                   <div className="clock-admin-controls">
@@ -5413,119 +1357,22 @@ export function App() {
       </div>
 
       {/* RIGHT: Players + Stats */}
-      <div className="panel right-panel">
-        <div className="right-panel-toggle-row">
-          <button
-            className={showRosterPanel ? "toggle-btn active" : "toggle-btn"}
-            onClick={() => { setShowRosterPanel(true); setActiveRosterPlayerId(null); }}
-            title="Player-first actions">
-            Players
-          </button>
-          <button
-            className={!showRosterPanel ? "toggle-btn active" : "toggle-btn"}
-            onClick={() => { setShowRosterPanel(false); setActiveRosterPlayerId(null); }}
-            title="Quick stat circles">
-            Stats
-          </button>
-        </div>
-        {!showRosterPanel ? (
-          <div className="stat-grid">
-            <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "def_reb", teamId: vcSideSetup })}><span className="rebound-main">DEF</span><br/><span className="sub-lbl">reb</span></button>
-            <button className="circle white rebound-btn" onClick={() => setModal({ kind: "stat", stat: "off_reb", teamId: vcSideSetup })}><span className="rebound-main">OFF</span><br/><span className="sub-lbl">reb</span></button>
-            <button className="circle stat-foul" onClick={() => setModal({ kind: "stat", stat: "foul", teamId: vcSideSetup })}>foul</button>
-            <button className="circle stat-to" onClick={() => setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup })}>to</button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "steal",   teamId: vcSideSetup })}>stl</button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "assist",  teamId: vcSideSetup })}>asst</button>
-            <button className="circle white" onClick={() => setModal({ kind: "stat", stat: "block",   teamId: vcSideSetup })}>blk</button>
-            <button className="circle red-out" onClick={() => setModal({ kind: "sub1", teamId: vcSideSetup })}>sub</button>
-          </div>
-        ) : (
-          <div className="roster-panel">
-            {(() => {
-              const teamPlayers = vcSideSetup === "home" ? homePlayers : awayPlayers;
-              const lineup = computeCurrentLineup(allEventObjs, vcTeamId, appData.gameSetup.startingLineup ?? [], teamPlayers);
-              return (
-                <>
-                  <div className="roster-section">
-                    <h4 className="roster-section-title">On Court — tap player to act</h4>
-                    <div className="roster-list">
-                      {lineup.onCourt.map(p => (
-                        <div key={p.id} className={`roster-player on-court${activeRosterPlayerId === p.id ? " roster-player-active" : ""}`}>
-                          <button
-                            className="roster-player-tap"
-                            onClick={() => setActiveRosterPlayerId(activeRosterPlayerId === p.id ? null : p.id)}
-                          >
-                            <span className="roster-player-num">#{p.number}</span>
-                            <span className="roster-player-info">
-                              <span className="roster-player-name">{p.name}</span>
-                              <span className="roster-player-stats">
-                                {pTotals[p.id]?.points ?? 0}pts
-                                {" · "}
-                                {pTotals[p.id]?.fouls ?? 0}f
-                              </span>
-                            </span>
-                            {pTotals[p.id]?.fouls ? (
-                              <span className={`roster-foul-badge${pTotals[p.id].fouls >= 5 ? " foul-badge-out" : pTotals[p.id].fouls >= 4 ? " foul-badge-warn" : ""}`}>
-                                {pTotals[p.id].fouls}f
-                              </span>
-                            ) : null}
-                          </button>
-                          {activeRosterPlayerId === p.id && (
-                            <div className="player-quick-actions">
-                              <button className="pqa-btn pqa-make pqa-2pt" onClick={() => handlePlayerQuickShot(p, 2, true)}>2PT ✓</button>
-                              <button className="pqa-btn pqa-miss pqa-2pt" onClick={() => handlePlayerQuickShot(p, 2, false)}>2PT ✗</button>
-                              <button className="pqa-btn pqa-make pqa-3pt" onClick={() => handlePlayerQuickShot(p, 3, true)}>3PT ✓</button>
-                              <button className="pqa-btn pqa-miss pqa-3pt" onClick={() => handlePlayerQuickShot(p, 3, false)}>3PT ✗</button>
-                              <button className="pqa-btn pqa-ft" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true }); }}>FT</button>
-                              <button className="pqa-btn pqa-reb" onClick={() => handlePlayerQuickStat(p, "def_reb")}>REB</button>
-                              <button className="pqa-btn pqa-foul" onClick={() => handlePlayerQuickStat(p, "foul")}>FOUL</button>
-                              <button className="pqa-btn pqa-to" onClick={() => handlePlayerQuickStat(p, "turnover")}>TO</button>
-                              <button className="pqa-btn pqa-stl" onClick={() => handlePlayerQuickStat(p, "steal")}>STL</button>
-                              <button className="pqa-btn pqa-asst" onClick={() => handlePlayerQuickStat(p, "assist")}>ASST</button>
-                              <button className="pqa-btn pqa-blk" onClick={() => handlePlayerQuickStat(p, "block")}>BLK</button>
-                              <button className="pqa-btn pqa-sub" onClick={() => { setActiveRosterPlayerId(null); setModal({ kind: "sub1", teamId: vcSideSetup, playerOutId: p.id }); }}>SUB</button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {lineup.onCourt.length === 0 && (
-                        <p className="roster-empty-hint">No players on court. Set starting lineup in Setup.</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="roster-section">
-                    <h4 className="roster-section-title">Bench</h4>
-                    <div className="roster-list">
-                      {lineup.bench.map(p => (
-                        <div key={p.id} className="roster-player bench">
-                          <span className="roster-player-num">#{p.number}</span>
-                          <span className="roster-player-info">
-                            <span className="roster-player-name">{p.name}</span>
-                            {pTotals[p.id] && (
-                              <span className="roster-player-stats">
-                                {pTotals[p.id].points}pts
-                                {pTotals[p.id].fouls > 0 && ` · ${pTotals[p.id].fouls}f`}
-                              </span>
-                            )}
-                          </span>
-                          <button
-                            className="roster-sub-btn"
-                            onClick={() => {
-                              if (lineup.onCourt.length > 0) {
-                                setModal({ kind: "sub1", teamId: vcSideSetup, playerInId: p.id });
-                              }
-                            }}
-                            title="Sub in">+</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
+      <RosterPanel
+        vcSideSetup={vcSideSetup}
+        homePlayers={homePlayers}
+        awayPlayers={awayPlayers}
+        allEventObjs={allEventObjs}
+        vcTeamId={vcTeamId}
+        startingLineup={appData.gameSetup.startingLineup ?? []}
+        pTotals={pTotals}
+        showRosterPanel={showRosterPanel}
+        setShowRosterPanel={setShowRosterPanel}
+        activeRosterPlayerId={activeRosterPlayerId}
+        setActiveRosterPlayerId={setActiveRosterPlayerId}
+        setModal={setModal}
+        handlePlayerQuickShot={handlePlayerQuickShot}
+        handlePlayerQuickStat={handlePlayerQuickStat}
+      />
 
       <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
         <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">
@@ -5537,10 +1384,6 @@ export function App() {
           title="Game summary"
           onClick={() => {
             setShowGameSummary(true);
-            setSummaryTab("teams");
-            setSummaryAiInsights(null);
-            setSummaryPlayerAiInsights(null);
-            void fetchOpenAiSummaryInsights();
           }}>
           Summary
         </button>
@@ -5549,410 +1392,6 @@ export function App() {
           End Game
         </button>
       </div>
-    </div>
-  );
-}
-
-// ================================================================
-//  SETTINGS SCREEN  (extracted component to keep App readable)
-// ================================================================
-interface SettingsScreenProps {
-  appData: AppData;
-  settingsView: SettingsView;
-  onPersist: (d: AppData) => void;
-  onNav: (v: SettingsView) => void;
-  onBack: () => void;
-  onStartGame: () => void | Promise<void>;
-}
-
-const POSITIONS = ["PG", "SG", "SF", "PF", "C", ""];
-
-function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack, onStartGame }: SettingsScreenProps) {
-  // ---- Game setup local state ----
-  const [gsGameId, setGsGameId] = useState(appData.gameSetup.gameId);
-  const [gsConnectionId, setGsConnectionId] = useState(normalizeConnectionId(appData.gameSetup.connectionId));
-  const [gsMyTeamId, setGsMyTeamId] = useState(appData.gameSetup.myTeamId);
-  const [gsApiUrl, setGsApiUrl] = useState(appData.gameSetup.apiUrl ?? DEFAULT_API);
-  const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
-  const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
-  const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
-  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? DEFAULT_STATS_DASHBOARD);
-  const [gsClockVisible, setGsClockVisible] = useState(appData.gameSetup.clockVisible ?? true);
-  const [gsClockEnabled, setGsClockEnabled] = useState(appData.gameSetup.clockEnabled ?? true);
-  const [gsTrackClock, setGsTrackClock] = useState(appData.gameSetup.trackClock ?? true);
-  const [gsTrackPossession, setGsTrackPossession] = useState(appData.gameSetup.trackPossession ?? true);
-  const [gsTrackTimeouts, setGsTrackTimeouts] = useState(appData.gameSetup.trackTimeouts ?? true);
-  const [gsOpponentTrackStats, setGsOpponentTrackStats] = useState<OpponentTrackStat[]>(
-    normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats)
-  );
-  const [gsHomeTeamColor, setGsHomeTeamColor] = useState(normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR);
-  const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR);
-  const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
-
-  const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
-  const gsOpponentName = gsOpponent.trim() || "Opponent";
-  const gsHomeSideLabel = gsVcSide === "home"
-    ? `${gsMyTeamName} (home)`
-    : `${gsOpponentName} (home)`;
-  const gsAwaySideLabel = gsVcSide === "away"
-    ? `${gsMyTeamName} (away)`
-    : `${gsOpponentName} (away)`;
-
-  function applyTrackedTeamColor(
-    gameSetup: GameSetup,
-    teams: Team[],
-    myTeamId: string
-  ): GameSetup {
-    const selectedTeam = teams.find((team) => team.id === myTeamId);
-    if (!selectedTeam?.teamColor) {
-      return { ...gameSetup, myTeamId };
-    }
-
-    const normalizedColor = normalizeTeamColor(selectedTeam.teamColor) ?? DEFAULT_HOME_TEAM_COLOR;
-    return gameSetup.vcSide === "home"
-      ? { ...gameSetup, myTeamId, homeTeamColor: normalizedColor }
-      : { ...gameSetup, myTeamId, awayTeamColor: normalizedColor };
-  }
-
-  function toggleOpponentTrackStat(stat: OpponentTrackStat) {
-    setGsOpponentTrackStats((current) => {
-      if (current.includes(stat)) {
-        const next = current.filter((item) => item !== stat);
-        return next.length > 0 ? next : current;
-      }
-      return [...current, stat];
-    });
-  }
-
-  function saveGameSetup() {
-    const normalizedConnectionId = normalizeConnectionId(gsConnectionId || appData.gameSetup.connectionId);
-    const connectionChanged = normalizedConnectionId !== normalizeConnectionId(appData.gameSetup.connectionId);
-    setGsConnectionId(normalizedConnectionId);
-    onPersist({
-      ...appData,
-      gameSetup: applyTrackedTeamColor(
-        {
-          gameId: gsGameId.trim() || "game-1",
-          connectionId: normalizedConnectionId || undefined,
-          syncedConnectionId: connectionChanged ? undefined : appData.gameSetup.syncedConnectionId,
-          myTeamId: gsMyTeamId,
-          apiUrl: gsApiUrl.trim() || DEFAULT_API,
-          apiKey: gsApiKey.trim() || undefined,
-          schoolId: appData.gameSetup.schoolId,
-          opponent: gsOpponent.trim(),
-          vcSide: gsVcSide,
-          dashboardUrl: gsDashboardUrl.trim(),
-          clockVisible: gsClockVisible,
-          clockEnabled: gsClockEnabled,
-          trackClock: gsTrackClock,
-          trackPossession: gsTrackPossession,
-          trackTimeouts: gsTrackTimeouts,
-          opponentTrackStats: normalizeOpponentTrackStats(gsOpponentTrackStats),
-          homeTeamColor: normalizeTeamColor(gsHomeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
-          awayTeamColor: normalizeTeamColor(gsAwayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
-          statsGameId: appData.gameSetup.statsGameId,
-          startingLineup: appData.gameSetup.startingLineup,
-        },
-        appData.teams,
-        gsMyTeamId,
-      ),
-    });
-  }
-
-  // ================================================================
-  //  RENDER: Game setup
-  // ================================================================
-  if (settingsView === "game-setup") {
-    const setupErrors: string[] = [];
-    if (!gsMyTeamId) setupErrors.push("Select your team");
-    if (!gsOpponent.trim()) setupErrors.push("Enter the opponent name");
-    const trackingBadges = [
-      gsTrackClock ? "Clock" : null,
-      gsTrackPossession ? "Possession" : null,
-      gsTrackTimeouts ? "Timeouts" : null,
-    ].filter(Boolean);
-
-    return (
-      <div className="settings-page">
-        <header className="settings-header">
-          <button className="back-btn" onClick={() => onNav("menu")}>{"<- Back"}</button>
-          <h2>Game Setup</h2>
-          <button className="save-btn" onClick={() => { saveGameSetup(); onNav("menu"); }}>Save</button>
-        </header>
-
-        <section className="settings-section settings-hero-section">
-          <div className="settings-overview">
-            <div className="settings-overview-copy">
-              <h3>Current setup</h3>
-              <div className="settings-overview-title">{gsMyTeamName} vs {gsOpponentName}</div>
-              <p className="dim-text">
-                {gsVcSide === "home" ? "VC is home" : "VC is away"} • Game ID {gsGameId.trim() || "game-1"}
-              </p>
-            </div>
-            <div className="settings-overview-meta">
-              <span className="settings-badge">{gsConnectionId ? `Linked • ${gsConnectionId}` : "Not linked yet"}</span>
-              <span className="settings-badge">{trackingBadges.length > 0 ? trackingBadges.join(" • ") : "Manual stats only"}</span>
-            </div>
-          </div>
-        </section>
-
-        <div className="settings-grid-2">
-          <section className="settings-section">
-            <h3>Game ID</h3>
-            <input value={gsGameId} onChange={e => setGsGameId(e.target.value)} placeholder="game-1" />
-          </section>
-
-          <section className="settings-section">
-            <h3>Connection Code</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Paste the coach's 6-digit code to link roster and live sync.</p>
-            <input value={gsConnectionId} onChange={e => setGsConnectionId(normalizeConnectionId(e.target.value))} placeholder="482913" />
-          </section>
-        </div>
-
-        <section className="settings-section">
-          <h3>Your Team</h3>
-          {appData.teams.length === 0 && <p className="dim-text">No teams are available yet. Complete team setup from the coach workspace.</p>}
-          <div className="team-picker">
-            {appData.teams.map(t => {
-              const isSelected = gsMyTeamId === t.id;
-              const displayColor = t.teamColor ?? DEFAULT_HOME_TEAM_COLOR;
-              const normalizedColor = normalizeTeamColor(displayColor) ?? DEFAULT_HOME_TEAM_COLOR;
-              return (
-                <button key={t.id}
-                  className="team-pick-btn"
-                  style={isSelected ? {
-                    background: `color-mix(in srgb, ${normalizedColor} 12%, rgba(255,255,255,0.04))`,
-                    borderColor: normalizedColor,
-                  } : undefined}
-                  onClick={() => {
-                    setGsMyTeamId(t.id);
-                    if (t.teamColor) {
-                      const nextColor = normalizeTeamColor(t.teamColor) ?? DEFAULT_HOME_TEAM_COLOR;
-                      if (gsVcSide === "home") {
-                        setGsHomeTeamColor(nextColor);
-                      } else {
-                        setGsAwayTeamColor(nextColor);
-                      }
-                    }
-                  }}>
-                  <span className="tp-abbr" style={{ borderColor: normalizedColor, color: normalizedColor }}>{t.abbreviation}</span>
-                  <span className="tp-name">{t.name}</span>
-                  <span className="tp-count">{t.players.length}p</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <div className="settings-grid-2">
-          <section className="settings-section">
-            <h3>Opponent Name</h3>
-            <input
-              placeholder="e.g. Knappa"
-              value={gsOpponent}
-              onChange={e => setGsOpponent(e.target.value)}
-            />
-          </section>
-
-          <section className="settings-section">
-            <h3>Your Side</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Are you playing home or away?</p>
-            <div className="team-toggle">
-              <button className={`tt-btn${gsVcSide === "home" ? " tt-teal" : ""}`} onClick={() => setGsVcSide("home")}>{gsHomeSideLabel}</button>
-              <button className={`tt-btn${gsVcSide === "away" ? " tt-red" : ""}`}  onClick={() => setGsVcSide("away")}>{gsAwaySideLabel}</button>
-            </div>
-          </section>
-        </div>
-
-        <section className="settings-section">
-          <h3>Opponent Color</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Pick the opponent's jersey color to make scorekeeping faster.</p>
-          <div className="team-color-rows">
-            <div className="team-color-row">
-              <span className="team-color-label">{gsVcSide === "home" ? gsAwaySideLabel : gsHomeSideLabel}</span>
-              <div className="team-color-swatches">
-                {TEAM_COLOR_OPTIONS.map((color) => {
-                  const currentColor = gsVcSide === "home" ? gsAwayTeamColor : gsHomeTeamColor;
-                  return (
-                    <button
-                      key={`opp-${color}`}
-                      type="button"
-                      className={`team-color-swatch${currentColor === color ? " selected" : ""}`}
-                      style={{ background: color }}
-                      onClick={() => gsVcSide === "home" ? setGsAwayTeamColor(color) : setGsHomeTeamColor(color)}
-                      title={`Opponent color ${color}`}
-                    />
-                  );
-                })}
-              </div>
-              {gsVcSide === "home"
-                ? <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsAwayTeamColor} onChange={e => setGsAwayTeamColor(normalizeTeamColor(e.target.value) ?? DEFAULT_AWAY_TEAM_COLOR)} />
-                : <input className="team-color-input" type="color" aria-label="Custom opponent color" value={gsHomeTeamColor} onChange={e => setGsHomeTeamColor(normalizeTeamColor(e.target.value) ?? DEFAULT_HOME_TEAM_COLOR)} />
-              }
-            </div>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3>Opponent Stats To Track</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>Choose which opponent stats can be recorded.</p>
-          <div className="team-toggle">
-            <button className={`tt-btn${gsOpponentTrackStats.includes("points") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("points")}>Points</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("free_throws") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("free_throws")}>Free Throws</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("def_reb") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("def_reb")}>Def Reb</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("off_reb") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("off_reb")}>Off Reb</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("turnover") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("turnover")}>Turnover</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("steal") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("steal")}>Steal</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("assist") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("assist")}>Assist</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("block") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("block")}>Block</button>
-            <button className={`tt-btn${gsOpponentTrackStats.includes("foul") ? " tt-teal" : ""}`} onClick={() => toggleOpponentTrackStat("foul")}>Foul</button>
-          </div>
-        </section>
-
-        <div className="settings-grid-2">
-          <section className="settings-section">
-            <h3>Tracking Toggles</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Choose what the operator tracks during the game.</p>
-            <div className="team-toggle">
-              <button className={`tt-btn${gsTrackTimeouts ? " tt-teal" : ""}`} onClick={() => setGsTrackTimeouts(!gsTrackTimeouts)}>
-                Timeouts {gsTrackTimeouts ? "On" : "Off"}
-              </button>
-              <button className={`tt-btn${gsTrackPossession ? " tt-teal" : ""}`} onClick={() => setGsTrackPossession(!gsTrackPossession)}>
-                Possession {gsTrackPossession ? "On" : "Off"}
-              </button>
-              <button className={`tt-btn${gsTrackClock ? " tt-teal" : ""}`} onClick={() => setGsTrackClock(!gsTrackClock)}>
-                Game Clock {gsTrackClock ? "Tracked" : "Off"}
-              </button>
-            </div>
-          </section>
-
-          <section className="settings-section">
-            <h3>Clock Panel</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>These only affect the operator screen controls when game clock tracking is on.</p>
-            <div className="team-toggle">
-              <button className={`tt-btn${gsClockVisible ? " tt-teal" : ""}`} onClick={() => setGsClockVisible(!gsClockVisible)}>{gsClockVisible ? "Panel Visible" : "Panel Hidden"}</button>
-              <button className={`tt-btn${gsClockEnabled ? " tt-teal" : ""}`} onClick={() => setGsClockEnabled(!gsClockEnabled)}>{gsClockEnabled ? "Controls Unlocked" : "Controls Locked"}</button>
-            </div>
-          </section>
-        </div>
-
-        <div className="settings-grid-2">
-          <section className="settings-section">
-            <h3>Realtime API URL</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Use the laptop's local IP on game day (example: http://192.168.1.5:4000).</p>
-            <input
-              placeholder={DEFAULT_API}
-              value={gsApiUrl}
-              onChange={e => setGsApiUrl(e.target.value)}
-            />
-          </section>
-
-          <section className="settings-section">
-            <h3>Legacy Stats Export URL</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Optional separate post-game export endpoint. If you only use the coach dashboard, leave this on the same host as the Realtime API.</p>
-            <input
-              placeholder="http://localhost:4000"
-              value={gsDashboardUrl}
-              onChange={e => setGsDashboardUrl(e.target.value)}
-            />
-          </section>
-        </div>
-
-        <section className="settings-section">
-          <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>API key or login token from the coach dashboard. Leave blank during local development.</p>
-          <input
-            type="password"
-            placeholder="Leave blank to disable auth"
-            value={gsApiKey}
-            onChange={e => setGsApiKey(e.target.value)}
-          />
-        </section>
-
-        <section className="settings-section">
-          {setupErrors.length > 0 && (
-            <ul className="setup-errors">
-              {setupErrors.map(err => <li key={err}>{err}</li>)}
-            </ul>
-          )}
-          <div className="settings-actions">
-            <button
-              className="save-btn"
-              disabled={setupErrors.length > 0}
-              onClick={() => { if (setupErrors.length === 0) { saveGameSetup(); onNav("menu"); } }}>
-              Save Game Setup
-            </button>
-          </div>
-        </section>
-
-      </div>
-    );
-  }
-
-  // ================================================================
-  //  RENDER: Settings menu (default)
-  // ================================================================
-  const myTeamForMenu = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
-  const vcSideForMenu = appData.gameSetup.vcSide ?? "home";
-  const menuSideLabel = vcSideForMenu === "home" ? "home" : "away";
-
-  return (
-    <div className="settings-page">
-      <header className="settings-header">
-        <button className="back-btn" onClick={onBack}>{"<- Game"}</button>
-        <h2>Settings</h2>
-        <div style={{ width: 64 }} />
-      </header>
-
-      <section className="settings-section">
-        <h3>Game</h3>
-        <div className="menu-card" onClick={() => onNav("game-setup")}>
-          <div className="menu-card-info">
-            <span className="menu-card-title">Game Setup</span>
-            <span className="menu-card-sub">
-              {myTeamForMenu
-                ? `${myTeamForMenu.name} (${menuSideLabel}) vs ${appData.gameSetup.opponent || "TBD"} | ${appData.gameSetup.gameId}`
-                : "No team selected"}
-            </span>
-          </div>
-          <span className="menu-chev">&gt;</span>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>Device Setup</h3>
-        <div className="menu-card" onClick={() => onNav("ipad-tips")}>
-          <div className="menu-card-info">
-            <span className="menu-card-title">iPad Setup Tips</span>
-            <span className="menu-card-sub">Home screen, auto-lock, DND, rotation lock &amp; more</span>
-          </div>
-          <span className="menu-chev">&gt;</span>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3 style={{color:'#f87171'}}>Danger Zone</h3>
-        <div
-          className="menu-card"
-          style={{border:'1px solid #7f1d1d'}}
-          onClick={() => {
-            if (!confirm('Clear all local data on this device? Game events, roster, and settings saved here will be erased.')) return;
-            const keysToRemove: string[] = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i);
-              if (k) keysToRemove.push(k);
-            }
-            keysToRemove.forEach(k => localStorage.removeItem(k));
-            window.location.reload();
-          }}
-        >
-          <div className="menu-card-info">
-            <span className="menu-card-title" style={{color:'#f87171'}}>Clear Local Data</span>
-            <span className="menu-card-sub">Erase all data stored on this device</span>
-          </div>
-          <span className="menu-chev">&gt;</span>
-        </div>
-      </section>
     </div>
   );
 }
