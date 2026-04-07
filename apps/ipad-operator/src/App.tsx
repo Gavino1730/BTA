@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
 import { SettingsScreen } from "./SettingsScreen.js";
@@ -8,10 +8,11 @@ import { GameSummaryModal } from "./GameSummaryModal.js";
 import { ModalRouter, ChainPromptBar } from "./ModalRouter.js";
 import { ScoringPanel } from "./ScoringPanel.js";
 import { RosterPanel } from "./RosterPanel.js";
-import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS } from "./hooks/index.js";
+import { LiveCenterPanel } from "./LiveCenterPanel.js";
+import { InlineNoticeBar, AlertBanner, ConfirmDialogOverlay } from "./OperatorOverlays.js";
+import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived } from "./hooks/index.js";
 import {
   getPeriodDefaultClock,
-  isOvertimePeriod,
   normalizeTeamColor,
   type GameEvent,
 } from "@bta/shared-schema";
@@ -52,13 +53,6 @@ import {
   formatClockFromSeconds,
 } from "./helpers/clock.js";
 import {
-  computePlayerTotals,
-  computeScores,
-  describeEvent,
-  getEventSectionLabel,
-  getEventTeamBucket,
-} from "./helpers/events.js";
-import {
   getOperatorAlertAutoClearMs,
 } from "./helpers/labels.js";
 import {
@@ -73,7 +67,6 @@ import {
 } from "./helpers/network.js";
 import {
   abbreviateName,
-  computeTeamStats,
   playerDisplayName,
 } from "./helpers/players.js";
 import {
@@ -463,191 +456,23 @@ export function App() {
     }
   }
   // ---- Computed values ----
-  const allEvents = useMemo(() => [
-    ...submittedEvents.map(e => ({ event: e, pending: false })),
-    ...pendingEvents.filter(e => !submittedEvents.some(s => s.id === e.id)).map(e => ({ event: e, pending: true })),
-  ].sort((a, b) => b.event.sequence - a.event.sequence), [submittedEvents, pendingEvents]);
-  // scores and totals include pending events so the UI is always up-to-date offline
-  const allEventObjs = useMemo(() => allEvents.map(x => x.event), [allEvents]);
-  const scores = useMemo(() => computeScores(allEventObjs, homeTeamId, awayTeamId), [allEventObjs, homeTeamId, awayTeamId]);
-  const pTotals = useMemo(() => computePlayerTotals(allEventObjs), [allEventObjs]);
-  const homeTeamStats = useMemo(() => computeTeamStats(allEventObjs, homeTeamId), [allEventObjs, homeTeamId]);
-  const awayTeamStats = useMemo(() => computeTeamStats(allEventObjs, awayTeamId), [allEventObjs, awayTeamId]);
-  const periodTeamFouls = useMemo(() => {
-    const totals = { home: 0, away: 0 };
-    const inOT = isOvertimePeriod(period);
-    for (const event of allEventObjs) {
-      if (event.type !== "foul") continue;
-      // NFHS OT rule: Q4 fouls carry into OT and all OT-period fouls accumulate.
-      const counts = inOT
-        ? event.period === "Q4" || isOvertimePeriod(event.period)
-        : event.period === period;
-      if (!counts) continue;
-      if (event.teamId === homeTeamId) totals.home += 1;
-      if (event.teamId === awayTeamId) totals.away += 1;
-    }
-    return totals;
-  }, [allEventObjs, period, homeTeamId, awayTeamId]);
-  const homeInBonus = periodTeamFouls.away >= 5;
-  const awayInBonus = periodTeamFouls.home >= 5;
-  const timeoutUsage = useMemo(() => {
-    const regulation = {
-      home: { full: 0, short: 0 },
-      away: { full: 0, short: 0 },
-    };
-    const overtime = {
-      home: { full: 0 },
-      away: { full: 0 },
-    };
-    for (const event of allEventObjs) {
-      if (event.type !== "timeout") continue;
-      const side = event.teamId === homeTeamId ? "home" : event.teamId === awayTeamId ? "away" : null;
-      if (!side) continue;
-      if (isOvertimePeriod(event.period)) {
-        if (event.timeoutType === "full") overtime[side].full += 1;
-      } else {
-        regulation[side][event.timeoutType] += 1;
-      }
-    }
-    return { regulation, overtime };
-  }, [allEventObjs, homeTeamId, awayTeamId]);
-  const inOvertimeNow = isOvertimePeriod(period);
-  const timeoutRemaining = useMemo(() => {
-    if (inOvertimeNow) {
-      return {
-        home: {
-          full: Math.max(0, 1 - timeoutUsage.overtime.home.full),
-          short: 0,
-        },
-        away: {
-          full: Math.max(0, 1 - timeoutUsage.overtime.away.full),
-          short: 0,
-        },
-      };
-    }
-    return {
-      home: {
-        full: Math.max(0, 3 - timeoutUsage.regulation.home.full),
-        short: Math.max(0, 2 - timeoutUsage.regulation.home.short),
-      },
-      away: {
-        full: Math.max(0, 3 - timeoutUsage.regulation.away.full),
-        short: Math.max(0, 2 - timeoutUsage.regulation.away.short),
-      },
-    };
-  }, [inOvertimeNow, timeoutUsage]);
-  const totalTimeoutsLeft = {
-    home: timeoutRemaining.home.full + timeoutRemaining.home.short,
-    away: timeoutRemaining.away.full + timeoutRemaining.away.short,
-  };
-  const latestEvent = allEvents[0]?.event;
-
-  // When the clock starts while a timeout is the latest event, mark that timeout as dismissed
-  // so that pausing the clock again shows "Clock Stopped" rather than reverting to the timeout indicator.
-  useEffect(() => {
-    if (clockRunning && latestEvent?.type === "timeout") {
-      setDismissedTimeoutId(latestEvent.id);
-    }
-  }, [clockRunning, latestEvent]);
-  const currentGameState = useMemo(() => {
-    if (gamePhase === "post-game") {
-      return { label: "End of Game", tone: "done" as const };
-    }
-    if (gamePhase === "pre-game") {
-      return { label: "Pre-Game", tone: "idle" as const };
-    }
-
-    const clockDisabled = appData.gameSetup.clockEnabled === false || trackClock === false;
-    if (clockDisabled) {
-      return { label: "Clock Disabled", tone: "idle" as const };
-    }
-
-    const clockAtZero = clockToSec(clockInput) <= 0;
-    if (clockAtZero) {
-      if (period === "Q2") return { label: "Halftime", tone: "break" as const };
-      if (period === "Q4") return { label: "End of Q4", tone: "break" as const };
-      return { label: `End of ${period}`, tone: "break" as const };
-    }
-
-    if (!clockRunning && trackTimeouts && latestEvent?.type === "timeout" && latestEvent.id !== dismissedTimeoutId) {
-      const teamName = latestEvent.teamId === homeTeamId
-        ? homeTeamName
-        : latestEvent.teamId === awayTeamId
-          ? awayTeamName
-          : "Team";
-      const timeoutLen = latestEvent.timeoutType === "full" ? "60" : "30";
-      return { label: `${teamName} Timeout (${timeoutLen}s)`, tone: "alert" as const };
-    }
-
-    if (clockRunning) {
-      return { label: "Live", tone: "live" as const };
-    }
-
-    return { label: "Clock Stopped", tone: "idle" as const };
-  }, [
-    allEvents,
-    appData.gameSetup.clockEnabled,
-    awayTeamId,
-    awayTeamName,
-    clockInput,
-    clockRunning,
-    dismissedTimeoutId,
-    gamePhase,
-    homeTeamId,
-    homeTeamName,
-    latestEvent,
-    period,
-    trackClock,
-    trackTimeouts,
-  ]);
-  const eventPossessionTeamId = useMemo(() => {
-    const possessionEvent = allEventObjs.find((event) => event.type === "possession_start");
-    return possessionEvent?.possessedByTeamId ?? null;
-  }, [allEventObjs]);
-  const possessionTeamId = possessionOverrideTeamId !== undefined
-    ? possessionOverrideTeamId
-    : eventPossessionTeamId;
-  const possessionLabel = possessionTeamId === homeTeamId
-    ? homeTeamName
-    : possessionTeamId === awayTeamId
-      ? awayTeamName
-      : "Not set";
-  const foulAlerts = useMemo(() => {
-    const vcPl = appData.gameSetup.vcSide === "home" ? homePlayers : awayPlayers;
-    return vcPl.filter(p => (pTotals[p.id]?.fouls ?? 0) >= 4);
-  }, [appData.gameSetup.vcSide, homePlayers, awayPlayers, pTotals]);
-  const trackedPlayers = useMemo(
-    () => (vcSideSetup === "home" ? homePlayers : awayPlayers),
-    [vcSideSetup, homePlayers, awayPlayers],
-  );
-  const trackedTopScorer = useMemo(() => {
-    let current: { name: string; points: number } | undefined;
-    for (const player of trackedPlayers) {
-      const points = pTotals[player.id]?.points ?? 0;
-      if (!current || points > current.points) {
-        current = { name: player.name, points };
-      }
-    }
-    return current;
-  }, [trackedPlayers, pTotals]);
-  const maxOtInEvents = useMemo(() => {
-    return allEventObjs.reduce((maxOt, event) => {
-      if (!isOvertimePeriod(event.period)) return maxOt;
-      const otNumber = Number.parseInt(event.period.slice(2), 10);
-      return Number.isFinite(otNumber) ? Math.max(maxOt, otNumber) : maxOt;
-    }, 0);
-  }, [allEventObjs]);
-
-  const furthestReachedPeriodOrder = useMemo(() => {
-    let maxOrder = getPeriodOrder(period);
-    for (const event of allEventObjs) {
-      maxOrder = Math.max(maxOrder, getPeriodOrder(event.period));
-      if (event.type === "period_transition") {
-        maxOrder = Math.max(maxOrder, getPeriodOrder(event.newPeriod));
-      }
-    }
-    return maxOrder;
-  }, [allEventObjs, period]);
+  const {
+    allEvents, allEventObjs, scores, pTotals,
+    homeTeamStats, awayTeamStats, periodTeamFouls,
+    homeInBonus, awayInBonus, timeoutUsage, inOvertimeNow,
+    timeoutRemaining, totalTimeoutsLeft, latestEvent,
+    currentGameState, eventPossessionTeamId, possessionTeamId,
+    possessionLabel, foulAlerts, trackedPlayers, trackedTopScorer,
+    maxOtInEvents, furthestReachedPeriodOrder,
+  } = useLiveGameDerived({
+    submittedEvents, pendingEvents,
+    homeTeamId, awayTeamId, homeTeamName, awayTeamName,
+    homePlayers, awayPlayers, vcSideSetup,
+    period, gamePhase, clockInput, clockRunning,
+    trackClock, trackTimeouts, clockEnabled: appData.gameSetup.clockEnabled ?? true,
+    dismissedTimeoutId, setDismissedTimeoutId,
+    possessionOverrideTeamId,
+  });
 
   // Keep the ref current so the interval always has the latest values
   useEffect(() => {
@@ -802,74 +627,6 @@ export function App() {
   }
 
 
-  function renderInlineNotice() {
-    if (!inlineNotice) return null;
-    return (
-      <div className={`inline-notice inline-notice-${inlineNotice.tone}`} role="alert" aria-live="assertive">
-        <span>{inlineNotice.message}</span>
-        <button className="inline-notice-close" onClick={dismissInlineNotice} aria-label="Dismiss notice">
-          Dismiss
-        </button>
-      </div>
-    );
-  }
-
-  function renderAlertBanner() {
-    const visible = liveAlerts.filter((a) => !dismissedAlertIds.has(a.id));
-    if (visible.length === 0) return null;
-    const top = visible[0];
-    const isUrgent = top.priority === "urgent";
-    return (
-      <div
-        className={`operator-alert-banner operator-alert-banner-${top.priority}`}
-        role="alert"
-        aria-live="assertive"
-      >
-        <div className="operator-alert-content">
-          <span className={`operator-alert-badge operator-alert-badge-${top.priority}`}>
-            {isUrgent ? "URGENT" : "ALERT"}
-          </span>
-          <span className="operator-alert-message">{top.message}</span>
-          {visible.length > 1 && (
-            <span className="operator-alert-count">+{visible.length - 1} more</span>
-          )}
-        </div>
-        <button
-          className="operator-alert-dismiss"
-          onClick={() => setDismissedAlertIds((prev) => new Set([...prev, top.id]))}
-          aria-label="Dismiss alert"
-        >
-          X
-        </button>
-      </div>
-    );
-  }
-
-  function renderConfirmDialog() {
-    if (!confirmDialog) return null;
-    return (
-      <div className="modal-overlay" onClick={() => resolveConfirm(false)}>
-        <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header">
-            <span className="modal-title">{confirmDialog.title}</span>
-          </div>
-          <div className="confirm-message">{confirmDialog.message}</div>
-          <div className="confirm-actions">
-            <button className="confirm-btn confirm-btn-cancel" onClick={() => resolveConfirm(false)}>
-              {confirmDialog.cancelLabel}
-            </button>
-            <button
-              className={`confirm-btn ${confirmDialog.tone === "danger" ? "confirm-btn-danger" : "confirm-btn-primary"}`}
-              onClick={() => resolveConfirm(true)}
-            >
-              {confirmDialog.confirmLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // ================================================================
   //  SETTINGS
   // ================================================================
@@ -920,8 +677,8 @@ export function App() {
         onStartGame={startGame}
         onNavigate={navigateView}
         showInlineNotice={showInlineNotice}
-        inlineNoticeNode={renderInlineNotice()}
-        confirmDialogNode={renderConfirmDialog()}
+        inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
+        confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />
     );
   }
@@ -957,8 +714,8 @@ export function App() {
         onResetFromPostGame={resetFromPostGame}
         onDiscardFromPostGame={discardFromPostGame}
         onHandleNewGame={handleNewGame}
-        inlineNoticeNode={renderInlineNotice()}
-        confirmDialogNode={renderConfirmDialog()}
+        inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
+        confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />
     );
   }
@@ -990,9 +747,9 @@ export function App() {
     >
       {showTutorial && <TutorialOverlay onDismiss={() => setShowTutorial(false)} />}
       <button className="help-fab" onClick={() => setShowTutorial(true)} title="Help &amp; Tutorial">?</button>
-      {renderInlineNotice()}
-      {renderAlertBanner()}
-      {renderConfirmDialog()}
+      <InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />
+      <AlertBanner alerts={liveAlerts} dismissedIds={dismissedAlertIds} onDismissId={setDismissedAlertIds} />
+      <ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />
       <ModalRouter
         modal={modal}
         team={{
@@ -1099,262 +856,55 @@ export function App() {
       />
 
       {/* CENTER: Feed */}
-      <div className="panel center-panel">
-        <div className="scoreboard">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.4rem" }}>
-            {appData.gameSetup.connectionId && (
-              <div className="score-device-id" style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.4rem" }} title="Operator connection status">
-                <span>{`Connection: ${appData.gameSetup.connectionId}`}</span>
-                <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline - events queued locally"}>
-                  *
-                </span>
-              </div>
-            )}
-            <div className={`game-state-banner game-state-${currentGameState.tone}`} style={{ margin: 0 }}>
-              {currentGameState.label}
-            </div>
-          </div>
-          {(() => {
-            const myScoreRow = (
-              <div className="scoreboard-team-card scoreboard-team-card-my">
-                <div className="score-row">
-                  <span className={`team-lbl team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? homeTeamName : awayTeamName}</span>
-                  <span className={`score team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? scores.home : scores.away}</span>
-                </div>
-                <div className="score-meta-row">
-                  <span className={`score-meta${(vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away) >= 5 ? " foul-count-danger" : (vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away) === 4 ? " foul-count-warn" : ""}`}>
-                    Fouls: {vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away}
-                  </span>
-                  {(vcSideSetup === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
-                  {possessionTeamId === (vcSideSetup === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${vcSideSetup}`}>POSS</span>}
-                </div>
-              </div>
-            );
-            const oppSide = vcSideSetup === "home" ? "away" : "home";
-            const oppScoreRow = (
-              <div className="scoreboard-team-card scoreboard-team-card-opp">
-                <div className="score-row">
-                  <span className={`team-lbl team-${oppSide}-txt`}>{oppSide === "home" ? homeTeamName : awayTeamName}</span>
-                  <span className={`score team-${oppSide}-txt`}>{oppSide === "home" ? scores.home : scores.away}</span>
-                </div>
-                <div className="score-meta-row">
-                  <span className={`score-meta${(oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away) >= 5 ? " foul-count-danger" : (oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away) === 4 ? " foul-count-warn" : ""}`}>
-                    Fouls: {oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away}
-                  </span>
-                  {(oppSide === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
-                  {possessionTeamId === (oppSide === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${oppSide}`}>POSS</span>}
-                </div>
-              </div>
-            );
-            return <div className="scoreboard-team-grid">{myScoreRow}{oppScoreRow}</div>;
-          })()}
-        </div>
-
-        {foulAlerts.length > 0 && (
-          <div className="foul-alerts">
-            {foulAlerts.map(p => (
-              <div key={p.id} className={`foul-alert ${(pTotals[p.id]?.fouls ?? 0) >= 5 ? "foul-out-alert" : "foul-warn-alert"}`}>
-                {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "OUT" : "WARN"} #{p.number} {p.name} - {(pTotals[p.id]?.fouls ?? 0) >= 5 ? "FOULED OUT" : "4 fouls"}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="event-feed-header">
-          <span className="event-feed-title">Game Log</span>
-          <span className="event-feed-hint">Tap an event to edit or delete it</span>
-        </div>
-
-        <div className="event-feed">
-          {allEvents.length === 0 && <p className="empty-feed">No events yet</p>}
-          {allEvents.map(({ event, pending }) => {
-            const d = describeEvent(event, homeTeamName, awayTeamName, allPlayers, pTotals, homeTeamId, awayTeamId);
-            const eventStamp = `${event.period} ${formatClockFromSeconds(event.clockSecondsRemaining)}`;
-            const sectionLabel = getEventSectionLabel(event);
-            const teamBucket = getEventTeamBucket(event, homeTeamId, awayTeamId);
-            const teamColor = teamBucket === "home" ? homeTeamColor : teamBucket === "away" ? awayTeamColor : undefined;
-            const isLast = allEvents[allEvents.length - 1]?.event.id === event.id;
-            return (
-              <div
-                key={event.id}
-                className="feed-item-wrapper"
-              >
-                <button
-                  type="button"
-                  className={`feed-item feed-item-${teamBucket}${pending ? " feed-pending" : ""}`}
-                  style={teamColor ? ({ ["--feed-team-color" as string]: teamColor }) : undefined}
-                  onClick={() => openFeedEventEditor({ event, pending })}
-                >
-                  <span className="feed-stamp">{eventStamp}</span>
-                  <span className="feed-main-row">
-                    <span className="feed-section-tag">{sectionLabel}</span>
-                    <span className={`feed-main ac-${d.accent}`}>{d.main}</span>
-                    <span className="feed-item-action">Edit</span>
-                  </span>
-                  {d.detail && <span className="feed-detail">{d.detail}</span>}
-                </button>
-                {isLast && (
-                  <button
-                    className="feed-undo-btn"
-                    title="Undo: Quick delete this event"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void deleteEventRecord({ event, pending });
-                    }}
-                  >
-                    Undo
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div className="period-row">
-          {periodLabels.map((lbl) => {
-            const isOt = isOvertimePeriod(lbl);
-            const isSkip = getPeriodOrder(lbl) > getPeriodOrder(period) + 1;
-            return (
-              <div key={lbl} className="period-chip">
-                <button
-                  className={`period-btn${period === lbl ? " period-on" : ""}${isSkip ? " period-btn-skip" : ""}`}
-                  disabled={isSkip}
-                  onClick={() => { void changePeriod(lbl); }}
-                >{lbl}</button>
-                {isOt && (
-                  <button
-                    className="period-delete-btn"
-                    title={`Delete ${lbl}`}
-                    onClick={async () => {
-                      const ok = await requestConfirm({
-                        title: `Delete ${lbl}?`,
-                        message: "This removes all events in that overtime period.",
-                        confirmLabel: `Delete ${lbl}`,
-                        tone: "danger",
-                      });
-                      if (!ok) return;
-                      void deleteOvertimePeriod(lbl);
-                    }}
-                  >
-                    x
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <button
-            className="period-add-btn"
-            onClick={addOvertimePeriod}
-          >
-            + OT
-          </button>
-        </div>
-        {trackClock && <div className="clock-row">
-          {(appData.gameSetup.clockVisible ?? true) && (
-            <>
-              <button
-                className={`clock-inp clock-inp-display${appData.gameSetup.clockEnabled === false ? " clock-inp-disabled" : ""}`}
-                disabled={appData.gameSetup.clockEnabled === false}
-                onClick={() => {
-                  if (appData.gameSetup.clockEnabled === false) return;
-                  setClockPadDigits("");
-                  setClockPadOpen(v => !v);
-                }}>
-                {clockPadOpen ? formatClockFromPadInput(clockPadDigits) : clockInput}
-              </button>
-              {clockPadOpen && (
-                <div className="clock-numpad-overlay" onClick={() => setClockPadOpen(false)}>
-                  <div className="clock-numpad" onClick={e => e.stopPropagation()}>
-                    <div className="clock-numpad-preview">{formatClockFromPadInput(clockPadDigits)}</div>
-                    <div className="clock-numpad-grid">
-                      {([1,2,3,4,5,6,7,8,9,".",0,"DEL"] as (number|string)[]).map((k, i) => (
-                        <button
-                          key={i}
-                          className="clock-numpad-key"
-                          onClick={() => {
-                            if (k === "DEL") {
-                              setClockPadDigits(d => d.slice(0, -1));
-                            } else if (k === ".") {
-                              // only allow one dot, only when no minutes typed (sub-minute)
-                              setClockPadDigits(d => {
-                                if (d.includes(".")) return d;
-                                return d + ".";
-                              });
-                            } else {
-                              setClockPadDigits(d => {
-                                const dotIdx = d.indexOf(".");
-                                if (dotIdx !== -1) {
-                                  // after dot: only 1 tenths digit allowed
-                                  if (d.length > dotIdx + 1) return d;
-                                  return d + String(k);
-                                }
-                                // before dot: max 4 digits (MMSS)
-                                return (d + String(k)).slice(0, 4);
-                              });
-                            }
-                          }}>
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="clock-numpad-actions">
-                      <button className="clock-numpad-cancel" onClick={() => setClockPadOpen(false)}>Cancel</button>
-                      <button className="clock-numpad-set" onClick={() => {
-                        const formatted = formatClockFromPadInput(clockPadDigits);
-                        setClockInput(formatted);
-                        setClockPadOpen(false);
-                      }}>Set</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="clock-tools-row clock-tools-row-main">
-                <button className={`clock-tool-btn ${clockRunning ? "clock-btn-stop" : "clock-btn-start"}`} onClick={() => setClockRunning((v) => !v)} disabled={appData.gameSetup.clockEnabled === false}>
-                  {clockRunning ? "Stop" : "Start"}
-                </button>
-                <button className="clock-tool-btn clock-btn-reset" onClick={resetClockForPeriod} disabled={appData.gameSetup.clockEnabled === false}>Reset</button>
-                <button className="clock-tool-btn clock-btn-minus" onClick={() => adjustClock(-1)} disabled={appData.gameSetup.clockEnabled === false}>-1s</button>
-                <button className="clock-tool-btn clock-btn-plus" onClick={() => adjustClock(1)} disabled={appData.gameSetup.clockEnabled === false}>+1s</button>
-              </div>
-              <div className="clock-admin-row">
-                <button className="clock-admin-toggle" onClick={() => setShowClockAdmin(v => !v)}>
-                  {showClockAdmin ? "â–² Clock Settings" : "â–¼ Clock Settings"}
-                </button>
-                {showClockAdmin && (
-                  <div className="clock-admin-controls">
-                    <button
-                      className={`clock-tool-btn clock-btn-visibility${(appData.gameSetup.clockVisible ?? true) ? " active" : ""}`}
-                      onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}>
-                      {(appData.gameSetup.clockVisible ?? true) ? "Hide Clock" : "Show Clock"}
-                    </button>
-                    <button
-                      className={`clock-tool-btn clock-btn-enabled${(appData.gameSetup.clockEnabled ?? true) ? " active" : ""}`}
-                      onClick={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}>
-                      {(appData.gameSetup.clockEnabled ?? true) ? "Disable Clock" : "Enable Clock"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {trackPossession && <div>
-            <div className="shot-timeout-title" style={{ marginBottom: "0.3rem" }}>Possession</div>
-            <div className="possession-row">
-            <button
-              className={`possession-btn possession-btn-home ${possessionTeamId === homeTeamId ? "active" : ""}`}
-              onClick={() => setPossession("home")}
-              title={`Set possession: ${homeTeamName}`}>
-              Home: {homeTeamName}
-            </button>
-            <button
-              className={`possession-btn possession-btn-away ${possessionTeamId === awayTeamId ? "active" : ""}`}
-              onClick={() => setPossession("away")}
-              title={`Set possession: ${awayTeamName}`}>
-              Away: {awayTeamName}
-            </button>
-          </div>
-          </div>}
-        </div>}
-      </div>
+      <LiveCenterPanel
+        connectionId={appData.gameSetup.connectionId}
+        online={online}
+        currentGameState={currentGameState}
+        vcSideSetup={vcSideSetup}
+        homeTeamName={homeTeamName}
+        awayTeamName={awayTeamName}
+        homeTeamColor={homeTeamColor}
+        awayTeamColor={awayTeamColor}
+        homeTeamId={homeTeamId}
+        awayTeamId={awayTeamId}
+        scores={scores}
+        periodTeamFouls={periodTeamFouls}
+        homeInBonus={homeInBonus}
+        awayInBonus={awayInBonus}
+        possessionTeamId={possessionTeamId}
+        allEvents={allEvents}
+        allPlayers={allPlayers}
+        pTotals={pTotals}
+        foulAlerts={foulAlerts}
+        period={period}
+        overtimeCount={overtimeCount}
+        trackClock={trackClock}
+        trackPossession={trackPossession}
+        clockVisible={appData.gameSetup.clockVisible ?? true}
+        clockEnabled={appData.gameSetup.clockEnabled ?? true}
+        clockInput={clockInput}
+        clockRunning={clockRunning}
+        clockPadOpen={clockPadOpen}
+        clockPadDigits={clockPadDigits}
+        showClockAdmin={showClockAdmin}
+        openFeedEventEditor={openFeedEventEditor}
+        deleteEventRecord={deleteEventRecord}
+        changePeriod={changePeriod}
+        addOvertimePeriod={addOvertimePeriod}
+        deleteOvertimePeriod={deleteOvertimePeriod}
+        getPeriodOrder={getPeriodOrder}
+        requestConfirm={requestConfirm}
+        setPossession={setPossession}
+        setClockInput={setClockInput}
+        setClockRunning={setClockRunning}
+        setClockPadOpen={setClockPadOpen}
+        setClockPadDigits={setClockPadDigits}
+        setShowClockAdmin={setShowClockAdmin}
+        resetClockForPeriod={resetClockForPeriod}
+        adjustClock={adjustClock}
+        onToggleClockVisible={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}
+        onToggleClockEnabled={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}
+      />
 
       {/* RIGHT: Players + Stats */}
       <RosterPanel
