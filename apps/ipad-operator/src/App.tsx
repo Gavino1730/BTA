@@ -379,31 +379,12 @@ const DEFAULT_DATA: AppData = {
   },
 };
 
-const STANDARD_TEST_TEAM: Team = {
-  id: "team-usa",
-  name: "USA",
-  abbreviation: "USA",
-  players: [
-    { id: "usa-4", number: "4", name: "Stephen Curry", position: "PG", height: "6'2\"", grade: "Pro" },
-    { id: "usa-6", number: "6", name: "LeBron James", position: "SF", height: "6'9\"", grade: "Pro" },
-    { id: "usa-7", number: "7", name: "Kevin Durant", position: "SF", height: "6'10\"", grade: "Pro" },
-    { id: "usa-8", number: "8", name: "Kobe Bryant", position: "SG", height: "6'6\"", grade: "Pro" },
-    { id: "usa-9", number: "9", name: "Michael Jordan", position: "SG", height: "6'6\"", grade: "Pro" },
-    { id: "usa-10", number: "10", name: "Magic Johnson", position: "PG", height: "6'9\"", grade: "Pro" },
-    { id: "usa-11", number: "11", name: "Kyrie Irving", position: "PG", height: "6'2\"", grade: "Pro" },
-    { id: "usa-13", number: "13", name: "Anthony Davis", position: "PF", height: "6'10\"", grade: "Pro" },
-    { id: "usa-15", number: "15", name: "Carmelo Anthony", position: "PF", height: "6'7\"", grade: "Pro" },
-    { id: "usa-34", number: "34", name: "Shaquille O'Neal", position: "C", height: "7'1\"", grade: "Pro" },
-  ],
-};
-
 function withStandardizedTeams(data: AppData): AppData {
-  const hasTestTeam = data.teams.some((t) => t.id === STANDARD_TEST_TEAM.id);
-  const teams = hasTestTeam ? data.teams : [...data.teams, STANDARD_TEST_TEAM];
+  const teams = data.teams;
   const hasSelectedTeam = teams.some((t) => t.id === data.gameSetup.myTeamId);
   const gameSetup = hasSelectedTeam
     ? data.gameSetup
-    : { ...data.gameSetup, myTeamId: STANDARD_TEST_TEAM.id };
+    : { ...data.gameSetup, myTeamId: "" };
   return { ...data, teams, gameSetup };
 }
 
@@ -434,7 +415,7 @@ function clearOperatorLocalCache(): void {
   keysToRemove.forEach((key) => localStorage.removeItem(key));
 }
 
-function loadAppData(skipCacheClear = false): AppData {
+function loadAppData(): AppData {
   // Check URL params first - a QR-code scan may carry config overrides.
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
@@ -461,10 +442,7 @@ function loadAppData(skipCacheClear = false): AppData {
   if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
   if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
 
-  // Only clear the local cache on the initial app load (when called as useState initializer).
-  // Subsequent calls from startGame/endAndResetGame/etc. pass skipCacheClear=true so they
-  // never accidentally wipe pending events or settings that were manually entered.
-  if (!urlSetup.connectionId && !skipCacheClear) {
+  if (!urlSetup.connectionId) {
     clearOperatorLocalCache();
   }
 
@@ -1250,24 +1228,17 @@ export function App() {
         return;
       }
 
-      // Use functional updater to always merge against the latest state, avoiding
-      // stale-closure overwrites when socket events updated appData between the
-      // fetch start and the response arriving.
-      setAppData((current) => {
-        if (JSON.stringify(converted) === JSON.stringify(current.teams)) {
-          return current;
-        }
+      if (JSON.stringify(converted) === JSON.stringify(appData.teams)) {
+        return;
+      }
 
-        const hasSelectedTeam = converted.some((team) => team.id === current.gameSetup.myTeamId);
-        const nextMyTeamId = hasSelectedTeam ? current.gameSetup.myTeamId : (converted[0]?.id ?? "");
+      const hasSelectedTeam = converted.some((team) => team.id === appData.gameSetup.myTeamId);
+      const nextMyTeamId = hasSelectedTeam ? appData.gameSetup.myTeamId : (converted[0]?.id ?? "");
 
-        const next = {
-          ...current,
-          teams: converted,
-          gameSetup: { ...current.gameSetup, myTeamId: nextMyTeamId },
-        };
-        saveAppData(next);
-        return next;
+      persistData({
+        ...appData,
+        teams: converted,
+        gameSetup: { ...appData.gameSetup, myTeamId: nextMyTeamId },
       });
     }
 
@@ -1281,10 +1252,7 @@ export function App() {
       clearInterval(intervalId);
     };
   }, [
-    appData.gameSetup.connectionId,
-    appData.gameSetup.apiUrl,
-    appData.gameSetup.apiKey,
-    appData.gameSetup.schoolId,
+    appData,
   ]);
 
   useEffect(() => {
@@ -1407,6 +1375,13 @@ export function App() {
       return;
     }
 
+    // Never auto-attach this iPad to a live game unless the same connection
+    // code has been explicitly synced from the coach dashboard.
+    if (!isConnectionReadyForStart(appData.gameSetup)) {
+      setLineupLockedByLiveGame(false);
+      return;
+    }
+
     let cancelled = false;
 
     async function syncActiveGameLockAndLineup() {
@@ -1481,7 +1456,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, gamePhase]);
+  }, [appData.gameSetup, gamePhase]);
 
   // ---- In-game roster state ----
   const [showRosterPanel, setShowRosterPanel] = useState(true);
@@ -1508,10 +1483,8 @@ export function App() {
 
   function lineupsEqual(left: string[], right: string[]): boolean {
     if (left.length !== right.length) return false;
-    const leftSorted = [...left].sort();
-    const rightSorted = [...right].sort();
-    for (let index = 0; index < leftSorted.length; index += 1) {
-      if (leftSorted[index] !== rightSorted[index]) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
     }
     return true;
   }
@@ -1958,7 +1931,7 @@ export function App() {
   }
 
   async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
-    const latest = loadAppData(true);
+    const latest = loadAppData();
     const apiUrl = latest.gameSetup.apiUrl?.trim();
     if (!apiUrl || !gid) {
       return false;
@@ -2227,11 +2200,9 @@ export function App() {
   }
 
   async function startGame(newGameId?: string) {
-    // Read fresh settings from localStorage - persistData writes there synchronously
+    // Read fresh settings from localStorage - saveGameSetup writes there synchronously
     // before this async function resolves, so we always get the latest values.
-    // Pass skipCacheClear=true to avoid accidentally wiping manually-entered settings
-    // (e.g. when the operator typed their connection code instead of scanning a QR code).
-    const latest = loadAppData(true);
+    const latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
     let effectiveGameId = gid;
     let shouldResetEventTimeline = false;
@@ -2300,10 +2271,9 @@ export function App() {
 
   /** End the current game: auto-saves to stats dashboard if there's data, then resets. */
   async function endAndResetGame() {
-    // Read fresh localStorage data so we always get the opponent name just saved by persistData()
-    // (React state updates are async, so appData.gameSetup.opponent may still be the old value here).
-    // Pass skipCacheClear=true so we never wipe pending events during an active game flow.
-    const latest = loadAppData(true);
+    // Read fresh localStorage data so we always get the opponent name just saved by saveGameSetup()
+    // (React state updates are async, so appData.gameSetup.opponent may still be the old value here)
+    const latest = loadAppData();
     if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
       const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
       if (!saved) {
@@ -2332,7 +2302,7 @@ export function App() {
 
   /** Prepare a fresh game after viewing post-game screen - returns to pre-game setup. */
   function handleNewGame() {
-    const latest = loadAppData(true);
+    const latest = loadAppData();
     const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
     const nextData: AppData = {
       ...latest,

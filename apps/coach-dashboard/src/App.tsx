@@ -214,6 +214,19 @@ interface PresenceStatus {
   lastSeenIso: string | null;
 }
 
+interface ActiveSetupResponse {
+  activeGameId?: string;
+  setup?: {
+    gameId?: string;
+    myTeamId?: string;
+    myTeamName?: string;
+    opponentName?: string;
+    vcSide?: "home" | "away";
+    homeTeamColor?: string;
+    awayTeamColor?: string;
+  } | null;
+}
+
 function normalizeConnectionId(value: string | null | undefined): string {
   return normalizeConnectionCode(value);
 }
@@ -461,6 +474,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   const [newGameMyTeamId, setNewGameMyTeamId] = useState("");
   const [newGameVcSide, setNewGameVcSide] = useState<"home" | "away">("home");
   const [newGameOppColor, setNewGameOppColor] = useState("#f87171");
+  const [newGameStartingLineup, setNewGameStartingLineup] = useState<string[]>([]);
   const [state, setState] = useState<GameState | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLaunchingGame, setIsLaunchingGame] = useState(false);
@@ -616,21 +630,32 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   }, []);
 
   useEffect(() => {
+    const selectedTeam = rosterTeams.find((team) => team.id === newGameMyTeamId);
+    const validPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
+    setNewGameStartingLineup((previous) => previous.filter((playerId) => validPlayerIds.has(playerId)).slice(0, 5));
+  }, [newGameMyTeamId, rosterTeams]);
+
+  useEffect(() => {
     const normalizedConnectionId = normalizeConnectionId(connectionId);
     if (!normalizedConnectionId) {
       return;
     }
 
-    const preferredTeam = rosterTeams.find((team) => team.id === setupNames.myTeamId) ?? rosterTeams[0] ?? null;
-    const trackedTeamColor = normalizeTeamColor(preferredTeam?.teamColor);
+    const hasPublishedSetup = Boolean(
+      setupNames.myTeamId
+      || setupNames.myTeamName
+      || setupNames.opponentName
+      || setupNames.homeColor
+      || setupNames.awayColor
+    );
     const payload = {
       gameId: gameId || undefined,
-      myTeamId: setupNames.myTeamId || preferredTeam?.id || undefined,
-      myTeamName: setupNames.myTeamName || preferredTeam?.name || undefined,
+      myTeamId: setupNames.myTeamId || undefined,
+      myTeamName: setupNames.myTeamName || undefined,
       opponentName: setupNames.opponentName || undefined,
-      vcSide: setupNames.vcSide,
-      homeTeamColor: normalizeTeamColor(setupNames.homeColor) ?? (setupNames.vcSide === "home" ? trackedTeamColor : undefined),
-      awayTeamColor: normalizeTeamColor(setupNames.awayColor) ?? (setupNames.vcSide === "away" ? trackedTeamColor : undefined),
+      vcSide: hasPublishedSetup ? setupNames.vcSide : undefined,
+      homeTeamColor: normalizeTeamColor(setupNames.homeColor),
+      awayTeamColor: normalizeTeamColor(setupNames.awayColor),
       dashboardUrl: window.location.href,
     };
 
@@ -911,13 +936,29 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
   }, [connectionId]);
 
   useEffect(() => {
-    if (!gameId) {
-      return;
-    }
-
     let cancelled = false;
-    async function reconcileStaleGameId() {
+
+    async function reconcileGameId() {
       try {
+        if (!gameId) {
+          const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
+            headers: apiKeyHeader(),
+          });
+
+          if (!activeResponse.ok || cancelled) {
+            return;
+          }
+
+          const active = await activeResponse.json() as { gameId?: string };
+          if (cancelled || !active.gameId || endedGameIdsRef.current.has(active.gameId)) {
+            return;
+          }
+
+          setDashboardStatus("Recovered active game from server.");
+          setGameId(active.gameId);
+          return;
+        }
+
         const stateResponse = await fetch(`${apiBase}/api/games/${gameId}/state`, {
           headers: apiKeyHeader(),
         });
@@ -952,7 +993,57 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
       }
     }
 
-    void reconcileStaleGameId();
+    void reconcileGameId();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
+
+  useEffect(() => {
+    if (!gameId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function hydrateActiveSetupNames() {
+      try {
+        const response = await fetch(`${apiBase}/api/games/active/setup`, {
+          headers: apiKeyHeader(),
+        });
+
+        if (!response.ok || cancelled) {
+          return;
+        }
+
+        const payload = await response.json() as ActiveSetupResponse;
+        if (cancelled || !payload.setup) {
+          return;
+        }
+
+        if (payload.activeGameId && payload.activeGameId !== gameId) {
+          return;
+        }
+
+        setSetupNames((current) => ({
+          myTeamId: payload.setup?.myTeamId ?? current.myTeamId,
+          myTeamName: payload.setup?.myTeamName ?? current.myTeamName,
+          opponentName: payload.setup?.opponentName ?? current.opponentName,
+          vcSide: payload.setup?.vcSide === "away"
+            ? "away"
+            : payload.setup?.vcSide === "home"
+              ? "home"
+              : current.vcSide,
+          homeColor: normalizeTeamColor(payload.setup?.homeTeamColor) ?? current.homeColor,
+          awayColor: normalizeTeamColor(payload.setup?.awayTeamColor) ?? current.awayColor,
+        }));
+      } catch {
+        // Keep current setup when active setup cannot be fetched.
+      }
+    }
+
+    void hydrateActiveSetupNames();
 
     return () => {
       cancelled = true;
@@ -2362,13 +2453,67 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                     type="button"
                     className="shell-nav-link"
                     style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
-                    onClick={() => setNewGameMyTeamId(t.id)}
+                    onClick={() => {
+                      setNewGameMyTeamId(t.id);
+                      setNewGameStartingLineup([]);
+                    }}
                   >
                     {t.name}
                   </button>
                 );
               })}
             </div>
+          </div>
+
+          {/* Starting lineup */}
+          <div style={{ marginBottom: "1rem" }}>
+            <p className="settings-section-label">Starting Lineup (required)</p>
+            <p className="settings-section-desc" style={{ marginTop: "0.35rem" }}>
+              Select exactly 5 players for tip-off. Selected: {newGameStartingLineup.length}/5
+            </p>
+            {(() => {
+              const selectedTeam = rosterTeams.find((team) => team.id === newGameMyTeamId);
+              if (!newGameMyTeamId) {
+                return <p className="settings-section-desc" style={{ marginTop: "0.5rem" }}>Pick your team first.</p>;
+              }
+              if (!selectedTeam || selectedTeam.players.length === 0) {
+                return <p className="settings-section-desc" style={{ marginTop: "0.5rem" }}>No players on this roster yet. Add players in Settings.</p>;
+              }
+
+              return (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.6rem" }}>
+                  {selectedTeam.players.map((player) => {
+                    const isSelected = newGameStartingLineup.includes(player.id);
+                    const isDisabled = !isSelected && newGameStartingLineup.length >= 5;
+                    return (
+                      <button
+                        key={player.id}
+                        type="button"
+                        className="shell-nav-link"
+                        disabled={isDisabled}
+                        onClick={() => {
+                          setNewGameStartingLineup((previous) => {
+                            if (previous.includes(player.id)) {
+                              return previous.filter((playerId) => playerId !== player.id);
+                            }
+                            if (previous.length >= 5) {
+                              return previous;
+                            }
+                            return [...previous, player.id];
+                          });
+                        }}
+                        style={isSelected
+                          ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" }
+                          : undefined}
+                        title={`${player.number} ${player.name}`}
+                      >
+                        #{player.number} {player.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Opponent + Side */}
@@ -2412,10 +2557,10 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           <button
             type="button"
             className="shell-nav-link shell-nav-link-active"
-            disabled={!newGameMyTeamId || !newGameOpponent.trim() || isLaunchingGame}
-            style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim() || isLaunchingGame) ? 0.45 : 1 }}
+            disabled={!newGameMyTeamId || !newGameOpponent.trim() || newGameStartingLineup.length !== 5 || isLaunchingGame}
+            style={{ display: "block", width: "100%", textAlign: "center", padding: "0.75rem", fontSize: "1rem", fontWeight: 700, marginBottom: "1.5rem", borderRadius: 12, opacity: (!newGameMyTeamId || !newGameOpponent.trim() || newGameStartingLineup.length !== 5 || isLaunchingGame) ? 0.45 : 1 }}
             onClick={() => {
-              if (isLaunchingGame) {
+              if (isLaunchingGame || newGameStartingLineup.length !== 5) {
                 return;
               }
 
@@ -2430,6 +2575,13 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
               const oppSlug = newGameOpponent.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
               const homeTeamId = newGameVcSide === "home" ? newGameMyTeamId : oppSlug;
               const awayTeamId = newGameVcSide === "away" ? newGameMyTeamId : oppSlug;
+              const rosterPlayerIds = new Set((selectedTeam?.players ?? []).map((player) => player.id));
+              const selectedStartingLineup = [...new Set(newGameStartingLineup)]
+                .filter((playerId) => rosterPlayerIds.has(playerId))
+                .slice(0, 5);
+              const startingLineupByTeam = selectedStartingLineup.length > 0
+                ? { [newGameMyTeamId]: selectedStartingLineup }
+                : undefined;
 
               void (async () => {
                 setIsLaunchingGame(true);
@@ -2439,7 +2591,7 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
                   const response = await fetch(`${apiBase}/api/games`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...apiKeyHeader() },
-                    body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName }),
+                    body: JSON.stringify({ gameId: newId, homeTeamId, awayTeamId, opponentName, startingLineupByTeam }),
                   });
 
                   if (response.status === 409) {
@@ -2493,6 +2645,11 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
           >
             {isLaunchingGame ? "Starting..." : "Launch Game"}
           </button>
+          {newGameStartingLineup.length !== 5 && (
+            <p className="settings-section-desc" style={{ marginBottom: "1rem" }}>
+              Select all 5 starters to launch the game.
+            </p>
+          )}
           <p className="settings-section-desc">{dashboardStatus}</p>
 
           {/* Pairing code */}
