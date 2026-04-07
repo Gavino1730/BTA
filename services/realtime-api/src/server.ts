@@ -2778,7 +2778,7 @@ app.post("/api/games/:gameId/submit", requireApiKey, requireWriteRole, (req, res
   res.json({ message: "Game submitted successfully", gameId });
 });
 
-app.post("/api/reset", (req, res) => {
+app.post("/api/reset", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   resetAllData({ schoolId });
   gameOverridesBySchool.delete(schoolId);
@@ -2919,7 +2919,7 @@ app.get("/api/ai/game-analysis/:gameId", (req, res) => {
   res.json({ gameId: req.params.gameId, analysis });
 });
 
-app.delete("/api/ai/team-summary", (_req, res) => {
+app.delete("/api/ai/team-summary", requireApiKey, (_req, res) => {
   // No persistent cache to clear in this implementation — return success.
   res.json({ message: "Cache cleared" });
 });
@@ -2930,7 +2930,7 @@ app.get("/api/season-analysis", (req, res) => {
   res.json(buildSeasonAnalysisPayload(schoolId, force));
 });
 
-app.delete("/api/season-analysis", (req, res) => {
+app.delete("/api/season-analysis", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   seasonAnalysisBySchool.delete(schoolId);
   res.json({ message: "Cache cleared" });
@@ -2964,7 +2964,7 @@ app.get("/api/ai/player-analysis/:playerName", (req, res) => {
   res.json(payload);
 });
 
-app.delete("/api/ai/player-analysis/:playerName", (req, res) => {
+app.delete("/api/ai/player-analysis/:playerName", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const playerName = sanitizeTextField(req.params.playerName, 100) ?? "";
   playerAnalysisCacheBySchool.get(schoolId)?.delete(playerName);
@@ -3352,18 +3352,6 @@ app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) =
   emitToGameRooms(schoolId, gameId, "game:insights", []);
 
   res.status(201).json(state);
-});
-
-app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const removed = deleteGame(req.params.gameId, { schoolId });
-  if (!removed) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  emitToGameRooms(schoolId, req.params.gameId, "game:deleted", { gameId: req.params.gameId });
-  res.json({ gameId: req.params.gameId, deleted: true });
 });
 
 app.get("/api/games/active/state", requireApiKey, (req, res) => {
