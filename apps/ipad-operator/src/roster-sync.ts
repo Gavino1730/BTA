@@ -20,7 +20,7 @@ export interface Player {
   notes?: string;
 }
 
-export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "default")
+export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "")
   .toString()
   .trim();
 

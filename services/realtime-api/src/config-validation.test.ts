@@ -9,7 +9,8 @@ function baseConfig(): RuntimeConfig {
     jwtEnabled: true,
     apiKeyPresent: false,
     allowedOriginsConfigured: true,
-    databaseUrlConfigured: true
+    databaseUrlConfigured: true,
+    localAuthSecretSeparate: true
   };
 }
 
