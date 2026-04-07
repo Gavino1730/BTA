@@ -510,12 +510,8 @@ export function App({ onConnectionChange, showTutorial = false, onDismissTutoria
     // or device-connection carry-over from the previous game.
     setState(null);
     setInsights([]);
-    setAiChatMessages([]);
-    setAiChatInput("");
-    setAiChatSuggestions([]);
+    resetAiState();
     setBoxScoreFilter([]);
-    setPromptPreview(null);
-    setAiRefreshError("");
     setDeviceConnected(false);
     setDashboardStatus("Loading new game...");
     setIsLoading(true);

@@ -10,7 +10,7 @@ import { ScoringPanel } from "./ScoringPanel.js";
 import { RosterPanel } from "./RosterPanel.js";
 import { LiveCenterPanel } from "./LiveCenterPanel.js";
 import { InlineNoticeBar, AlertBanner, ConfirmDialogOverlay } from "./OperatorOverlays.js";
-import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived } from "./hooks/index.js";
+import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived, useTeamSetup } from "./hooks/index.js";
 import {
   getPeriodDefaultClock,
   normalizeTeamColor,
@@ -41,20 +41,17 @@ import type {
   GameSetup,
   Modal,
   OperatorAlert,
-  Player,
-  RunningTotals,
   Team,
 } from "./types.js";
-import type { OpponentTrackStat, SettingsView, TeamSide } from "./types.js";
-import {
-  clockToSec,
-  formatClockFromDigits,
-  formatClockFromPadInput,
-  formatClockFromSeconds,
-} from "./helpers/clock.js";
+import type { SettingsView, TeamSide } from "./types.js";
 import {
   getOperatorAlertAutoClearMs,
 } from "./helpers/labels.js";
+import {
+  clockToSec,
+  formatClockFromDigits,
+  formatClockFromSeconds,
+} from "./helpers/clock.js";
 import {
   apiHeaders,
   apiKeyHeader,
@@ -62,13 +59,8 @@ import {
   generateGameId,
   isConnectionReadyForStart,
   normalizeConnectionId,
-  normalizeOpponentTrackStats,
   normalizeUrlBase,
 } from "./helpers/network.js";
-import {
-  abbreviateName,
-  playerDisplayName,
-} from "./helpers/players.js";
 import {
   clearOperatorLocalCache,
   DEFAULT_DATA,
@@ -282,16 +274,6 @@ export function App() {
   // Ref for auto-save interval - always holds the latest values without re-registering the interval
   const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
 
-  // Helper to generate team ID from name
-  function generateTeamId(name: string): string {
-    return `team-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`;
-  }
-
-  function persistPhase(phase: "pre-game" | "live" | "post-game") {
-    setGamePhase(phase);
-    localStorage.setItem("operator-console:phase", phase);
-  }
-
   function sanitizeLineup(lineup: unknown): string[] {
     if (!Array.isArray(lineup)) return [];
     return [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5);
@@ -305,96 +287,19 @@ export function App() {
     return true;
   }
 
-  // ---- Derived: home/away teams ----
-  // myTeamId is the team we are tracking; side determines which slot they fill.
-  const myTeam = appData.teams.find(t => t.id === appData.gameSetup.myTeamId);
-  const vcSideSetup = appData.gameSetup.vcSide ?? "home";
-  const homeTeam = vcSideSetup === "home" ? myTeam : undefined;
-  const awayTeam  = vcSideSetup === "away" ? myTeam : undefined;
-  const opponentName = appData.gameSetup.opponent?.trim() || "";
-  const opponentTeamId = opponentName ? generateTeamId(opponentName) : "opponent";
-  const homeTeamId = vcSideSetup === "home" ? (appData.gameSetup.myTeamId || "team-home") : opponentTeamId;
-  const awayTeamId = vcSideSetup === "away" ? (appData.gameSetup.myTeamId || "team-away") : opponentTeamId;
-  const vcTeamId = vcSideSetup === "home" ? homeTeamId : awayTeamId;
-  const homeTeamName = myTeam && vcSideSetup === "home" ? myTeam.name : opponentName || "Home";
-  const awayTeamName  = myTeam && vcSideSetup === "away" ? myTeam.name : opponentName || "Away";
-  const homeTeamAbbr = vcSideSetup === "home"
-    ? (myTeam?.abbreviation ?? homeTeamName.slice(0, 3).toUpperCase())
-    : (opponentName ? opponentName.slice(0, 3).toUpperCase() : "OPP");
-  const awayTeamAbbr = vcSideSetup === "away"
-    ? (myTeam?.abbreviation ?? awayTeamName.slice(0, 3).toUpperCase())
-    : (opponentName ? opponentName.slice(0, 3).toUpperCase() : "OPP");
-  const homeTeamColor = normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR;
-  const awayTeamColor = normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR;
-  const opponentTrackStats = normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats);
-  const opponentTrackSet = new Set<OpponentTrackStat>(opponentTrackStats);
-  const trackClock = appData.gameSetup.trackClock ?? true;
-  const trackPossession = appData.gameSetup.trackPossession ?? true;
-  const trackTimeouts = appData.gameSetup.trackTimeouts ?? true;
-  const opponentSide: TeamSide = vcSideSetup === "home" ? "away" : "home";
 
-  function isOpponentStatEnabled(key: OpponentTrackStat): boolean {
-    return opponentTrackSet.has(key);
-  }
-
-  // ---- Game moment options for context (pre-game, quarters, halftime, timeout, end of game) ----
-  const liveHomeSideLabel = `${homeTeamName} (home)`;
-  const liveAwaySideLabel = `${awayTeamName} (away)`;
-  const homePlayers = homeTeam?.players ?? [];
-  const awayPlayers = awayTeam?.players ?? [];
-  const allPlayers = [...homePlayers, ...awayPlayers];
-
-  function resolveTeamId(side: TeamSide): string {
-    return side === "home" ? homeTeamId : awayTeamId;
-  }
-
-  function normalizeEventTeamId(event: GameEvent): GameEvent {
-    if (event.teamId === homeTeamId || event.teamId === awayTeamId) return event;
-    if (event.teamId === "home") return { ...event, teamId: homeTeamId };
-    if (event.teamId === "away") return { ...event, teamId: awayTeamId };
-    if (event.teamId === "team-home") return { ...event, teamId: homeTeamId };
-    if (event.teamId === "team-away") return { ...event, teamId: awayTeamId };
-    return event;
-  }
-
-  // ---- Network ----
-  useSocket({
-    gameId,
-    gamePhase,
-    gameSetup: appData.gameSetup,
-    socketRef,
-    setAppData,
-    setLiveAlerts,
-    setDismissedAlertIds,
-    setConnectionSyncStatus,
-    persistPhase,
-    showInlineNotice,
-  });
-
-  useEffect(() => {
-    if (liveAlertTimerRef.current !== null) {
-      window.clearTimeout(liveAlertTimerRef.current);
-      liveAlertTimerRef.current = null;
-    }
-
-    const visibleAlerts = liveAlerts.filter((alert) => !dismissedAlertIds.has(alert.id));
-    if (visibleAlerts.length === 0) {
-      return;
-    }
-
-    liveAlertTimerRef.current = window.setTimeout(() => {
-      setLiveAlerts([]);
-      setDismissedAlertIds(new Set());
-      liveAlertTimerRef.current = null;
-    }, getOperatorAlertAutoClearMs(visibleAlerts));
-
-    return () => {
-      if (liveAlertTimerRef.current !== null) {
-        window.clearTimeout(liveAlertTimerRef.current);
-        liveAlertTimerRef.current = null;
-      }
-    };
-  }, [dismissedAlertIds, liveAlerts]);
+  // ---- Team identities ----
+  const {
+    myTeam, vcSideSetup, homeTeam, awayTeam,
+    opponentName, opponentTeamId,
+    homeTeamId, awayTeamId, vcTeamId,
+    homeTeamName, awayTeamName, homeTeamAbbr, awayTeamAbbr,
+    homeTeamColor, awayTeamColor,
+    trackClock, trackPossession, trackTimeouts, opponentSide,
+    isOpponentStatEnabled,
+    homePlayers, awayPlayers, allPlayers,
+    resolveTeamId, normalizeEventTeamId,
+  } = useTeamSetup(appData);
 
   // ---- Event queue (hook) ----
   const {
