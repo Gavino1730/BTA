@@ -10,7 +10,7 @@ import { ScoringPanel } from "./ScoringPanel.js";
 import { RosterPanel } from "./RosterPanel.js";
 import { LiveCenterPanel } from "./LiveCenterPanel.js";
 import { InlineNoticeBar, AlertBanner, ConfirmDialogOverlay } from "./OperatorOverlays.js";
-import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useClockControls, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, buildRealtimeGameRegistrationPayload, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived, useTeamSetup, useLineupSync } from "./hooks/index.js";
+import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useClockControls, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived, useTeamSetup, useLineupSync } from "./hooks/index.js";
 import {
   normalizeTeamColor,
 } from "@bta/shared-schema";
@@ -36,8 +36,6 @@ import {
   clockToSec,
 } from "./helpers/clock.js";
 import {
-  apiHeaders,
-  apiKeyHeader,
   buildCoachViewUrl,
   generateGameId,
   isConnectionReadyForStart,
@@ -263,7 +261,7 @@ export function App() {
     normalizeEventTeamId,
     showInlineNotice,
     triggerFeedback,
-    ensureRealtimeGameExists,
+    preGameNotes,
     onHydrateState(statePayload) {
       const trackedTeamId = appData.gameSetup.vcSide === "away"
         ? (appData.gameSetup.myTeamId || "team-away")
@@ -291,21 +289,6 @@ export function App() {
     },
   });
 
-  async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
-    const latest = loadAppData();
-    const apiUrl = latest.gameSetup.apiUrl?.trim();
-    if (!apiUrl || !gid) return false;
-    try {
-      const res = await fetch(`${apiUrl}/api/games`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
-        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  }
   // ---- Computed values ----
   const {
     allEvents, allEventObjs, scores, pTotals,
@@ -354,7 +337,6 @@ export function App() {
     postGameNameInput, postGameOpponentInput, postGameDateInput,
     postGameHomeScoreInput, postGameAwayScoreInput,
     persistData, persistPhase, resetTimeline,
-    ensureRealtimeGameExists,
     setSubmitStatus, setSubmitMessage,
     showInlineNotice, requestConfirm,
   });
@@ -393,7 +375,6 @@ export function App() {
   }, [chainPrompt]);
 
   // ---- Modal helpers ----
-  function closeModal() { setModal(null); }
   function dismissChain() { setChainPrompt(null); }
 
   const {

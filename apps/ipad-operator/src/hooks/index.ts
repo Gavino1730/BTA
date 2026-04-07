@@ -17,7 +17,7 @@ export { useEventEditor } from "./useEventEditor.js";
 export type { UseEventEditorInput } from "./useEventEditor.js";
 export { usePeriodControl, getPeriodOrder } from "./usePeriodControl.js";
 export type { UsePeriodControlInput } from "./usePeriodControl.js";
-export { useGameFlow, buildRealtimeGameRegistrationPayload } from "./useGameFlow.js";
+export { useGameFlow } from "./useGameFlow.js";
 export type { UseGameFlowInput } from "./useGameFlow.js";
 export { useLiveGameDerived } from "./useLiveGameDerived.js";
 export { useTeamSetup } from "./useTeamSetup.js";

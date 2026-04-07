@@ -5,6 +5,8 @@ import {
   apiHeaders,
   apiKeyHeader,
 } from "../helpers/network.js";
+import { buildRealtimeGameRegistrationPayload } from "./useGameFlow.js";
+import { loadAppData } from "../helpers/storage.js";
 import {
   loadPending,
   loadSeq,
@@ -20,8 +22,7 @@ export interface EventQueueDeps {
   normalizeEventTeamId: (event: GameEvent) => GameEvent;
   showInlineNotice: (message: string, tone?: "info" | "success" | "warning" | "error", timeoutMs?: number) => void;
   triggerFeedback: (tone: "event" | "undo" | "warning", vibrateMs?: number) => void;
-  /** Called to ensure the game exists on the server before event submission. */
-  ensureRealtimeGameExists: (gid: string) => Promise<boolean>;
+  preGameNotes: string;
   /** Called to sync lineup from server state during hydration. */
   onHydrateState?: (statePayload: {
     events?: unknown[];
@@ -42,9 +43,25 @@ export function useEventQueue(deps: EventQueueDeps) {
     normalizeEventTeamId,
     showInlineNotice,
     triggerFeedback,
-    ensureRealtimeGameExists,
+    preGameNotes,
     onHydrateState,
   } = deps;
+
+  async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
+    const latest = loadAppData();
+    const apiUrl = latest.gameSetup.apiUrl?.trim();
+    if (!apiUrl || !gid) return false;
+    try {
+      const res = await fetch(`${apiUrl}/api/games`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
+        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
 
   const [pendingEvents, setPendingEvents] = useState<GameEvent[]>(() => loadPending(gameId));
   const [submittedEvents, setSubmittedEvents] = useState<GameEvent[]>([]);

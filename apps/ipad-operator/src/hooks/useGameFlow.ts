@@ -30,7 +30,6 @@ export interface UseGameFlowInput {
   persistData: (next: AppData) => void;
   persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
   resetTimeline: (gameIdToReset: string) => void;
-  ensureRealtimeGameExists: (gid: string) => Promise<boolean>;
   setSubmitStatus: React.Dispatch<React.SetStateAction<"idle" | "pending" | "success" | "error">>;
   setSubmitMessage: React.Dispatch<React.SetStateAction<string>>;
   showInlineNotice: (msg: string, tone: "success" | "warning" | "error" | "info", ms?: number) => void;
@@ -84,7 +83,6 @@ export function useGameFlow({
   postGameNameInput, postGameOpponentInput, postGameDateInput,
   postGameHomeScoreInput, postGameAwayScoreInput,
   persistData, persistPhase, resetTimeline,
-  ensureRealtimeGameExists,
   setSubmitStatus, setSubmitMessage,
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
@@ -452,7 +450,6 @@ export function useGameFlow({
   }
 
   return {
-    ensureRealtimeGameExists,
     startGame,
     endAndResetGame,
     endGame,
