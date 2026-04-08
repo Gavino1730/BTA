@@ -2866,7 +2866,7 @@ app.get("/api/games/:gameId/audit-log", (req, res) => {
   });
 });
 
-app.put("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
+app.put("/api/games/:gameId", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const gameId = String(req.params.gameId);
   const existing = buildGamesPayload(schoolId).find((entry) => String(entry.gameId) === gameId);
@@ -2914,7 +2914,7 @@ app.put("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
     updatedAtIso: new Date().toISOString()
   };
 
-  setGameOverride(schoolId, override);
+  await setGameOverride(schoolId, override);
   res.json({ message: "Game updated successfully", game: override });
 });
 

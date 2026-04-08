@@ -2203,6 +2203,14 @@ function persistSessions() {
   persistNormalizedSessions();
 }
 
+async function flushSnapshotToDb(): Promise<void> {
+  if (!persistenceProvider) {
+    return;
+  }
+  const payload = buildPersistedSnapshot();
+  await persistenceProvider.save(payload);
+}
+
 let storeInitialized = false;
 let retentionTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -2410,9 +2418,10 @@ export function getGameOverrideMap(schoolId: string): Map<string, GameEditOverri
   return created;
 }
 
-export function setGameOverride(schoolId: string, override: GameEditOverride): void {
+export async function setGameOverride(schoolId: string, override: GameEditOverride): Promise<void> {
   getGameOverrideMap(schoolId).set(override.gameId, override);
   persistSessions();
+  await flushSnapshotToDb();
 }
 
 export function saveOrganizationMember(member: OrganizationMemberInput, scope?: TenantScope): OrganizationMember {
