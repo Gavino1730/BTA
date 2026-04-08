@@ -787,6 +787,7 @@ function buildDefaultGamePlayerStats(schoolId: string, gameId: string): Array<Re
 
 function buildGamesPayload(schoolId: string): Array<Record<string, unknown>> {
   const overrides = getGameOverrideMap(schoolId);
+  const rosterPlayerById = getRosterPlayerByIdForSchool(schoolId);
   return getSeasonGames({ schoolId }).map((game) => {
     const base = {
       gameId: game.gameId,
@@ -805,9 +806,47 @@ function buildGamesPayload(schoolId: string): Array<Record<string, unknown>> {
       return base;
     }
 
+    // Normalize override player_stats to canonical field names
+    const rawStats = override.player_stats as Array<Record<string, unknown>> | undefined;
+    const normalizedPlayerStats = rawStats?.map((p) => {
+      const rosterInfo = p.playerId ? rosterPlayerById.get(String(p.playerId)) : undefined;
+      const fgMade = Number(p.fg_made ?? p.fg ?? 0);
+      const fgAtt = Number(p.fg_att ?? p.fga ?? 0);
+      const fg3Made = Number(p.fg3_made ?? p.fg3 ?? 0);
+      const fg3Att = Number(p.fg3_att ?? p.fg3a ?? 0);
+      const ftMade = Number(p.ft_made ?? p.ft ?? 0);
+      const ftAtt = Number(p.ft_att ?? p.fta ?? 0);
+      const oreb = Number(p.oreb ?? 0);
+      const dreb = Number(p.dreb ?? 0);
+      const nameStr = String(p.name ?? rosterInfo?.name ?? p.playerId ?? "Unknown");
+      const firstName = nameStr.split(" ")[0] ?? nameStr;
+      return {
+        playerId: p.playerId ?? undefined,
+        name: nameStr,
+        first_name: firstName,
+        number: p.number ?? rosterInfo?.number ?? "",
+        fg_made: fgMade,
+        fg_att: fgAtt,
+        fg3_made: fg3Made,
+        fg3_att: fg3Att,
+        ft_made: ftMade,
+        ft_att: ftAtt,
+        oreb,
+        dreb,
+        asst: Number(p.asst ?? p.ast ?? 0),
+        stl: Number(p.stl ?? 0),
+        blk: Number(p.blk ?? 0),
+        to: Number(p.to ?? 0),
+        fouls: Number(p.fouls ?? p.pf ?? 0),
+        plus_minus: Number(p.plus_minus ?? 0),
+        pts: Number(p.pts ?? (fgMade - fg3Made) * 2 + fg3Made * 3 + ftMade),
+      };
+    });
+
     return {
       ...base,
-      ...override
+      ...override,
+      ...(normalizedPlayerStats ? { player_stats: normalizedPlayerStats } : {}),
     };
   });
 }

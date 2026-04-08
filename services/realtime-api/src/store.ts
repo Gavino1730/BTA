@@ -240,6 +240,7 @@ export interface SeasonGameSummary {
 }
 
 export interface SeasonPlayerSummary {
+  playerId?: string;
   name: string;
   full_name: string;
   first_name: string;
@@ -2762,6 +2763,7 @@ function buildSchoolAnalytics(scope?: TenantScope): {
   for (const team of rosterTeams) {
     for (const player of team.players) {
       playerMap.set(player.id, {
+        playerId: player.id,
         name: player.name,
         full_name: player.name,
         first_name: player.name.split(" ")[0] ?? player.name,
