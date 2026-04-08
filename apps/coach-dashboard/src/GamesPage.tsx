@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
+import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
 
 interface GameTeamStats {
   fg?: number;
@@ -184,18 +184,6 @@ function teamInitials(value: string): string {
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
   return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase();
-}
-
-function schoolIdToTeamName(schoolId: string): string {
-  const clean = schoolId.trim().toLowerCase();
-  if (!clean) {
-    return "Our Team";
-  }
-  return clean
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function computeRecordAfterGame(games: GameSummary[], gameId: string | number): string | null {
@@ -684,7 +672,7 @@ export function GamesPage() {
   const [resultFilter, setResultFilter] = useState("");
   const [status, setStatus] = useState("Loading games...");
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
-  const teamName = useMemo(() => schoolIdToTeamName(resolveActiveSchoolId()), []);
+  const teamName = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
 
   function loadGames() {
     setStatus("Loading games...");

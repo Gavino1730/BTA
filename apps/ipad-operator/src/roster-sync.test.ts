@@ -13,7 +13,8 @@ describe("roster sync auth headers", () => {
   });
 
   it("includes school id when explicitly provided", () => {
-    const headers = buildAuthHeaders({ schoolId: "valley-catholic" });
-    expect(headers["x-school-id"]).toBe("valley-catholic");
+    const headers = buildAuthHeaders({ schoolId: "home-team" });
+    expect(headers["x-school-id"]).toBe("home-team");
   });
 });
+

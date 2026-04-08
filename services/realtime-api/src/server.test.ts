@@ -152,7 +152,7 @@ describe("operator pairing endpoints", () => {
         teams: [
           {
             id: "vc-varsity",
-            name: "Valley Catholic Varsity",
+            name: "Home Team Varsity",
             abbreviation: "VC",
             teamColor: "#1d4ed8",
             players: [
@@ -170,7 +170,7 @@ describe("operator pairing endpoints", () => {
       body: JSON.stringify({
         gameId: "pairing-game",
         myTeamId: "vc-varsity",
-        myTeamName: "Valley Catholic Varsity",
+        myTeamName: "Home Team Varsity",
         opponentName: "Central Christian",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
@@ -211,7 +211,7 @@ describe("operator pairing endpoints", () => {
       body: JSON.stringify({
         gameId: "pairing-noscope-game",
         myTeamId: "vc-varsity",
-        myTeamName: "Valley Catholic Varsity",
+        myTeamName: "Home Team Varsity",
         opponentName: "Central Christian",
         vcSide: "home"
       })
@@ -283,7 +283,7 @@ describe("operator pairing endpoints", () => {
       body: JSON.stringify({
         gameId: "game-a",
         myTeamId: "vc-varsity",
-        myTeamName: "Valley Catholic Varsity",
+        myTeamName: "Home Team Varsity",
         opponentName: "Central Christian",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
@@ -341,7 +341,7 @@ describe("operator pairing endpoints", () => {
       body: JSON.stringify({
         gameId: "active-setup-game",
         myTeamId: "vc",
-        myTeamName: "Valley Catholic",
+        myTeamName: "Home Team",
         opponentName: "Opponent",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
@@ -356,7 +356,7 @@ describe("operator pairing endpoints", () => {
       body: JSON.stringify({
         gameId: "active-setup-game",
         myTeamId: "vc",
-        myTeamName: "Valley Catholic",
+        myTeamName: "Home Team",
         opponentName: "Opponent",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
@@ -398,7 +398,7 @@ describe("unified stats endpoints", () => {
         teams: [
           {
             id: "vc",
-            name: "Valley Catholic",
+            name: "Home Team",
             abbreviation: "VC",
             coachStyle: "Push pace",
             players: [
@@ -482,7 +482,7 @@ describe("unified stats endpoints", () => {
     expect(seasonBody.fg3).toBe(1);
     expect(seasonBody.ppg).toBe(3);
     expect(playersBody.some((player) => player.full_name === "Cooper Bonnett" && player.ppg === 3)).toBe(true);
-    expect(liveContextBody.teamInfo.name).toBe("Valley Catholic");
+    expect(liveContextBody.teamInfo.name).toBe("Home Team");
     expect(liveContextBody.teamInfo.coachStyle).toBe("Push pace");
     expect(liveContextBody.recentGames[0]?.opponent).toBe("OES");
   });
@@ -721,7 +721,7 @@ describe("unified stats endpoints", () => {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-school-id": "compat-school" },
       body: JSON.stringify({
-        name: "Valley Catholic",
+        name: "Home Team",
         season: "2026",
         teamColor: "#112233",
         playingStyle: "Control tempo"
@@ -863,10 +863,10 @@ describe("unified stats endpoints", () => {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-school-id": "onboarding-school" },
       body: JSON.stringify({
-        organizationName: "Valley Catholic Athletics",
+        organizationName: "Home Team Athletics",
         coachName: "Coach Rivera",
-        coachEmail: "coach@valleycatholic.org",
-        teamName: "Valley Catholic",
+        coachEmail: "coach@hometeam.org",
+        teamName: "Home Team",
         season: "2026",
         teamColor: "#1d4ed8",
         playingStyle: "Control tempo",
@@ -914,18 +914,18 @@ describe("unified stats endpoints", () => {
     expect(stateBody.hasAccount).toBe(true);
     expect(stateBody.hasProfile).toBe(true);
     expect(stateBody.hasTeam).toBe(true);
-    expect(profileBody.profile?.organizationName).toBe("Valley Catholic Athletics");
+    expect(profileBody.profile?.organizationName).toBe("Home Team Athletics");
     expect(profileBody.profile?.coachName).toBe("Coach Rivera");
     expect(teamsBody.teams[0]?.coachStyle ?? "").toBe("");
-    expect(profileBody.profile?.coachEmail).toBe("coach@valleycatholic.org");
+    expect(profileBody.profile?.coachEmail).toBe("coach@hometeam.org");
     expect(Boolean(profileBody.profile?.completedAtIso)).toBe(true);
-    expect(accountBody.account?.organization.organizationName).toBe("Valley Catholic Athletics");
-    expect(accountBody.account?.organization.teamName).toBe("Valley Catholic");
+    expect(accountBody.account?.organization.organizationName).toBe("Home Team Athletics");
+    expect(accountBody.account?.organization.teamName).toBe("Home Team");
     expect(Boolean(accountBody.account?.organization.onboardingCompletedAtIso)).toBe(true);
     expect(accountBody.account?.primaryCoach.fullName).toBe("Coach Rivera");
-    expect(accountBody.account?.primaryCoach.email).toBe("coach@valleycatholic.org");
+    expect(accountBody.account?.primaryCoach.email).toBe("coach@hometeam.org");
     expect(accountBody.account?.primaryCoach.role).toBe("owner");
-    expect(teamsBody.teams[0]?.name).toBe("Valley Catholic");
+    expect(teamsBody.teams[0]?.name).toBe("Home Team");
     expect(teamsBody.teams[0]?.season).toBe("2026");
     expect(teamsBody.teams[0]?.players).toHaveLength(2);
   });
@@ -1029,7 +1029,7 @@ describe("unified stats endpoints", () => {
         teams: [
           {
             id: "vc",
-            name: "Valley Catholic",
+            name: "Home Team",
             abbreviation: "VC",
             players: [{ id: "p1", number: "3", name: "Mason Lee", position: "G" }]
           }
@@ -1117,7 +1117,7 @@ describe("unified stats endpoints", () => {
         teams: [
           {
             id: "vc",
-            name: "Valley Catholic",
+            name: "Home Team",
             abbreviation: "VC",
             players: [{ id: "p7", number: "7", name: "Eli Carter", position: "G" }]
           }
@@ -1389,3 +1389,4 @@ describe("Realtime API Server", () => {
     });
   });
 });
+

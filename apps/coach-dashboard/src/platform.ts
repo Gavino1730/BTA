@@ -28,6 +28,19 @@ function normalizeSchoolId(value: unknown): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
 }
 
+export function formatSchoolNameFromId(schoolId: string): string {
+  const clean = normalizeSchoolId(schoolId);
+  if (!clean) {
+    return "Our Team";
+  }
+
+  return clean
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function parseJsonSafely(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value) as unknown;

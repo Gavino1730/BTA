@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, clearAuthSession, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, formatSchoolNameFromId, resolveActiveSchoolId, storeAuthSession } from "./platform.js";
 
 interface SetupPageProps {
   onComplete: () => void;
@@ -58,6 +58,7 @@ function buildEmptyRosterRow(id: number): RosterRow {
 }
 
 export function SetupPage({ onComplete }: SetupPageProps) {
+  const schoolPlaceholder = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
   const [coachEmail, setCoachEmail] = useState("");
@@ -430,7 +431,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           <div className="setup-grid">
             <label className="stats-filter-field">
               <span>School Name *</span>
-              <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder="Valley Catholic" required />
+              <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder} required />
             </label>
             <label className="stats-filter-field">
               <span>Team Name *</span>

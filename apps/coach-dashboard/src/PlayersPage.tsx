@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
 import {
   buildPlayerGameHistory,
   type GamePlayerStat,
@@ -159,6 +159,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
   const [status, setStatus] = useState("Loading player details...");
   const [selectedGameId, setSelectedGameId] = useState("");
   const playerName = getPlayerDisplayName(player);
+  const schoolLabel = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
 
   const playerGameBoxScores = useMemo<PlayerGameBoxScore[]>(() => {
     return games
@@ -254,7 +255,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           <div className="player-profile-hero">
             <div className="player-profile-avatar" aria-hidden="true">{playerName.slice(0, 1).toUpperCase()}</div>
             <div>
-              <p className="stats-page-eyebrow">Valley Catholic • Varsity</p>
+              <p className="stats-page-eyebrow">{schoolLabel} • Varsity</p>
               <h2 style={{ margin: 0 }}>{playerName}</h2>
               <p className="stats-page-subcopy" style={{ marginTop: "0.3rem" }}>
                 #{player.number ?? "-"} • {inferPosition(player.role)} • {getPlayerGamesPlayed(player)} GP
