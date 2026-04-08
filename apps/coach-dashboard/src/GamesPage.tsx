@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 
 interface GameTeamStats {
   fg?: number;
@@ -186,6 +186,18 @@ function teamInitials(value: string): string {
   return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase();
 }
 
+function schoolIdToTeamName(schoolId: string): string {
+  const clean = schoolId.trim().toLowerCase();
+  if (!clean) {
+    return "Our Team";
+  }
+  return clean
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function computeRecordAfterGame(games: GameSummary[], gameId: string | number): string | null {
   const sorted = [...games].sort((a, b) => {
     const aDate = new Date(a.date).getTime();
@@ -210,7 +222,7 @@ function computeRecordAfterGame(games: GameSummary[], gameId: string | number): 
   return null;
 }
 
-function GameModal({ game, games, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; games: GameSummary[]; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
+function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; games: GameSummary[]; teamName: string; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
   const [mode, setMode] = useState<"view" | "edit">(initialMode);
   const [date, setDate] = useState(game.date ?? "");
   const [opponent, setOpponent] = useState(game.opponent ?? "");
@@ -244,6 +256,8 @@ function GameModal({ game, games, onClose, onSaved, onDeleted, initialMode = "vi
   const scoreDiff = Number(vcScore || 0) - Number(oppScore || 0);
   const inferredResult = scoreDiff > 0 ? "W" : scoreDiff < 0 ? "L" : "T";
   const resultCode = (game.result || inferredResult).toUpperCase();
+  const ourTeamName = teamName.trim() || "Our Team";
+  const ourTeamShort = teamInitials(ourTeamName);
   const resultLabel = resultCode === "W" ? "WIN" : resultCode === "L" ? "LOSS" : "TIE";
   const isWin = resultCode === "W";
   const isLoss = resultCode === "L";
@@ -451,14 +465,14 @@ function GameModal({ game, games, onClose, onSaved, onDeleted, initialMode = "vi
             <>
               <section className={`game-detail-hero ${isWin ? "is-win" : isLoss ? "is-loss" : "is-tie"}`}>
                 <div className="game-detail-team game-detail-team-home">
-                  <div className="game-detail-logo">VC</div>
+                  <div className="game-detail-logo">{ourTeamShort}</div>
                   <div>
-                    <p className="game-detail-team-label">Valley Catholic</p>
-                    <h3 className="game-detail-team-name">VC</h3>
+                    <p className="game-detail-team-label">{ourTeamName}</p>
+                    <h3 className="game-detail-team-name">{ourTeamShort}</h3>
                   </div>
                 </div>
                 <div className="game-detail-score-wrap">
-                  <p className="game-detail-matchup">{teamInitials(opponent)} @ VC</p>
+                  <p className="game-detail-matchup">{teamInitials(opponent)} @ {ourTeamShort}</p>
                   <div className="game-detail-scoreline">
                     <span>{vcScore}</span>
                     <em>—</em>
@@ -644,12 +658,33 @@ function safePct(made: number | undefined, attempted: number | undefined): strin
   return `${((Number(made ?? 0) / attempts) * 100).toFixed(1)}%`;
 }
 
+function toGameTimestamp(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function compareGamesMostRecent(left: GameSummary, right: GameSummary): number {
+  const byDate = toGameTimestamp(right.date) - toGameTimestamp(left.date);
+  if (byDate !== 0) {
+    return byDate;
+  }
+
+  const rightId = Number(right.gameId);
+  const leftId = Number(left.gameId);
+  if (Number.isFinite(rightId) && Number.isFinite(leftId) && rightId !== leftId) {
+    return rightId - leftId;
+  }
+
+  return String(right.gameId).localeCompare(String(left.gameId));
+}
+
 export function GamesPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("");
   const [status, setStatus] = useState("Loading games...");
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
+  const teamName = useMemo(() => schoolIdToTeamName(resolveActiveSchoolId()), []);
 
   function loadGames() {
     setStatus("Loading games...");
@@ -667,7 +702,7 @@ export function GamesPage() {
     return [...games]
       .filter((game) => game.opponent.toLowerCase().includes(query.toLowerCase()))
       .filter((game) => !resultFilter || game.result === resultFilter)
-      .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
+      .sort(compareGamesMostRecent);
   }, [games, query, resultFilter]);
 
   function handleSaved(updated: GameSummary) {
@@ -686,6 +721,7 @@ export function GamesPage() {
         <GameModal
           game={selectedGame}
           games={games}
+          teamName={teamName}
           onClose={() => setSelectedGame(null)}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
