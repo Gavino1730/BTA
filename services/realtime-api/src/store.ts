@@ -89,7 +89,7 @@ export interface OrganizationMember {
   authSubject?: string;
   fullName: string;
   email: string;
-  role: "owner" | "coach" | "analyst";
+  role: "owner" | "coach" | "analyst" | "player";
   status: "active" | "invited";
   invitedAtIso?: string;
   joinedAtIso?: string;
@@ -117,7 +117,7 @@ export interface LocalAuthAccount {
   fullName: string;
   passwordHash: string;
   passwordSalt: string;
-  role: "owner" | "coach" | "analyst";
+  role: "owner" | "coach" | "analyst" | "player";
   status: "active" | "invited";
   createdAtIso: string;
   updatedAtIso: string;
@@ -778,7 +778,7 @@ function sanitizeOrganizationMember(
 ): OrganizationMember {
   const now = new Date().toISOString();
   const email = trimProfileField(input.email ?? existing?.email, 160).toLowerCase();
-  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner"
+  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner" || input.role === "player"
     ? input.role
     : existing?.role ?? "coach";
   const status = input.status === "invited" || input.status === "active"
@@ -824,7 +824,7 @@ function sanitizeLocalAuthAccount(
   const organizationId = trimProfileField(input.organizationId ?? existing?.organizationId, 80)
     || onboardingAccountsBySchool.get(schoolId)?.organization.organizationId
     || undefined;
-  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner"
+  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner" || input.role === "player"
     ? input.role
     : existing?.role ?? "owner";
   const status = input.status === "invited" || input.status === "active"

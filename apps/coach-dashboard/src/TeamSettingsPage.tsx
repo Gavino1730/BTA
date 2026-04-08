@@ -104,6 +104,7 @@ interface RosterEditRow {
   notes: string;
   email: string;
   phone: string;
+  tempPassword: string;
   isNew?: boolean;
   showExpanded?: boolean;
 }
@@ -169,7 +170,7 @@ export function TeamSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
-  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
+  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string; tempPassword: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
   const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
     const saved = localStorage.getItem("coach:settings-section");
     if (saved === "pairing" || saved === "roster" || saved === "profile" || saved === "ai" || saved === "members") return saved;
@@ -254,6 +255,7 @@ export function TeamSettingsPage() {
                     notes: p.notes ?? "",
                     email: p.email ?? "",
                     phone: p.phone ?? "",
+                    tempPassword: "",
                   }))
                 : []
             );
@@ -513,12 +515,101 @@ export function TeamSettingsPage() {
 
       setRoster((current) => [
         ...current,
-        { key: `new-${Date.now()}`, originalName: name, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim() },
+        { key: `new-${Date.now()}`, originalName: name, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim(), tempPassword: "" },
       ]);
-      setNewPlayer({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
-      setStatus(`${name} added to roster.`);
+      if (newPlayer.email.trim() && newPlayer.tempPassword.trim()) {
+        const accountResponse = await fetch(`${apiBase}/api/auth/player-account`, {
+          method: "POST",
+          headers: apiKeyHeader(true),
+          body: JSON.stringify({
+            playerName: name,
+            fullName: name,
+            email: newPlayer.email.trim(),
+            password: newPlayer.tempPassword.trim(),
+          }),
+        });
+        if (!accountResponse.ok) {
+          const payload = await accountResponse.json() as { error?: string };
+          throw new Error(payload.error || "Could not create player account");
+        }
+      }
+
+      setNewPlayer({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
+      setStatus(newPlayer.email.trim() ? `${name} added and player login configured.` : `${name} added to roster.`);
     } catch {
       setStatus("Could not add player.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function configurePlayerAccount(row: RosterEditRow) {
+    const playerName = row.name.trim();
+    const email = row.email.trim();
+    const password = row.tempPassword.trim();
+    if (!playerName || !email || !password) {
+      setStatus("Player name, school email, and temporary password are required.");
+      return;
+    }
+
+    setSaving(true);
+    setStatus(`Configuring login for ${playerName}...`);
+    try {
+      const response = await fetch(`${apiBase}/api/auth/player-account`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          playerName,
+          fullName: playerName,
+          email,
+          password,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string };
+        throw new Error(payload.error || "Could not configure player login");
+      }
+
+      setRoster((current) => current.map((entry) => entry.key === row.key ? { ...entry, tempPassword: "" } : entry));
+      setStatus(`Player login configured for ${playerName}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not configure player login.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetPlayerPassword(row: RosterEditRow) {
+    const playerName = row.name.trim();
+    const email = row.email.trim();
+    const password = row.tempPassword.trim();
+    if (!playerName || !email || !password) {
+      setStatus("Player name, school email, and temporary password are required.");
+      return;
+    }
+
+    setSaving(true);
+    setStatus(`Resetting password for ${playerName}...`);
+    try {
+      const response = await fetch(`${apiBase}/api/auth/player-account/reset-password`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string };
+        throw new Error(payload.error || "Could not reset player password");
+      }
+
+      setRoster((current) => current.map((entry) => entry.key === row.key ? { ...entry, tempPassword: "" } : entry));
+      setStatus(`Password reset for ${playerName}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not reset player password.");
     } finally {
       setSaving(false);
     }
@@ -568,6 +659,7 @@ export function TeamSettingsPage() {
         notes: row.notes?.trim() || "",
         email: row.email?.trim() || "",
         phone: row.phone?.trim() || "",
+        tempPassword: row.tempPassword,
       } : entry));
       setStatus(`${name} saved.`);
     } catch {
@@ -758,6 +850,16 @@ export function TeamSettingsPage() {
                         />
                       </label>
                       <label className="stats-filter-field">
+                        <span>Temporary Password</span>
+                        <input
+                          className="settings-roster-input"
+                          type="password"
+                          value={row.tempPassword}
+                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, tempPassword: e.target.value } : r))}
+                          placeholder="Set temporary password"
+                        />
+                      </label>
+                      <label className="stats-filter-field">
                         <span>Phone</span>
                         <input
                           className="settings-roster-input"
@@ -786,6 +888,14 @@ export function TeamSettingsPage() {
                           rows={2}
                         />
                       </label>
+                      <div className="settings-form-footer">
+                        <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving || !row.name.trim() || !row.email.trim() || !row.tempPassword.trim()} onClick={() => void configurePlayerAccount(row)}>
+                          Create Login
+                        </button>
+                        <button type="button" className="shell-nav-link" disabled={saving || !row.email.trim() || !row.tempPassword.trim()} onClick={() => void resetPlayerPassword(row)}>
+                          Reset Password
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -823,6 +933,10 @@ export function TeamSettingsPage() {
               <label className="stats-filter-field">
                 <span>Email</span>
                 <input type="email" value={newPlayer.email} onChange={(e) => setNewPlayer((cur) => ({ ...cur, email: e.target.value }))} placeholder="player@school.edu" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Temporary Password</span>
+                <input type="password" value={newPlayer.tempPassword} onChange={(e) => setNewPlayer((cur) => ({ ...cur, tempPassword: e.target.value }))} placeholder="Set temporary password" />
               </label>
               <label className="stats-filter-field">
                 <span>Phone</span>

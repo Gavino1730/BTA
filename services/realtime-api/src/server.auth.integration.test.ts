@@ -363,7 +363,7 @@ describe("server auth integration", () => {
     expect(body.members.some((member) => member.email === "dana@school.org" && member.authSubject === "analyst-user-1" && member.status === "active")).toBe(true);
   });
 
-  it("restricts member management to org owners and protects the last owner", async () => {
+  it("allows coach member management and protects the last owner", async () => {
     const ownerToken = makeTestToken({
       sub: "owner-guard-1",
       schoolId: "guard-school",
@@ -416,7 +416,7 @@ describe("server auth integration", () => {
       }
     });
 
-    const forbiddenUpdate = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
+    const coachManagedUpdate = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${assistantToken}`,
@@ -426,7 +426,7 @@ describe("server auth integration", () => {
       body: JSON.stringify({ role: "owner", fullName: "Assistant Coach" })
     });
 
-    expect(forbiddenUpdate.status).toBe(403);
+    expect(coachManagedUpdate.status).toBe(200);
 
     const ownerMembersRes = await fetch(`${API_BASE}/api/org/members`, {
       headers: {
@@ -450,7 +450,19 @@ describe("server auth integration", () => {
       body: JSON.stringify({ role: "coach", fullName: "Owner Guard" })
     });
 
-    expect(lastOwnerDemotion.status).toBe(400);
+    expect(lastOwnerDemotion.status).toBe(200);
+
+    const lastOwnerDemotionAttempt = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${assistantToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "guard-school"
+      },
+      body: JSON.stringify({ role: "coach", fullName: "Assistant Coach" })
+    });
+
+    expect(lastOwnerDemotionAttempt.status).toBe(400);
 
     const selfDelete = await fetch(`${API_BASE}/api/org/members/${ownerMember?.memberId}`, {
       method: "DELETE",

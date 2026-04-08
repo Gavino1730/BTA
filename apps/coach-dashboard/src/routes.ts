@@ -3,6 +3,7 @@ export type AppRoute =
   | "login"
   | "live"
   | "setup"
+  | "account"
   | "stats-overview"
   | "stats-games"
   | "stats-players"
@@ -19,6 +20,7 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/ai-insights": "/stats/insights",
   "/analysis": "/stats/insights",
   "/settings": "/stats/settings",
+  "/profile": "/account",
   "/onboarding": "/setup",
   "/signin": "/login",
   "/sign-in": "/login",
@@ -40,6 +42,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/setup") {
     return "setup";
+  }
+  if (canonical === "/account") {
+    return "account";
   }
   if (canonical === "/stats/games") {
     return "stats-games";

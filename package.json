@@ -21,10 +21,12 @@
     "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach --prefix-colors cyan,green,yellow \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\"",
     "game-day": "node scripts/run-ps.mjs scripts/game-day.ps1",
     "smoke-test": "node scripts/run-ps.mjs scripts/smoke-test.ps1",
+    "test:e2e": "playwright test",
     "audit:ui": "node scripts/ui-audit.mjs",
     "validate:env": "npm run validate:env -w @bta/realtime-api"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^22.15.19",
     "concurrently": "^9.2.1",
     "playwright": "^1.58.2",

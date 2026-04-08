@@ -73,16 +73,71 @@ export function App() {
 
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
+  const [accessBlockedMessage, setAccessBlockedMessage] = useState<string | null>(null);
 
   function persistData(next: AppData) {
     setAppData(next);
     saveAppData(next);
   }
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkRoleAccess() {
+      const token = appData.gameSetup.apiKey?.trim();
+      if (!token || !token.startsWith("bta.")) {
+        if (!cancelled) {
+          setAccessBlockedMessage(null);
+        }
+        return;
+      }
+
+      try {
+        const apiUrl = normalizeUrlBase(appData.gameSetup.apiUrl || DEFAULT_API);
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${token}`,
+        };
+        if (appData.gameSetup.schoolId?.trim()) {
+          headers["x-school-id"] = appData.gameSetup.schoolId.trim();
+        }
+        const response = await fetch(`${apiUrl}/api/auth/session`, { headers });
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json() as { user?: { role?: string } | null };
+        const role = String(payload.user?.role ?? "").trim().toLowerCase();
+        if (!cancelled) {
+          setAccessBlockedMessage(role === "player"
+            ? "Player accounts cannot use the Score Operator app. Use the coach dashboard for read-only views."
+            : null);
+        }
+      } catch {
+        // Best-effort check only.
+      }
+    }
+
+    void checkRoleAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.schoolId]);
+
   // ---- Navigation state ----
   const [view, setView] = useState<"game" | "settings">(() => parseViewFromHash(window.location.hash).view);
   const [settingsView, setSettingsView] = useState<SettingsView>(() => parseViewFromHash(window.location.hash).settingsView);
   const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips"]);
+
+  if (accessBlockedMessage) {
+    return (
+      <main className="app-shell" style={{ display: "grid", minHeight: "100dvh", placeItems: "center", padding: 24 }}>
+        <section className="card" style={{ maxWidth: 640 }}>
+          <h2>Access Restricted</h2>
+          <p>{accessBlockedMessage}</p>
+        </section>
+      </main>
+    );
+  }
 
   function navigateView(nextView: "game" | "settings", nextSettingsView: SettingsView = "menu") {
     const hash = viewToHash(nextView, nextSettingsView);

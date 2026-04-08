@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AccountPage } from "./AccountPage.js";
 import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
 import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
@@ -18,12 +19,23 @@ function normalizeConnectionId(value: string | null | undefined): string {
   return normalizeConnectionCode(value);
 }
 
-interface ConnectedNavActionsProps {
-  onSignOut: () => void;
-  onShowTutorial: () => void;
+function normalizeUserRole(role: string | null | undefined): string | null {
+  const normalized = String(role ?? "").trim().toLowerCase();
+  return normalized || null;
 }
 
-function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsProps) {
+function isPlayerRole(role: string | null | undefined): boolean {
+  return normalizeUserRole(role) === "player";
+}
+
+interface ConnectedNavActionsProps {
+  onSignOut: () => void;
+  onOpenAccount: () => void;
+  onShowTutorial: () => void;
+  hideLiveTools?: boolean;
+}
+
+function ConnectedNavActions({ onSignOut, onOpenAccount, onShowTutorial, hideLiveTools = false }: ConnectedNavActionsProps) {
   const {
     connectionId,
     deviceConnected,
@@ -46,30 +58,43 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
 
   return (
     <>
+      {!hideLiveTools && (
+        <button
+          type="button"
+          className={`connection-pill ${deviceConnected ? "online" : "offline"}`}
+          style={{ flexShrink: 0, cursor: "pointer" }}
+          onClick={handleCopyCode}
+          title={codeCopied ? "Copied!" : "Click to copy operator code"}
+          aria-label={codeCopied ? "Code copied" : `Copy operator code ${connectionId}`}
+        >
+          <span className="connection-pill-dot" aria-hidden="true" />
+          <span className="connection-pill-status">
+            {codeCopied ? "Copied!" : deviceConnected ? "Live" : serverConnected ? "Waiting" : "Offline"}
+          </span>
+          {!codeCopied && (
+            <>
+              <span className="connection-pill-sep" aria-hidden="true">·</span>
+              <span className="connection-pill-code">
+                {connectionId}
+              </span>
+            </>
+          )}
+        </button>
+      )}
+      {!hideLiveTools && (
+        <>
+          <a href={scoreOperatorUrl} className="coach-nav-ext-link" target="_blank" rel="noreferrer">
+            Score Operator
+          </a>
+        </>
+      )}
       <button
         type="button"
-        className={`connection-pill ${deviceConnected ? "online" : "offline"}`}
-        style={{ flexShrink: 0, cursor: "pointer" }}
-        onClick={handleCopyCode}
-        title={codeCopied ? "Copied!" : "Click to copy operator code"}
-        aria-label={codeCopied ? "Code copied" : `Copy operator code ${connectionId}`}
+        className="coach-nav-ext-link"
+        onClick={onOpenAccount}
       >
-        <span className="connection-pill-dot" aria-hidden="true" />
-        <span className="connection-pill-status">
-          {codeCopied ? "Copied!" : deviceConnected ? "Live" : serverConnected ? "Waiting" : "Offline"}
-        </span>
-        {!codeCopied && (
-          <>
-            <span className="connection-pill-sep" aria-hidden="true">·</span>
-            <span className="connection-pill-code">
-              {connectionId}
-            </span>
-          </>
-        )}
+        My Account
       </button>
-      <a href={scoreOperatorUrl} className="coach-nav-ext-link" target="_blank" rel="noreferrer">
-        Score Operator
-      </a>
       <button
         type="button"
         className="coach-nav-ext-link"
@@ -99,6 +124,7 @@ export function UnifiedCoachApp() {
   const initialAuthSession = useRef(readStoredAuthSession()).current;
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => Boolean(initialAuthSession?.token));
+  const [currentRole, setCurrentRole] = useState<string | null>(() => normalizeUserRole(initialAuthSession?.role));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
 
@@ -125,7 +151,7 @@ export function UnifiedCoachApp() {
         ]);
 
         const sessionPayload = sessionResponse.ok
-          ? await sessionResponse.json() as { authenticated?: boolean }
+          ? await sessionResponse.json() as { authenticated?: boolean; user?: { role?: string } | null }
           : null;
         const onboardingPayload = onboardingResponse.ok
           ? await onboardingResponse.json() as { completed?: boolean }
@@ -146,13 +172,16 @@ export function UnifiedCoachApp() {
           const authenticated = sessionPayload !== null
             ? Boolean(sessionPayload.authenticated)
             : Boolean(storedSession?.token);
+          const sessionRole = sessionPayload?.user?.role ?? storedSession?.role ?? null;
           setIsAuthenticated(authenticated);
+          setCurrentRole(normalizeUserRole(sessionRole));
           setRequiresSetup(!authenticated || !Boolean(onboardingPayload.completed));
         }
       } catch {
         if (!cancelled) {
           const storedSession = readStoredAuthSession();
           setIsAuthenticated(Boolean(storedSession?.token));
+          setCurrentRole(normalizeUserRole(storedSession?.role));
           setRequiresSetup(!Boolean(storedSession?.token));
         }
       }
@@ -208,12 +237,31 @@ export function UnifiedCoachApp() {
   }, []);
 
   const handleAuthSuccess = useCallback((setupComplete: boolean) => {
+    const stored = readStoredAuthSession();
     setIsAuthenticated(true);
+    setCurrentRole(normalizeUserRole(stored?.role));
     setRequiresSetup(!setupComplete);
     const nextPath = setupComplete ? "/live" : "/setup";
     window.history.replaceState({}, "", nextPath);
     setRoute(resolveCoachRoute(nextPath));
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || requiresSetup) {
+      return;
+    }
+
+    if (!isPlayerRole(currentRole)) {
+      return;
+    }
+
+    if (route !== "live" && route !== "stats-settings" && route !== "setup") {
+      return;
+    }
+
+    window.history.replaceState({}, "", "/stats");
+    setRoute("stats-overview");
+  }, [currentRole, isAuthenticated, requiresSetup, route]);
 
   function navigate(nextPath: string) {
     const isPublicPath = nextPath === "/" || nextPath === "/login" || nextPath === "/demo";
@@ -224,6 +272,10 @@ export function UnifiedCoachApp() {
 
     if (requiresSetup && isAuthenticated && !isPublicPath && nextPath !== "/setup") {
       nextPath = "/setup";
+    }
+
+    if (isAuthenticated && !requiresSetup && isPlayerRole(currentRole) && (nextPath === "/live" || nextPath === "/stats/settings" || nextPath === "/setup")) {
+      nextPath = "/stats";
     }
 
     if (window.location.pathname === nextPath) {
@@ -275,6 +327,7 @@ export function UnifiedCoachApp() {
   }
 
   const isLive = route === "live";
+  const playerView = isPlayerRole(currentRole);
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
     return (
@@ -298,19 +351,22 @@ export function UnifiedCoachApp() {
       <nav className="coach-navbar">
         <div className="coach-nav-container">
           <ul className="coach-nav-links">
-            {navBtn("Live", "live", "/live")}
+            {!playerView && navBtn("Live", "live", "/live")}
             {navBtn("Overview", "stats-overview", "/stats")}
             {navBtn("Games", "stats-games", "/stats/games")}
             {navBtn("Players", "stats-players", "/stats/players")}
             {navBtn("Trends", "stats-trends", "/stats/trends")}
             {navBtn("AI Insights", "stats-insights", "/stats/insights")}
-            {navBtn("Settings", "stats-settings", "/stats/settings")}
+            {!playerView && navBtn("Settings", "stats-settings", "/stats/settings")}
           </ul>
           <div className="coach-nav-actions">
             <ConnectedNavActions
+              hideLiveTools={playerView}
+              onOpenAccount={() => navigate("/account")}
               onSignOut={() => {
                 clearAuthSession();
                 setIsAuthenticated(false);
+                setCurrentRole(null);
                 setRequiresSetup(true);
                 window.history.replaceState({}, "", "/login");
                 setRoute("login");
@@ -327,6 +383,7 @@ export function UnifiedCoachApp() {
       {route === "stats-trends" && <TrendsPage />}
       {route === "stats-insights" && <AiInsightsPage />}
       {route === "stats-settings" && <TeamSettingsPage />}
+      {route === "account" && <AccountPage onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))} />}
     </GameSessionProvider>
   );
 }
