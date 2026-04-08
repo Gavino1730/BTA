@@ -79,14 +79,18 @@ export function useEventQueue(deps: EventQueueDeps) {
   const [sequence, setSequence] = useState(() => loadSeq(gameId));
 
   const sequenceRef = useRef(sequence);
+  const normalizeEventTeamIdRef = useRef(normalizeEventTeamId);
+  const onHydrateStateRef = useRef(onHydrateState);
   const isFlushingRef = useRef(false);
   const flushBackoffUntilRef = useRef(0);
 
   useEffect(() => { sequenceRef.current = sequence; }, [sequence]);
+  useEffect(() => { normalizeEventTeamIdRef.current = normalizeEventTeamId; }, [normalizeEventTeamId]);
+  useEffect(() => { onHydrateStateRef.current = onHydrateState; }, [onHydrateState]);
 
   // --- Submit a single event to the API ---
   async function submitEvent(event: GameEvent): Promise<boolean> {
-    const normalizedEvent = normalizeEventTeamId(event);
+    const normalizedEvent = normalizeEventTeamIdRef.current(event);
     if (!canCallTenantScopedEventApi()) {
       return false;
     }
@@ -155,7 +159,7 @@ export function useEventQueue(deps: EventQueueDeps) {
       flushBackoffUntilRef.current = 0;
       try {
         const res = await fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(gameSetup));
-        if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map(normalizeEventTeamId));
+        if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map((event) => normalizeEventTeamIdRef.current(event)));
       } catch { /* empty */ }
       showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
     }
@@ -186,14 +190,14 @@ export function useEventQueue(deps: EventQueueDeps) {
     sequenceRef.current = next;
     setSequence(next);
     saveSeq(gameId, next);
-    const eventWithReservedSequence = normalizeEventTeamId({ ...event, sequence: reservedSequence });
-    setPendingEvents(cur => [...cur, eventWithReservedSequence].sort((a, b) => a.sequence - b.sequence));
+    const normalizedWithSequence = normalizeEventTeamIdRef.current({ ...event, sequence: reservedSequence });
+    setPendingEvents(cur => [...cur, normalizedWithSequence].sort((a, b) => a.sequence - b.sequence));
     triggerFeedback("event", 30);
     if (!canCallTenantScopedEventApi()) {
       showInlineNotice("Event saved locally. It will sync after school setup is connected.", "info", 2500);
       return;
     }
-    await submitEvent(eventWithReservedSequence);
+    await submitEvent(normalizedWithSequence);
   }
 
   // --- Undo the most recent event ---
@@ -239,7 +243,7 @@ export function useEventQueue(deps: EventQueueDeps) {
 
   // --- Hydrate events from server on mount / gameId change ---
   useEffect(() => {
-    const localPending = loadPending(gameId).map(normalizeEventTeamId);
+    const localPending = loadPending(gameId).map((event) => normalizeEventTeamIdRef.current(event));
     const localSeq = loadSeq(gameId);
     setPendingEvents(localPending);
     setSequence(localSeq);
@@ -253,7 +257,7 @@ export function useEventQueue(deps: EventQueueDeps) {
       try {
         const res = await fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(gameSetup));
         if (!res.ok) return;
-        const events = ((await res.json()) as GameEvent[]).map(normalizeEventTeamId);
+        const events = ((await res.json()) as GameEvent[]).map((event) => normalizeEventTeamIdRef.current(event));
         setSubmittedEvents(events);
         const highest = events.reduce((m, e) => Math.max(m, e.sequence), 0);
         const next = Math.max(localSeq, highest + 1);
@@ -266,14 +270,14 @@ export function useEventQueue(deps: EventQueueDeps) {
             events?: unknown[];
             activeLineupsByTeam?: Record<string, string[]>;
           };
-          onHydrateState?.(statePayload);
+          onHydrateStateRef.current?.(statePayload);
         }
       } catch {
         // Hydration failed (offline) - keep local pending queue intact
       }
     }
     void hydrate();
-  }, [gameId, gamePhase, gameSetup.apiUrl, gameSetup.schoolId, gameSetup.syncedConnectionId, normalizeEventTeamId, onHydrateState]);
+  }, [gameId, gamePhase, gameSetup.apiUrl, gameSetup.schoolId, gameSetup.syncedConnectionId]);
 
   // --- Persist pending / sequence to localStorage ---
   useEffect(() => { savePending(gameId, pendingEvents); }, [gameId, pendingEvents]);
