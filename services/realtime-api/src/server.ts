@@ -2562,6 +2562,160 @@ app.put("/api/auth/me", requireApiKey, (req, res) => {
   res.json(buildAuthSessionResponse(schoolId, savedAccount, savedMember, token));
 });
 
+function normalizeStaffRole(value: unknown, fallback: LocalAuthAccount["role"] = "coach"): LocalAuthAccount["role"] {
+  if (value === "owner" || value === "coach" || value === "analyst") {
+    return value;
+  }
+  return fallback;
+}
+
+app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const actingMember = requireOrganizationManager(req, res);
+  if (!actingMember) {
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const fullName = sanitizeTextField(payload.fullName, 120);
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const password = String(payload.password ?? "").trim();
+  const requestedRole = normalizeStaffRole(payload.role, "coach");
+
+  if (!fullName || !email || !password) {
+    res.status(400).json({ error: "fullName, email, and password are required" });
+    return;
+  }
+
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address" });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  if (requestedRole === "owner" && actingMember.role !== "owner") {
+    res.status(403).json({ error: "Only organization owners can create owner accounts" });
+    return;
+  }
+
+  const existingAccount = getLocalAuthAccountByEmail(email, { schoolId });
+  if (existingAccount) {
+    if (existingAccount.role === "player") {
+      res.status(409).json({ error: "A player account already exists for this email" });
+      return;
+    }
+
+    res.status(409).json({ error: "An account with that email already exists" });
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const existingMember = getOrganizationMembersByScope({ schoolId }).find((member) => member.email === email) ?? null;
+  const memberRole = normalizeMemberRole(existingMember?.role ?? requestedRole, requestedRole);
+
+  if (memberRole === "owner" && actingMember.role !== "owner") {
+    res.status(403).json({ error: "Only organization owners can assign owner role" });
+    return;
+  }
+
+  const { passwordHash, passwordSalt } = hashPassword(password);
+  const account = saveLocalAuthAccount({
+    email,
+    fullName,
+    passwordHash,
+    passwordSalt,
+    organizationId: actingMember.organizationId,
+    role: memberRole,
+    status: "active",
+  }, { schoolId });
+
+  const member = saveOrganizationMember({
+    memberId: existingMember?.memberId,
+    organizationId: existingMember?.organizationId ?? actingMember.organizationId,
+    authSubject: account.accountId,
+    fullName,
+    email,
+    role: memberRole,
+    status: "active",
+    invitedAtIso: existingMember?.invitedAtIso,
+    joinedAtIso: existingMember?.joinedAtIso ?? nowIso,
+  }, { schoolId });
+
+  res.status(201).json({
+    message: "Coach account created",
+    account: {
+      accountId: account.accountId,
+      email: account.email,
+      fullName: account.fullName,
+      role: account.role,
+      status: account.status,
+    },
+    member,
+    members: getOrganizationMembersByScope({ schoolId }),
+  });
+});
+
+app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const actingMember = requireOrganizationManager(req, res);
+  if (!actingMember) {
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const password = String(payload.password ?? "").trim();
+
+  if (!email || !password) {
+    res.status(400).json({ error: "email and password are required" });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  if (!account || account.role === "player") {
+    res.status(404).json({ error: "Coach account not found" });
+    return;
+  }
+
+  if (account.role === "owner" && actingMember.role !== "owner") {
+    res.status(403).json({ error: "Only organization owners can reset owner passwords" });
+    return;
+  }
+
+  const nextCredentials = hashPassword(password);
+  const savedAccount = saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: nextCredentials.passwordHash,
+    passwordSalt: nextCredentials.passwordSalt,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+  }, { schoolId });
+
+  res.json({
+    message: "Coach password reset",
+    account: {
+      accountId: savedAccount.accountId,
+      email: savedAccount.email,
+      fullName: savedAccount.fullName,
+      role: savedAccount.role,
+      status: savedAccount.status,
+    },
+  });
+});
+
 app.post("/api/auth/player-account", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const actingMember = requireOrganizationManager(req, res);

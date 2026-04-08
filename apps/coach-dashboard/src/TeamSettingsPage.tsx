@@ -71,11 +71,25 @@ interface OrganizationMemberDto {
   email: string;
   role: AppMemberRole;
   status: "active" | "invited";
+  tempPassword?: string;
 }
 
 interface OrganizationMembersResponse {
   currentMember?: { memberId: string; fullName: string; email: string; role: string; status: string } | null;
   members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
+}
+
+function mapApiMembers(
+  members: { memberId: string; fullName: string; email: string; role: string; status: string }[] | undefined
+): OrganizationMemberDto[] {
+  return Array.isArray(members)
+    ? members.map((member) => ({
+      ...member,
+      role: roleFromApi(member.role),
+      status: member.status as "active" | "invited",
+      tempPassword: "",
+    }))
+    : [];
 }
 
 interface RosterPlayerDto {
@@ -169,6 +183,7 @@ export function TeamSettingsPage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
+  const [inviteTempPassword, setInviteTempPassword] = useState("");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string; tempPassword: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
   const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
@@ -237,7 +252,7 @@ export function TeamSettingsPage() {
           setCustomPrompt(aiPayload.customPrompt ?? primary?.customPrompt ?? "");
           const rawCurrent = membersPayload.currentMember;
           setCurrentMember(rawCurrent ? { ...rawCurrent, role: roleFromApi(rawCurrent.role), status: (rawCurrent.status as "active" | "invited") } : null);
-          setMembers(Array.isArray(membersPayload.members) ? membersPayload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
+          setMembers(mapApiMembers(membersPayload.members));
           if (rosterResponse.ok) {
             const rosterPayload = await rosterResponse.json() as RosterPlayerDto[];
             setRoster(
@@ -401,28 +416,41 @@ export function TeamSettingsPage() {
     setStatus("Sending organization invite...");
 
     try {
-      const response = await fetch(`${apiBase}/api/org/members`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          fullName: inviteName.trim(),
-          email: inviteEmail.trim(),
-          role: roleToApi(inviteRole),
-        }),
-      });
+      const response = inviteTempPassword.trim()
+        ? await fetch(`${apiBase}/api/auth/coach-account`, {
+          method: "POST",
+          headers: apiKeyHeader(true),
+          body: JSON.stringify({
+            fullName: inviteName.trim(),
+            email: inviteEmail.trim(),
+            role: roleToApi(inviteRole),
+            password: inviteTempPassword.trim(),
+          }),
+        })
+        : await fetch(`${apiBase}/api/org/members`, {
+          method: "POST",
+          headers: apiKeyHeader(true),
+          body: JSON.stringify({
+            fullName: inviteName.trim(),
+            email: inviteEmail.trim(),
+            role: roleToApi(inviteRole),
+          }),
+        });
 
       if (!response.ok) {
-        throw new Error("Invite failed");
+        const payload = await response.json() as { error?: string };
+        throw new Error(payload.error || "Invite failed");
       }
 
       const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
-      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
+      setMembers(mapApiMembers(payload.members));
       setInviteName("");
       setInviteEmail("");
       setInviteRole("coach");
-      setStatus("Organization member invited.");
-    } catch {
-      setStatus("Could not invite organization member.");
+      setInviteTempPassword("");
+      setStatus(inviteTempPassword.trim() ? "Coach account created." : "Organization member invited.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not invite organization member.");
     } finally {
       setSaving(false);
     }
@@ -448,7 +476,7 @@ export function TeamSettingsPage() {
       }
 
       const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
-      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
+      setMembers(mapApiMembers(payload.members));
       setStatus("Organization member updated.");
     } catch {
       setStatus("Could not update organization member.");
@@ -472,7 +500,7 @@ export function TeamSettingsPage() {
       }
 
       const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
-      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
+      setMembers(mapApiMembers(payload.members));
       setStatus("Organization member removed.");
     } catch {
       setStatus("Could not remove organization member.");
@@ -694,6 +722,64 @@ export function TeamSettingsPage() {
       setStatus(`${name} removed.`);
     } catch {
       setStatus("Could not remove player.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setCoachPassword(member: OrganizationMemberDto) {
+    const email = member.email.trim();
+    const fullName = member.fullName.trim();
+    const password = (member.tempPassword ?? "").trim();
+    if (!email || !fullName || !password) {
+      setStatus("Member name, email, and temporary password are required.");
+      return;
+    }
+
+    setSaving(true);
+    setStatus(`Setting password for ${fullName}...`);
+
+    try {
+      const resetResponse = await fetch(`${apiBase}/api/auth/coach-account/reset-password`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (resetResponse.ok) {
+        setMembers((current) => current.map((entry) => entry.memberId === member.memberId ? { ...entry, tempPassword: "" } : entry));
+        setStatus(`Password reset for ${fullName}.`);
+        return;
+      }
+
+      const resetPayload = await resetResponse.json() as { error?: string };
+      if (resetResponse.status !== 404) {
+        throw new Error(resetPayload.error || "Could not reset member password");
+      }
+
+      const createResponse = await fetch(`${apiBase}/api/auth/coach-account`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          fullName,
+          email,
+          role: roleToApi(member.role),
+          password,
+        }),
+      });
+
+      const createPayload = await createResponse.json() as {
+        error?: string;
+        members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
+      };
+      if (!createResponse.ok) {
+        throw new Error(createPayload.error || "Could not create coach account");
+      }
+
+      setMembers(mapApiMembers(createPayload.members));
+      setStatus(`Coach account created for ${fullName}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not set member password.");
     } finally {
       setSaving(false);
     }
@@ -1135,8 +1221,23 @@ export function TeamSettingsPage() {
                       <option value="player">Player</option>
                     </select>
                     <span className={`settings-status-badge settings-status-${member.status}`}>{member.status}</span>
+                    {member.role !== "player" && (
+                      <input
+                        type="password"
+                        className="settings-member-name-input"
+                        value={member.tempPassword}
+                        onChange={(event) => setMembers((current) => current.map((entry) => entry.memberId === member.memberId ? { ...entry, tempPassword: event.target.value } : entry))}
+                        placeholder="Temporary password"
+                        disabled={currentMember?.role !== "admin"}
+                      />
+                    )}
                     {currentMember?.role === "admin" && (
                       <>
+                        {member.role !== "player" && (
+                          <button type="button" className="shell-nav-link" disabled={saving || !member.tempPassword.trim()} onClick={() => void setCoachPassword(member)}>
+                            Set Password
+                          </button>
+                        )}
                         <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void saveMember(member)}>
                           Save
                         </button>
@@ -1171,9 +1272,13 @@ export function TeamSettingsPage() {
                   <option value="player">Player</option>
                 </select>
               </label>
+              <label className="stats-filter-field">
+                <span>Temporary Password (optional)</span>
+                <input type="password" value={inviteTempPassword} onChange={(event) => setInviteTempPassword(event.target.value)} placeholder="Create account now" />
+              </label>
             </div>
             <div className="settings-form-footer">
-              <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>Send Invite</button>
+              <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>{inviteTempPassword.trim() ? "Create Account" : "Send Invite"}</button>
             </div>
           </form>
         </section>

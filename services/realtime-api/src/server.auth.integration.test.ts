@@ -475,6 +475,104 @@ describe("server auth integration", () => {
     expect(selfDelete.status).toBe(400);
   });
 
+  it("creates coach accounts and supports password reset", async () => {
+    const ownerToken = makeTestToken({
+      sub: "coach-account-owner-1",
+      schoolId: "coach-account-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Coach Account School Athletics",
+        teamName: "Coach Account School",
+        season: "2026"
+      })
+    });
+
+    const createResponse = await fetch(`${API_BASE}/api/auth/coach-account`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Riley",
+        email: "assistant-riley@school.org",
+        role: "coach",
+        password: "TempPass123!"
+      })
+    });
+
+    expect(createResponse.status).toBe(201);
+
+    const loginBeforeReset = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "TempPass123!"
+      })
+    });
+
+    expect(loginBeforeReset.status).toBe(200);
+
+    const resetResponse = await fetch(`${API_BASE}/api/auth/coach-account/reset-password`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "UpdatedPass123!"
+      })
+    });
+
+    expect(resetResponse.status).toBe(200);
+
+    const oldPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "TempPass123!"
+      })
+    });
+
+    expect(oldPasswordLogin.status).toBe(401);
+
+    const updatedPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "UpdatedPass123!"
+      })
+    });
+
+    expect(updatedPasswordLogin.status).toBe(200);
+  });
+
   it("exposes prometheus security metrics to authorized write role", async () => {
     const token = makeTestToken({
       sub: "metrics-coach",
