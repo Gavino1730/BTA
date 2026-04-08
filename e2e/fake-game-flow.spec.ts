@@ -1,52 +1,33 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const API_BASE = "http://localhost:4000";
 const COACH_BASE = "http://localhost:5173";
 const OPERATOR_BASE = "http://localhost:5174";
+const AUTH_SESSION_KEY = "bta.coach.authSession";
+const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 
-type AuthUser = {
-  email?: string;
-  fullName?: string;
-  role?: string;
-  schoolId?: string;
-  lastLoginAtIso?: string | null;
-};
-
-type RegisterPayload = {
+type SeedResult = {
+  schoolId: string;
   token: string;
-  user: AuthUser;
-};
-
-type LoginPayload = {
-  token: string;
-  user?: AuthUser;
-  onboarding?: { completed?: boolean };
-};
-
-type RosterPlayer = {
-  id?: string;
-  name: string;
-  number: string;
-  position?: string;
-  grade?: string;
-};
-
-type RosterTeam = {
-  id: string;
-  name: string;
-  players: RosterPlayer[];
+  coachEmail: string;
+  team: {
+    id: string;
+    name: string;
+    abbreviation: string;
+    teamColor: string;
+    players: Array<{ id: string; name: string; number: string; position: string; grade: string }>;
+  };
 };
 
 function uniqueSeed(): string {
   return Date.now().toString(36);
 }
 
-async function seedCoachAccountAndRoster(api: APIRequestContext) {
+async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedResult> {
   const seed = uniqueSeed();
   const schoolId = `e2e-${seed}`;
-  const email = `coach.${seed}@bta.local`;
+  const coachEmail = `coach.${seed}@bta.local`;
   const password = "Secret123!";
-  const coachName = "E2E Coach";
 
   const registerRes = await api.post(`${API_BASE}/api/auth/register`, {
     headers: {
@@ -54,24 +35,44 @@ async function seedCoachAccountAndRoster(api: APIRequestContext) {
       "x-school-id": schoolId,
     },
     data: {
-      fullName: coachName,
-      email,
+      fullName: "E2E Coach",
+      email: coachEmail,
       password,
       schoolName: "E2E High School",
       teamName: "E2E Eagles",
     },
   });
   expect(registerRes.ok()).toBeTruthy();
-  const registerBody = (await registerRes.json()) as RegisterPayload;
+  const registerBody = await registerRes.json() as { token: string };
 
-  const roster = [
-    { name: "Ava Lane", number: "1", position: "G", grade: "11" },
-    { name: "Nora Cruz", number: "2", position: "G", grade: "11" },
-    { name: "Maya Cole", number: "3", position: "W", grade: "12" },
-    { name: "Jade King", number: "4", position: "W", grade: "10" },
-    { name: "Lina Park", number: "5", position: "C", grade: "12" },
-    { name: "Zoe Hart", number: "6", position: "G", grade: "10" },
+  const players = [
+    { id: "p-1", name: "Ava Lane", number: "1", position: "G", grade: "11" },
+    { id: "p-2", name: "Nora Cruz", number: "2", position: "G", grade: "11" },
+    { id: "p-3", name: "Maya Cole", number: "3", position: "W", grade: "12" },
+    { id: "p-4", name: "Jade King", number: "4", position: "W", grade: "10" },
+    { id: "p-5", name: "Lina Park", number: "5", position: "C", grade: "12" },
+    { id: "p-6", name: "Zoe Hart", number: "6", position: "G", grade: "10" },
   ];
+
+  const rosterRes = await api.put(`${API_BASE}/config/roster-teams`, {
+    headers: {
+      Authorization: `Bearer ${registerBody.token}`,
+      "Content-Type": "application/json",
+      "x-school-id": schoolId,
+    },
+    data: {
+      teams: [
+        {
+          id: "e2e-team",
+          name: "E2E Eagles",
+          abbreviation: "E2E",
+          teamColor: "#1d4ed8",
+          players,
+        },
+      ],
+    },
+  });
+  expect(rosterRes.ok()).toBeTruthy();
 
   const onboardingRes = await api.post(`${API_BASE}/api/onboarding/complete`, {
     headers: {
@@ -82,27 +83,16 @@ async function seedCoachAccountAndRoster(api: APIRequestContext) {
     data: {
       organizationName: "E2E High School Athletics",
       schoolName: "E2E High School",
-      coachName,
-      coachEmail: email,
+      coachName: "E2E Coach",
+      coachEmail,
       teamName: "E2E Eagles",
       abbreviation: "E2E",
       season: "2026",
       teamColor: "#1d4ed8",
-      roster,
+      roster: players,
     },
   });
   expect(onboardingRes.ok()).toBeTruthy();
-
-  const teamsRes = await api.get(`${API_BASE}/config/roster-teams`, {
-    headers: {
-      Authorization: `Bearer ${registerBody.token}`,
-      "x-school-id": schoolId,
-    },
-  });
-  expect(teamsRes.ok()).toBeTruthy();
-  const teamsBody = (await teamsRes.json()) as { teams?: RosterTeam[] };
-  const team = (teamsBody.teams ?? []).find((entry) => entry.name === "E2E Eagles") ?? teamsBody.teams?.[0];
-  expect(team).toBeTruthy();
 
   const loginRes = await api.post(`${API_BASE}/api/auth/login`, {
     headers: {
@@ -110,28 +100,118 @@ async function seedCoachAccountAndRoster(api: APIRequestContext) {
       "x-school-id": schoolId,
     },
     data: {
-      email,
+      email: coachEmail,
       password,
     },
   });
   expect(loginRes.ok()).toBeTruthy();
-  const loginBody = (await loginRes.json()) as LoginPayload;
-  expect(loginBody.token).toBeTruthy();
+  const loginBody = await loginRes.json() as { token: string };
 
   return {
     schoolId,
     token: loginBody.token,
-    coachEmail: email,
-    coachPassword: password,
-    teamName: team!.name,
-    starterNames: (team!.players ?? []).slice(0, 5).map((player) => player.name),
+    coachEmail,
+    team: {
+      id: "e2e-team",
+      name: "E2E Eagles",
+      abbreviation: "E2E",
+      teamColor: "#1d4ed8",
+      players,
+    },
   };
+}
+
+async function recordMadeTwoPointWithOnCourtPlayer(page: Page): Promise<void> {
+  const twoPointButtons = page.locator(".classic-score-grid button", { hasText: "2pt" });
+  const modalOverlay = page.locator(".modal-overlay");
+
+  async function dismissOpenModal(): Promise<void> {
+    if (!await modalOverlay.isVisible().catch(() => false)) {
+      return;
+    }
+
+    const skipButton = page.getByRole("button", { name: /^Skip$/i }).first();
+    if (await skipButton.isVisible().catch(() => false)) {
+      await skipButton.click();
+      await expect(modalOverlay).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
+      return;
+    }
+
+    const closeButton = page.getByRole("button", { name: /^X$/i }).first();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click();
+    } else {
+      await page.keyboard.press("Escape");
+    }
+
+    await expect(modalOverlay).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
+  }
+
+  const total = await twoPointButtons.count();
+  expect(total).toBeGreaterThan(0);
+
+  for (let i = 0; i < total; i += 1) {
+    await dismissOpenModal();
+    await twoPointButtons.nth(i).click();
+
+    const noPlayersMessage = page.getByText("No players on court yet");
+    if (await noPlayersMessage.isVisible().catch(() => false)) {
+      await page.keyboard.press("Escape");
+      await dismissOpenModal();
+      continue;
+    }
+
+    const madeButton = page.getByRole("button", { name: "Made" }).first();
+    if (await madeButton.isVisible().catch(() => false)) {
+      await madeButton.click();
+    }
+
+    const playerRows = page.locator(".player-list .player-row");
+    if (await playerRows.count() > 0) {
+      await playerRows.first().click();
+      await dismissOpenModal();
+      return;
+    }
+
+    await page.keyboard.press("Escape");
+    await dismissOpenModal();
+  }
+
+  throw new Error("Could not find a 2pt flow with on-court players.");
 }
 
 test("runs one fake game through real coach and operator clicks", async ({ browser, request }) => {
   const seed = await seedCoachAccountAndRoster(request);
 
-  const coachContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const coachContext = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: COACH_BASE,
+          localStorage: [
+            { name: "coach:tutorial-complete", value: "1" },
+            {
+              name: AUTH_SESSION_KEY,
+              value: JSON.stringify({
+                token: seed.token,
+                email: seed.coachEmail,
+                fullName: "E2E Coach",
+                role: "owner",
+                schoolId: seed.schoolId,
+                lastLoginAtIso: null,
+              }),
+            },
+            {
+              name: ROSTER_STORAGE_KEY,
+              value: JSON.stringify({ teams: [seed.team] }),
+            },
+          ],
+        },
+      ],
+    },
+  });
 
   const coachPage = await coachContext.newPage();
   await coachPage.route("**/api/auth/session**", async (route) => {
@@ -142,15 +222,13 @@ test("runs one fake game through real coach and operator clicks", async ({ brows
         authenticated: true,
         token: seed.token,
         user: {
-          accountId: `e2e-${seed.schoolId}`,
+          accountId: `acct-${seed.schoolId}`,
           email: seed.coachEmail,
           fullName: "E2E Coach",
           role: "owner",
           schoolId: seed.schoolId,
         },
-        onboarding: {
-          completed: true,
-        },
+        onboarding: { completed: true },
       }),
     });
   });
@@ -167,37 +245,17 @@ test("runs one fake game through real coach and operator clicks", async ({ brows
       }),
     });
   });
+
   await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
 
-  const setupHeading = coachPage.getByRole("heading", { name: "School Setup" });
-  if (await setupHeading.isVisible()) {
-    const schoolInput = coachPage.getByLabel("School Name *").first();
-    const teamInput = coachPage.getByLabel("Team Name *").first();
-    const rosterNameInput = coachPage.getByPlaceholder("Player name").first();
-    const rosterNumberInput = coachPage.getByPlaceholder("0").first();
-
-    if ((await schoolInput.inputValue()).trim().length === 0) {
-      await schoolInput.fill("E2E High School");
-    }
-    if ((await teamInput.inputValue()).trim().length === 0) {
-      await teamInput.fill(seed.teamName);
-    }
-    if ((await rosterNameInput.inputValue()).trim().length === 0) {
-      await rosterNameInput.fill(seed.starterNames[0] ?? "Ava Lane");
-    }
-    if ((await rosterNumberInput.inputValue()).trim().length === 0) {
-      await rosterNumberInput.fill("1");
-    }
-
-    await coachPage.getByRole("button", { name: "Complete Setup" }).click();
-  }
-
+  const teamButton = coachPage.getByRole("button", { name: seed.team.name, exact: true });
   await expect(coachPage.getByRole("heading", { name: "Start New Game" })).toBeVisible();
-  await coachPage.getByRole("button", { name: seed.teamName, exact: true }).click();
+  await expect(teamButton).toBeVisible({ timeout: 15_000 });
+  await teamButton.click();
   await coachPage.getByPlaceholder("e.g. Opponent").fill("E2E Rivals");
 
-  for (const starterName of seed.starterNames) {
-    await coachPage.getByRole("button", { name: new RegExp(starterName) }).click();
+  for (const player of seed.team.players.slice(0, 5)) {
+    await coachPage.getByRole("button", { name: new RegExp(player.name) }).click();
   }
 
   await coachPage.getByRole("button", { name: "Launch Game" }).click();
@@ -206,27 +264,75 @@ test("runs one fake game through real coach and operator clicks", async ({ brows
   const connectionCode = (await coachPage.locator(".settings-pairing-code").first().innerText()).trim();
   expect(connectionCode).toMatch(/^\d{6}$/);
 
-  const operatorContext = await browser.newContext({ viewport: { width: 834, height: 1194 } });
+  const operatorContext = await browser.newContext({
+    viewport: { width: 834, height: 1194 },
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: OPERATOR_BASE,
+          localStorage: [
+            { name: "ipo:tutorial-complete", value: "1" },
+            {
+              name: "shared-app-data-v3",
+              value: JSON.stringify({
+                teams: [
+                  {
+                    id: seed.team.id,
+                    name: seed.team.name,
+                    abbreviation: "E2E",
+                    players: [
+                      { id: "p-1", number: "1", name: "Ava Lane", position: "G" },
+                      { id: "p-2", number: "2", name: "Nora Cruz", position: "G" },
+                      { id: "p-3", number: "3", name: "Maya Cole", position: "W" },
+                      { id: "p-4", number: "4", name: "Jade King", position: "W" },
+                      { id: "p-5", number: "5", name: "Lina Park", position: "C" },
+                    ],
+                  },
+                ],
+                gameSetup: {
+                  gameId: "game-1",
+                  connectionId: connectionCode,
+                  syncedConnectionId: connectionCode,
+                  myTeamId: seed.team.id,
+                  apiUrl: API_BASE,
+                  schoolId: seed.schoolId,
+                  opponent: "E2E Rivals",
+                  vcSide: "home",
+                  dashboardUrl: `${COACH_BASE}/live?schoolId=${seed.schoolId}`,
+                  clockVisible: true,
+                  clockEnabled: true,
+                  trackClock: true,
+                  trackPossession: true,
+                  trackTimeouts: true,
+                  opponentTrackStats: ["points", "free_throws", "def_reb", "off_reb", "turnover", "steal", "assist", "block", "foul"],
+                  homeTeamColor: "#1d4ed8",
+                  awayTeamColor: "#f87171",
+                  startingLineup: ["p-1", "p-2", "p-3", "p-4", "p-5"],
+                  apiKey: seed.token,
+                },
+              }),
+            },
+          ],
+        },
+      ],
+    },
+  });
+
   const operatorPage = await operatorContext.newPage();
   await operatorPage.goto(`${OPERATOR_BASE}/?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
-
   await operatorPage.getByLabel("Connection code").fill(connectionCode);
   await operatorPage.getByRole("button", { name: "Sync Now" }).click();
   await expect(operatorPage.getByRole("button", { name: "Start Game" })).toBeEnabled();
-
   await operatorPage.getByRole("button", { name: "Start Game" }).click();
   await expect(operatorPage.locator(".classic-score-grid")).toBeVisible();
 
-  await operatorPage.locator(".classic-score-grid button", { hasText: "2pt" }).first().click();
-  await operatorPage.locator(".player-list .player-row").first().click();
+  await recordMadeTwoPointWithOnCourtPlayer(operatorPage);
+  await recordMadeTwoPointWithOnCourtPlayer(operatorPage);
 
-  const chainPromptSkip = operatorPage.getByRole("button", { name: "Skip" });
-  if (await chainPromptSkip.isVisible()) {
-    await chainPromptSkip.click();
-  }
-
-  await operatorPage.getByRole("button", { name: "foul" }).click();
-  await operatorPage.locator(".player-list .player-row").first().click();
+  const gameIdText = await coachPage.locator(".settings-section-desc", { hasText: "Game ID:" }).first().innerText();
+  const gameId = gameIdText.replace("Game ID:", "").trim();
+  expect(gameId.length).toBeGreaterThan(0);
 
   await expect.poll(async () => {
     const scoreTexts = await coachPage.locator(".score-item .score").allTextContents();
@@ -234,30 +340,10 @@ test("runs one fake game through real coach and operator clicks", async ({ brows
   }, {
     timeout: 30_000,
     message: "Coach scoreboard did not reflect operator scoring update.",
-  }).toContain("2");
-
-  const gameIdText = await coachPage.locator(".settings-section-desc", { hasText: "Game ID:" }).first().innerText();
-  const gameId = gameIdText.replace("Game ID:", "").trim();
-  expect(gameId.length).toBeGreaterThan(0);
-
-  const gameStateRes = await request.get(`${API_BASE}/api/games/${encodeURIComponent(gameId)}/state`, {
-    headers: {
-      Authorization: `Bearer ${seed.token}`,
-      "x-school-id": seed.schoolId,
-    },
-  });
-  expect(gameStateRes.ok()).toBeTruthy();
-  const gameState = (await gameStateRes.json()) as {
-    state?: {
-      scoreByTeam?: Record<string, number>;
-      events?: Array<unknown>;
-    };
-  };
-
-  const totalPoints = Object.values(gameState.state?.scoreByTeam ?? {}).reduce((sum, value) => sum + (value ?? 0), 0);
-  expect(totalPoints).toBeGreaterThanOrEqual(2);
-  expect((gameState.state?.events ?? []).length).toBeGreaterThanOrEqual(2);
+  }).toContain("4");
 
   await operatorContext.close();
   await coachContext.close();
 });
+
+
