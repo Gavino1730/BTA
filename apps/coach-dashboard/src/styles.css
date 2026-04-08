@@ -2184,58 +2184,102 @@ body {
 
 .box-score-table-wrap {
   overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
 .box-score-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 640px;
-  font-size: 0.86rem;
+  min-width: 580px;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .box-score-table th,
 .box-score-table td {
-  border-bottom: 1px solid var(--border);
-  padding: 0.44rem 0.46rem;
+  padding: 0.5rem 0.55rem;
   text-align: right;
+  white-space: nowrap;
 }
 
 .box-score-table th:first-child,
 .box-score-table td:first-child {
   text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 1;
 }
 
 .box-score-table thead th {
   color: var(--text-muted);
-  font-size: 0.74rem;
-  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  background: var(--surface-2);
+  border-bottom: 2px solid var(--border-hi);
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
+.box-score-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.box-score-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.box-score-table tbody tr:hover {
+  background: rgba(79, 140, 255, 0.07);
+}
+
+.box-score-table tbody td:first-child {
+  font-weight: 600;
+  color: var(--text);
+  background: inherit;
+  min-width: 140px;
+}
+
+.box-score-table tbody td {
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.box-score-table tbody td:nth-child(2) {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 0.92em;
 }
 
 .box-score-table tfoot td {
   font-weight: 800;
   color: #ffffff;
+  background: var(--surface-2);
+  border-top: 2px solid var(--border-hi);
 }
 
 .box-score-empty {
   text-align: center !important;
-
-  /* Foul trouble visualization */
-  .foul-badge {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-weight: 600;
-    font-size: 0.85em;
-  }
-  .foul-badge-safe { background: transparent; color: inherit; }
-  .foul-badge-warn { background: rgba(255, 193, 7, 0.2); color: #e6ac00; border: 1px solid #e6ac00; }
-  .foul-badge-danger { background: rgba(255, 87, 34, 0.2); color: #ff5722; border: 1px solid #ff5722; }
-  .foul-badge-out { background: #b71c1c; color: #fff; border: 1px solid #b71c1c; }
-  .foul-row-warning { background: rgba(255, 193, 7, 0.06); }
-  .foul-row-danger { background: rgba(255, 87, 34, 0.08); }
   color: var(--text-muted);
 }
+
+/* Foul trouble visualization */
+.foul-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.82em;
+  line-height: 1.5;
+}
+.foul-badge-safe { background: transparent; color: inherit; }
+.foul-badge-warn { background: rgba(255, 193, 7, 0.18); color: #e6ac00; border: 1px solid rgba(230, 172, 0, 0.4); }
+.foul-badge-danger { background: rgba(255, 87, 34, 0.18); color: #ff5722; border: 1px solid rgba(255, 87, 34, 0.4); }
+.foul-badge-out { background: #b71c1c; color: #fff; border: 1px solid #b71c1c; }
+.foul-row-warning { background: rgba(255, 193, 7, 0.06) !important; }
+.foul-row-danger { background: rgba(255, 87, 34, 0.08) !important; }
 
 .ai-page-hero {
   display: flex;

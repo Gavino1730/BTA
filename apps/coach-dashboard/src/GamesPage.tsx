@@ -123,11 +123,15 @@ const inputSt: CSSProperties = {
 };
 const cellSt: CSSProperties = {
   background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-  color: "var(--text)", borderRadius: 5, padding: "0.28rem 0.35rem", textAlign: "center", width: "100%", boxSizing: "border-box",
+  color: "var(--text)", borderRadius: 5, padding: "0.32rem 0.4rem", textAlign: "center", width: "100%", boxSizing: "border-box",
+  fontVariantNumeric: "tabular-nums",
 };
 const thSt: CSSProperties = {
-  padding: "0.35rem 0.35rem", textAlign: "center", fontSize: "0.7rem",
+  padding: "0.5rem 0.45rem", textAlign: "center", fontSize: "0.72rem",
   textTransform: "uppercase", color: "var(--text-muted)", whiteSpace: "nowrap",
+  fontWeight: 700, letterSpacing: "0.04em",
+  borderBottom: "2px solid var(--border-hi)",
+  background: "var(--surface-2)",
 };
 
 function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
@@ -304,8 +308,8 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
               <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
             )}
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1300, fontSize: "0.81rem" }}>
+          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 820, fontSize: "0.83rem", fontVariantNumeric: "tabular-nums" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   <th style={{ ...thSt, textAlign: "left", minWidth: 140 }}>Player</th>
@@ -318,28 +322,28 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                    <td style={{ padding: "0.3rem 0.3rem" }}>
+                  <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.025)" }}>
+                    <td style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }}>
                       {isEditing
                         ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} />
                         : <span style={{ padding: "0 0.3rem" }}>{row.name || "—"}</span>}
                     </td>
-                    <td style={{ padding: "0.3rem 0.2rem", textAlign: "center" }}>
+                    <td style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
                       {isEditing
                         ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} />
                         : <span>{row.number || "—"}</span>}
                     </td>
                     {STAT_COLS.map(c => (
-                      <td key={c.key} style={{ padding: "0.3rem 0.2rem", textAlign: "center" }}>
+                      <td key={c.key} style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
                         {isEditing
                           ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} />
                           : <span>{String(row[c.key as StatKey])}</span>}
                       </td>
                     ))}
-                    <td style={{ padding: "0.3rem 0.2rem", fontWeight: 700, textAlign: "center" }}>{rowReb(row)}</td>
-                    <td style={{ padding: "0.3rem 0.2rem", fontWeight: 700, color: "var(--teal)", textAlign: "center" }}>{rowPts(row)}</td>
+                    <td style={{ padding: "0.45rem 0.4rem", fontWeight: 700, textAlign: "center" }}>{rowReb(row)}</td>
+                    <td style={{ padding: "0.45rem 0.4rem", fontWeight: 700, color: "var(--teal)", textAlign: "center", fontSize: "0.92em" }}>{rowPts(row)}</td>
                     {isEditing && (
-                      <td style={{ padding: "0.3rem 0.2rem" }}>
+                      <td style={{ padding: "0.45rem 0.4rem" }}>
                         <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} style={{ background: "rgba(248,113,113,0.14)", border: "none", color: "var(--red)", borderRadius: 6, padding: "0.28rem 0.55rem", cursor: "pointer" }}>✕</button>
                       </td>
                     )}
