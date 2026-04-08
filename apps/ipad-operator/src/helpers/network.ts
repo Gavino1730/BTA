@@ -139,6 +139,7 @@ export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkR
     teams: convertedTeams,
     gameSetup: {
       ...current.gameSetup,
+      schoolId: snapshot.schoolId?.trim() || current.gameSetup.schoolId,
       connectionId: resolvedConnectionId || undefined,
       syncedConnectionId: resolvedConnectionId || undefined,
       gameId: snapshot.setup?.gameId?.trim() || current.gameSetup.gameId,

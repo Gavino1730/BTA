@@ -166,6 +166,9 @@ button, [role="button"], .shell-nav-link {
 }
 
 :root {
+  --brand-primary: #13b67a;
+  --brand-primary-strong: #2ad39a;
+  --brand-primary-deep: #0c7f55;
   --bg: #0c101a;
   --surface: #141b2b;
   --surface-2: rgba(255,255,255,0.045);
@@ -174,8 +177,8 @@ button, [role="button"], .shell-nav-link {
   --text: #f4f6fb;
   --text-muted: rgba(244,246,251,0.68);
   --text-dim: rgba(244,246,251,0.45);
-  --teal: var(--brand-primary, #c1121f);
-  --teal-soft: rgba(193,18,31,0.16);
+  --teal: var(--brand-primary, #13b67a);
+  --teal-soft: rgba(19,182,122,0.16);
   --gold: var(--brand-accent, #ffd166);
   --gold-soft: rgba(255,209,102,0.2);
   --red: var(--color-danger, #f25f5c);
@@ -5045,7 +5048,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
 .mkt-page {
   background:
-    radial-gradient(85% 55% at 74% 0%, rgba(193, 18, 31, 0.28) 0%, transparent 74%),
+    radial-gradient(85% 55% at 74% 0%, rgba(19, 182, 122, 0.26) 0%, transparent 74%),
     radial-gradient(75% 45% at 8% 4%, rgba(255, 209, 102, 0.12) 0%, transparent 60%),
     linear-gradient(180deg, #0a0e17 0%, #0c101a 48%, #101726 100%);
 }
@@ -5069,12 +5072,12 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .mkt-btn-primary {
-  background: linear-gradient(135deg, #8c1019 0%, #c1121f 52%, #e5383b 100%);
-  box-shadow: 0 8px 28px rgba(193, 18, 31, 0.42);
+  background: linear-gradient(135deg, #0c7f55 0%, #13b67a 52%, #2ad39a 100%);
+  box-shadow: 0 8px 28px rgba(19, 182, 122, 0.4);
 }
 
 .mkt-btn-primary:hover {
-  box-shadow: 0 12px 32px rgba(193, 18, 31, 0.48);
+  box-shadow: 0 12px 32px rgba(19, 182, 122, 0.47);
 }
 
 .mkt-btn-subtle,
@@ -5123,7 +5126,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .mkt-gradient-text {
   display: block;
   margin-top: 0.28rem;
-  background: linear-gradient(90deg, #ffd166 0%, #f4f6fb 38%, #e5383b 100%);
+  background: linear-gradient(90deg, #ffd166 0%, #f4f6fb 38%, #2ad39a 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -5195,8 +5198,8 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .mkt-possession-tag.is-home {
-  border-color: rgba(193, 18, 31, 0.55);
-  background: rgba(193, 18, 31, 0.2);
+  border-color: rgba(19, 182, 122, 0.58);
+  background: rgba(19, 182, 122, 0.2);
 }
 
 .mkt-possession-tag.is-away {
@@ -5216,7 +5219,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .mkt-demo-score-home {
-  color: #ff8d94;
+  color: #7ef0c4;
 }
 
 .mkt-demo-momentum {
@@ -5253,16 +5256,16 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   position: absolute;
   inset: 0 auto 0 0;
   display: block;
-  background: linear-gradient(90deg, #5ea8ff 0%, #ffd166 52%, #c1121f 100%);
+  background: linear-gradient(90deg, #5ea8ff 0%, #ffd166 52%, #13b67a 100%);
   transition: width var(--motion-standard, 180ms) ease;
 }
 
 .mkt-live-dot {
-  background: #e5383b;
+  background: #2ad39a;
 }
 
 .mkt-live-label {
-  color: #ffadb2;
+  color: #98ffd8;
 }
 
 @media (max-width: 860px) {

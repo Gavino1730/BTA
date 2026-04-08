@@ -88,6 +88,7 @@ export interface AppData {
 
 export interface OperatorLinkResponse {
   connectionId: string;
+  schoolId?: string;
   operatorToken?: string;
   setup?: {
     gameId?: string;

@@ -223,11 +223,13 @@ describe("operator pairing endpoints", () => {
 
     const body = await getRes.json() as {
       connectionId: string;
+      schoolId?: string;
       setup: { gameId?: string };
       operatorToken?: string;
     };
 
     expect(body.connectionId).toBe("conn-noscope-1");
+    expect(body.schoolId).toBe("pairing-noscope");
     expect(body.setup.gameId).toBe("pairing-noscope-game");
     expect(typeof body.operatorToken).toBe("string");
     expect(body.operatorToken?.length ?? 0).toBeGreaterThan(0);

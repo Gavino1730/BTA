@@ -3240,6 +3240,7 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
   const { operatorToken, ...publicSetup } = setup;
   res.json({
     connectionId,
+    schoolId,
     setup: publicSetup,
     teams: getRosterTeamsByScope({ schoolId }),
     operatorToken,

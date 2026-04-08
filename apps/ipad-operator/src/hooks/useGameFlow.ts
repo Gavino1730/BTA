@@ -107,7 +107,10 @@ export function useGameFlow({
 
       const payload = (await response.json()) as OperatorLinkResponse;
       const next = mergeCoachLinkSnapshot(current, payload);
-      if (next.gameSetup.apiKey !== current.gameSetup.apiKey) {
+      if (
+        next.gameSetup.apiKey !== current.gameSetup.apiKey
+        || next.gameSetup.schoolId !== current.gameSetup.schoolId
+      ) {
         saveAppData(next);
         setAppData(next);
       }
