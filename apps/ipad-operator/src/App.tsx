@@ -796,7 +796,7 @@ export function App() {
           Summary
         </button>
         <button className="live-nav-btn live-nav-btn-secondary" onClick={() => navigateView("settings")} title="Settings">Settings</button>
-        <button className="live-nav-btn live-nav-btn-end" onClick={() => endGame()}>
+        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
           End Game
         </button>
       </div>

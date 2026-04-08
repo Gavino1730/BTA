@@ -170,6 +170,24 @@ export function useSocket({
       }
     });
 
+    socket.on("game:submitted", (submittedPayload: unknown) => {
+      const submittedGameId = typeof submittedPayload === "object"
+        && submittedPayload !== null
+        && "gameId" in submittedPayload
+        && typeof (submittedPayload as { gameId?: unknown }).gameId === "string"
+        ? (submittedPayload as { gameId: string }).gameId
+        : "";
+
+      if (!submittedGameId || submittedGameId !== gameId) {
+        return;
+      }
+
+      if (gamePhase === "live") {
+        persistPhase("post-game");
+      }
+      showInlineNotice("Game ended on another device. Switched to post-game view.", "info", 4500);
+    });
+
     socket.on("operator:link:updated", (linkPayload: unknown) => {
       if (!linkPayload || typeof linkPayload !== "object") {
         return;
@@ -246,6 +264,7 @@ export function useSocket({
       socket.off("game:state");
       socket.off("game:insights");
       socket.off("game:deleted");
+      socket.off("game:submitted");
       socket.off("operator:link:updated");
       socket.off("presence:status");
       socket.off("roster:teams");

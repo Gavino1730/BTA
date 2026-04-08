@@ -266,8 +266,16 @@ export function useGameFlow({
     return true;
   }
 
-  function endGame() {
+  async function endGame() {
     setSubmitStatus("idle");
+    const apiSubmitted = await submitGameToRealtimeApi();
+    if (!apiSubmitted) {
+      showInlineNotice(
+        "Could not notify other devices that the game ended. You can retry with Submit Game in post-game.",
+        "warning",
+        6000,
+      );
+    }
     setSubmitMessage("Review game details, then tap Submit Game to publish stats to the dashboard.");
     persistPhase("post-game");
   }

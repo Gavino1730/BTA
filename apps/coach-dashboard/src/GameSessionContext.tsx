@@ -140,7 +140,7 @@ export interface GameSession {
   endGameStatus: string;
   requestEndGameFromDashboard: () => void;
   cancelEndGamePrompt: () => void;
-  discardGameFromDashboard: () => void;
+  discardGameFromDashboard: () => Promise<void>;
   endGameFromDashboard: () => Promise<void>;
 
   // AI
@@ -371,7 +371,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameVcSide, setNewGameVcSide,
     newGameOppColor, setNewGameOppColor,
     newGameStartingLineup, setNewGameStartingLineup,
-    isLaunchingGame, launchGame,
+    isLaunchingGame, launchGame, resetForm: resetNewGameForm,
   } = useNewGameForm({ rosterTeams, endedGameIdsRef, connectionId, setGameId, setSetupNames, setDashboardStatus });
 
   // URL sync
@@ -404,12 +404,13 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     setState(null);
     setInsights([]);
     resetAiState();
+    resetNewGameForm();
     setBoxScoreFilter([]);
     setIsLoading(false);
     setActivePageState("live");
     sessionStorage.setItem("coach:live-tab", "live");
     setDashboardStatus(statusMessage);
-  }, [gameId, resetAiState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameId, resetAiState, resetNewGameForm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Socket hook
   useCoachSocket({
