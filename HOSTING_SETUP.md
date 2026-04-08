@@ -39,6 +39,12 @@ Create a Vercel project for the repo and point the root directory to:
 Then add env vars from:
 - `apps/coach-dashboard/.env.production.example`
 
+Minimum coach Vercel env vars:
+- `VITE_API=https://api.yourdomain.com`
+- `VITE_OPERATOR_CONSOLE=https://operator.yourdomain.com`
+- `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
+
 The included `vercel.json` already handles:
 - monorepo install/build
 - SPA rewrites to `index.html`
@@ -50,6 +56,13 @@ Create another Vercel project and point the root directory to:
 
 Then add env vars from:
 - `apps/ipad-operator/.env.production.example`
+
+Minimum operator Vercel env vars:
+- `VITE_API=https://api.yourdomain.com`
+- `VITE_COACH_DASHBOARD=https://coach.yourdomain.com`
+- `VITE_STATS_DASHBOARD=https://api.yourdomain.com`
+- `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
 
 The included `vercel.json` already handles:
 - monorepo install/build
