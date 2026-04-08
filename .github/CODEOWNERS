@@ -1,0 +1,14 @@
+# Default owner
+* @Gavino1730
+
+# Core contracts and engine
+/packages/shared-schema/ @Gavino1730
+/packages/game-state/ @Gavino1730
+
+# Runtime services
+/services/realtime-api/ @Gavino1730
+/services/insight-engine/ @Gavino1730
+
+# Applications
+/apps/coach-dashboard/ @Gavino1730
+/apps/ipad-operator/ @Gavino1730

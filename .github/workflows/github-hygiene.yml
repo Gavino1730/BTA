@@ -1,0 +1,35 @@
+name: GitHub Hygiene
+
+on:
+  pull_request:
+    paths:
+      - '.github/**'
+      - '*.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/**'
+      - '*.md'
+
+jobs:
+  validate-github-files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure required community files exist
+        run: |
+          test -f README.md
+          test -f CONTRIBUTING.md
+          test -f CODE_OF_CONDUCT.md
+          test -f SECURITY.md
+          test -f SUPPORT.md
+          test -f .github/pull_request_template.md
+          test -f .github/CODEOWNERS
+          test -f .github/ISSUE_TEMPLATE/bug_report.yml
+          test -f .github/ISSUE_TEMPLATE/feature_request.yml
+          test -f .github/ISSUE_TEMPLATE/config.yml
