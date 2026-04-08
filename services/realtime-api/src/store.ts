@@ -2933,59 +2933,87 @@ function buildSchoolAnalytics(scope?: TenantScope): {
       team_stats: gameTeamStats
     });
 
-    for (const statLine of Object.values(playerStats)) {
-      const existing = playerMap.get(statLine.playerId) ?? {
-        name: statLine.playerId,
-        full_name: statLine.playerId,
-        first_name: statLine.playerId,
-        games: 0,
-        pts: 0,
-        fg: 0,
-        fga: 0,
-        fg3: 0,
-        fg3a: 0,
-        ft: 0,
-        fta: 0,
-        oreb: 0,
-        dreb: 0,
-        reb: 0,
-        asst: 0,
-        to: 0,
-        stl: 0,
-        blk: 0,
-        fouls: 0,
-        plus_minus: 0,
-        ppg: 0,
-        rpg: 0,
-        apg: 0,
-        spg: 0,
-        bpg: 0,
-        tpg: 0,
-        fpg: 0,
-        fg_pct: 0,
-        fg3_pct: 0,
-        ft_pct: 0,
-        coach_style: "",
-        roster_info: null
-      } as SeasonPlayerSummary;
-      const fg3Line = fg3ByPlayer.get(statLine.playerId) ?? { made: 0, attempts: 0 };
-      existing.games += 1;
-      existing.pts += statLine.points;
-      existing.fg += statLine.fgMade;
-      existing.fga += statLine.fgAttempts;
-      existing.fg3 += fg3Line.made;
-      existing.fg3a += fg3Line.attempts;
-      existing.ft += statLine.ftMade;
-      existing.fta += statLine.ftAttempts;
-      existing.oreb += statLine.reboundsOff;
-      existing.dreb += statLine.reboundsDef;
-      existing.reb += statLine.reboundsOff + statLine.reboundsDef;
-      existing.asst += statLine.assists;
-      existing.to += statLine.turnovers;
-      existing.stl += statLine.steals;
-      existing.blk += statLine.blocks;
-      existing.fouls += statLine.fouls;
-      playerMap.set(statLine.playerId, existing);
+    // Use override player_stats if available, otherwise fall back to event-derived stats
+    const overridePlayerStats = override?.player_stats;
+    if (Array.isArray(overridePlayerStats) && overridePlayerStats.length > 0) {
+      for (const ps of overridePlayerStats) {
+        const playerId = String(ps.playerId ?? "");
+        if (!playerId) { continue; }
+        const existing = playerMap.get(playerId);
+        if (!existing) { continue; }
+        existing.games += 1;
+        existing.pts += Number(ps.pts ?? 0);
+        existing.fg += Number(ps.fg ?? 0);
+        existing.fga += Number(ps.fga ?? 0);
+        existing.fg3 += Number(ps.fg3 ?? 0);
+        existing.fg3a += Number(ps.fg3a ?? 0);
+        existing.ft += Number(ps.ft ?? 0);
+        existing.fta += Number(ps.fta ?? 0);
+        existing.oreb += Number(ps.oreb ?? 0);
+        existing.dreb += Number(ps.dreb ?? 0);
+        existing.reb += Number(ps.oreb ?? 0) + Number(ps.dreb ?? 0);
+        existing.asst += Number(ps.asst ?? 0);
+        existing.to += Number(ps.to ?? 0);
+        existing.stl += Number(ps.stl ?? 0);
+        existing.blk += Number(ps.blk ?? 0);
+        existing.fouls += Number(ps.fouls ?? 0);
+        playerMap.set(playerId, existing);
+      }
+    } else {
+      for (const statLine of Object.values(playerStats)) {
+        const existing = playerMap.get(statLine.playerId) ?? {
+          name: statLine.playerId,
+          full_name: statLine.playerId,
+          first_name: statLine.playerId,
+          games: 0,
+          pts: 0,
+          fg: 0,
+          fga: 0,
+          fg3: 0,
+          fg3a: 0,
+          ft: 0,
+          fta: 0,
+          oreb: 0,
+          dreb: 0,
+          reb: 0,
+          asst: 0,
+          to: 0,
+          stl: 0,
+          blk: 0,
+          fouls: 0,
+          plus_minus: 0,
+          ppg: 0,
+          rpg: 0,
+          apg: 0,
+          spg: 0,
+          bpg: 0,
+          tpg: 0,
+          fpg: 0,
+          fg_pct: 0,
+          fg3_pct: 0,
+          ft_pct: 0,
+          coach_style: "",
+          roster_info: null
+        } as SeasonPlayerSummary;
+        const fg3Line = fg3ByPlayer.get(statLine.playerId) ?? { made: 0, attempts: 0 };
+        existing.games += 1;
+        existing.pts += statLine.points;
+        existing.fg += statLine.fgMade;
+        existing.fga += statLine.fgAttempts;
+        existing.fg3 += fg3Line.made;
+        existing.fg3a += fg3Line.attempts;
+        existing.ft += statLine.ftMade;
+        existing.fta += statLine.ftAttempts;
+        existing.oreb += statLine.reboundsOff;
+        existing.dreb += statLine.reboundsDef;
+        existing.reb += statLine.reboundsOff + statLine.reboundsDef;
+        existing.asst += statLine.assists;
+        existing.to += statLine.turnovers;
+        existing.stl += statLine.steals;
+        existing.blk += statLine.blocks;
+        existing.fouls += statLine.fouls;
+        playerMap.set(statLine.playerId, existing);
+      }
     }
   }
 

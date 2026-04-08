@@ -2,7 +2,7 @@ param(
     [string]$Api = "https://btarealtime-api-production.up.railway.app",
     [string]$ApiKey = "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU",
     [string]$Email = "bears@demo.com",
-    [string]$Password = "12345678",
+    [string]$LoginPw = "12345678",
     [string]$SchoolId = "vancouver-bears",
     [string]$TeamJson = "$PSScriptRoot\..\vancouver-bears-team.json"
 )
@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 # Login
 $loginHeaders = @{ "x-api-key" = $ApiKey }
-$loginBody = @{ email = $Email; password = $Password } | ConvertTo-Json -Compress
+$loginBody = @{ email = $Email; password = $LoginPw } | ConvertTo-Json -Compress
 $login = Invoke-RestMethod -Uri "$Api/api/auth/login" -Method POST -ContentType "application/json" -Headers $loginHeaders -Body $loginBody
 $token = $login.token
 Write-Host "Logged in as $($login.user.email)"
