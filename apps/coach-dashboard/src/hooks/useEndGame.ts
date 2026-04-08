@@ -14,7 +14,7 @@ interface UseEndGameReturn {
   endGameStatus: string;
   requestEndGameFromDashboard: () => void;
   cancelEndGamePrompt: () => void;
-  discardGameFromDashboard: () => void;
+  discardGameFromDashboard: () => Promise<void>;
   endGameFromDashboard: () => Promise<void>;
 }
 
@@ -53,11 +53,22 @@ export function useEndGame({
     setIsEndGamePromptOpen(false);
   }
 
-  function discardGameFromDashboard(): void {
+  async function discardGameFromDashboard(): Promise<void> {
     if (!gameId || isEndingGame) {
       return;
     }
+    const discardingGameId = gameId;
     setIsEndGamePromptOpen(false);
+    // Delete the game from the server so it no longer appears as an active game.
+    // Best-effort: clear locally even if the server call fails.
+    try {
+      await fetch(`${apiBase}/api/games/${discardingGameId}`, {
+        method: "DELETE",
+        headers: apiKeyHeader(),
+      });
+    } catch {
+      // ignore network errors — proceed with local clear
+    }
     clearActiveGame("Game closed without saving.");
   }
 

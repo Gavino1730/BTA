@@ -36,6 +36,13 @@ export function useLineupSync({
       return;
     }
 
+    const schoolId = appData.gameSetup.schoolId?.trim();
+    if (!schoolId) {
+      setLineupLockedByLiveGame(false);
+      setLineupSyncStatus("Waiting for school sync before checking live game lock.");
+      return;
+    }
+
     // Don't poll the server until we have a gameId from the coach sync.
     // useCoachSync delivers the gameId via the operator link; polling active/state
     // before that just generates repeated 404s.

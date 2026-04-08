@@ -17,6 +17,37 @@ interface UseCoachAiOptions {
   setDashboardStatus: (status: string) => void;
 }
 
+function mapAiHttpError(status: number, fallback: string): string {
+  if (status === 429) {
+    return "AI insights are temporarily rate-limited. Wait a moment and try again.";
+  }
+  if (status === 503) {
+    return "AI service is temporarily unavailable. Rules-based insights are still active.";
+  }
+  if (status === 401 || status === 403) {
+    return "AI request blocked by auth or role policy. Reconnect and try again.";
+  }
+  if (status === 400) {
+    return "AI request rejected. Verify game scope and try again.";
+  }
+  return fallback;
+}
+
+async function readErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const payload = await response.json() as { error?: unknown; message?: unknown };
+    const text = typeof payload.error === "string"
+      ? payload.error
+      : typeof payload.message === "string"
+        ? payload.message
+        : "";
+    const trimmed = text.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoachAiOptions) {
   const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTenantScope = Boolean(resolveActiveSchoolId());
@@ -221,7 +252,11 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       });
 
       if (!response.ok) {
-        setAiChatStatus(`AI chat unavailable (${response.status}).`);
+        const apiMessage = await readErrorMessage(response);
+        const fallback = apiMessage
+          ? `AI chat unavailable: ${apiMessage}`
+          : "AI chat is unavailable right now.";
+        setAiChatStatus(mapAiHttpError(response.status, fallback));
         return;
       }
 
@@ -298,14 +333,19 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       });
 
       if (!response.ok) {
-        throw new Error(`Insight refresh failed with status ${response.status}`);
+        const apiMessage = await readErrorMessage(response);
+        const fallback = apiMessage
+          ? `Could not refresh AI bench calls: ${apiMessage}`
+          : "Could not refresh AI bench calls right now.";
+        setAiRefreshError(mapAiHttpError(response.status, fallback));
+        return;
       }
 
       const payload = (await response.json()) as Insight[];
       setInsights(payload);
       setDashboardStatus("AI bench calls refreshed");
     } catch {
-      setAiRefreshError("Could not refresh AI bench calls right now.");
+      setAiRefreshError("Could not refresh AI bench calls right now. Check network and try again.");
     } finally {
       setIsRefreshingAiInsights(false);
     }

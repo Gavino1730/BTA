@@ -145,6 +145,14 @@ export function useNewGameForm({
     }
   }
 
+  function resetForm(): void {
+    setNewGameOpponent("");
+    setNewGameMyTeamId("");
+    setNewGameVcSide("home");
+    setNewGameOppColor("#f87171");
+    setNewGameStartingLineup([]);
+  }
+
   return {
     newGameOpponent, setNewGameOpponent,
     newGameMyTeamId, setNewGameMyTeamId,
@@ -153,5 +161,6 @@ export function useNewGameForm({
     newGameStartingLineup, setNewGameStartingLineup,
     isLaunchingGame,
     launchGame,
+    resetForm,
   };
 }
