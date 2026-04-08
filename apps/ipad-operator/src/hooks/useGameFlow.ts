@@ -257,14 +257,7 @@ export function useGameFlow({
     return true;
   }
 
-  async function endGame() {
-    const ok = await requestConfirm({
-      title: "End game now?",
-      message: "This moves to post-game review. You can still re-save stats from the post-game screen.",
-      confirmLabel: "End Game",
-      tone: "danger",
-    });
-    if (!ok) return;
+  function endGame() {
     setSubmitStatus("idle");
     setSubmitMessage("Review game details, then tap Submit Game to publish stats to the dashboard.");
     persistPhase("post-game");

@@ -149,12 +149,6 @@ export function PreGameScreen({
         {!hasConnectionId && (
           <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
         )}
-        {hasConnectionId && !hasSyncedConnection && (
-          <p className="pregame-error">This connection code is not synced yet. Tap Sync Now to validate and load the linked team.</p>
-        )}
-        {hasConnectionId && !appData.gameSetup.myTeamId && (
-          <p className="pregame-error">Tap Sync Now to pull team and game setup from the coach dashboard.</p>
-        )}
 
         {myTeam && !showLineupSetup && (
           <button

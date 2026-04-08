@@ -120,30 +120,47 @@ export function useCoachSync({
       );
 
       if (response.status === 404) {
-        setAppData((current) => {
-          const next: AppData = {
-            ...current,
-            gameSetup: {
-              ...current.gameSetup,
-              connectionId: normalizedId,
-              syncedConnectionId: undefined,
-              myTeamId: "",
-              opponent: "",
-              startingLineup: [],
-            },
-          };
-          saveAppData(next);
-          return next;
-        });
-        setConnectionSyncStatus(
-          "Code saved locally. Waiting for the coach dashboard to publish the linked team and roster.",
-        );
-        if (!options?.silent) {
-          showInlineNotice(
-            "That code is saved on this iPad. Open the coach dashboard live page or try Sync again in a moment.",
-            "warning",
-            5000,
+        const alreadySynced = Boolean(appData.gameSetup.syncedConnectionId?.trim());
+        if (alreadySynced) {
+          // Link is temporarily gone but the operator already has a synced game session.
+          // Preserve all in-game state so a transient 404 (e.g. server restart, coach reset)
+          // does not kick the operator out mid-game.
+          setConnectionSyncStatus(
+            "Coach link temporarily unavailable. Your last synced roster and lineup are saved locally.",
           );
+          if (!options?.silent) {
+            showInlineNotice(
+              "Lost contact with the coach dashboard. Your in-game data is saved locally on this iPad.",
+              "warning",
+              5000,
+            );
+          }
+        } else {
+          setAppData((current) => {
+            const next: AppData = {
+              ...current,
+              gameSetup: {
+                ...current.gameSetup,
+                connectionId: normalizedId,
+                syncedConnectionId: undefined,
+                myTeamId: "",
+                opponent: "",
+                startingLineup: [],
+              },
+            };
+            saveAppData(next);
+            return next;
+          });
+          setConnectionSyncStatus(
+            "Code saved locally. Waiting for the coach dashboard to publish the linked team and roster.",
+          );
+          if (!options?.silent) {
+            showInlineNotice(
+              "That code is saved on this iPad. Open the coach dashboard live page or try Sync again in a moment.",
+              "warning",
+              5000,
+            );
+          }
         }
         return false;
       }

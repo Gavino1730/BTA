@@ -230,18 +230,18 @@ export function useGameHydration({
           try {
             const activeRes = await fetch(`${apiBase}/api/games/active/state`, { headers: apiKeyHeader() });
             if (activeRes.ok) {
-              const active = await activeRes.json() as { gameId?: string };
+              const active = await activeRes.json() as { gameId?: string | null };
               if (active.gameId && active.gameId !== gameId) {
                 setDashboardStatus("Recovered active game from server.");
                 setGameId(active.gameId);
                 setIsLoading(false);
                 return;
+              } else if (!active.gameId) {
+                endedGameIdsRef.current.add(gameId);
+                skipNextReconcileRef.current = true;
+                clearActiveGame("Cleared stale game session. Start a new game when ready.");
+                return;
               }
-            } else if (activeRes.status === 404) {
-              endedGameIdsRef.current.add(gameId);
-              skipNextReconcileRef.current = true;
-              clearActiveGame("Cleared stale game session. Start a new game when ready.");
-              return;
             }
           } catch { /* offline — fall through to cache */ }
           const cachedState = localStorage.getItem(`gameState-${gameId}`);

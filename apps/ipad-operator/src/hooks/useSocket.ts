@@ -20,6 +20,7 @@ export interface SocketDeps {
   setLiveAlerts: React.Dispatch<React.SetStateAction<OperatorAlert[]>>;
   setDismissedAlertIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setConnectionSyncStatus: (status: string) => void;
+  setConnectedOperatorCount: (count: number) => void;
   persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
   showInlineNotice: (
     message: string,
@@ -41,11 +42,13 @@ export function useSocket({
   setLiveAlerts,
   setDismissedAlertIds,
   setConnectionSyncStatus,
+  setConnectedOperatorCount,
   persistPhase,
   showInlineNotice,
 }: SocketDeps): void {
   useEffect(() => {
     if (gamePhase !== "live") {
+      setConnectedOperatorCount(0);
       return;
     }
 
@@ -100,6 +103,7 @@ export function useSocket({
     });
 
     socket.on("disconnect", (reason: string) => {
+      setConnectedOperatorCount(0);
       if (reason !== "io client namespace disconnect") {
         showInlineNotice(`Disconnected from server (${reason}). Check your connection.`, "warning");
       }
@@ -183,6 +187,23 @@ export function useSocket({
       setConnectionSyncStatus("Coach updates received. The latest team and roster info are saved locally on this iPad.");
     });
 
+    socket.on("presence:status", (presencePayload: unknown) => {
+      if (!presencePayload || typeof presencePayload !== "object") {
+        return;
+      }
+      const payload = presencePayload as { connectionId?: unknown; operatorCount?: unknown; online?: unknown };
+      const payloadConnectionId = normalizeConnectionId(typeof payload.connectionId === "string" ? payload.connectionId : "");
+      if (!payloadConnectionId || payloadConnectionId !== connectionId) {
+        return;
+      }
+      const nextCount = typeof payload.operatorCount === "number"
+        ? Math.max(0, Math.floor(payload.operatorCount))
+        : payload.online
+          ? 1
+          : 0;
+      setConnectedOperatorCount(nextCount);
+    });
+
     socket.on("roster:teams", (teamsPayload: unknown) => {
       if (!Array.isArray(teamsPayload)) {
         return;
@@ -215,6 +236,7 @@ export function useSocket({
     }, 10000);
 
     return () => {
+      setConnectedOperatorCount(0);
       clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       socket.off("connect", register);
@@ -225,6 +247,7 @@ export function useSocket({
       socket.off("game:insights");
       socket.off("game:deleted");
       socket.off("operator:link:updated");
+      socket.off("presence:status");
       socket.off("roster:teams");
       socket.disconnect();
       if (socketRef.current === socket) {

@@ -57,34 +57,32 @@ export function ScoringPanel({
         )}
 
         <div className="classic-score-grid" role="group" aria-label="Scoring controls by team">
-          <div className="classic-score-col">
-            <div className="shot-grid-team-label shot-grid-team-label-my" title={`Scoring for ${myName}`}>{myName}</div>
-            <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) })}>2pt</button>
-            <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) })}>3pt</button>
-            <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>1pt</button>
-          </div>
+          <div className="shot-grid-team-label shot-grid-team-label-my" title={`Scoring for ${myName}`}>{myName}</div>
+          <div className="shot-grid-team-label shot-grid-team-label-opp" title={`Scoring for ${oppName}`}>{oppName}</div>
 
-          <div className="classic-score-col">
-            <div className="shot-grid-team-label shot-grid-team-label-opp" title={`Scoring for ${oppName}`}>{oppName}</div>
-            <button
-              className={`circle classic-score-btn ${oppColorClass}`}
-              disabled={!canTrackOppPoints}
-              onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true, zone: defaultZoneForPoints(2) })}
-              title={canTrackOppPoints ? `Add 2PT for ${oppName}` : "Enable opponent points tracking in settings"}
-            >2pt</button>
-            <button
-              className={`circle classic-score-btn ${oppColorClass}`}
-              disabled={!canTrackOppPoints}
-              onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true, zone: defaultZoneForPoints(3) })}
-              title={canTrackOppPoints ? `Add 3PT for ${oppName}` : "Enable opponent points tracking in settings"}
-            >3pt</button>
-            <button
-              className={`circle classic-score-btn ${oppColorClass}`}
-              disabled={!canTrackOppFt}
-              onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}
-              title={canTrackOppFt ? `Add FT for ${oppName}` : "Enable opponent free throw tracking in settings"}
-            >1pt</button>
-          </div>
+          <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) })}>2pt</button>
+          <button
+            className={`circle classic-score-btn ${oppColorClass}`}
+            disabled={!canTrackOppPoints}
+            onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 2, made: true, zone: defaultZoneForPoints(2) })}
+            title={canTrackOppPoints ? `Add 2PT for ${oppName}` : "Enable opponent points tracking in settings"}
+          >2pt</button>
+
+          <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) })}>3pt</button>
+          <button
+            className={`circle classic-score-btn ${oppColorClass}`}
+            disabled={!canTrackOppPoints}
+            onClick={() => setModal({ kind: "shot", teamId: opponentSide, points: 3, made: true, zone: defaultZoneForPoints(3) })}
+            title={canTrackOppPoints ? `Add 3PT for ${oppName}` : "Enable opponent points tracking in settings"}
+          >3pt</button>
+
+          <button className={`circle classic-score-btn ${myColorClass}`} onClick={() => setModal({ kind: "freeThrow", teamId: vcSideSetup, made: true })}>1pt</button>
+          <button
+            className={`circle classic-score-btn ${oppColorClass}`}
+            disabled={!canTrackOppFt}
+            onClick={() => setModal({ kind: "freeThrow", teamId: opponentSide, made: true })}
+            title={canTrackOppFt ? `Add FT for ${oppName}` : "Enable opponent free throw tracking in settings"}
+          >1pt</button>
         </div>
       </div>
     </div>

@@ -29,6 +29,13 @@ export interface AppConnectionInfo {
   operatorConsoleUrl: string;
 }
 
+export interface ConnectedOperatorInfo {
+  deviceId: string | null;
+  gameId: string | null;
+  lastSeenIso: string | null;
+  connectedAtIso: string | null;
+}
+
 interface SetupNames {
   myTeamId: string;
   myTeamName: string;
@@ -56,6 +63,8 @@ export interface GameSession {
   isLoading: boolean;
   serverConnected: boolean;
   deviceConnected: boolean;
+  connectedOperatorCount: number;
+  connectedOperators: ConnectedOperatorInfo[];
   dashboardStatus: string;
 
   // UI
@@ -257,6 +266,8 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
   const [isLoading, setIsLoading] = useState(false);
   const [serverConnected, setServerConnected] = useState(false);
   const [deviceConnected, setDeviceConnected] = useState(false);
+  const [connectedOperatorCount, setConnectedOperatorCount] = useState(0);
+  const [connectedOperators, setConnectedOperators] = useState<ConnectedOperatorInfo[]>([]);
   const endedGameIdsRef = useRef<Set<string>>(new Set<string>(
     (() => { try { return JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[]; } catch { return []; } })()
   ));
@@ -399,6 +410,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
   useCoachSocket({
     connectionId, gameIdRef, endedGameIdsRef, clearActiveGame,
     setGameId, setState, setServerConnected, setDeviceConnected,
+    setConnectedOperatorCount, setConnectedOperators,
     setDashboardStatus, setInsights, setRosterTeamsFromRemote,
   });
 
@@ -460,7 +472,8 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     // Game identity
     gameId, setupNames,
     // Game data
-    state, insights, isLoading, serverConnected, deviceConnected, dashboardStatus,
+    state, insights, isLoading, serverConnected, deviceConnected,
+    connectedOperatorCount, connectedOperators, dashboardStatus,
     // UI
     activePage, setActivePage, boxScoreFilter, setBoxScoreFilter,
     // Actions

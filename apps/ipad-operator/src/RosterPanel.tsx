@@ -31,16 +31,16 @@ export function RosterPanel({
     <div className="panel right-panel">
       <div className="right-panel-toggle-row">
         <button
-          className={showRosterPanel ? "toggle-btn active" : "toggle-btn"}
-          onClick={() => { setShowRosterPanel(true); setActiveRosterPlayerId(null); }}
-          title="Player-first actions">
-          Players
-        </button>
-        <button
           className={!showRosterPanel ? "toggle-btn active" : "toggle-btn"}
           onClick={() => { setShowRosterPanel(false); setActiveRosterPlayerId(null); }}
           title="Quick stat circles">
           Stats
+        </button>
+        <button
+          className={showRosterPanel ? "toggle-btn active" : "toggle-btn"}
+          onClick={() => { setShowRosterPanel(true); setActiveRosterPlayerId(null); }}
+          title="Player-first actions">
+          Players
         </button>
       </div>
       {!showRosterPanel ? (

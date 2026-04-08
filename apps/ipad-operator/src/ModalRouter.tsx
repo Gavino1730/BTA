@@ -1,8 +1,8 @@
 import { computeCurrentLineup } from "./helpers/events.js";
-import { foulTypeLabel, turnoverTypeLabel, zoneLabel } from "./helpers/labels.js";
+import { foulTypeLabel, turnoverTypeLabel } from "./helpers/labels.js";
 import type { ChainPrompt, EventEditContext, Modal, Player, RunningTotals } from "./types.js";
 import type { OpponentTrackStat, TeamSide } from "./types.js";
-import { TWO_POINT_ZONES, THREE_POINT_ZONES, FOUL_TYPE_OPTIONS, TURNOVER_TYPE_OPTIONS } from "./types.js";
+import { FOUL_TYPE_OPTIONS, TURNOVER_TYPE_OPTIONS } from "./types.js";
 import type { GameEvent } from "@bta/shared-schema";
 
 // ── Shared sub-props ──
@@ -122,19 +122,7 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
             <button className={`toggle-btn ${modal.made ? "t-teal" : ""}`} onClick={() => setModal({ ...modal, made: true })}>Made</button>
             <button className={`toggle-btn ${!modal.made ? "t-red" : ""}`} onClick={() => setModal({ ...modal, made: false })}>Miss</button>
           </div>
-          {modal.kind === "shot" && (
-            <div className="shot-zone-row">
-              {(modal.points === 3 ? THREE_POINT_ZONES : TWO_POINT_ZONES).map((zone) => (
-                <button
-                  key={zone}
-                  className={`zone-btn ${modal.zone === zone ? "active" : ""}`}
-                  onClick={() => setModal({ ...modal, zone })}
-                >
-                  {zoneLabel(zone)}
-                </button>
-              ))}
-            </div>
-          )}
+
           <div className="player-list">
             {players.length === 0 && !allowTeamOnlyForOpponent && <p className="no-players">No players on court yet</p>}
             {players.map(p => (

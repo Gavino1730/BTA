@@ -1,13 +1,7 @@
 import type { ReactNode } from "react";
-import { normalizeTeamColor } from "@bta/shared-schema";
-import { buildCoachViewUrl } from "./helpers/network.js";
-import { DEFAULT_HOME_TEAM_COLOR, DEFAULT_AWAY_TEAM_COLOR } from "./constants.js";
-import type { AppData, Team } from "./types.js";
 
 export interface PostGameScreenProps {
-  appData: AppData;
   gameId: string;
-  myTeam: Team | undefined;
   homeTeamName: string;
   awayTeamName: string;
   scores: { home: number; away: number };
@@ -43,9 +37,7 @@ function parseScoreInput(value: string, fallback: number) {
 }
 
 export function PostGameScreen({
-  appData,
   gameId,
-  myTeam,
   homeTeamName,
   awayTeamName,
   scores,
@@ -75,15 +67,6 @@ export function PostGameScreen({
 }: PostGameScreenProps) {
   const editedHomeScore = parseScoreInput(postGameHomeScoreInput, scores.home);
   const editedAwayScore = parseScoreInput(postGameAwayScoreInput, scores.away);
-  const coachUrl = buildCoachViewUrl(gameId, {
-    connectionId: appData.gameSetup.connectionId,
-    myTeamId: appData.gameSetup.myTeamId,
-    myTeamName: myTeam?.name,
-    opponentName: appData.gameSetup.opponent,
-    vcSide: appData.gameSetup.vcSide,
-    homeTeamColor: normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
-    awayTeamColor: normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
-  });
 
   return (
     <div className="postgame-screen">
@@ -160,20 +143,12 @@ export function PostGameScreen({
           {submitMessage}
         </div>
 
-        <a
-          className="coach-connect-btn"
-          href={coachUrl}
-          target="_blank"
-          rel="noreferrer">
-          Open Dashboard
-        </a>
-
         <button
           className="postgame-retry-btn"
           onClick={async () => {
             const edits = onApplyPostGameEdits();
             onSetSubmitStatus("pending");
-            onSetSubmitMessage("Submitting game to dashboard...");
+            onSetSubmitMessage("Submitting game...");
             const apiOk = await onSubmitGameToRealtimeApi();
             const legacyOk = await onSubmitToDashboard({
               opponent: edits.opponent,
@@ -181,14 +156,14 @@ export function PostGameScreen({
               homeScore: editedHomeScore,
               awayScore: editedAwayScore,
             });
-            if (apiOk) {
+            if (apiOk && legacyOk) {
               onSetSubmitStatus("success");
               onSetSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
               setTimeout(() => {
                 onSetSubmitStatus("idle");
                 onSetSubmitMessage("Game has been submitted to the dashboard.");
               }, 4000);
-            } else if (!legacyOk) {
+            } else {
               onSetSubmitStatus("error");
               onSetSubmitMessage("Submit failed. Check your connection and try again.");
             }
