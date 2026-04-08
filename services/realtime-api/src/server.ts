@@ -1672,7 +1672,13 @@ function isOptionalTenantScopeRequest(req: Request): boolean {
 function shouldSuppressMissingTenantTelemetry(req: Request): boolean {
   // Some clients probe roster config before account/school bootstrap completes.
   // Keep strict tenant enforcement (request still fails) but avoid noisy logs.
-  return req.method === "GET" && req.path === "/roster-teams";
+  if (req.method !== "GET") {
+    return false;
+  }
+
+  return req.path === "/roster-teams"
+    || req.path === "/games/active/state"
+    || req.path === "/games/active/setup";
 }
 
 function buildBootstrapSchoolSeed(...candidates: unknown[]): string {

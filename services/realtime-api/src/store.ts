@@ -173,6 +173,25 @@ export interface CoachAiChatResponse {
   usedHistoricalContext: boolean;
 }
 
+export type GameAiErrorCode =
+  | "missing_api_key"
+  | "rate_limited"
+  | "timeout"
+  | "service_unavailable"
+  | "upstream_error"
+  | "invalid_payload"
+  | "network_error";
+
+export interface GameAiStatus {
+  model: string;
+  healthy: boolean;
+  lastSuccessAtIso?: string;
+  lastErrorAtIso?: string;
+  lastErrorCode?: GameAiErrorCode;
+  lastErrorMessage?: string;
+  lastErrorStatus?: number;
+}
+
 export interface GameAiContext {
   clockEnabled: boolean;
   opponentStatsLimited: boolean;
@@ -331,6 +350,7 @@ interface GameSession {
   ruleInsights: LiveInsight[];
   aiInsights: LiveInsight[];
   aiRefreshInFlight: Promise<LiveInsight[] | null> | null;
+  aiStatus: GameAiStatus;
   lastAiRefreshAtMs: number;
   lastAiEventCount: number;
   lastAiFingerprint: string;
@@ -547,6 +567,66 @@ function readEnvNumber(name: string, fallback: number): number {
 
 function getOpenAiApiKey(): string {
   return process.env.OPENAI_API_KEY ?? "";
+}
+
+function defaultGameAiStatus(): GameAiStatus {
+  return {
+    model: LIVE_AI_MODEL,
+    healthy: true,
+  };
+}
+
+function markAiSuccess(session: GameSession): void {
+  session.aiStatus = {
+    ...session.aiStatus,
+    model: LIVE_AI_MODEL,
+    healthy: true,
+    lastSuccessAtIso: new Date().toISOString(),
+  };
+}
+
+function markAiFailure(
+  session: GameSession,
+  code: GameAiErrorCode,
+  message: string,
+  status?: number,
+): void {
+  const nowIso = new Date().toISOString();
+  session.aiStatus = {
+    ...session.aiStatus,
+    model: LIVE_AI_MODEL,
+    healthy: false,
+    lastErrorAtIso: nowIso,
+    lastErrorCode: code,
+    lastErrorMessage: message,
+    lastErrorStatus: status,
+  };
+
+  console.warn(`[realtime-api] AI status degraded (${code})`, {
+    gameId: session.state.gameId,
+    schoolId: session.schoolId,
+    status,
+    message,
+  });
+}
+
+interface AiRequestIssue {
+  code: GameAiErrorCode;
+  message: string;
+  status?: number;
+}
+
+function mapOpenAiHttpFailure(status: number): AiRequestIssue {
+  if (status === 429) {
+    return { code: "rate_limited", message: "OpenAI rate limit reached", status };
+  }
+  if (status === 503) {
+    return { code: "service_unavailable", message: "OpenAI service unavailable", status };
+  }
+  if (status >= 500) {
+    return { code: "upstream_error", message: `OpenAI upstream error (${status})`, status };
+  }
+  return { code: "upstream_error", message: `OpenAI request rejected (${status})`, status };
 }
 
 function buildStatsHeaders(): Record<string, string> {
@@ -1702,6 +1782,13 @@ async function requestAiChatResponse(
     });
 
     if (!response.ok) {
+      const failure = mapOpenAiHttpFailure(response.status);
+      console.warn("[realtime-api] AI chat upstream failure", {
+        gameId: session.state.gameId,
+        schoolId: session.schoolId,
+        status: failure.status,
+        code: failure.code,
+      });
       return null;
     }
 
@@ -1724,7 +1811,13 @@ async function requestAiChatResponse(
       generatedAtIso: new Date().toISOString(),
       usedHistoricalContext: Boolean(session.historicalContextSummary)
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      console.warn("[realtime-api] AI chat timed out", {
+        gameId: session.state.gameId,
+        schoolId: session.schoolId,
+      });
+    }
     return null;
   } finally {
     clearTimeout(timeout);
@@ -1834,6 +1927,8 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
     });
 
     if (!response.ok) {
+      const failure = mapOpenAiHttpFailure(response.status);
+      markAiFailure(session, failure.code, failure.message, failure.status);
       return [];
     }
 
@@ -1846,10 +1941,19 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
     };
     const content = payload.choices?.[0]?.message?.content;
     if (!content) {
+      markAiFailure(session, "invalid_payload", "OpenAI returned empty chat completion content", 502);
       return [];
     }
 
-    const parsedInsights = parseAiInsightResponse(content, session, latestEvent);
+    let parsedInsights: LiveInsight[];
+    try {
+      parsedInsights = parseAiInsightResponse(content, session, latestEvent);
+    } catch {
+      markAiFailure(session, "invalid_payload", "OpenAI returned invalid JSON payload", 502);
+      return [];
+    }
+
+    markAiSuccess(session);
     if (!isOpeningSample(session.state, orderedEvents)) {
       return parsedInsights;
     }
@@ -1862,7 +1966,13 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
           ? insight.explanation
           : `Opening sample: ${insight.explanation}`
       }));
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      markAiFailure(session, "timeout", "OpenAI request timed out", 504);
+      return [];
+    }
+
+    markAiFailure(session, "network_error", "OpenAI request failed due to network/runtime error", 503);
     return [];
   } finally {
     clearTimeout(timeout);
@@ -2043,6 +2153,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
       ruleInsights: [],
       aiInsights: [],
       aiRefreshInFlight: null,
+      aiStatus: defaultGameAiStatus(),
       lastAiRefreshAtMs: 0,
       lastAiEventCount: 0,
       lastAiFingerprint: "",
@@ -2499,6 +2610,7 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
     ruleInsights: [],
     aiInsights: [],
     aiRefreshInFlight: null,
+    aiStatus: defaultGameAiStatus(),
     lastAiRefreshAtMs: 0,
     lastAiEventCount: 0,
     lastAiFingerprint: "",
@@ -2619,6 +2731,14 @@ export function getGameAiContext(gameId: string, scope?: TenantScope): GameAiCon
     return null;
   }
   return sanitizeGameAiContext(session.aiContext);
+}
+
+export function getGameAiStatus(gameId: string, scope?: TenantScope): GameAiStatus | null {
+  const session = getSession(gameId, scope);
+  if (!session) {
+    return null;
+  }
+  return { ...session.aiStatus, model: LIVE_AI_MODEL };
 }
 
 export function updateGameAiSettings(
@@ -3193,6 +3313,7 @@ export async function refreshGameAiInsights(
   const forceRefresh = options?.force === true;
 
   if (!getOpenAiApiKey()) {
+    markAiFailure(session, "missing_api_key", "OPENAI_API_KEY is not configured", 503);
     return null;
   }
 
@@ -3263,7 +3384,7 @@ export async function refreshGameAiInsights(
     })
     .catch(() => {
       // Network error: keep existing insights and show rule-based fallback
-      console.warn("[realtime-api] AI insights fetch failed; showing rule-based insights");
+      markAiFailure(session, "network_error", "AI insights refresh failed unexpectedly", 503);
       return combineInsights(session);
     })
     .finally(() => {

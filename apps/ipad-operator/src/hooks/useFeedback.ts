@@ -101,11 +101,23 @@ export function useFeedback() {
       if (unlockedRef.current) return;
       void unlockFeedbackAudio();
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void unlockFeedbackAudio();
+    };
+    const handlePageShow = () => {
+      void unlockFeedbackAudio();
+    };
+
     window.addEventListener("pointerdown", unlock, { passive: true });
     window.addEventListener("touchstart", unlock, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handlePageShow);
     return () => {
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("touchstart", unlock);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, []);
 

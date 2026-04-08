@@ -40,10 +40,6 @@ Priority keys:
 - [!] P0 Set DATABASE_URL to durable Postgres (Supabase) for production.
   - Source: DEPLOYMENT.md, HOSTING_SETUP.md
   - Notes: file-backed persistence is dev-only.
-- [ ] P0 Integrate end-to-end checks into CI/release gate.
-  - Source: existing backlog + ci-gate/smoke/ui-audit scripts
-  - Current gap: smoke-test and ui-audit are manual-only.
-  - Action: run smoke + UI audit in staging/promotion pipeline.
 - [ ] P0 Complete and sign off roster sync checklist end-to-end.
   - Source: existing backlog
   - Current gap: no formal full-flow verification for coach<->operator sync.
@@ -64,10 +60,6 @@ Priority keys:
 ## P1 — High-Value Improvements (Pre-Season)
 
 ### AI Safety, Cost, and UX
-- [ ] P1 Add structured AI failure telemetry (429/timeouts/parse failures).
-  - Action: emit counters and logs with clear error codes.
-- [ ] P1 Add coach-visible AI status states.
-  - Action: show "AI temporarily unavailable" instead of silent empty state.
 - [ ] P1 Add configurable per-game AI budget and enforcement.
   - Proposed envs:
     - BTA_OPENAI_MAX_TOKENS_PER_GAME
@@ -76,9 +68,6 @@ Priority keys:
   - Action: route metrics to push endpoint + thresholds.
 
 ### iPad Operator Reliability
-- [ ] P1 Improve iOS audio/haptic re-unlock on app resume/background transitions.
-  - Source: existing backlog
-  - Action: re-prime AudioContext on visibility restore and action fallback.
 - [ ] P1 Guard pre-game/queue behavior until school scope is resolved.
   - Source: reliability notes
   - Action: prevent tenant-scoped event flushes before schoolId sync.
@@ -138,7 +127,7 @@ Priority keys:
 ## Consolidated Action Plan (Suggested Execution Order)
 
 1. P0 CI/release gate hardening
-- Wire smoke-test and UI audit into gated staging/release workflow.
+- Expand current CI e2e gating from optional to always-on in the production promotion pipeline.
 
 2. P0 Production safety completion
 - Confirm tenant/auth envs, ALLOWED_ORIGINS, and Postgres durability in hosted env.
@@ -174,6 +163,23 @@ Priority keys:
 - apps/ipad-operator/src/hooks/useFeedback.ts
 - apps/ipad-operator/src/PreGameScreen.tsx
 - apps/coach-dashboard/src/InsightsPanel.tsx
+
+---
+
+## Recently Completed
+
+- [x] P0 Added optional E2E checks to CI gate script.
+  - File: scripts/ci-gate.mjs
+  - Detail: `ci-gate` now runs `smoke-test` and `audit:ui` when `BTA_RUN_E2E_GATE=1` or when `CI=true`.
+- [x] P1 Improved iPad feedback reliability on app resume/navigation restore.
+  - File: apps/ipad-operator/src/hooks/useFeedback.ts
+  - Detail: added `visibilitychange` and `pageshow` re-unlock hooks for Web Audio feedback.
+- [x] P1 Added clearer coach-facing AI failure states for refresh/chat flows.
+  - File: apps/coach-dashboard/src/hooks/useCoachAi.ts
+  - Detail: status-specific messaging for rate-limit, service unavailable, and auth/scope failures.
+- [x] P1 Added structured AI failure telemetry in realtime API insights flow.
+  - Files: services/realtime-api/src/store.ts, services/realtime-api/src/server.ts
+  - Detail: tracks AI health state and error codes (rate-limited/timeout/invalid payload/upstream/network), logs degradation context, and returns structured error payloads on forced AI refresh failures.
 
 ---
 
