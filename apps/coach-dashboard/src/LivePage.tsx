@@ -89,7 +89,7 @@ export function LivePage() {
           <p className="idle-screen-sub">Start a game on the Live tab to enable AI insights.</p>
         </div>
       )}
-      {!gameId && activePage === "live" && (
+      {!gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <SetupGameCard
           rosterTeams={rosterTeams}
           newGameMyTeamId={newGameMyTeamId}
@@ -108,6 +108,13 @@ export function LivePage() {
           connectionId={connectionId}
           setConnectionId={setConnectionId}
         />
+      )}
+      {!gameId && activePage === "live" && liveSubPage === "operators" && (
+        <div className="idle-screen">
+          <div className="idle-screen-icon">+</div>
+          <p className="idle-screen-title">No Active Game</p>
+          <p className="idle-screen-sub">Start a game from the Scoreboard tab before managing operator connections.</p>
+        </div>
       )}
       {gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <>
