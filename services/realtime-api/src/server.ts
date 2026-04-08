@@ -1465,6 +1465,7 @@ const securityTelemetry: Record<SecurityMetricKey, number> = {
 };
 
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
+let debugAuthSequence = 0;
 
 function renderPrometheusSecurityMetrics(): string {
   return [
@@ -1573,11 +1574,24 @@ function debugAuthLog(event: string, req: Request, details: Record<string, unkno
     return;
   }
 
-  console.warn("[realtime-api][debug-auth]", {
+  // Emit as one JSON line so concurrent requests cannot visually interleave fields.
+  const payload = {
+    seq: ++debugAuthSequence,
+    ts: new Date().toISOString(),
     event,
     ...buildRequestDebugSummary(req),
     ...details,
-  });
+  };
+
+  process.stderr.write(`[realtime-api][debug-auth] ${JSON.stringify(payload)}\n`);
+}
+
+function setDebugRejectionHeader(res: Response, reason: string): void {
+  if (!DEBUG_AUTH) {
+    return;
+  }
+
+  res.setHeader("X-BTA-Debug-Reason", reason);
 }
 
 type AuthedRequest = Request & { authContext?: AuthContext };
@@ -1834,6 +1848,7 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
     jwtWriteRequired: JWT_WRITE_REQUIRED,
     requestReadOnly: isReadOnlyRequest(req),
   });
+  setDebugRejectionHeader(res, `auth:${reason}`);
   trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
   res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
 }
@@ -1890,6 +1905,7 @@ function requireTenantScope(req: Request, res: Response, next: NextFunction): vo
       resolvedStatus: resolved.status ?? null,
       authSchoolId: normalizeSchoolId(scopedReq.authContext?.schoolId),
     });
+    setDebugRejectionHeader(res, `tenant:${resolved.error ?? "schoolId is required"}`);
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
     return;
   }
