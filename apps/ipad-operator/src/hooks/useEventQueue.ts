@@ -216,6 +216,18 @@ export function useEventQueue(deps: EventQueueDeps) {
     const localSeq = loadSeq(gameId);
     setPendingEvents(localPending);
     setSequence(localSeq);
+
+    const normalizedGameId = gameId.trim();
+    const hasTenantScope = Boolean(gameSetup.schoolId?.trim());
+    const isPlaceholderPreGame = gamePhase === "pre-game"
+      && normalizedGameId === "game-1"
+      && !gameSetup.syncedConnectionId?.trim();
+
+    if (!normalizedGameId || !hasTenantScope || isPlaceholderPreGame) {
+      setSubmittedEvents([]);
+      return;
+    }
+
     async function hydrate() {
       try {
         const res = await fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(gameSetup));
@@ -240,7 +252,7 @@ export function useEventQueue(deps: EventQueueDeps) {
       }
     }
     void hydrate();
-  }, [gameId]);
+  }, [gameId, gamePhase, gameSetup.apiUrl, gameSetup.schoolId, gameSetup.syncedConnectionId, normalizeEventTeamId, onHydrateState]);
 
   // --- Persist pending / sequence to localStorage ---
   useEffect(() => { savePending(gameId, pendingEvents); }, [gameId, pendingEvents]);

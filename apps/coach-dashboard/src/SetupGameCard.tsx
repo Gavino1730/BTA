@@ -43,31 +43,58 @@ export function SetupGameCard({
         </div>
       </div>
 
-      {/* Your Team */}
-      <div style={{ marginBottom: "1rem" }}>
-        <p className="settings-section-label">Your Team</p>
-        {rosterTeams.length === 0 && (
-          <p className="settings-section-desc">No teams yet — add one in <strong>Settings</strong> first.</p>
-        )}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
-          {rosterTeams.map(t => {
-            const isSelected = newGameMyTeamId === t.id;
-            const color = normalizeTeamColor(t.teamColor) ?? "#4f8cff";
-            return (
-              <button
-                key={t.id}
-                type="button"
-                className="shell-nav-link"
-                style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
-                onClick={() => {
-                  setNewGameMyTeamId(t.id);
-                  setNewGameStartingLineup(() => []);
-                }}
-              >
-                {t.name}
-              </button>
-            );
-          })}
+      {/* Pairing code */}
+      <div style={{ marginBottom: "1.5rem" }}>
+        <div className="stats-page-card-head" style={{ paddingBottom: "0.75rem" }}>
+          <div>
+            <h3 style={{ fontSize: "0.95rem" }}>Operator Pairing Code</h3>
+            <p className="settings-section-desc">Have the iPad operator enter this code to sync setup.</p>
+          </div>
+          <div className="settings-header-actions">
+            <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionId)}>Copy Code</button>
+            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionId(generateConnectionCode())}>New Code</button>
+          </div>
+        </div>
+        <div className="settings-pairing-display">
+          <span className="settings-pairing-code">{connectionId}</span>
+          <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
+        </div>
+      </div>
+
+      {/* Your Team + Side */}
+      <div style={{ display: "flex", gap: "1.5rem", alignItems: "flex-start", marginBottom: "1rem", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="settings-section-label">Your Team</p>
+          {rosterTeams.length === 0 && (
+            <p className="settings-section-desc">No teams yet — add one in <strong>Settings</strong> first.</p>
+          )}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
+            {rosterTeams.map(t => {
+              const isSelected = newGameMyTeamId === t.id;
+              const color = normalizeTeamColor(t.teamColor) ?? "#4f8cff";
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="shell-nav-link"
+                  style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
+                  onClick={() => {
+                    setNewGameMyTeamId(t.id);
+                    setNewGameStartingLineup(() => []);
+                  }}
+                >
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ flexShrink: 0 }}>
+          <p className="settings-section-label">Your Side</p>
+          <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+            <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("home")} style={newGameVcSide === "home" ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" } : undefined}>Home</button>
+            <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("away")} style={newGameVcSide === "away" ? { borderColor: "#f87171", color: "#f87171", background: "rgba(248,113,113,0.1)" } : undefined}>Away</button>
+          </div>
         </div>
       </div>
 
@@ -122,24 +149,15 @@ export function SetupGameCard({
         })()}
       </div>
 
-      {/* Opponent + Side */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", alignItems: "end", marginBottom: "1rem" }}>
-        <div>
-          <p className="settings-section-label">Opponent</p>
-          <input
-            value={newGameOpponent}
-            onChange={e => setNewGameOpponent(e.target.value)}
-            placeholder="e.g. Opponent"
-            style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
-          />
-        </div>
-        <div>
-          <p className="settings-section-label">Side</p>
-          <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
-            <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("home")} style={newGameVcSide === "home" ? { borderColor: "var(--teal)", color: "var(--teal)", background: "rgba(20,184,166,0.1)" } : undefined}>Home</button>
-            <button type="button" className="shell-nav-link" onClick={() => setNewGameVcSide("away")} style={newGameVcSide === "away" ? { borderColor: "#f87171", color: "#f87171", background: "rgba(248,113,113,0.1)" } : undefined}>Away</button>
-          </div>
-        </div>
+      {/* Opponent */}
+      <div style={{ marginBottom: "1rem" }}>
+        <p className="settings-section-label">Opponent</p>
+        <input
+          value={newGameOpponent}
+          onChange={e => setNewGameOpponent(e.target.value)}
+          placeholder="e.g. Opponent"
+          style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
+        />
       </div>
 
       {/* Opponent color */}
@@ -150,12 +168,13 @@ export function SetupGameCard({
             <button
               key={color}
               type="button"
+              className="setup-game-color-swatch"
               onClick={() => setNewGameOppColor(color)}
-              style={{ width: 28, height: 28, borderRadius: "50%", background: color, border: newGameOppColor === color ? "2px solid white" : "2px solid rgba(255,255,255,0.2)", cursor: "pointer", flexShrink: 0 }}
+              style={{ background: color, borderColor: newGameOppColor === color ? "white" : "rgba(255,255,255,0.2)" }}
               title={color}
             />
           ))}
-          <input type="color" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} style={{ height: 28, width: 36, borderRadius: 8, padding: "0 2px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.2)", background: "transparent" }} />
+          <input type="color" className="setup-game-color-input" value={newGameOppColor} onChange={e => setNewGameOppColor(e.target.value)} />
         </div>
       </div>
 
@@ -175,24 +194,6 @@ export function SetupGameCard({
         </p>
       )}
       <p className="settings-section-desc">{dashboardStatus}</p>
-
-      {/* Pairing code */}
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
-        <div className="stats-page-card-head" style={{ paddingBottom: "0.75rem" }}>
-          <div>
-            <h3 style={{ fontSize: "0.95rem" }}>Operator Pairing Code</h3>
-            <p className="settings-section-desc">Have the iPad operator enter this code to sync setup.</p>
-          </div>
-          <div className="settings-header-actions">
-            <button type="button" className="shell-nav-link" onClick={() => void navigator.clipboard?.writeText(connectionId)}>Copy Code</button>
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setConnectionId(generateConnectionCode())}>New Code</button>
-          </div>
-        </div>
-        <div className="settings-pairing-display">
-          <span className="settings-pairing-code">{connectionId}</span>
-          <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
-        </div>
-      </div>
     </section>
   );
 }

@@ -89,7 +89,7 @@ export function LivePage() {
           <p className="idle-screen-sub">Start a game on the Live tab to enable AI insights.</p>
         </div>
       )}
-      {!gameId && activePage === "live" && (
+      {!gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <SetupGameCard
           rosterTeams={rosterTeams}
           newGameMyTeamId={newGameMyTeamId}
@@ -109,6 +109,13 @@ export function LivePage() {
           setConnectionId={setConnectionId}
         />
       )}
+      {!gameId && activePage === "live" && liveSubPage === "operators" && (
+        <div className="idle-screen">
+          <div className="idle-screen-icon">+</div>
+          <p className="idle-screen-title">No Active Game</p>
+          <p className="idle-screen-sub">Start a game from the Scoreboard tab before managing operator connections.</p>
+        </div>
+      )}
       {gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <>
           <section className="card settings-section-card">
@@ -117,6 +124,10 @@ export function LivePage() {
                 <h3>Live Game Controls</h3>
                 <p className="settings-section-desc">Game ID: {gameId}</p>
                 <p className="settings-section-desc operators-online-indicator">Operators online: {connectedOperatorCount}</p>
+                <div className="settings-pairing-display">
+                  <p className="settings-section-desc">Operator Pairing Code</p>
+                  <span className="settings-pairing-code">{connectionId}</span>
+                </div>
               </div>
               <div className="settings-header-actions">
                 <button

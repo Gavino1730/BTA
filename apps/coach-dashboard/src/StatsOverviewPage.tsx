@@ -201,7 +201,7 @@ export function StatsOverviewPage() {
         <p className="stats-page-status">{status}</p>
       </section>
 
-      <section className="stats-metric-grid">
+      <section className="stats-metric-grid stats-metric-grid-overview">
         <div className="stats-metric-card accent-blue">
           <span className="stats-metric-label">Record</span>
           <strong className="stats-metric-value">{formatRecord(seasonStats?.win, seasonStats?.loss)}</strong>

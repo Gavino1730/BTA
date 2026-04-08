@@ -91,6 +91,104 @@ interface ChatMessage {
   content: string;
 }
 
+const MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/â€™/g, "'"],
+  [/â€˜/g, "'"],
+  [/â€œ/g, '"'],
+  [/â€�/g, '"'],
+  [/â€”/g, "-"],
+  [/â€“/g, "-"],
+  [/â€¦/g, "..."],
+  [/â†‘/g, "+"],
+  [/â†“/g, "-"],
+  [/Â·/g, " - "],
+  [/Â/g, ""],
+];
+
+function sanitizeText(value: string | null | undefined): string {
+  if (!value) return "";
+
+  return MOJIBAKE_REPLACEMENTS.reduce((text, [pattern, replacement]) => {
+    return text.replace(pattern, replacement);
+  }, value);
+}
+
+function sanitizeRecommendations(entries: RecommendationEntry[] | undefined): RecommendationEntry[] {
+  return (entries ?? []).map((entry) => ({
+    ...entry,
+    category: sanitizeText(entry.category),
+    priority: sanitizeText(entry.priority),
+    recommendation: sanitizeText(entry.recommendation),
+    reason: sanitizeText(entry.reason),
+  }));
+}
+
+function sanitizePlayerInsights(entries: PlayerInsightCard[] | undefined): PlayerInsightCard[] {
+  return (entries ?? []).map((entry) => ({
+    ...entry,
+    name: sanitizeText(entry.name),
+    role: sanitizeText(entry.role),
+    strengths: (entry.strengths ?? []).map((item) => sanitizeText(item)),
+    areas_for_improvement: (entry.areas_for_improvement ?? []).map((item) => sanitizeText(item)),
+    efficiency_grade: sanitizeText(entry.efficiency_grade),
+  }));
+}
+
+function sanitizeInsightsPayload(payload: ComprehensiveInsightsPayload): ComprehensiveInsightsPayload {
+  return {
+    ...payload,
+    team_trends: payload.team_trends ? {
+      ...payload.team_trends,
+      recent_performance: payload.team_trends.recent_performance ? {
+        ...payload.team_trends.recent_performance,
+        record: sanitizeText(payload.team_trends.recent_performance.record),
+        trend: sanitizeText(payload.team_trends.recent_performance.trend),
+      } : undefined,
+      scoring_trends: payload.team_trends.scoring_trends ? {
+        ...payload.team_trends.scoring_trends,
+        trend: sanitizeText(payload.team_trends.scoring_trends.trend),
+      } : undefined,
+      defensive_trends: payload.team_trends.defensive_trends ? {
+        ...payload.team_trends.defensive_trends,
+        trend: sanitizeText(payload.team_trends.defensive_trends.trend),
+      } : undefined,
+    } : undefined,
+    recommendations: sanitizeRecommendations(payload.recommendations),
+    player_insights: sanitizePlayerInsights(payload.player_insights),
+  };
+}
+
+function sanitizeSeasonAnalysis(payload: SeasonAnalysis): SeasonAnalysis {
+  return {
+    ...payload,
+    season_summary: sanitizeText(payload.season_summary),
+    per_game_analysis: (payload.per_game_analysis ?? []).map((entry) => ({
+      ...entry,
+      opponent: sanitizeText(entry.opponent),
+      date: sanitizeText(entry.date),
+      score: sanitizeText(entry.score),
+      result: sanitizeText(entry.result),
+      analysis: sanitizeText(entry.analysis),
+      player_performances: (entry.player_performances ?? []).map((performance) => ({
+        ...performance,
+        name: sanitizeText(performance.name),
+        indicator: sanitizeText(performance.indicator),
+      })),
+    })),
+  };
+}
+
+function sanitizeLiveContext(payload: LiveContextPayload): LiveContextPayload {
+  return {
+    ...payload,
+    clock: sanitizeText(payload.clock),
+    activeLineup: (payload.activeLineup ?? []).map((name) => sanitizeText(name)),
+    liveInsights: (payload.liveInsights ?? []).map((item) => sanitizeText(item)),
+    teamName: sanitizeText(payload.teamName),
+    opponentName: sanitizeText(payload.opponentName),
+  };
+}
+
 function formatNumber(value: number | undefined, digits = 1): string {
   return Number.isFinite(value) ? Number(value).toFixed(digits) : (0).toFixed(digits);
 }
@@ -151,21 +249,21 @@ export function AiInsightsPage() {
         const live = await livePayload;
 
         if (!cancelled) {
-          setInsights(insightsPayload);
-          setAnalysis(seasonPayload);
-          setTeamSummary(teamSummaryPayload.summary ?? "");
+          setInsights(sanitizeInsightsPayload(insightsPayload));
+          setAnalysis(sanitizeSeasonAnalysis(seasonPayload));
+          setTeamSummary(sanitizeText(teamSummaryPayload.summary));
           const nextPlayers = Array.isArray(playersPayload) ? playersPayload : [];
           setPlayers(nextPlayers);
           if (!selectedPlayer && nextPlayers.length > 0) {
             setSelectedPlayer(playerDisplayLabel(nextPlayers[0]));
           }
           if (live) {
-            setLiveContext(live);
+            setLiveContext(sanitizeLiveContext(live));
             if (live.sessionId) {
               // Fetch current pre-game notes for the live game
               fetch(`${apiBase}/api/games/${encodeURIComponent(live.sessionId)}/ai-context`, { headers: apiKeyHeader() })
                 .then((r) => r.ok ? r.json() as Promise<{ preGameNotes?: string }> : null)
-                .then((ctx) => { if (ctx?.preGameNotes) setPreGameNotes(ctx.preGameNotes); })
+                .then((ctx) => { if (ctx?.preGameNotes) setPreGameNotes(sanitizeText(ctx.preGameNotes)); })
                 .catch(() => {});
             }
           }
@@ -207,7 +305,7 @@ export function AiInsightsPage() {
         if (!response.ok) throw new Error("Player insight request failed");
         const payload = await response.json() as { insights?: string };
         if (!cancelled) {
-          setPlayerInsight(payload.insights ?? "No player-specific insight available yet.");
+          setPlayerInsight(sanitizeText(payload.insights) || "No player-specific insight available yet.");
         }
       } catch {
         if (!cancelled) {
@@ -244,9 +342,9 @@ export function AiInsightsPage() {
       if (!response.ok) throw new Error("AI chat failed");
 
       const payload = await response.json() as { reply?: string; suggestions?: string[] };
-      const reply = payload.reply ?? "No answer available.";
+      const reply = sanitizeText(payload.reply) || "No answer available.";
       setChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
-      setChatSuggestions(Array.isArray(payload.suggestions) ? payload.suggestions : []);
+      setChatSuggestions(Array.isArray(payload.suggestions) ? payload.suggestions.map((item) => sanitizeText(item)) : []);
     } catch {
       setChatHistory((prev) => [...prev, { role: "assistant", content: "Could not get an answer right now. Try again shortly." }]);
     } finally {
@@ -267,7 +365,7 @@ export function AiInsightsPage() {
       const response = await fetch(`${apiBase}/api/season-analysis?force=true`, { headers: apiKeyHeader() });
       if (!response.ok) throw new Error("Refresh failed");
       const payload = await response.json() as SeasonAnalysis;
-      setAnalysis(payload);
+      setAnalysis(sanitizeSeasonAnalysis(payload));
       setStatus("Season analysis refreshed.");
     } catch {
       setStatus("Could not refresh the season analysis.");
@@ -282,8 +380,8 @@ export function AiInsightsPage() {
   const trendArrow = (trend?: string) => {
     if (!trend) return "";
     const t = trend.toLowerCase();
-    if (t.includes("improv") || t.includes("up") || t.includes("increas")) return " â†‘";
-    if (t.includes("declin") || t.includes("down") || t.includes("decreas")) return " â†“";
+    if (t.includes("improv") || t.includes("up") || t.includes("increas")) return " +";
+    if (t.includes("declin") || t.includes("down") || t.includes("decreas")) return " -";
     return "";
   };
 
@@ -302,7 +400,7 @@ export function AiInsightsPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Live Game Banner â”€â”€ */}
+      {/* Live Game Banner */}
       {liveContext?.gameActive && (
         <section className="ai-live-banner">
           <div className="ai-live-banner-score">
@@ -310,7 +408,7 @@ export function AiInsightsPage() {
             <strong>{liveContext.teamName ?? "Us"} {liveContext.score?.our ?? 0}</strong>
             <span className="ai-live-vs">vs</span>
             <strong>{liveContext.score?.opponent ?? 0} {liveContext.opponentName ?? "Opponent"}</strong>
-            <span className="ai-live-meta">Q{liveContext.period ?? 1} {liveContext.clock ? `Â· ${liveContext.clock}` : ""}</span>
+            <span className="ai-live-meta">Q{liveContext.period ?? 1}{liveContext.clock ? ` - ${liveContext.clock}` : ""}</span>
           </div>
           {(liveContext.activeLineup ?? []).length > 0 && (
             <div className="ai-live-lineup">
@@ -363,12 +461,12 @@ export function AiInsightsPage() {
         </section>
       )}
 
-      {/* â”€â”€ Metric Cards â”€â”€ */}
+      {/* Metric Cards */}
       <section className="stats-metric-grid">
         <div className="stats-metric-card accent-blue">
           <span className="stats-metric-label">Recent Record</span>
-          <strong className="stats-metric-value">{insights?.team_trends?.recent_performance?.record ?? "â€”"}</strong>
-          <span className="stats-metric-detail">Trend: {insights?.team_trends?.recent_performance?.trend ?? "steady"}{trendArrow(insights?.team_trends?.recent_performance?.trend)}</span>
+          <strong className="stats-metric-value">{sanitizeText(insights?.team_trends?.recent_performance?.record) || "-"}</strong>
+          <span className="stats-metric-detail">Trend: {sanitizeText(insights?.team_trends?.recent_performance?.trend) || "steady"}{trendArrow(insights?.team_trends?.recent_performance?.trend)}</span>
         </div>
         <div className="stats-metric-card">
           <span className="stats-metric-label">Avg Score</span>
@@ -397,14 +495,14 @@ export function AiInsightsPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Season Summary + Recommendations â”€â”€ */}
+      {/* Season Summary + Recommendations */}
       <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
         <section className="stats-page-card">
           <div className="stats-page-card-head">
             <h3>Season Summary</h3>
             <span className="stats-page-status">{analysis?.generated_at ? new Date(analysis.generated_at).toLocaleDateString() : "Live"}</span>
           </div>
-          <p className="stats-page-subcopy">{analysis?.season_summary ?? teamSummary ?? "No season summary available yet."}</p>
+          <p className="stats-page-subcopy">{sanitizeText(analysis?.season_summary) || sanitizeText(teamSummary) || "No season summary available yet."}</p>
         </section>
 
         <section className="stats-page-card">
@@ -417,8 +515,8 @@ export function AiInsightsPage() {
             <ul className="stats-list">
               {(insights?.recommendations ?? []).map((item, index) => (
                 <li key={`recommendation-${index}`}>
-                  <strong>{item.category ?? "Focus"} â€” {item.priority ?? "Info"}</strong>: {item.recommendation}
-                  {item.reason ? <div className="stats-page-subcopy" style={{ marginTop: "0.25rem" }}>{item.reason}</div> : null}
+                  <strong>{sanitizeText(item.category) || "Focus"} - {sanitizeText(item.priority) || "Info"}</strong>: {sanitizeText(item.recommendation)}
+                  {item.reason ? <div className="stats-page-subcopy" style={{ marginTop: "0.25rem" }}>{sanitizeText(item.reason)}</div> : null}
                 </li>
               ))}
             </ul>
@@ -426,11 +524,11 @@ export function AiInsightsPage() {
         </section>
       </section>
 
-      {/* â”€â”€ Ask the AI (chat with history) â”€â”€ */}
+      {/* Ask the AI (chat with history) */}
       <section className="stats-page-card" style={{ marginBottom: "1rem" }}>
         <div className="stats-page-card-head">
           <h3>Ask the AI</h3>
-          <span className="stats-page-status">Coach Q&amp;A Â· season + {liveContext?.gameActive ? "live game" : "roster"} context</span>
+          <span className="stats-page-status">Coach Q&amp;A - season + {liveContext?.gameActive ? "live game" : "roster"} context</span>
         </div>
 
         {chatHistory.length > 0 && (
@@ -444,7 +542,7 @@ export function AiInsightsPage() {
             {chatLoading && (
               <div className="ai-chat-bubble ai-chat-bubble-assistant ai-chat-bubble-loading">
                 <span className="ai-chat-role">AI</span>
-                <p className="ai-chat-content">Thinkingâ€¦</p>
+                <p className="ai-chat-content">Thinking...</p>
               </div>
             )}
             <div ref={chatBottomRef} />
@@ -463,7 +561,7 @@ export function AiInsightsPage() {
           />
           <div className="ai-chat-actions">
             <button type="button" className="shell-nav-link shell-nav-link-active" disabled={chatLoading || !question.trim()} onClick={() => void askAiQuestion(question)}>
-              {chatLoading ? "Thinkingâ€¦" : "Ask AI"}
+              {chatLoading ? "Thinking..." : "Ask AI"}
             </button>
             {chatHistory.length > 0 && (
               <button type="button" className="shell-nav-link" onClick={() => { setChatHistory([]); setChatSuggestions([]); }}>
@@ -484,7 +582,7 @@ export function AiInsightsPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Player Spotlight â”€â”€ */}
+      {/* Player Spotlight */}
       <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
         <section className="stats-page-card">
           <div className="stats-page-card-head">
@@ -513,14 +611,14 @@ export function AiInsightsPage() {
               {playerSpotlights.map((entry) => (
                 <div key={entry.name} className="ai-player-card">
                   <div className="ai-player-card-head">
-                    <strong>{entry.name}</strong>
-                    <span className="stats-result-badge result-t">{entry.efficiency_grade ?? entry.role ?? "â€”"}</span>
+                    <strong>{sanitizeText(entry.name)}</strong>
+                    <span className="stats-result-badge result-t">{sanitizeText(entry.efficiency_grade) || sanitizeText(entry.role) || "-"}</span>
                   </div>
                   {(entry.strengths ?? []).length > 0 && (
-                    <p className="stats-page-subcopy"><strong>Strengths:</strong> {entry.strengths!.join(", ")}</p>
+                    <p className="stats-page-subcopy"><strong>Strengths:</strong> {entry.strengths!.map((item) => sanitizeText(item)).join(", ")}</p>
                   )}
                   {(entry.areas_for_improvement ?? []).length > 0 && (
-                    <p className="stats-page-subcopy"><strong>Focus:</strong> {entry.areas_for_improvement!.join(", ")}</p>
+                    <p className="stats-page-subcopy"><strong>Focus:</strong> {entry.areas_for_improvement!.map((item) => sanitizeText(item)).join(", ")}</p>
                   )}
                 </div>
               ))}
@@ -529,7 +627,7 @@ export function AiInsightsPage() {
         )}
       </section>
 
-      {/* â”€â”€ Recent Game Analysis â”€â”€ */}
+      {/* Recent Game Analysis */}
       <section className="stats-page-card">
         <div className="stats-page-card-head">
           <h3>Recent Game Analysis</h3>
@@ -542,21 +640,21 @@ export function AiInsightsPage() {
             {recentGameAnalysis.map((entry, index) => (
               <div key={`${entry.game ?? index}`} className="stats-game-row" style={{ alignItems: "flex-start" }}>
                 <div>
-                  <strong>{entry.date || "No date"} â€” {entry.opponent || "Opponent"}</strong>
-                  <span>{entry.analysis || "No game analysis available yet."}</span>
+                  <strong>{sanitizeText(entry.date) || "No date"} - {sanitizeText(entry.opponent) || "Opponent"}</strong>
+                  <span>{sanitizeText(entry.analysis) || "No game analysis available yet."}</span>
                   {(entry.player_performances ?? []).length > 0 && (
                     <div className="ai-perf-chips">
                       {entry.player_performances!.slice(0, 4).map((p, pi) => (
                         <span key={pi} className="ai-perf-chip">
-                          {p.name ?? "?"} {p.pts != null ? `${p.pts}pts` : ""} {p.indicator ?? ""}
+                          {sanitizeText(p.name) || "?"} {p.pts != null ? `${p.pts}pts` : ""} {sanitizeText(p.indicator)}
                         </span>
                       ))}
                     </div>
                   )}
                 </div>
                 <div className="stats-game-score-block">
-                  <strong>{entry.score || "â€”"}</strong>
-                  <span>{entry.result || "â€”"}</span>
+                  <strong>{sanitizeText(entry.score) || "-"}</strong>
+                  <span>{sanitizeText(entry.result) || "-"}</span>
                 </div>
               </div>
             ))}

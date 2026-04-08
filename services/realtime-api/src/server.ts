@@ -1464,17 +1464,6 @@ const securityTelemetry: Record<SecurityMetricKey, number> = {
 };
 
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
-let debugRequestSequence = 0;
-type DebugRequest = Request & { btaDebugRequestId?: string };
-
-function ensureDebugRequestId(req: Request): string {
-  const debugReq = req as DebugRequest;
-  if (!debugReq.btaDebugRequestId) {
-    debugRequestSequence += 1;
-    debugReq.btaDebugRequestId = `r${debugRequestSequence}`;
-  }
-  return debugReq.btaDebugRequestId;
-}
 
 function renderPrometheusSecurityMetrics(): string {
   return [
@@ -1538,45 +1527,6 @@ function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, un
     event,
     ...details
   });
-}
-
-function resolveTokenKind(token: string | null | undefined): "none" | "local" | "jwt" | "other" {
-  if (!token) {
-    return "none";
-  }
-  if (token.startsWith("bta.")) {
-    return "local";
-  }
-  const parts = token.split(".");
-  if (parts.length >= 3) {
-    return "jwt";
-  }
-  return "other";
-}
-
-function buildRequestDebugSummary(req: Request): Record<string, unknown> {
-  const bearer = extractBearerToken(req.headers, undefined);
-  const headerSchoolId = normalizeSchoolId(readHeaderValue(req.headers["x-school-id"]));
-  const querySchoolId = normalizeSchoolId(req.query.schoolId);
-  const apiKeyHeader = readHeaderValue(req.headers["x-api-key"]);
-  const queryApiKey = typeof req.query.apiKey === "string" ? req.query.apiKey : undefined;
-
-  return {
-    requestId: ensureDebugRequestId(req),
-    method: req.method,
-    path: req.path,
-    hasBearer: Boolean(bearer),
-    bearerKind: resolveTokenKind(bearer),
-    hasApiKeyHeader: Boolean(apiKeyHeader),
-    hasApiKeyQuery: Boolean(queryApiKey),
-    hasSchoolIdHeader: Boolean(headerSchoolId),
-    hasSchoolIdQuery: Boolean(querySchoolId),
-    headerSchoolId,
-    querySchoolId,
-    userAgent: readHeaderValue(req.headers["user-agent"]),
-    origin: readHeaderValue(req.headers.origin),
-    referer: readHeaderValue(req.headers.referer),
-  };
 }
 
 type AuthedRequest = Request & { authContext?: AuthContext };
