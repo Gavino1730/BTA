@@ -211,7 +211,7 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
           <section className="settings-section">
             <h3>Opponent Name</h3>
             <input
-              placeholder="e.g. Knappa"
+              placeholder="e.g. Opponent"
               value={gsOpponent}
               onChange={e => setGsOpponent(e.target.value)}
             />

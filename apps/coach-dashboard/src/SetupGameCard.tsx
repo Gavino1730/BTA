@@ -129,7 +129,7 @@ export function SetupGameCard({
           <input
             value={newGameOpponent}
             onChange={e => setNewGameOpponent(e.target.value)}
-            placeholder="e.g. Knappa"
+            placeholder="e.g. Opponent"
             style={{ display: "block", width: "100%", marginTop: "0.5rem", minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "var(--text)", padding: "0.75rem 0.9rem", fontFamily: "inherit", fontSize: "inherit" }}
           />
         </div>

@@ -10,7 +10,7 @@ interface MarketingPageProps {
 const FEATURES = [
   { icon: "⚡", eyebrow: "Real-Time",        title: "Stats as they happen",       desc: "See score, possessions, and momentum update in real time. No more clipboard delay." },
   { icon: "📱", eyebrow: "iPad Operator",    title: "One-tap sideline entry",      desc: "Your scorekeeper enters stats on an iPad. The coach dashboard updates in under a second." },
-  { icon: "📊", eyebrow: "Season Analytics", title: "Trends across every game",    desc: "Win/loss record, FG% over time, point margin charts, and splitting splits — all in one view." },
+  { icon: "📊", eyebrow: "Season Analytics", title: "Trends across every game",    desc: "Win/loss record, FG% over time, point margin charts, and shooting splits — all in one view." },
   { icon: "👤", eyebrow: "Player Insights",  title: "Per-player breakdowns",       desc: "Game logs, PPG trends, and side-by-side comparisons to sharpen your rotation decisions." },
   { icon: "🤖", eyebrow: "AI Insights",      title: "Automated observations",      desc: "Spot momentum shifts, pace changes, and efficiency drops without crunching numbers manually." },
   { icon: "🔐", eyebrow: "Secure Access",    title: "One account, one team",       desc: "Your roster, games, and insights belong to your login. Team data never crosses accounts." },
@@ -33,25 +33,25 @@ const FAQS = [
 // ---- Live demo widget ----
 
 const DEMO_EVENTS = [
-  { msg: "+2 Jaxon Reed",             vc: 2, opp: 0 },
-  { msg: "+3 Milo Hart (3PT)",        vc: 3, opp: 0 },
-  { msg: "+2 Theo Lin",               vc: 2, opp: 0 },
-  { msg: "+1 Jaxon Reed (FT)",        vc: 1, opp: 0 },
-  { msg: "Turnover -> Cedar Grove",   vc: 0, opp: 0 },
-  { msg: "+2 Cedar Grove #24",        vc: 0, opp: 2 },
-  { msg: "+3 Cedar Grove wing",       vc: 0, opp: 3 },
-  { msg: "Timeout - North Ridge Prep",vc: 0, opp: 0 },
-  { msg: "+2 Elias Shaw",             vc: 2, opp: 0 },
-  { msg: "Foul -> Cedar Grove (bonus)", vc: 0, opp: 0 },
-  { msg: "+2 Rowan Pike",             vc: 2, opp: 0 },
+  { msg: "+2 Home #1",                vc: 2, opp: 0 },
+  { msg: "+3 Home #4 (3PT)",          vc: 3, opp: 0 },
+  { msg: "+2 Home #3",                vc: 2, opp: 0 },
+  { msg: "+1 Home #1 (FT)",           vc: 1, opp: 0 },
+  { msg: "Turnover -> Away",          vc: 0, opp: 0 },
+  { msg: "+2 Away #24",               vc: 0, opp: 2 },
+  { msg: "+3 Away wing",              vc: 0, opp: 3 },
+  { msg: "Timeout - Home",            vc: 0, opp: 0 },
+  { msg: "+2 Home #2",                vc: 2, opp: 0 },
+  { msg: "Foul -> Away (bonus)",      vc: 0, opp: 0 },
+  { msg: "+2 Home #5",                vc: 2, opp: 0 },
 ];
 
 const DEMO_BOX = [
-  { name: "Jaxon Reed",  pts: 24, reb: 3, ast: 6 },
-  { name: "Theo Lin",    pts: 14, reb: 8, ast: 2 },
-  { name: "Milo Hart",   pts: 10, reb: 6, ast: 1 },
-  { name: "Elias Shaw",  pts: 6,  reb: 2, ast: 4 },
-  { name: "Rowan Pike",  pts: 4,  reb: 1, ast: 3 },
+  { name: "Player #1",   pts: 24, reb: 3, ast: 6 },
+  { name: "Player #3",   pts: 14, reb: 8, ast: 2 },
+  { name: "Player #4",   pts: 10, reb: 6, ast: 1 },
+  { name: "Player #2",   pts: 6,  reb: 2, ast: 4 },
+  { name: "Player #5",   pts: 4,  reb: 1, ast: 3 },
 ];
 
 function LiveDemoWidget() {
@@ -59,6 +59,9 @@ function LiveDemoWidget() {
   const [vcScore, setVcScore] = useState(58);
   const [oppScore, setOppScore] = useState(54);
   const [evtIdx, setEvtIdx] = useState(0);
+  const [momentum, setMomentum] = useState(14);
+  const [shotsInRun, setShotsInRun] = useState(3);
+  const [possession, setPossession] = useState<"HOME" | "AWAY">("HOME");
   const [evtVisible, setEvtVisible] = useState(false);
   const tick = useRef(0);
 
@@ -70,6 +73,12 @@ function LiveDemoWidget() {
         const evt = DEMO_EVENTS[evtIdx % DEMO_EVENTS.length];
         setVcScore((p) => p + evt.vc);
         setOppScore((p) => p + evt.opp);
+        setMomentum((m) => {
+          const shift = evt.vc > evt.opp ? 8 : evt.opp > evt.vc ? -9 : 3;
+          return Math.max(-42, Math.min(42, m + shift));
+        });
+        setShotsInRun((r) => (evt.vc > 0 ? Math.min(7, r + 1) : Math.max(0, r - 1)));
+        setPossession((team) => (team === "HOME" ? "AWAY" : "HOME"));
         setEvtIdx((e) => e + 1);
         setEvtVisible(true);
         setTimeout(() => setEvtVisible(false), 2600);
@@ -81,6 +90,7 @@ function LiveDemoWidget() {
   const mins = Math.floor(seconds / 60);
   const secs = String(seconds % 60).padStart(2, "0");
   const currentEvt = DEMO_EVENTS[Math.max(0, evtIdx - 1) % DEMO_EVENTS.length];
+  const momentumPct = Math.max(0, Math.min(100, 50 + momentum));
 
   return (
     <div className="mkt-demo-widget">
@@ -90,17 +100,32 @@ function LiveDemoWidget() {
         <span className="mkt-demo-clock">Q4 - {mins}:{secs}</span>
         <span className="mkt-demo-sample-tag">Sample data</span>
       </div>
+      <div className="mkt-demo-statebar">
+        <span className={`mkt-possession-tag ${possession === "HOME" ? "is-home" : "is-away"}`}>
+          Possession: {possession}
+        </span>
+        <span className="mkt-run-tag">Run: {shotsInRun}-0</span>
+      </div>
       <div className="mkt-demo-scoreboard">
         <div className="mkt-demo-team mkt-demo-team-home">
-          <span className="mkt-demo-team-abbr">NRP</span>
-          <span className="mkt-demo-team-name">North Ridge Prep</span>
+          <span className="mkt-demo-team-abbr">HOME</span>
+          <span className="mkt-demo-team-name">Home Team</span>
           <strong className="mkt-demo-score mkt-demo-score-home">{vcScore}</strong>
         </div>
         <div className="mkt-demo-sep">-</div>
         <div className="mkt-demo-team mkt-demo-team-away">
           <strong className="mkt-demo-score">{oppScore}</strong>
-          <span className="mkt-demo-team-name">Cedar Grove</span>
-          <span className="mkt-demo-team-abbr">CGR</span>
+          <span className="mkt-demo-team-name">Away Team</span>
+          <span className="mkt-demo-team-abbr">AWAY</span>
+        </div>
+      </div>
+      <div className="mkt-demo-momentum" role="img" aria-label={`Momentum ${momentum >= 0 ? "Home Team" : "Away Team"}`}>
+        <div className="mkt-demo-momentum-head">
+          <span>Momentum</span>
+          <strong>{momentum >= 0 ? `HOME +${momentum}` : `AWAY +${Math.abs(momentum)}`}</strong>
+        </div>
+        <div className="mkt-demo-momentum-track">
+          <span className="mkt-demo-momentum-fill" style={{ width: `${momentumPct}%` }} />
         </div>
       </div>
       <div
@@ -111,6 +136,8 @@ function LiveDemoWidget() {
         <span className="mkt-demo-event-dot" aria-hidden="true" />
         <span className="mkt-demo-event-text">{currentEvt.msg}</span>
       </div>
+      <div className="mkt-demo-insight">Insight: Player #1 is 4/5 over the last 3:00.</div>
+      <div className="mkt-demo-recommendation">Recommendation: Run through #1 next two possessions.</div>
       <div className="mkt-demo-box">
         <div className="mkt-demo-box-head">
           <span>Player</span><span>PTS</span><span>REB</span><span>AST</span>
@@ -131,20 +158,20 @@ function LiveDemoWidget() {
 // ---- Public demo dashboard (no auth required) ----
 
 const DEMO_GAMES = [
-  { opponent: "Cedar Grove",   loc: "home", result: "W", vc: 62, opp: 48, date: "Feb 14" },
-  { opponent: "Westfield Tech",loc: "away", result: "W", vc: 55, opp: 51, date: "Feb 11" },
-  { opponent: "Pine Harbor",   loc: "home", result: "L", vc: 44, opp: 58, date: "Feb 7"  },
-  { opponent: "Maple Heights", loc: "away", result: "W", vc: 67, opp: 43, date: "Feb 4"  },
-  { opponent: "Riverton",      loc: "home", result: "L", vc: 51, opp: 64, date: "Jan 31" },
+  { opponent: "Opponent A",    loc: "home", result: "W", vc: 62, opp: 48, date: "Feb 14" },
+  { opponent: "Opponent B",    loc: "away", result: "W", vc: 55, opp: 51, date: "Feb 11" },
+  { opponent: "Opponent C",    loc: "home", result: "L", vc: 44, opp: 58, date: "Feb 7"  },
+  { opponent: "Opponent D",    loc: "away", result: "W", vc: 67, opp: 43, date: "Feb 4"  },
+  { opponent: "Opponent E",    loc: "home", result: "L", vc: 51, opp: 64, date: "Jan 31" },
 ];
 
 const DEMO_PLAYERS = [
-  { name: "Jaxon Reed",   num: "1",  ppg: 18.4, rpg: 4.2, apg: 5.8, fg: 44.1 },
-  { name: "Theo Lin",     num: "3",  ppg: 12.3, rpg: 6.8, apg: 1.9, fg: 41.3 },
-  { name: "Milo Hart",    num: "4",  ppg: 9.8,  rpg: 5.2, apg: 2.1, fg: 38.7 },
-  { name: "Elias Shaw",   num: "2",  ppg: 7.2,  rpg: 3.1, apg: 3.4, fg: 36.2 },
-  { name: "Rowan Pike",   num: "5",  ppg: 6.4,  rpg: 2.8, apg: 2.1, fg: 35.1 },
-  { name: "Nico Vale",    num: "15", ppg: 2.8,  rpg: 4.1, apg: 0.8, fg: 51.2 },
+  { name: "Player #1",    num: "1",  ppg: 18.4, rpg: 4.2, apg: 5.8, fg: 44.1 },
+  { name: "Player #3",    num: "3",  ppg: 12.3, rpg: 6.8, apg: 1.9, fg: 41.3 },
+  { name: "Player #4",    num: "4",  ppg: 9.8,  rpg: 5.2, apg: 2.1, fg: 38.7 },
+  { name: "Player #2",    num: "2",  ppg: 7.2,  rpg: 3.1, apg: 3.4, fg: 36.2 },
+  { name: "Player #5",    num: "5",  ppg: 6.4,  rpg: 2.8, apg: 2.1, fg: 35.1 },
+  { name: "Player #15",   num: "15", ppg: 2.8,  rpg: 4.1, apg: 0.8, fg: 51.2 },
 ];
 
 const TH_ST: CSSProperties = {
@@ -156,7 +183,7 @@ export function DemoPage({ onNavigate }: { onNavigate: (path: string) => void })
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       <div className="mkt-demo-banner">
-        <span>Demo mode - sample North Ridge Prep season data - read-only</span>
+        <span>Demo mode - sample team season data - read-only</span>
         <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>
           Sign In for Real Data -&gt;
         </button>
@@ -177,7 +204,7 @@ export function DemoPage({ onNavigate }: { onNavigate: (path: string) => void })
       <div className="stats-page">
         <section className="stats-page-hero">
           <div>
-            <h1>North Ridge Prep</h1>
+            <h1>Sample Team</h1>
             <p className="stats-page-subtitle">2025-26 Season - Sample Data</p>
           </div>
           <span className="stats-page-status">Demo - read-only</span>
@@ -312,13 +339,11 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           </button>
           <nav className="mkt-nav-links" aria-label="Site navigation">
             <a href="#features">Features</a>
-            <a href="#how-it-works">How it works</a>
-            <a href="#faq">FAQ</a>
             <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
           </nav>
           <div className="mkt-nav-actions">
-            <button type="button" className="mkt-btn mkt-btn-ghost" onClick={() => onNavigate("/login")}>Sign In</button>
-            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/demo")}>Try for Free</button>
+            <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/login")}>Coach Login</button>
+            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/demo")}>Start Live Demo</button>
           </div>
         </div>
       </header>
@@ -328,28 +353,33 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section className="mkt-hero" aria-label="Hero">
           <div className="mkt-hero-inner">
             <div className="mkt-hero-copy">
-              <span className="mkt-badge">⚡ Built for high school coaches</span>
+              <span className="mkt-badge">Courtside Control System</span>
               <h1 className="mkt-h1">
-                Win the half.<br />
-                <span className="mkt-gradient-text">Coach with live data.</span>
+                Win the next possession before it starts.
+                <span className="mkt-gradient-text">BTA Courtside runs at game speed.</span>
               </h1>
               <p className="mkt-hero-sub">
-                BTA Courtside gives your bench real-time basketball stats, season analytics, and AI insights — so you make the right call at the right moment.
+                Live scoreflow, momentum tracking, and rotation signals in one command surface, built for decisions made in ten seconds or less.
               </p>
+              <div className="mkt-hero-rails" aria-hidden="true">
+                <span className="mkt-hero-rail">Possession pressure</span>
+                <span className="mkt-hero-rail">Shot-quality trend</span>
+                <span className="mkt-hero-rail">Bench readiness</span>
+              </div>
               <div className="mkt-hero-actions">
                 <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-                  Try the Demo — free
+                  Open Live Command View
                 </button>
                 <button
                   type="button"
-                  className="mkt-btn mkt-btn-ghost mkt-btn-lg"
+                  className="mkt-btn mkt-btn-subtle mkt-btn-lg"
                   onClick={() => onNavigate(isAuthenticated ? "/live" : "/login")}
                 >
-                  {isAuthenticated ? "Open Dashboard" : "Sign In"}
+                  {isAuthenticated ? "Enter Dashboard" : "Coach Login"}
                 </button>
               </div>
               <div className="mkt-trust-row">
-                {["📡 Live game tracking", "📱 iPad sync", "📊 Season analytics", "🤖 AI insights"].map((p) => (
+                {["Realtime possession map", "Live player impact", "Sideline resilient sync", "Sub-second updates"].map((p) => (
                   <span key={p} className="mkt-trust-pill">{p}</span>
                 ))}
               </div>
@@ -364,10 +394,10 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section className="mkt-numbers">
           <div className="mkt-numbers-inner">
             {[
-              { val: "< 1s",    label: "Stat sync latency" },
-              { val: "15+",     label: "Stats tracked per player" },
-              { val: "6-digit", label: "Instant iPad pairing" },
-              { val: "Offline", label: "Works with no connection" },
+              { val: "< 1s",   label: "Updates in under 1 second" },
+              { val: "Auto",   label: "Tracks every key stat live" },
+              { val: "2 sec",  label: "Connects sideline devices fast" },
+              { val: "Offline",label: "Built for dead-gym WiFi" },
             ].map((n) => (
               <div key={n.label} className="mkt-number-item">
                 <strong>{n.val}</strong>

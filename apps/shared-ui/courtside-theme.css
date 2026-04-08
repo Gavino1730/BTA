@@ -1,0 +1,58 @@
+:root {
+  /* Brand and accent */
+  --brand-primary: #c1121f;
+  --brand-primary-strong: #e5383b;
+  --brand-primary-deep: #8c1019;
+  --brand-accent: #ffd166;
+  --brand-accent-strong: #ffb703;
+
+  /* Core background stack */
+  --bg: #0c101a;
+  --bg-elevated: #141b2b;
+  --bg-layer-1: #1a2336;
+  --bg-layer-2: #202b42;
+  --surface: var(--bg-elevated);
+  --surface-2: rgba(255, 255, 255, 0.045);
+  --surface-3: rgba(255, 255, 255, 0.075);
+
+  /* Text and structure */
+  --text: #f4f6fb;
+  --text-muted: rgba(244, 246, 251, 0.68);
+  --text-dim: rgba(244, 246, 251, 0.45);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-hi: rgba(255, 255, 255, 0.2);
+
+  /* Status and semantic */
+  --color-success: #38d996;
+  --color-warning: #ffd166;
+  --color-danger: #f25f5c;
+  --color-info: #5ea8ff;
+
+  /* Legacy aliases to reduce churn while migrating */
+  --teal: var(--brand-primary);
+  --teal-soft: rgba(193, 18, 31, 0.16);
+  --gold: var(--brand-accent);
+  --gold-soft: rgba(255, 209, 102, 0.2);
+  --red: var(--color-danger);
+  --red-soft: rgba(242, 95, 92, 0.16);
+
+  /* Motion and shape */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-slow: 280ms;
+
+  /* Typography */
+  --font-ui: "Bahnschrift", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Bahnschrift SemiCondensed", "Arial Narrow", "Trebuchet MS", sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+}

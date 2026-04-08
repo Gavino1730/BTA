@@ -166,21 +166,21 @@ button, [role="button"], .shell-nav-link {
 }
 
 :root {
-  --bg:         #0b1226;
-  --surface:    #122347;
-  --surface-2:  rgba(255,255,255,0.05);
-  --border:     rgba(255,255,255,0.09);
-  --border-hi:  rgba(255,255,255,0.16);
-  --text:       #e8eaf0;
-  --text-muted: rgba(232,234,240,0.55);
-  --text-dim:   rgba(232,234,240,0.35);
-  --teal:       #4f8cff;
-  --teal-soft:  rgba(79,140,255,0.14);
-  --gold:       #f2c24b;
-  --gold-soft:  rgba(242,194,75,0.16);
-  --red:        #f87171;
-  --red-soft:   rgba(248,113,113,0.14);
-  font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  --bg: #0c101a;
+  --surface: #141b2b;
+  --surface-2: rgba(255,255,255,0.045);
+  --border: rgba(255,255,255,0.1);
+  --border-hi: rgba(255,255,255,0.2);
+  --text: #f4f6fb;
+  --text-muted: rgba(244,246,251,0.68);
+  --text-dim: rgba(244,246,251,0.45);
+  --teal: var(--brand-primary, #c1121f);
+  --teal-soft: rgba(193,18,31,0.16);
+  --gold: var(--brand-accent, #ffd166);
+  --gold-soft: rgba(255,209,102,0.2);
+  --red: var(--color-danger, #f25f5c);
+  --red-soft: rgba(242,95,92,0.16);
+  font-family: var(--font-ui, "Bahnschrift", "Segoe UI", "Helvetica Neue", Arial, sans-serif);
   background: var(--bg);
   color: var(--text);
 }
@@ -4345,6 +4345,16 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   border: 1px solid rgba(255,255,255,0.12);
 }
 .mkt-btn-ghost:hover { background: rgba(255,255,255,0.11); }
+.mkt-btn-subtle {
+  background: transparent;
+  color: rgba(232,234,240,0.68);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.mkt-btn-subtle:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.05);
+}
 .mkt-btn-lg {
   font-size: 1rem;
   padding: 0.7rem 1.6rem;
@@ -4529,6 +4539,22 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .mkt-demo-event-text {
   font-size: 0.82rem;
   color: rgba(232,234,240,0.75);
+}
+.mkt-demo-insight {
+  font-size: 0.78rem;
+  color: #9bc1ff;
+  background: rgba(79,140,255,0.12);
+  border: 1px solid rgba(79,140,255,0.28);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+}
+.mkt-demo-recommendation {
+  font-size: 0.78rem;
+  color: #b9fbc0;
+  background: rgba(74,222,128,0.12);
+  border: 1px solid rgba(74,222,128,0.3);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
 }
 .mkt-demo-box { display: flex; flex-direction: column; }
 .mkt-demo-box-head,
@@ -5010,5 +5036,241 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   }
   .mkt-demo-banner {
     font-size: 0.72rem;
+  }
+}
+
+/* ===================================================================
+   Courtside Premium Overrides
+   =================================================================== */
+
+.mkt-page {
+  background:
+    radial-gradient(85% 55% at 74% 0%, rgba(193, 18, 31, 0.28) 0%, transparent 74%),
+    radial-gradient(75% 45% at 8% 4%, rgba(255, 209, 102, 0.12) 0%, transparent 60%),
+    linear-gradient(180deg, #0a0e17 0%, #0c101a 48%, #101726 100%);
+}
+
+.mkt-nav {
+  background: rgba(8, 12, 21, 0.86);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.mkt-brand-name {
+  font-family: var(--font-display, "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif);
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+}
+
+.mkt-btn {
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.065em;
+  font-size: 0.76rem;
+}
+
+.mkt-btn-primary {
+  background: linear-gradient(135deg, #8c1019 0%, #c1121f 52%, #e5383b 100%);
+  box-shadow: 0 8px 28px rgba(193, 18, 31, 0.42);
+}
+
+.mkt-btn-primary:hover {
+  box-shadow: 0 12px 32px rgba(193, 18, 31, 0.48);
+}
+
+.mkt-btn-subtle,
+.mkt-btn-ghost {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.mkt-hero {
+  position: relative;
+  padding: 4.5rem 1.5rem 3.5rem;
+}
+
+.mkt-hero::after {
+  content: "";
+  position: absolute;
+  inset: 6% 7% 10% 7%;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent 28%);
+  clip-path: polygon(0 0, 98% 0, 100% 8%, 100% 100%, 2% 100%, 0 92%);
+}
+
+.mkt-hero-copy {
+  gap: 1rem;
+}
+
+.mkt-badge {
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-size: 0.66rem;
+  color: #ffd166;
+  border-color: rgba(255, 209, 102, 0.35);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.mkt-h1 {
+  font-family: var(--font-display, "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif);
+  font-size: clamp(2.5rem, 5.2vw, 4.4rem);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  max-width: 11.8ch;
+}
+
+.mkt-gradient-text {
+  display: block;
+  margin-top: 0.28rem;
+  background: linear-gradient(90deg, #ffd166 0%, #f4f6fb 38%, #e5383b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.mkt-hero-sub {
+  max-width: 56ch;
+  color: rgba(244, 246, 251, 0.72);
+}
+
+.mkt-hero-rails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.mkt-hero-rail {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.28rem 0.66rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(244, 246, 251, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.63rem;
+}
+
+.mkt-trust-pill {
+  border-radius: 4px;
+  border-color: rgba(255, 255, 255, 0.14);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.64rem;
+}
+
+.mkt-demo-widget {
+  max-width: 420px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%),
+    #131b2c;
+  box-shadow: 0 20px 46px rgba(0,0,0,0.48);
+}
+
+.mkt-demo-statebar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.mkt-possession-tag,
+.mkt-run-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.58rem;
+  color: rgba(244, 246, 251, 0.86);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mkt-possession-tag.is-home {
+  border-color: rgba(193, 18, 31, 0.55);
+  background: rgba(193, 18, 31, 0.2);
+}
+
+.mkt-possession-tag.is-away {
+  border-color: rgba(94, 168, 255, 0.58);
+  background: rgba(94, 168, 255, 0.2);
+}
+
+.mkt-run-tag {
+  border-color: rgba(255, 209, 102, 0.52);
+  background: rgba(255, 209, 102, 0.16);
+}
+
+.mkt-demo-scoreboard {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 16, 26, 0.82);
+}
+
+.mkt-demo-score-home {
+  color: #ff8d94;
+}
+
+.mkt-demo-momentum {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mkt-demo-momentum-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: rgba(244, 246, 251, 0.75);
+  font-size: 0.67rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mkt-demo-momentum-head strong {
+  color: #ffd166;
+  font-size: 0.7rem;
+}
+
+.mkt-demo-momentum-track {
+  position: relative;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.mkt-demo-momentum-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  background: linear-gradient(90deg, #5ea8ff 0%, #ffd166 52%, #c1121f 100%);
+  transition: width var(--motion-standard, 180ms) ease;
+}
+
+.mkt-live-dot {
+  background: #e5383b;
+}
+
+.mkt-live-label {
+  color: #ffadb2;
+}
+
+@media (max-width: 860px) {
+  .mkt-hero::after {
+    inset: 4% 4% 9% 4%;
+  }
+
+  .mkt-hero-rails {
+    display: none;
   }
 }

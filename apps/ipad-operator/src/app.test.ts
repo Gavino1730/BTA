@@ -596,14 +596,14 @@ describe("coach code sync snapshot", () => {
       setup: {
         gameId: "vc-vs-central",
         myTeamId: "vc-varsity",
-        opponentName: "Central Christian",
+        opponentName: "Opponent Team",
         vcSide: "away",
         dashboardUrl: "http://localhost:5173/live",
       },
       teams: [
         {
           id: "vc-varsity",
-          name: "Valley Catholic Varsity",
+          name: "Sample Team Varsity",
           abbreviation: "VC",
           players: [{ id: "p1", number: "1", name: "Ava", position: "PG" }],
         },
@@ -614,9 +614,9 @@ describe("coach code sync snapshot", () => {
     expect(merged.gameSetup.syncedConnectionId).toBe("conn-vc-2026");
     expect(merged.gameSetup.gameId).toBe("vc-vs-central");
     expect(merged.gameSetup.myTeamId).toBe("vc-varsity");
-    expect(merged.gameSetup.opponent).toBe("Central Christian");
+    expect(merged.gameSetup.opponent).toBe("Opponent Team");
     expect(merged.gameSetup.vcSide).toBe("away");
-    expect(merged.teams[0]?.name).toBe("Valley Catholic Varsity");
+    expect(merged.teams[0]?.name).toBe("Sample Team Varsity");
     expect(merged.gameSetup.startingLineup).toEqual(["p1"]);
   });
 
@@ -625,7 +625,7 @@ describe("coach code sync snapshot", () => {
       teams: [
         {
           id: "vc-varsity",
-          name: "Valley Catholic Varsity",
+          name: "Sample Team Varsity",
           abbreviation: "VC",
           players: [
             { id: "p1", number: "1", name: "Ava", position: "PG" },
@@ -637,7 +637,7 @@ describe("coach code sync snapshot", () => {
         connectionId: "conn-vc-2026",
         gameId: "vc-vs-central",
         myTeamId: "vc-varsity",
-        opponent: "Central Christian",
+        opponent: "Opponent Team",
         vcSide: "home",
         dashboardUrl: "http://localhost:4000",
         startingLineup: ["p1", "p2", "missing-player"],
@@ -650,7 +650,7 @@ describe("coach code sync snapshot", () => {
       teams: [
         {
           id: "vc-varsity",
-          name: "Valley Catholic Varsity",
+          name: "Sample Team Varsity",
           abbreviation: "VC",
           players: [{ id: "p1", number: "1", name: "Ava", position: "PG" }],
         },
@@ -668,7 +668,7 @@ describe("coach code sync snapshot", () => {
         syncedConnectionId: "conn-vc-2026",
         gameId: "vc-vs-central",
         myTeamId: "vc-varsity",
-        opponent: "Central Christian",
+        opponent: "Opponent Team",
         vcSide: "home",
         dashboardUrl: "http://localhost:4000",
       },

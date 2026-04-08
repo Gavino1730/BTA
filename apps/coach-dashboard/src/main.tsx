@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { UnifiedCoachApp } from "./UnifiedCoachApp.js";
-import { initSupabaseSessionRefresh } from "./supabase/client.js";
+import "../../shared-ui/courtside-theme.css";
 import "./styles.css";
 
 if ("serviceWorker" in navigator) {
@@ -13,8 +13,6 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
-
-void initSupabaseSessionRefresh();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

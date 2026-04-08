@@ -869,7 +869,7 @@ export function TeamSettingsPage() {
                 <input
                   value={profile?.organizationName ?? ""}
                   onChange={(event) => setProfile((current) => ({ ...(current ?? {}), organizationName: event.target.value }))}
-                  placeholder="Valley Catholic Athletics"
+                  placeholder="Your School Athletics"
                 />
               </label>
               <label className="stats-filter-field">
@@ -877,7 +877,7 @@ export function TeamSettingsPage() {
                 <input
                   value={profile?.coachName ?? ""}
                   onChange={(event) => setProfile((current) => ({ ...(current ?? {}), coachName: event.target.value }))}
-                  placeholder="Coach Rivera"
+                  placeholder="Coach Name"
                 />
               </label>
               <label className="stats-filter-field">

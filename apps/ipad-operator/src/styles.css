@@ -12,14 +12,14 @@ button, .circle, .icon-btn, [role="button"] {
 }
 
 :root {
-  font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-  background: #0b1226;
-  color: #e8eaf0;
+  font-family: var(--font-ui, "Bahnschrift", "Segoe UI", "Helvetica Neue", Arial, sans-serif);
+  background: var(--bg, #0c101a);
+  color: var(--text, #f4f6fb);
   --live-bottom-nav-h: 82px;
-  --accent-blue: #4f8cff;
-  --accent-blue-soft: rgba(79,140,255,0.14);
-  --accent-gold: #f2c24b;
-  --accent-gold-soft: rgba(242,194,75,0.16);
+  --accent-blue: var(--brand-primary, #c1121f);
+  --accent-blue-soft: rgba(193,18,31,0.16);
+  --accent-gold: var(--brand-accent, #ffd166);
+  --accent-gold-soft: rgba(255,209,102,0.2);
   --result-make-bg: rgba(16,185,129,0.26);
   --result-make-bg-strong: rgba(16,185,129,0.38);
   --result-make-bg-soft: rgba(16,185,129,0.1);
@@ -48,8 +48,8 @@ html, body {
    GAME LAYOUT  (3-column)
    ================================================================ */
 .game-layout {
-  --team-home-color: #4f8cff;
-  --team-away-color: #f87171;
+  --team-home-color: var(--brand-primary-strong, #e5383b);
+  --team-away-color: #5ea8ff;
   display: grid;
   grid-template-columns: 1fr 1.35fr 1fr;
   height: 100dvh;

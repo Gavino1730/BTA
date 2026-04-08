@@ -17,7 +17,7 @@ const baseAppData: AppData = {
 
 const baseTeam: Team = {
   id: "team-home",
-  name: "Valley Catholic",
+  name: "Sample Team",
   abbreviation: "VC",
   players: [],
 };
