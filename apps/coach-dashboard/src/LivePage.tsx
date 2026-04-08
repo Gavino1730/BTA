@@ -117,6 +117,10 @@ export function LivePage() {
                 <h3>Live Game Controls</h3>
                 <p className="settings-section-desc">Game ID: {gameId}</p>
                 <p className="settings-section-desc operators-online-indicator">Operators online: {connectedOperatorCount}</p>
+                <div className="settings-pairing-display">
+                  <p className="settings-section-desc">Operator Pairing Code</p>
+                  <span className="settings-pairing-code">{connectionId}</span>
+                </div>
               </div>
               <div className="settings-header-actions">
                 <button

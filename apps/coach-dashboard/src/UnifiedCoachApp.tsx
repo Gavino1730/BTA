@@ -37,23 +37,6 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
 
   return (
     <>
-      <a href={operatorConsoleUrl} className="coach-nav-ext-link">
-        Score Operator
-      </a>
-      <button
-        type="button"
-        className="coach-nav-ext-link"
-        onClick={onSignOut}
-      >
-        Sign Out
-      </button>
-      <button
-        type="button"
-        onClick={onShowTutorial}
-        title="Help &amp; Tutorial"
-        aria-label="Open help and tutorial"
-        className="coach-nav-help-button"
-      >?</button>
       <button
         type="button"
         className={`connection-pill ${deviceConnected ? "online" : "offline"}`}
@@ -75,6 +58,23 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
           </>
         )}
       </button>
+      <a href={operatorConsoleUrl} className="coach-nav-ext-link" target="_blank" rel="noreferrer">
+        Score Operator
+      </a>
+      <button
+        type="button"
+        className="coach-nav-ext-link"
+        onClick={onSignOut}
+      >
+        Sign Out
+      </button>
+      <button
+        type="button"
+        onClick={onShowTutorial}
+        title="Help &amp; Tutorial"
+        aria-label="Open help and tutorial"
+        className="coach-nav-help-button"
+      >?</button>
     </>
   );
 }
