@@ -1443,7 +1443,6 @@ const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
-const DEBUG_AUTH = process.env.BTA_DEBUG_AUTH === "1";
 const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
 const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
 
@@ -1466,8 +1465,6 @@ const securityTelemetry: Record<SecurityMetricKey, number> = {
 
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
 let debugRequestSequence = 0;
-let debugAuthSequence = 0;
-
 type DebugRequest = Request & { btaDebugRequestId?: string };
 
 function ensureDebugRequestId(req: Request): string {
@@ -1580,31 +1577,6 @@ function buildRequestDebugSummary(req: Request): Record<string, unknown> {
     origin: readHeaderValue(req.headers.origin),
     referer: readHeaderValue(req.headers.referer),
   };
-}
-
-function debugAuthLog(event: string, req: Request, details: Record<string, unknown> = {}): void {
-  if (!DEBUG_AUTH) {
-    return;
-  }
-
-  // Emit as one JSON line so concurrent requests cannot visually interleave fields.
-  const payload = {
-    seq: ++debugAuthSequence,
-    ts: new Date().toISOString(),
-    event,
-    ...buildRequestDebugSummary(req),
-    ...details,
-  };
-
-  process.stderr.write(`[realtime-api][debug-auth] ${JSON.stringify(payload)}\n`);
-}
-
-function setDebugRejectionHeader(res: Response, reason: string): void {
-  if (!DEBUG_AUTH) {
-    return;
-  }
-
-  res.setHeader("X-BTA-Debug-Reason", reason);
 }
 
 type AuthedRequest = Request & { authContext?: AuthContext };
@@ -1826,28 +1798,21 @@ function isReadOnlyRequest(req: Request): boolean {
 async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
   const scopedReq = req as ScopedRequest;
   if (scopedReq.authContext) {
-    debugAuthLog("requireApiKey.pass.authContext", req, {
-      authSchoolId: normalizeSchoolId(scopedReq.authContext.schoolId),
-      authRole: scopedReq.authContext.role ?? null,
-    });
     next();
     return;
   }
 
   if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && isReadOnlyRequest(req)) {
-    debugAuthLog("requireApiKey.pass.readOnlyWithJwt", req);
     next();
     return;
   }
 
   if (!API_KEY && !isJwtAuthEnabled()) {
-    debugAuthLog("requireApiKey.pass.authDisabled", req);
     next();
     return;
   }
 
   if (hasValidApiKeyRequest(req)) {
-    debugAuthLog("requireApiKey.pass.validApiKey", req);
     next();
     return;
   }
@@ -1855,13 +1820,6 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
   const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !isReadOnlyRequest(req)
     ? "jwt-write-required"
     : "missing-valid-credentials";
-  debugAuthLog("requireApiKey.reject", req, {
-    reason,
-    jwtEnabled: isJwtAuthEnabled(),
-    jwtWriteRequired: JWT_WRITE_REQUIRED,
-    requestReadOnly: isReadOnlyRequest(req),
-  });
-  setDebugRejectionHeader(res, `auth:${reason}`);
   trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
   res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
 }
@@ -1882,15 +1840,6 @@ async function attachAuthContext(req: Request, _res: Response, next: NextFunctio
   const authContext = await verifyBearerToken(token);
   if (authContext) {
     scopedReq.authContext = authContext;
-    debugAuthLog("attachAuthContext.verified", req, {
-      authSchoolId: normalizeSchoolId(authContext.schoolId),
-      authRole: authContext.role ?? null,
-      subject: authContext.subject,
-    });
-  } else {
-    debugAuthLog("attachAuthContext.invalidToken", req, {
-      bearerKind: resolveTokenKind(token),
-    });
   }
 
   next();
@@ -1904,30 +1853,16 @@ function requireTenantScope(req: Request, res: Response, next: NextFunction): vo
   });
 
   if (optionalTenantScope && resolved.error === "schoolId is required") {
-    debugAuthLog("requireTenantScope.pass.optionalNoScope", req, {
-      optionalTenantScope,
-    });
     next();
     return;
   }
 
   if (!resolved.schoolId) {
-    debugAuthLog("requireTenantScope.reject", req, {
-      optionalTenantScope,
-      resolvedError: resolved.error ?? null,
-      resolvedStatus: resolved.status ?? null,
-      authSchoolId: normalizeSchoolId(scopedReq.authContext?.schoolId),
-    });
-    setDebugRejectionHeader(res, `tenant:${resolved.error ?? "schoolId is required"}`);
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
     return;
   }
 
   scopedReq.tenantSchoolId = resolved.schoolId;
-  debugAuthLog("requireTenantScope.pass", req, {
-    tenantSchoolId: resolved.schoolId,
-    optionalTenantScope,
-  });
   next();
 }
 
@@ -3276,7 +3211,6 @@ app.get("/api/advanced/all", (req, res) => {
 
 app.get("/config/roster-teams", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  debugAuthLog("config.rosterTeams.get", req, { schoolId });
   res.json({ teams: getRosterTeamsByScope({ schoolId }) });
 });
 
@@ -3351,13 +3285,6 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
       operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
     }
   }
-
-  debugAuthLog("operatorLinks.get", req, {
-    connectionId,
-    schoolId,
-    resolvedViaConnectionLookup,
-    hasOperatorToken: Boolean(setup.operatorToken),
-  });
 
   // The connection code itself is the shared secret between coach and operator.
   // Always deliver the operator token to any caller that knows the connection ID —
@@ -3655,12 +3582,6 @@ app.delete("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, 
 
 app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  debugAuthLog("games.create", req, {
-    schoolId,
-    requestedGameId: typeof req.body?.gameId === "string" ? req.body.gameId : null,
-    myTeamId: typeof req.body?.homeTeamId === "string" ? req.body.homeTeamId : null,
-    oppTeamId: typeof req.body?.awayTeamId === "string" ? req.body.awayTeamId : null,
-  });
   const {
     gameId,
     homeTeamId,
@@ -3905,10 +3826,6 @@ app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, async (r
 
 app.get("/api/games/:gameId/events", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  debugAuthLog("games.events.get", req, {
-    schoolId,
-    gameId: req.params.gameId,
-  });
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
     res.status(404).json({ error: "game not found" });
@@ -3929,12 +3846,6 @@ app.get("/api/games/:gameId/events", requireApiKey, (req, res) => {
 
 app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRateLimiter, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  debugAuthLog("games.events.post.begin", req, {
-    schoolId,
-    gameId: req.params.gameId,
-    eventType: typeof req.body?.type === "string" ? req.body.type : null,
-    sequence: typeof req.body?.sequence === "number" ? req.body.sequence : null,
-  });
   try {
     const payload = {
       ...(req.body ?? {}),
@@ -3948,22 +3859,9 @@ app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRate
     broadcastGameStateWithDebounce(schoolId, event.gameId, state, insights);
     void refreshAndBroadcastInsights(schoolId, event.gameId);
 
-    debugAuthLog("games.events.post.success", req, {
-      schoolId,
-      gameId: event.gameId,
-      eventId: event.id,
-      eventType: event.type,
-      sequence: event.sequence,
-    });
-
     res.status(201).json({ event, state, insights });
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid event";
-    debugAuthLog("games.events.post.error", req, {
-      schoolId,
-      gameId: req.params.gameId,
-      errorMessage: message,
-    });
     if (/^Game not found:/i.test(message)) {
       res.status(404).json({ error: message });
       return;
@@ -4295,7 +4193,6 @@ export async function startServer(overridePort?: number): Promise<number> {
       }
       console.log(`[realtime-api] Local token signing: ${isLocalTokenAuthEnabled() ? "ENABLED" : "disabled"}`);
       console.log(`[realtime-api] Tenant strict mode: ${REQUIRE_TENANT ? "ENABLED" : "disabled"}`);
-      console.log(`[realtime-api] Debug auth logging: ${DEBUG_AUTH ? "ENABLED" : "disabled"} (set BTA_DEBUG_AUTH=1)`);
       console.log(`[realtime-api] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
       resolve(boundPort);
     });

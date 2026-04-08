@@ -4,28 +4,6 @@ import { DEFAULT_COACH_DASHBOARD, DEFAULT_HOME_TEAM_COLOR, DEFAULT_AWAY_TEAM_COL
 import type { AppData, GameSetup, OperatorLinkResponse, OpponentTrackStat } from "../types.js";
 import { OPPONENT_TRACK_STAT_OPTIONS, DEFAULT_OPPONENT_TRACK_STATS } from "../types.js";
 
-const DEBUG_AUTH = import.meta.env.VITE_DEBUG_AUTH === "1";
-
-export function debugOperatorAuth(event: string, details: Record<string, unknown>): void {
-  if (!DEBUG_AUTH) {
-    return;
-  }
-
-  console.warn("[ipad-operator][debug-auth]", { event, ...details });
-}
-
-export function buildOperatorAuthSnapshot(setup: { apiUrl?: string; apiKey?: string; schoolId?: string; connectionId?: string; syncedConnectionId?: string }) {
-  return {
-    apiUrl: normalizeUrlBase(setup.apiUrl),
-    hasApiKey: Boolean(setup.apiKey?.trim()),
-    apiKeyKind: setup.apiKey?.trim()?.startsWith("bta.") ? "local-token" : (setup.apiKey?.trim() ? "api-key" : "none"),
-    hasSchoolId: Boolean(setup.schoolId?.trim()),
-    schoolId: setup.schoolId?.trim() || null,
-    connectionId: normalizeConnectionId(setup.connectionId),
-    syncedConnectionId: normalizeConnectionId(setup.syncedConnectionId),
-  };
-}
-
 export function normalizeConnectionId(value: string | null | undefined): string {
   return (value ?? "")
     .trim()
@@ -155,12 +133,6 @@ export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkR
       : []);
 
   const resolvedConnectionId = normalizeConnectionId(snapshot.connectionId || current.gameSetup.connectionId);
-
-  debugOperatorAuth("mergeCoachLinkSnapshot", {
-    responseHasOperatorToken: Boolean(snapshot.operatorToken),
-    responseSchoolId: snapshot.schoolId?.trim() || null,
-    responseConnectionId: resolvedConnectionId,
-  });
 
   return {
     ...current,

@@ -1,9 +1,7 @@
 import type { GameEvent } from "@bta/shared-schema";
 import {
   apiKeyHeader,
-  buildOperatorAuthSnapshot,
   buildAiContextFromSetup,
-  debugOperatorAuth,
   generateGameId,
   isConnectionReadyForStart,
   isLegacyStatsExportConfigured,
@@ -99,30 +97,15 @@ export function useGameFlow({
     }
 
     try {
-      debugOperatorAuth("refreshOperatorAuth.request", {
-        connectionId,
-        ...buildOperatorAuthSnapshot(current.gameSetup),
-      });
-
       const response = await fetch(
         `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
         { headers: apiKeyHeader(current.gameSetup) },
       );
-      debugOperatorAuth("refreshOperatorAuth.response", {
-        connectionId,
-        status: response.status,
-        ok: response.ok,
-      });
       if (!response.ok) {
         return current;
       }
 
       const payload = (await response.json()) as OperatorLinkResponse;
-      debugOperatorAuth("refreshOperatorAuth.payload", {
-        connectionId,
-        responseSchoolId: payload.schoolId?.trim() || null,
-        hasOperatorToken: Boolean(payload.operatorToken),
-      });
       const next = mergeCoachLinkSnapshot(current, payload);
       if (
         next.gameSetup.apiKey !== current.gameSetup.apiKey
@@ -132,12 +115,7 @@ export function useGameFlow({
         setAppData(next);
       }
       return next;
-    } catch (error) {
-      debugOperatorAuth("refreshOperatorAuth.error", {
-        connectionId,
-        ...buildOperatorAuthSnapshot(current.gameSetup),
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+    } catch {
       return current;
     }
   }
@@ -160,11 +138,6 @@ export function useGameFlow({
 
     const requestHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
     if (!hasWriteCredential(requestHeaders)) {
-      debugOperatorAuth("startGame.missingWriteCredential", {
-        ...buildOperatorAuthSnapshot(latest.gameSetup),
-        hasAuthorizationHeader: Boolean(requestHeaders.Authorization),
-        hasApiKeyHeader: Boolean(requestHeaders["x-api-key"]),
-      });
       showInlineNotice(
         "Live auth token is missing. Tap Sync Now on Ready to Track, then try Start Game again.",
         "warning",
@@ -174,13 +147,6 @@ export function useGameFlow({
     }
 
     try {
-      debugOperatorAuth("startGame.request", {
-        gameId: gid,
-        ...buildOperatorAuthSnapshot(latest.gameSetup),
-        hasAuthorizationHeader: Boolean(requestHeaders.Authorization),
-        hasApiKeyHeader: Boolean(requestHeaders["x-api-key"]),
-      });
-
       let res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
         method: "POST",
         headers: requestHeaders,
@@ -188,10 +154,6 @@ export function useGameFlow({
       });
 
       if (res.status === 401) {
-        debugOperatorAuth("startGame.unauthorizedRetry", {
-          gameId: gid,
-          status: res.status,
-        });
         latest = await refreshOperatorAuthFromConnection(latest);
         const retryHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
         if (hasWriteCredential(retryHeaders)) {
@@ -205,12 +167,6 @@ export function useGameFlow({
 
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        debugOperatorAuth("startGame.responseError", {
-          gameId: gid,
-          status: res.status,
-          body,
-          ...buildOperatorAuthSnapshot(latest.gameSetup),
-        });
         if (res.status === 409) {
           let parsed: { activeGameId?: string; activeState?: { gameId?: string; homeTeamId?: string; awayTeamId?: string; opponentName?: string } } = {};
           try { parsed = JSON.parse(body); } catch { /* ignore */ }
@@ -270,10 +226,6 @@ export function useGameFlow({
           } catch { /* keep local values */ }
         }
       }
-      debugOperatorAuth("startGame.success", {
-        gameId: effectiveGameId,
-        ...buildOperatorAuthSnapshot(latest.gameSetup),
-      });
     } catch {
       showInlineNotice(
         `Could not reach the live server at ${latest.gameSetup.apiUrl}. Make sure the realtime API is running, then go to Settings > Game Setup and tap Start Game again.`,
