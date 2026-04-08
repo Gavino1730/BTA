@@ -355,11 +355,11 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
             <div className="mkt-hero-copy">
               <span className="mkt-badge">Courtside Control System</span>
               <h1 className="mkt-h1">
-                Win the next possession before it starts.
-                <span className="mkt-gradient-text">BTA Courtside runs at game speed.</span>
+                Win the next possession.
+                <span className="mkt-gradient-text">Make game-speed decisions.</span>
               </h1>
               <p className="mkt-hero-sub">
-                Live scoreflow, momentum tracking, and rotation signals in one command surface, built for decisions made in ten seconds or less.
+                Live scoreflow, momentum, and rotation cues in one screen.
               </p>
               <div className="mkt-hero-rails" aria-hidden="true">
                 <span className="mkt-hero-rail">Possession pressure</span>

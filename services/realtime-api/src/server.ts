@@ -1531,7 +1531,10 @@ function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, un
 type AuthedRequest = Request & { authContext?: AuthContext };
 type ScopedRequest = AuthedRequest & { tenantSchoolId?: string };
 
-function resolveRequestSchoolId(req: Request): { schoolId?: string; error?: string; status?: number } {
+function resolveRequestSchoolId(
+  req: Request,
+  options?: { suppressMissingScopeTelemetry?: boolean }
+): { schoolId?: string; error?: string; status?: number } {
   const scopedReq = req as ScopedRequest;
   if (scopedReq.tenantSchoolId) {
     return { schoolId: scopedReq.tenantSchoolId };
@@ -1554,7 +1557,7 @@ function resolveRequestSchoolId(req: Request): { schoolId?: string; error?: stri
     });
   }
 
-  if (result.error === "schoolId is required") {
+  if (result.error === "schoolId is required" && !options?.suppressMissingScopeTelemetry) {
     trackSecurityEvent("missingTenantScope", {
       path: req.path,
       method: req.method
@@ -1595,6 +1598,22 @@ function resolveSocketSchoolId(socket: {
 function isPublicAuthBootstrapRequest(req: Request): boolean {
   return req.method === "POST"
     && (req.path.endsWith("/auth/register") || req.path.endsWith("/auth/login"));
+}
+
+function isOperatorBootstrapRequest(req: Request): boolean {
+  return req.method === "GET" && /^\/operator-links\/[a-z0-9_-]+$/i.test(req.path);
+}
+
+function isOptionalTenantScopeRequest(req: Request): boolean {
+  if (isPublicAuthBootstrapRequest(req) || isOperatorBootstrapRequest(req)) {
+    return true;
+  }
+
+  if (req.method === "GET" && (req.path === "/auth/session" || req.path === "/onboarding/state")) {
+    return true;
+  }
+
+  return false;
 }
 
 function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
@@ -1643,7 +1662,7 @@ function resolveAuthSchoolId(
   payload: Record<string, unknown>,
   email: string,
 ): { schoolId?: string; error?: string; status?: number } {
-  const resolved = resolveRequestSchoolId(req);
+  const resolved = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
   if (resolved.schoolId) {
     return { schoolId: resolved.schoolId };
   }
@@ -1777,19 +1796,17 @@ async function attachAuthContext(req: Request, _res: Response, next: NextFunctio
 
 function requireTenantScope(req: Request, res: Response, next: NextFunction): void {
   const scopedReq = req as ScopedRequest;
-  const resolved = resolveRequestSchoolId(req);
+  const optionalTenantScope = isOptionalTenantScopeRequest(req);
+  const resolved = resolveRequestSchoolId(req, {
+    suppressMissingScopeTelemetry: optionalTenantScope,
+  });
+
+  if (optionalTenantScope && resolved.error === "schoolId is required") {
+    next();
+    return;
+  }
+
   if (!resolved.schoolId) {
-    const isOperatorBootstrapRequest = req.method === "GET" && /^\/operator-links\/[a-z0-9_-]+$/i.test(req.path);
-    if (isOperatorBootstrapRequest && resolved.error === "schoolId is required") {
-      next();
-      return;
-    }
-
-    if (isPublicAuthBootstrapRequest(req)) {
-      next();
-      return;
-    }
-
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
     return;
   }
@@ -2105,8 +2122,32 @@ app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
 
 app.get("/api/auth/session", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
+  const schoolResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
+  const schoolId = schoolResolution.schoolId;
   const authContext = (req as ScopedRequest).authContext;
+
+  if (!schoolId && !authContext) {
+    res.json({
+      authenticated: false,
+      token: null,
+      user: null,
+      currentMember: null,
+      onboarding: {
+        completed: false,
+        hasAccount: false,
+        hasProfile: false,
+        hasTeam: false,
+        teamCount: 0,
+      },
+    });
+    return;
+  }
+
+  if (!schoolId) {
+    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
+    return;
+  }
+
   if (!authContext) {
     res.json({
       authenticated: false,
@@ -2284,7 +2325,27 @@ app.post("/api/auth/logout", (_req, res) => {
 });
 
 app.get("/api/onboarding/state", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
+  const schoolResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
+  const schoolId = schoolResolution.schoolId;
+  if (!schoolId) {
+    if (schoolResolution.error && schoolResolution.error !== "schoolId is required") {
+      res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error });
+      return;
+    }
+
+    res.json({
+      completed: false,
+      hasAccount: false,
+      hasProfile: false,
+      hasTeam: false,
+      teamCount: 0,
+      account: null,
+      profile: null,
+      suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
+    });
+    return;
+  }
+
   const profile = buildOnboardingProfileView(schoolId);
   const account = getOnboardingAccountStateByScope({ schoolId });
   const suggestedCoach = buildSuggestedCoachIdentity((req as ScopedRequest).authContext);
@@ -3122,7 +3183,7 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
     return;
   }
 
-  const tenantResolution = resolveRequestSchoolId(req);
+  const tenantResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
   let schoolId = tenantResolution.schoolId;
   if (!schoolId) {
     if (tenantResolution.error && tenantResolution.error !== "schoolId is required") {

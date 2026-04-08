@@ -188,6 +188,29 @@ describe("server auth integration", () => {
     expect(sessionBody.onboarding?.completed).toBe(false);
   });
 
+  it("returns an unauthenticated session payload when no school scope or token is provided", async () => {
+    const response = await fetch(`${API_BASE}/api/auth/session`);
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      authenticated?: boolean;
+      onboarding?: {
+        completed?: boolean;
+        hasAccount?: boolean;
+        hasProfile?: boolean;
+        hasTeam?: boolean;
+        teamCount?: number;
+      };
+    };
+
+    expect(body.authenticated).toBe(false);
+    expect(body.onboarding?.completed).toBe(false);
+    expect(body.onboarding?.hasAccount).toBe(false);
+    expect(body.onboarding?.hasProfile).toBe(false);
+    expect(body.onboarding?.hasTeam).toBe(false);
+    expect(body.onboarding?.teamCount).toBe(0);
+  });
+
   it("returns auth-derived onboarding coach suggestions when no account is saved yet", async () => {
     const token = makeTestToken({
       sub: "setup-coach",

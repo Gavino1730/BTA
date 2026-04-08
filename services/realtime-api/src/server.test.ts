@@ -928,6 +928,29 @@ describe("unified stats endpoints", () => {
     expect(teamsBody.teams[0]?.players).toHaveLength(2);
   });
 
+  it("returns default onboarding state when no tenant scope is provided", async () => {
+    const response = await fetch(`${API_BASE}/api/onboarding/state`);
+    expect(response.status).toBe(200);
+
+    const body = await response.json() as {
+      completed?: boolean;
+      hasAccount?: boolean;
+      hasProfile?: boolean;
+      hasTeam?: boolean;
+      teamCount?: number;
+      account?: unknown;
+      profile?: unknown;
+    };
+
+    expect(body.completed).toBe(false);
+    expect(body.hasAccount).toBe(false);
+    expect(body.hasProfile).toBe(false);
+    expect(body.hasTeam).toBe(false);
+    expect(body.teamCount).toBe(0);
+    expect(body.account).toBeNull();
+    expect(body.profile).toBeNull();
+  });
+
   it("supports local email/password accounts through onboarding", async () => {
     await resetSchool("account-school");
 
