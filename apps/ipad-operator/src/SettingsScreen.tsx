@@ -323,7 +323,11 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
 
         <section className="settings-section">
           <h3>API Key</h3>
-          <p className="dim-text" style={{ marginBottom: 8 }}>API key or login token from the coach dashboard. Leave blank during local development.</p>
+          <p className="dim-text" style={{ marginBottom: 8 }}>
+            Prefer Connection Code + Sync Now on Ready to Track.
+            Use this field only as a manual fallback with your deployment BTA_API_KEY or a valid bta.* operator token.
+            Leave blank during local development.
+          </p>
           <input
             type="password"
             placeholder="Leave blank to disable auth"

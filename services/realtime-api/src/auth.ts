@@ -39,6 +39,10 @@ export function isJwtAuthEnabled(): boolean {
   return jwtEnabled;
 }
 
+export function isLocalTokenAuthEnabled(): boolean {
+  return localTokenEnabled;
+}
+
 export async function verifyBearerToken(token: string): Promise<AuthContext | null> {
   const normalizedToken = token.trim();
   if (!normalizedToken) {

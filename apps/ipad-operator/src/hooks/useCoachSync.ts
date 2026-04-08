@@ -3,6 +3,8 @@ import type { AppData } from "../types.js";
 import type { OperatorLinkResponse } from "../types.js";
 import {
   apiHeaders,
+  buildOperatorAuthSnapshot,
+  debugOperatorAuth,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
 } from "../helpers/network.js";
@@ -114,10 +116,21 @@ export function useCoachSync({
     setConnectionSyncStatus(`Syncing ${normalizedId} from the coach dashboard...`);
 
     try {
+      debugOperatorAuth("syncFromCoachCode.request", {
+        normalizedId,
+        ...buildOperatorAuthSnapshot(appData.gameSetup),
+      });
+
       const response = await fetch(
         `${appData.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(normalizedId)}`,
         apiHeaders(appData.gameSetup),
       );
+
+      debugOperatorAuth("syncFromCoachCode.response", {
+        normalizedId,
+        status: response.status,
+        ok: response.ok,
+      });
 
       if (response.status === 404) {
         setAppData((current) => {
@@ -153,6 +166,12 @@ export function useCoachSync({
       }
 
       const payload = (await response.json()) as OperatorLinkResponse;
+      debugOperatorAuth("syncFromCoachCode.payload", {
+        normalizedId,
+        responseSchoolId: payload.schoolId?.trim() || null,
+        hasOperatorToken: Boolean(payload.operatorToken),
+        setupGameId: payload.setup?.gameId ?? null,
+      });
       let syncedTeamName = "team";
 
       setAppData((current) => {
@@ -172,7 +191,12 @@ export function useCoachSync({
         showInlineNotice(`Synced ${syncedTeamName} from the coach dashboard.`, "success", 2500);
       }
       return true;
-    } catch {
+    } catch (error) {
+      debugOperatorAuth("syncFromCoachCode.error", {
+        normalizedId,
+        ...buildOperatorAuthSnapshot(appData.gameSetup),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       setConnectionSyncStatus(
         "Coach sync is temporarily offline. The last synced roster and lineup stay saved locally on this iPad.",
       );
