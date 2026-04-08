@@ -24,8 +24,17 @@ interface ConnectedNavActionsProps {
 }
 
 function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsProps) {
-  const { connectionId, deviceConnected, serverConnected, operatorConsoleUrl } = useGameSession();
+  const {
+    connectionId,
+    deviceConnected,
+    serverConnected,
+    operatorConsoleUrl,
+    hasGameStarted,
+  } = useGameSession();
   const [codeCopied, setCodeCopied] = useState(false);
+  const scoreOperatorUrl = hasGameStarted
+    ? operatorConsoleUrl
+    : operatorConsoleUrl.split("?")[0] ?? operatorConsoleUrl;
 
   function handleCopyCode() {
     if (!connectionId) return;
@@ -58,7 +67,7 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
           </>
         )}
       </button>
-      <a href={operatorConsoleUrl} className="coach-nav-ext-link" target="_blank" rel="noreferrer">
+      <a href={scoreOperatorUrl} className="coach-nav-ext-link" target="_blank" rel="noreferrer">
         Score Operator
       </a>
       <button

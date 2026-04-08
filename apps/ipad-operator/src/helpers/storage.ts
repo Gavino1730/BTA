@@ -1,5 +1,5 @@
 import { normalizeTeamColor } from "@bta/shared-schema";
-import { APP_DATA_KEY, DEFAULT_API, DEFAULT_AWAY_TEAM_COLOR, DEFAULT_HOME_TEAM_COLOR, DEFAULT_SCHOOL_ID, OPERATOR_ID_KEY, STORE } from "../constants.js";
+import { APP_DATA_KEY, DEFAULT_API, DEFAULT_AWAY_TEAM_COLOR, DEFAULT_HOME_TEAM_COLOR, DEFAULT_SCHOOL_ID, DEVICE_NAME_KEY, OPERATOR_ID_KEY, STORE } from "../constants.js";
 import type { AppData, GameSetup, OpponentTrackStat } from "../types.js";
 import { DEFAULT_OPPONENT_TRACK_STATS } from "../types.js";
 import { normalizeConnectionId, normalizeOpponentTrackStats } from "./network.js";
@@ -54,11 +54,17 @@ export function clearOperatorLocalCache(): void {
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key) continue;
+    if (key === DEVICE_NAME_KEY) continue;
     if (key === APP_DATA_KEY || key.startsWith(`${STORE}:`) || key.startsWith("operator-console:")) {
       keysToRemove.push(key);
     }
   }
   keysToRemove.forEach((key) => localStorage.removeItem(key));
+}
+
+function normalizeDeviceName(value: string | null | undefined): string | undefined {
+  const normalized = (value ?? "").trim();
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 // Only clear cached data once per page load (initial bootstrap).
@@ -67,6 +73,7 @@ export function clearOperatorLocalCache(): void {
 let _initialCacheClearDone = false;
 
 export function loadAppData(): AppData {
+  const persistedDeviceName = normalizeDeviceName(localStorage.getItem(DEVICE_NAME_KEY));
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
 
@@ -115,6 +122,7 @@ export function loadAppData(): AppData {
       gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
       gs.homeTeamColor = normalizeTeamColor(gs.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR;
       gs.awayTeamColor = normalizeTeamColor(gs.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR;
+      gs.deviceName = normalizeDeviceName(gs.deviceName) ?? persistedDeviceName;
       return withStandardizedTeams({
         ...DEFAULT_DATA,
         ...parsed,
@@ -122,10 +130,25 @@ export function loadAppData(): AppData {
       });
     }
   } catch { /* empty */ }
-  return withStandardizedTeams({ ...DEFAULT_DATA, gameSetup: { ...DEFAULT_DATA.gameSetup, ...urlSetup } });
+  return withStandardizedTeams({
+    ...DEFAULT_DATA,
+    gameSetup: {
+      ...DEFAULT_DATA.gameSetup,
+      ...urlSetup,
+      deviceName: persistedDeviceName,
+    },
+  });
 }
 
-export function saveAppData(d: AppData) { localStorage.setItem(APP_DATA_KEY, JSON.stringify(d)); }
+export function saveAppData(d: AppData) {
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(d));
+  const normalizedDeviceName = normalizeDeviceName(d.gameSetup.deviceName);
+  if (normalizedDeviceName) {
+    localStorage.setItem(DEVICE_NAME_KEY, normalizedDeviceName);
+  } else {
+    localStorage.removeItem(DEVICE_NAME_KEY);
+  }
+}
 
 // ---- Per-game event/seq persistence ----
 export function pendingKey(gid: string) { return `${STORE}:${gid}:pending`; }

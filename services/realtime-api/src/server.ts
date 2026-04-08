@@ -1619,6 +1619,12 @@ function isOptionalTenantScopeRequest(req: Request): boolean {
   return false;
 }
 
+function shouldSuppressMissingTenantTelemetry(req: Request): boolean {
+  // Some clients probe roster config before account/school bootstrap completes.
+  // Keep strict tenant enforcement (request still fails) but avoid noisy logs.
+  return req.method === "GET" && req.path === "/roster-teams";
+}
+
 function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
   for (const candidate of candidates) {
     const raw = sanitizeTextField(candidate, 120);
@@ -1800,8 +1806,9 @@ async function attachAuthContext(req: Request, _res: Response, next: NextFunctio
 function requireTenantScope(req: Request, res: Response, next: NextFunction): void {
   const scopedReq = req as ScopedRequest;
   const optionalTenantScope = isOptionalTenantScopeRequest(req);
+  const suppressMissingScopeTelemetry = optionalTenantScope || shouldSuppressMissingTenantTelemetry(req);
   const resolved = resolveRequestSchoolId(req, {
-    suppressMissingScopeTelemetry: optionalTenantScope,
+    suppressMissingScopeTelemetry,
   });
 
   if (optionalTenantScope && resolved.error === "schoolId is required") {
