@@ -185,12 +185,34 @@ async function main() {
       }
     }
 
+    // Recalculate team_stats from actual player stats to guarantee consistency
+    teamStats = {
+      fg: playerStatsList.reduce((s, p) => s + p.fg, 0),
+      fga: playerStatsList.reduce((s, p) => s + p.fga, 0),
+      fg3: playerStatsList.reduce((s, p) => s + p.fg3, 0),
+      fg3a: playerStatsList.reduce((s, p) => s + p.fg3a, 0),
+      ft: playerStatsList.reduce((s, p) => s + p.ft, 0),
+      fta: playerStatsList.reduce((s, p) => s + p.fta, 0),
+      oreb: playerStatsList.reduce((s, p) => s + p.oreb, 0),
+      dreb: playerStatsList.reduce((s, p) => s + p.dreb, 0),
+      reb: playerStatsList.reduce((s, p) => s + p.reb, 0),
+      asst: playerStatsList.reduce((s, p) => s + p.asst, 0),
+      to: playerStatsList.reduce((s, p) => s + p.to, 0),
+      stl: playerStatsList.reduce((s, p) => s + p.stl, 0),
+      blk: playerStatsList.reduce((s, p) => s + p.blk, 0),
+      fouls: playerStatsList.reduce((s, p) => s + p.fouls, 0),
+    };
+    // vc_score = sum of player pts so scoreboard always matches box score
+    const derivedScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
+    const result = derivedScore > game.opp_score ? "W" : derivedScore < game.opp_score ? "L" : "T";
+
     const body = {
       date: game.date,
       opponent: game.opponent,
       location: loc,
-      vc_score: game.vwb_score,
+      vc_score: derivedScore,
       opp_score: game.opp_score,
+      result,
       team_stats: teamStats,
       player_stats: playerStatsList,
     };
@@ -202,7 +224,7 @@ async function main() {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      console.log(`OK ${gid} ${game.vwb_score}-${game.opp_score} (${playerStatsList.length} players)`);
+      console.log(`OK ${gid} ${derivedScore}-${game.opp_score} ${result} (${playerStatsList.length} players)`);
     } catch (e) {
       console.log(`FAIL ${gid}: ${e.message}`);
     }
