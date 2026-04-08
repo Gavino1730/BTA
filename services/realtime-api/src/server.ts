@@ -1465,7 +1465,19 @@ const securityTelemetry: Record<SecurityMetricKey, number> = {
 };
 
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
+let debugRequestSequence = 0;
 let debugAuthSequence = 0;
+
+type DebugRequest = Request & { btaDebugRequestId?: string };
+
+function ensureDebugRequestId(req: Request): string {
+  const debugReq = req as DebugRequest;
+  if (!debugReq.btaDebugRequestId) {
+    debugRequestSequence += 1;
+    debugReq.btaDebugRequestId = `r${debugRequestSequence}`;
+  }
+  return debugReq.btaDebugRequestId;
+}
 
 function renderPrometheusSecurityMetrics(): string {
   return [
@@ -1553,6 +1565,7 @@ function buildRequestDebugSummary(req: Request): Record<string, unknown> {
   const queryApiKey = typeof req.query.apiKey === "string" ? req.query.apiKey : undefined;
 
   return {
+    requestId: ensureDebugRequestId(req),
     method: req.method,
     path: req.path,
     hasBearer: Boolean(bearer),
