@@ -47,7 +47,7 @@ export function buildAuthHeaders(
 }
 
 function buildHeaders(apiKey?: string, schoolId?: string, withJson = false): Record<string, string> {
-  return buildAuthHeaders({ apiKey, schoolId }, { withJson, allowBearerToken: false });
+  return buildAuthHeaders({ apiKey, schoolId }, { withJson, allowBearerToken: true });
 }
 
 /**

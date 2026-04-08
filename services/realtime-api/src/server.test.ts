@@ -202,6 +202,76 @@ describe("operator pairing endpoints", () => {
     expect(body.teams[0]?.players).toHaveLength(2);
   });
 
+  it("resolves operator link by unique connection code without requiring school scope", async () => {
+    await resetSchool("pairing-noscope");
+
+    const putRes = await fetch(`${API_BASE}/api/operator-links/conn-noscope-1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-noscope" },
+      body: JSON.stringify({
+        gameId: "pairing-noscope-game",
+        myTeamId: "vc-varsity",
+        myTeamName: "Valley Catholic Varsity",
+        opponentName: "Central Christian",
+        vcSide: "home"
+      })
+    });
+    expect(putRes.status).toBe(200);
+
+    const getRes = await fetch(`${API_BASE}/api/operator-links/conn-noscope-1`);
+    expect(getRes.status).toBe(200);
+
+    const body = await getRes.json() as {
+      connectionId: string;
+      setup: { gameId?: string };
+      operatorToken?: string;
+    };
+
+    expect(body.connectionId).toBe("conn-noscope-1");
+    expect(body.setup.gameId).toBe("pairing-noscope-game");
+    expect(typeof body.operatorToken).toBe("string");
+    expect(body.operatorToken?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("rejects operator link lookup without school scope when connection code is ambiguous", async () => {
+    await resetSchool("pairing-ambig-a");
+    await resetSchool("pairing-ambig-b");
+
+    const sharedConnectionId = "conn-ambig-1";
+
+    const firstPut = await fetch(`${API_BASE}/api/operator-links/${sharedConnectionId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-ambig-a" },
+      body: JSON.stringify({
+        gameId: "game-a",
+        myTeamId: "team-a",
+        myTeamName: "Team A",
+        opponentName: "Opponent A",
+        vcSide: "home"
+      })
+    });
+    expect(firstPut.status).toBe(200);
+
+    const secondPut = await fetch(`${API_BASE}/api/operator-links/${sharedConnectionId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-ambig-b" },
+      body: JSON.stringify({
+        gameId: "game-b",
+        myTeamId: "team-b",
+        myTeamName: "Team B",
+        opponentName: "Opponent B",
+        vcSide: "away"
+      })
+    });
+    expect(secondPut.status).toBe(200);
+
+    const getRes = await fetch(`${API_BASE}/api/operator-links/${sharedConnectionId}`);
+    expect(getRes.status).toBe(409);
+
+    const body = await getRes.json() as { error?: string };
+    expect(body.error).toContain("ambiguous");
+  });
+
   it("preserves existing setup fields when partial updates are published", async () => {
     await resetSchool("pairing-partial-update");
 

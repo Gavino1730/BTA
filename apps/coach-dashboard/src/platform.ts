@@ -28,6 +28,72 @@ function normalizeSchoolId(value: unknown): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
 }
 
+function parseJsonSafely(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeBase64Url(input: string): string {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  return atob(padded);
+}
+
+function readClaimPath(payload: Record<string, unknown>, path: string): unknown {
+  const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
+  let current: unknown = payload;
+  for (const part of parts) {
+    if (!current || typeof current !== "object" || !(part in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function decodeSchoolIdFromToken(token: string | undefined): string {
+  if (!token) {
+    return "";
+  }
+
+  const normalized = token.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  // Local tokens use bta.<base64url-payload>.<signature>
+  if (normalized.startsWith("bta.")) {
+    const [, encodedPayload] = normalized.split(".");
+    if (!encodedPayload) {
+      return "";
+    }
+    const payload = parseJsonSafely(decodeBase64Url(encodedPayload));
+    return normalizeSchoolId(payload?.schoolId);
+  }
+
+  // JWT tokens use header.payload.signature
+  const jwtParts = normalized.split(".");
+  if (jwtParts.length < 2) {
+    return "";
+  }
+  const payload = parseJsonSafely(decodeBase64Url(jwtParts[1]!));
+  if (!payload) {
+    return "";
+  }
+
+  return normalizeSchoolId(
+    readClaimPath(payload, "app_metadata.schoolId")
+    ?? payload.schoolId
+    ?? payload.school_id
+    ?? payload.tenantId
+    ?? payload.tenant_id
+  );
+}
+
 export function resolveActiveSchoolId(locationSearch?: string): string {
   const params = typeof locationSearch === "string"
     ? new URLSearchParams(locationSearch)
@@ -38,6 +104,7 @@ export function resolveActiveSchoolId(locationSearch?: string): string {
   return normalizeSchoolId(
     params?.get("schoolId")
       ?? readStoredAuthSession()?.schoolId
+      ?? decodeSchoolIdFromToken(readStoredAuthSession()?.token)
       ?? import.meta.env.VITE_SCHOOL_ID
       ?? resolveDefaultSchoolId(defaultHost)
   );

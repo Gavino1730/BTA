@@ -221,6 +221,25 @@ function buildTeamAbbreviation(name: string): string {
   return compact.slice(0, 4) || "TEAM";
 }
 
+function buildSchoolTeamId(name: string): string {
+  const slug = buildOrganizationSlug(name);
+  return `team-${slug || "team"}`;
+}
+
+function buildUniqueSchoolTeamId(name: string, teams: RosterTeam[]): string {
+  const base = buildSchoolTeamId(name);
+  const existing = new Set(teams.map((team) => team.id));
+  if (!existing.has(base)) {
+    return base;
+  }
+
+  let attempt = 2;
+  while (existing.has(`${base}-${attempt}`)) {
+    attempt += 1;
+  }
+  return `${base}-${attempt}`;
+}
+
 function buildOrganizationSlug(name: string): string {
   return name
     .trim()
@@ -228,6 +247,23 @@ function buildOrganizationSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+}
+
+function resolveSchoolName(payload: Record<string, unknown>): string {
+  return sanitizeTextField(
+    payload.schoolName
+    ?? payload.organizationName
+    ?? payload.school,
+    160,
+  );
+}
+
+function resolveCoachName(payload: Record<string, unknown>): string {
+  return sanitizeTextField(payload.coachName ?? payload.fullName, 120);
+}
+
+function resolveCoachEmail(payload: Record<string, unknown>): string {
+  return sanitizeTextField(payload.coachEmail ?? payload.email, 160).toLowerCase();
 }
 
 function defaultTeamAiSettings(): CoachAiSettings {
@@ -568,8 +604,10 @@ function getPrimaryTeam(schoolId: string): { teams: RosterTeam[]; team: RosterTe
 function upsertPrimaryTeam(schoolId: string, payload: Record<string, unknown>): RosterTeam[] {
   const { teams, team } = getPrimaryTeam(schoolId);
   const name = sanitizeTextField(payload.name ?? team?.name ?? "Team", 120) || "Team";
+  const seededTeamId = sanitizeTextField(payload.teamId ?? payload.id, 80)
+    || (buildOrganizationSlug(name) ? `team-${buildOrganizationSlug(name)}` : "");
   const nextTeam: RosterTeam = {
-    id: team?.id ?? "primary-team",
+    id: team?.id ?? (seededTeamId || "primary-team"),
     schoolId,
     name,
     abbreviation: sanitizeTextField(payload.abbreviation ?? team?.abbreviation ?? buildTeamAbbreviation(name), 12) || buildTeamAbbreviation(name),
@@ -591,9 +629,9 @@ function buildOrganizationProfilePayload(
   payload: Record<string, unknown>,
   options?: { complete?: boolean },
 ): Partial<OrganizationProfile> {
-  const organizationName = sanitizeTextField(payload.organizationName, 160);
-  const coachName = sanitizeTextField(payload.coachName, 120);
-  const coachEmail = sanitizeTextField(payload.coachEmail, 160).toLowerCase();
+  const organizationName = resolveSchoolName(payload);
+  const coachName = resolveCoachName(payload);
+  const coachEmail = resolveCoachEmail(payload);
 
   return {
     schoolId,
@@ -612,9 +650,9 @@ function buildOnboardingAccountPayload(
   payload: Record<string, unknown>,
   options?: { complete?: boolean },
 ): OnboardingAccountInput {
-  const organizationName = sanitizeTextField(payload.organizationName, 160);
-  const coachName = sanitizeTextField(payload.coachName, 120);
-  const coachEmail = sanitizeTextField(payload.coachEmail, 160).toLowerCase();
+  const organizationName = resolveSchoolName(payload);
+  const coachName = resolveCoachName(payload);
+  const coachEmail = resolveCoachEmail(payload);
 
   return {
     organization: {
@@ -639,12 +677,12 @@ function buildOnboardingAccountPayload(
 }
 
 function requireOnboardingIdentity(payload: Record<string, unknown>, res: Response): boolean {
-  const organizationName = sanitizeTextField(payload.organizationName, 160);
-  const coachName = sanitizeTextField(payload.coachName, 120);
-  const coachEmail = sanitizeTextField(payload.coachEmail, 160);
+  const organizationName = resolveSchoolName(payload);
+  const coachName = resolveCoachName(payload);
+  const coachEmail = resolveCoachEmail(payload);
 
   if (!organizationName || !coachName || !coachEmail) {
-    res.status(400).json({ error: "organizationName, coachName, and coachEmail are required" });
+    res.status(400).json({ error: "schoolName, coachName, and coachEmail are required" });
     return false;
   }
 
@@ -1635,11 +1673,12 @@ function resolveAuthSchoolId(
   return {
     schoolId: allocateBootstrapSchoolId(buildBootstrapSchoolSeed(
       payload.schoolId,
+      payload.schoolName,
       payload.organizationName,
       payload.teamName,
-      email,
       payload.fullName,
       payload.coachName,
+      email,
     ))
   };
 }
@@ -1740,6 +1779,12 @@ function requireTenantScope(req: Request, res: Response, next: NextFunction): vo
   const scopedReq = req as ScopedRequest;
   const resolved = resolveRequestSchoolId(req);
   if (!resolved.schoolId) {
+    const isOperatorBootstrapRequest = req.method === "GET" && /^\/operator-links\/[a-z0-9_-]+$/i.test(req.path);
+    if (isOperatorBootstrapRequest && resolved.error === "schoolId is required") {
+      next();
+      return;
+    }
+
     if (isPublicAuthBootstrapRequest(req)) {
       next();
       return;
@@ -2312,8 +2357,10 @@ app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res)
     return;
   }
 
+  const requestedAbbreviation = sanitizeTextField(payload.abbreviation, 12).toUpperCase();
+
   const existing = getPrimaryTeam(schoolId).team;
-  const teamId = existing?.id ?? "primary-team";
+  const teamId = existing?.id ?? `team-${buildOrganizationSlug(teamName) || "primary"}`;
   const currentPlayers = new Map((existing?.players ?? []).map((player) => [normalizeNameKey(player.name), player]));
   const rosterPayload = Array.isArray(payload.roster) ? payload.roster : [];
   const players = rosterPayload
@@ -2321,13 +2368,14 @@ app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res)
     .filter((player): player is RosterPlayer => Boolean(player));
 
   const savedTeams = upsertPrimaryTeam(schoolId, {
+    teamId,
     name: teamName,
     season: payload.season,
     teamColor: payload.teamColor,
     coachStyle: payload.coachStyle ?? existing?.coachStyle,
     playingStyle: payload.playingStyle,
     teamContext: payload.teamContext ?? existing?.teamContext,
-    abbreviation: existing?.abbreviation ?? buildTeamAbbreviation(teamName),
+    abbreviation: requestedAbbreviation || existing?.abbreviation || buildTeamAbbreviation(teamName),
   });
 
   savedTeams[0]!.players = players;
@@ -2342,7 +2390,7 @@ app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res)
     account,
     member,
     profile,
-    team: { id: persistedTeams[0]?.id ?? "primary-team", name: persistedTeams[0]?.name ?? teamName },
+    team: { id: persistedTeams[0]?.id ?? teamId, name: persistedTeams[0]?.name ?? teamName },
     playersLoaded: persistedTeams[0]?.players.length ?? 0,
   });
 });
@@ -3068,11 +3116,35 @@ app.put("/config/roster-teams", requireApiKey, requireWriteRole, (req, res) => {
 });
 
 app.get("/api/operator-links/:connectionId", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
   const connectionId = normalizeConnectionKey(req.params.connectionId);
   if (!connectionId) {
     res.status(400).json({ error: "connectionId is required" });
     return;
+  }
+
+  const tenantResolution = resolveRequestSchoolId(req);
+  let schoolId = tenantResolution.schoolId;
+  if (!schoolId) {
+    if (tenantResolution.error && tenantResolution.error !== "schoolId is required") {
+      res.status(tenantResolution.status ?? 400).json({ error: tenantResolution.error });
+      return;
+    }
+
+    const matchingSchoolIds = Array.from(operatorLinkByConnectionId.keys())
+      .filter((key) => key.endsWith(`:${connectionId}`))
+      .map((key) => key.slice(0, key.lastIndexOf(":")));
+
+    if (matchingSchoolIds.length === 0) {
+      res.status(404).json({ error: "Connection code not found" });
+      return;
+    }
+
+    if (matchingSchoolIds.length > 1) {
+      res.status(409).json({ error: "Connection code is ambiguous; provide schoolId" });
+      return;
+    }
+
+    schoolId = matchingSchoolIds[0]!;
   }
 
   let setup = getOperatorLinkSetup(schoolId, connectionId);
@@ -3200,12 +3272,19 @@ app.post("/teams", requireApiKey, requireWriteRole, (req, res) => {
   }
 
   const teams = getRosterTeamsByScope({ schoolId });
-  const id = `team-${Date.now()}`;
+  const normalizedName = sanitizeTextField(name, 120);
+  const normalizedAbbreviation = sanitizeTextField(abbreviation, 12).toUpperCase();
+  if (!normalizedName || !normalizedAbbreviation) {
+    res.status(400).json({ error: "name and abbreviation are required" });
+    return;
+  }
+
+  const id = buildUniqueSchoolTeamId(normalizedName, teams);
   const newTeam = {
     id,
     schoolId,
-    name,
-    abbreviation,
+    name: normalizedName,
+    abbreviation: normalizedAbbreviation,
     teamColor,
     players: []
   };
@@ -3216,6 +3295,43 @@ app.post("/teams", requireApiKey, requireWriteRole, (req, res) => {
   io.to(schoolRoom(schoolId)).emit("team:created", { team: newTeam });
 
   res.status(201).json({ team: newTeam });
+});
+
+app.get("/api/school/teams", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  res.json({ teams: getRosterTeamsByScope({ schoolId }) });
+});
+
+app.post("/api/school/teams", requireApiKey, requireWriteRole, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const name = sanitizeTextField(payload.name, 120);
+  const abbreviation = sanitizeTextField(payload.abbreviation, 12).toUpperCase();
+  const season = sanitizeTextField(payload.season, 40) || undefined;
+  const teamColor = normalizeTeamColor(payload.teamColor);
+
+  if (!name || !abbreviation) {
+    res.status(400).json({ error: "name and abbreviation are required" });
+    return;
+  }
+
+  const teams = getRosterTeamsByScope({ schoolId });
+  const id = buildUniqueSchoolTeamId(name, teams);
+  const team: RosterTeam = {
+    id,
+    schoolId,
+    name,
+    abbreviation,
+    season,
+    teamColor,
+    players: []
+  };
+
+  const saved = saveRosterTeams([...teams, team], { schoolId });
+  io.to(schoolRoom(schoolId)).emit("roster:teams", saved);
+  io.to(schoolRoom(schoolId)).emit("team:created", { team });
+
+  res.status(201).json({ team });
 });
 
 app.put("/teams/:teamId", requireApiKey, requireWriteRole, (req, res) => {

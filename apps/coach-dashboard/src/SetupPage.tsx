@@ -17,6 +17,7 @@ interface OnboardingAccountPayload {
   account?: {
     organization?: {
       organizationName?: string;
+      schoolName?: string;
       teamName?: string;
       season?: string;
     } | null;
@@ -57,10 +58,11 @@ function buildEmptyRosterRow(id: number): RosterRow {
 }
 
 export function SetupPage({ onComplete }: SetupPageProps) {
-  const [organizationName, setOrganizationName] = useState("");
+  const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
   const [coachEmail, setCoachEmail] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [teamAbbreviation, setTeamAbbreviation] = useState("");
   const [season, setSeason] = useState(String(new Date().getFullYear()));
   const [teamColor, setTeamColor] = useState("#1d4ed8");
   const [rows, setRows] = useState<RosterRow[]>([buildEmptyRosterRow(1)]);
@@ -111,7 +113,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         const account = accountPayload.account;
         const suggestedCoach = accountPayload.suggestedCoach;
         if (account?.organization || account?.primaryCoach) {
-          setOrganizationName(account.organization?.organizationName ?? "");
+          setSchoolName(account.organization?.schoolName ?? account.organization?.organizationName ?? "");
           setCoachName((current) => current || account.primaryCoach?.fullName || suggestedCoach?.coachName || "");
           setCoachEmail((current) => current || account.primaryCoach?.email || suggestedCoach?.coachEmail || "");
           setTeamName(account.organization?.teamName ?? "");
@@ -147,7 +149,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const completionPercent = useMemo(() => {
     const completed = [
       authSession?.email ? "account" : "",
-      organizationName.trim(),
+      schoolName.trim(),
       coachName.trim(),
       coachEmail.trim(),
       teamName.trim(),
@@ -156,7 +158,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     ].filter(Boolean).length;
 
     return Math.round((completed / 7) * 100);
-  }, [authSession?.email, organizationName, coachName, coachEmail, teamName, season, validRows.length]);
+  }, [authSession?.email, schoolName, coachName, coachEmail, teamName, season, validRows.length]);
 
   async function handleAuthSubmit() {
     const normalizedName = coachName.trim();
@@ -195,6 +197,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           fullName: normalizedName,
           email: normalizedEmail,
           password: normalizedPassword,
+          schoolName: schoolName.trim() || undefined,
+          teamName: teamName.trim() || undefined,
         }),
       });
 
@@ -248,23 +252,25 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       setStatus("Create or sign into your coach account before completing setup.");
       return;
     }
-    if (!normalizedTeam || !organizationName.trim() || !coachName.trim() || !coachEmail.trim()) {
-      setStatus("Organization, coach name, coach email, and team name are required.");
+    if (!normalizedTeam || !schoolName.trim() || !coachName.trim() || !coachEmail.trim()) {
+      setStatus("School name, coach name, coach email, and team name are required.");
       return;
     }
 
     setSaving(true);
-    setStatus("Saving organization, team, and roster setup...");
+    setStatus("Saving school, team, and roster setup...");
 
     try {
       const teamRes = await fetch(`${apiBase}/api/onboarding/complete`, {
         method: "POST",
         headers: apiKeyHeader(true),
         body: JSON.stringify({
-          organizationName: organizationName.trim(),
+          schoolName: schoolName.trim(),
+          organizationName: schoolName.trim(),
           coachName: coachName.trim(),
           coachEmail: coachEmail.trim(),
           teamName: normalizedTeam,
+          abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
           season: season.trim() || undefined,
           teamColor,
           roster: validRows,
@@ -278,7 +284,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       localStorage.setItem(
         PROFILE_KEY,
         JSON.stringify({
-          organizationName: organizationName.trim(),
+          schoolName: schoolName.trim(),
           coachName: coachName.trim(),
           coachEmail: coachEmail.trim(),
           teamName: normalizedTeam,
@@ -300,8 +306,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       <section className="stats-page-hero setup-hero">
         <div>
           <p className="stats-page-eyebrow">Coach onboarding</p>
-          <h1>Organization Setup</h1>
-          <p className="stats-page-subtitle">Create your organization profile, team, and roster in one streamlined flow.</p>
+          <h1>School Setup</h1>
+          <p className="stats-page-subtitle">Set up your school, team, and roster in one streamlined flow.</p>
         </div>
         <div className="setup-hero-status">
           <span className="setup-status-pill">{completionPercent}% ready</span>
@@ -407,7 +413,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             <p>{coachEmail.trim() || "Set the main contact email for alerts and invites."}</p>
           </article>
           <article className="setup-summary-card">
-            <span className="setup-summary-label">Program identity</span>
+            <span className="setup-summary-label">Team identity</span>
             <strong>{teamName.trim() || "Team name"}</strong>
             <p>{season.trim() ? `Season ${season.trim()}` : "Choose the current season"}</p>
           </article>
@@ -416,19 +422,27 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         <section className="setup-section">
           <div className="setup-section-head">
             <div>
-              <h3>Program Details</h3>
+              <h3>School Details</h3>
               <p className="setup-section-copy">These details appear across the coach dashboard, operator app, and live reports.</p>
             </div>
           </div>
 
           <div className="setup-grid">
             <label className="stats-filter-field">
-              <span>Organization Name</span>
-              <input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} placeholder="Central High Athletics" />
+              <span>School Name *</span>
+              <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder="Valley Catholic" required />
             </label>
             <label className="stats-filter-field">
               <span>Team Name *</span>
-              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Varsity Boys Basketball" required />
+              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Boys Varsity" required />
+            </label>
+            <label className="stats-filter-field">
+              <span>Team Abbreviation</span>
+              <input
+                value={teamAbbreviation}
+                onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
+                placeholder="VCBV"
+              />
             </label>
             <label className="stats-filter-field">
               <span>Season</span>
