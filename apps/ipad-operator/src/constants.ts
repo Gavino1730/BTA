@@ -18,6 +18,7 @@ export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "").toString
 
 export const STORE = "operator-console";
 export const OPERATOR_ID_KEY = "operator-console:operator-id";
+export const DEVICE_NAME_KEY = "operator-console:device-name";
 export const APP_DATA_KEY = "shared-app-data-v3";
 
 export const DEFAULT_HOME_TEAM_COLOR = "#4f8cff";
