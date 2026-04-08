@@ -52,7 +52,8 @@ export function PreGameScreen({
   const lineupIsSet = savedLineup.length > 0;
   const hasConnectionId = !!normalizeConnectionId(appData.gameSetup.connectionId);
   const hasSyncedConnection = isConnectionReadyForStart(appData.gameSetup);
-  const canStart = hasSyncedConnection && !!appData.gameSetup.myTeamId;
+  const hasTenantScope = Boolean(appData.gameSetup.schoolId?.trim());
+  const canStart = hasSyncedConnection && hasTenantScope && !!appData.gameSetup.myTeamId;
   const lineupLockedMessage = lineupLockedByLiveGame
     ? "Lineup is locked because this game is already live on another device."
     : "";
@@ -114,6 +115,8 @@ export function PreGameScreen({
                     ...appData.gameSetup,
                     connectionId: nextConnectionId || undefined,
                     syncedConnectionId: nextConnectionChanged ? undefined : appData.gameSetup.syncedConnectionId,
+                    schoolId: nextConnectionChanged ? undefined : appData.gameSetup.schoolId,
+                    apiKey: nextConnectionChanged ? undefined : appData.gameSetup.apiKey,
                     myTeamId: nextConnectionChanged ? "" : appData.gameSetup.myTeamId,
                     opponent: nextConnectionChanged ? "" : appData.gameSetup.opponent,
                     startingLineup: nextConnectionChanged ? [] : appData.gameSetup.startingLineup,
@@ -177,6 +180,10 @@ export function PreGameScreen({
 
         {lineupLockedByLiveGame && (
           <p className="pregame-settings-hint">{lineupLockedMessage}</p>
+        )}
+
+        {hasSyncedConnection && !hasTenantScope && (
+          <p className="pregame-error">Sync Now must finish school scope before Start Game is available.</p>
         )}
 
         {showLineupSetup && myTeam && (

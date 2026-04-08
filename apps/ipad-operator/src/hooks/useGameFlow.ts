@@ -136,6 +136,15 @@ export function useGameFlow({
       latest = await refreshOperatorAuthFromConnection(latest);
     }
 
+    if (!latest.gameSetup.schoolId?.trim()) {
+      showInlineNotice(
+        "School scope is not synced yet. Tap Sync Now on Ready to Track, wait for sync to complete, then Start Game.",
+        "warning",
+        7000,
+      );
+      return;
+    }
+
     const requestHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
     if (!hasWriteCredential(requestHeaders)) {
       showInlineNotice(

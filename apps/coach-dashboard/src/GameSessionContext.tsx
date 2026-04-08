@@ -136,7 +136,11 @@ export interface GameSession {
 
   // End game
   isEndingGame: boolean;
+  isEndGamePromptOpen: boolean;
   endGameStatus: string;
+  requestEndGameFromDashboard: () => void;
+  cancelEndGamePrompt: () => void;
+  discardGameFromDashboard: () => void;
   endGameFromDashboard: () => Promise<void>;
 
   // AI
@@ -423,7 +427,15 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
   });
 
   // End game hook
-  const { isEndingGame, endGameStatus, endGameFromDashboard } = useEndGame({
+  const {
+    isEndingGame,
+    isEndGamePromptOpen,
+    endGameStatus,
+    requestEndGameFromDashboard,
+    cancelEndGamePrompt,
+    discardGameFromDashboard,
+    endGameFromDashboard,
+  } = useEndGame({
     gameId, endedGameIdsRef, clearActiveGame, setDashboardStatus,
   });
 
@@ -496,7 +508,13 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameVcSide, setNewGameVcSide, newGameOppColor, setNewGameOppColor,
     newGameStartingLineup, setNewGameStartingLineup, isLaunchingGame, launchGame,
     // End game
-    isEndingGame, endGameStatus, endGameFromDashboard,
+    isEndingGame,
+    isEndGamePromptOpen,
+    endGameStatus,
+    requestEndGameFromDashboard,
+    cancelEndGamePrompt,
+    discardGameFromDashboard,
+    endGameFromDashboard,
     // AI
     isRefreshingAiInsights, aiRefreshError, aiSettings,
     aiSettingsDraft, setAiSettingsDraft, aiSettingsStatus,

@@ -21,8 +21,11 @@ export function LivePage() {
     newGameStartingLineup, setNewGameStartingLineup,
     isLaunchingGame, launchGame,
     connectionId, setConnectionId,
+    operatorConsoleUrl,
     connectedOperatorCount, connectedOperators,
-    isEndingGame, endGameStatus, endGameFromDashboard,
+    isEndingGame, isEndGamePromptOpen, endGameStatus,
+    requestEndGameFromDashboard, cancelEndGamePrompt, discardGameFromDashboard,
+    endGameFromDashboard,
     teams, aggregatedTeams, canonicalTeamId, teamColorById,
     getScoreboardLineup, displayTeamName, displayPlayerName,
     leadersByTeam, canonicalSideIds,
@@ -133,7 +136,7 @@ export function LivePage() {
                 <button
                   type="button"
                   className="shell-nav-link danger-btn"
-                  onClick={() => void endGameFromDashboard()}
+                  onClick={requestEndGameFromDashboard}
                   disabled={isEndingGame}
                 >
                   {isEndingGame ? "Ending..." : "End Game"}
@@ -200,6 +203,52 @@ export function LivePage() {
             displayTeamName={displayTeamName}
             displayPlayerName={displayPlayerName}
           />
+          {isEndGamePromptOpen ? (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0, 0, 0, 0.72)",
+                zIndex: 1000,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "1rem",
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="End Game Confirmation"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  cancelEndGamePrompt();
+                }
+              }}
+            >
+              <div
+                style={{
+                  width: "min(520px, 100%)",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border-hi)",
+                  borderRadius: 16,
+                  padding: "1rem",
+                  boxShadow: "0 18px 48px rgba(0,0,0,0.5)",
+                }}
+              >
+                <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>End Game</p>
+                <h3 style={{ marginBottom: "0.5rem" }}>Save this game before closing?</h3>
+                <p className="settings-section-desc" style={{ marginBottom: "0.9rem" }}>
+                  Save finalizes and submits this game to the API. Discard closes this live session without submitting.
+                </p>
+                <div style={{ display: "flex", gap: "0.6rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  <button type="button" className="shell-nav-link" onClick={cancelEndGamePrompt} disabled={isEndingGame}>Cancel</button>
+                  <button type="button" className="shell-nav-link" onClick={discardGameFromDashboard} disabled={isEndingGame}>Discard</button>
+                  <button type="button" className="shell-nav-link danger-btn" onClick={() => void endGameFromDashboard()} disabled={isEndingGame}>
+                    {isEndingGame ? "Saving..." : "Save & End"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
       {gameId && activePage === "live" && liveSubPage === "operators" && (

@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import type { AppData } from "../types.js";
 import type { OperatorLinkResponse } from "../types.js";
 import {
-  apiHeaders,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
 } from "../helpers/network.js";
@@ -47,6 +46,9 @@ export function useCoachSync({
       const apiUrl = appData.gameSetup.apiUrl?.trim() || DEFAULT_API;
       const apiKey = appData.gameSetup.apiKey?.trim() || undefined;
       const schoolId = appData.gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
+      if (!schoolId) {
+        return;
+      }
       const remoteTeams = await fetchTeamsFromRealtime(apiUrl, apiKey, schoolId);
       const converted = remoteTeams.map(convertRosterTeamToAppTeam);
 
@@ -73,7 +75,7 @@ export function useCoachSync({
     void syncTeamsFromRealtime();
     const intervalId = setInterval(() => {
       void syncTeamsFromRealtime();
-    }, 5000);
+    }, 20000);
 
     return () => {
       active = false;
@@ -106,6 +108,8 @@ export function useCoachSync({
     options?: { silent?: boolean },
   ): Promise<boolean> {
     const normalizedId = normalizeConnectionId(connectionCode);
+    const currentSyncedId = normalizeConnectionId(appData.gameSetup.syncedConnectionId);
+    const isCurrentSyncedCode = Boolean(currentSyncedId) && currentSyncedId === normalizedId;
     if (!normalizedId) {
       setConnectionSyncStatus(DEFAULT_CONNECTION_SYNC_STATUS);
       return false;
@@ -116,11 +120,11 @@ export function useCoachSync({
     try {
       const response = await fetch(
         `${appData.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(normalizedId)}`,
-        apiHeaders(appData.gameSetup),
+        { headers: { Accept: "application/json" } },
       );
 
       if (response.status === 404) {
-        const alreadySynced = Boolean(appData.gameSetup.syncedConnectionId?.trim());
+        const alreadySynced = isCurrentSyncedCode;
         if (alreadySynced) {
           // Link is temporarily gone but the operator already has a synced game session.
           // Preserve all in-game state so a transient 404 (e.g. server restart, coach reset)
@@ -143,6 +147,8 @@ export function useCoachSync({
                 ...current.gameSetup,
                 connectionId: normalizedId,
                 syncedConnectionId: undefined,
+                schoolId: undefined,
+                apiKey: undefined,
                 myTeamId: "",
                 opponent: "",
                 startingLineup: [],

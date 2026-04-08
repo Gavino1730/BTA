@@ -10,7 +10,11 @@ interface UseEndGameParams {
 
 interface UseEndGameReturn {
   isEndingGame: boolean;
+  isEndGamePromptOpen: boolean;
   endGameStatus: string;
+  requestEndGameFromDashboard: () => void;
+  cancelEndGamePrompt: () => void;
+  discardGameFromDashboard: () => void;
   endGameFromDashboard: () => Promise<void>;
 }
 
@@ -21,6 +25,7 @@ export function useEndGame({
   setDashboardStatus,
 }: UseEndGameParams): UseEndGameReturn {
   const [isEndingGame, setIsEndingGame] = useState(false);
+  const [isEndGamePromptOpen, setIsEndGamePromptOpen] = useState(false);
   const [endGameStatus, setEndGameStatus] = useState("");
 
   // Clear status when the active game changes (e.g. after clearActiveGame resets gameId)
@@ -28,9 +33,33 @@ export function useEndGame({
   useEffect(() => {
     if (prevGameIdRef.current !== gameId) {
       prevGameIdRef.current = gameId;
+      setIsEndGamePromptOpen(false);
       setEndGameStatus("");
     }
   }, [gameId]);
+
+  function requestEndGameFromDashboard(): void {
+    if (!gameId || isEndingGame) {
+      return;
+    }
+    setIsEndGamePromptOpen(true);
+    setEndGameStatus("");
+  }
+
+  function cancelEndGamePrompt(): void {
+    if (isEndingGame) {
+      return;
+    }
+    setIsEndGamePromptOpen(false);
+  }
+
+  function discardGameFromDashboard(): void {
+    if (!gameId || isEndingGame) {
+      return;
+    }
+    setIsEndGamePromptOpen(false);
+    clearActiveGame("Game closed without saving.");
+  }
 
   async function endGameFromDashboard(): Promise<void> {
     if (!gameId || isEndingGame) {
@@ -38,12 +67,8 @@ export function useEndGame({
     }
 
     const endingGameId = gameId;
-    const shouldEnd = window.confirm("End this game now? This will finalize it and return the dashboard to Start New Game.");
-    if (!shouldEnd) {
-      return;
-    }
-
     setIsEndingGame(true);
+    setIsEndGamePromptOpen(false);
     setEndGameStatus("Ending game...");
     setDashboardStatus("Ending game...");
 
@@ -77,10 +102,19 @@ export function useEndGame({
       const message = "Could not reach realtime API to end game.";
       setEndGameStatus(message);
       setDashboardStatus(message);
+      setIsEndGamePromptOpen(true);
     } finally {
       setIsEndingGame(false);
     }
   }
 
-  return { isEndingGame, endGameStatus, endGameFromDashboard };
+  return {
+    isEndingGame,
+    isEndGamePromptOpen,
+    endGameStatus,
+    requestEndGameFromDashboard,
+    cancelEndGamePrompt,
+    discardGameFromDashboard,
+    endGameFromDashboard,
+  };
 }
