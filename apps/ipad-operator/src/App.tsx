@@ -31,6 +31,7 @@ import type {
 import type { SettingsView, TeamSide } from "./types.js";
 import {
   getOperatorAlertAutoClearMs,
+  defaultZoneForPoints,
 } from "./helpers/labels.js";
 import {
   clockToSec,
@@ -587,6 +588,23 @@ export function App() {
       {showGameSummary && (
         <GameSummaryModal
           onClose={() => setShowGameSummary(false)}
+          onQuickAction={(action) => {
+            if (action === "plus2") {
+              setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) });
+              return;
+            }
+            if (action === "plus3") {
+              setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) });
+              return;
+            }
+            if (action === "turnover") {
+              setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup });
+              return;
+            }
+            setModal({ kind: "stat", stat: "foul", teamId: vcSideSetup });
+          }}
+          onPlayerQuickShot={handlePlayerQuickShot}
+          onPlayerQuickStat={handlePlayerQuickStat}
           period={period}
           overtimeCount={overtimeCount}
           clockInput={clockInput}
