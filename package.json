@@ -23,7 +23,7 @@
     "smoke-test": "node scripts/run-ps.mjs scripts/smoke-test.ps1",
     "test:e2e": "playwright test",
     "stress-test": "node scripts/stress-test.mjs",
-    "test:full-sim": "npm run test:e2e && npm run stress-test",
+    "test:full-sim": "node scripts/full-sim.mjs",
     "audit:ui": "node scripts/ui-audit.mjs",
     "validate:env": "npm run validate:env -w @bta/realtime-api"
   },
