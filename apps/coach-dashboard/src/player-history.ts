@@ -124,7 +124,8 @@ function toResultLabel(result: string | undefined, teamScore: number, oppScore: 
 
 export function buildPlayerGameHistory(player: PlayerSummary, games: GameSummary[]): PlayerGameHistoryRow[] {
   const targetKeys = buildTargetKeys(player);
-  if (targetKeys.size === 0) {
+  const targetNumber = normalizePlayerLookupKey(String(player.number ?? ""));
+  if (targetKeys.size === 0 && !targetNumber) {
     return [];
   }
 
@@ -133,7 +134,12 @@ export function buildPlayerGameHistory(player: PlayerSummary, games: GameSummary
       const stat = (game.player_stats ?? []).find((entry) => {
         const nameKey = normalizePlayerLookupKey(entry.name);
         const idKey = normalizePlayerLookupKey(entry.playerId);
-        return Boolean((nameKey && targetKeys.has(nameKey)) || (idKey && targetKeys.has(idKey)));
+        const numberKey = normalizePlayerLookupKey(String(entry.number ?? ""));
+        return Boolean(
+          (nameKey && targetKeys.has(nameKey))
+          || (idKey && targetKeys.has(idKey))
+          || (targetNumber && numberKey && targetNumber === numberKey)
+        );
       });
 
       if (!stat) {

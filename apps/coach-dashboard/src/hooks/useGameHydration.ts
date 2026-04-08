@@ -1,6 +1,6 @@
 import { type MutableRefObject, useEffect, useRef } from "react";
 import { normalizeTeamColor } from "@bta/shared-schema";
-import { apiBase, apiKeyHeader } from "../platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
 import { type GameState, type Insight, type BoxScoreFilter } from "../helpers/index.js";
 
 /** Remove old game cache entries from localStorage, keeping the current game
@@ -81,6 +81,8 @@ export function useGameHydration({
   resetAiState,
   setBoxScoreFilter,
 }: UseGameHydrationOptions): void {
+  const hasTenantScope = Boolean(resolveActiveSchoolId());
+
   // Set to true when we've just determined there's no active game (e.g. both the
   // specific gameId and active/state returned 404). Prevents reconcileGameId from
   // firing a redundant active/state fetch immediately after clearActiveGame.
@@ -90,7 +92,7 @@ export function useGameHydration({
   // When gameId is already set, the hydration effect below validates and loads
   // state — no duplicate fetch needed here.
   useEffect(() => {
-    if (gameId || !connectionId) {
+    if (gameId || !connectionId || !hasTenantScope) {
       return;
     }
 
@@ -128,11 +130,11 @@ export function useGameHydration({
     return () => {
       cancelled = true;
     };
-  }, [connectionId, gameId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectionId, gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate setup names from the server when a game is active.
   useEffect(() => {
-    if (!gameId) {
+    if (!gameId || !hasTenantScope) {
       return;
     }
 
@@ -179,11 +181,11 @@ export function useGameHydration({
     return () => {
       cancelled = true;
     };
-  }, [gameId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load game state and insights when gameId changes.
   useEffect(() => {
-    if (!gameId) {
+    if (!gameId || !hasTenantScope) {
       return;
     }
 
@@ -321,5 +323,5 @@ export function useGameHydration({
     return () => {
       cancelled = true;
     };
-  }, [gameId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 }

@@ -39,6 +39,24 @@ export function BoxScoreSection({
   stateHomeTeamId,
   stateAwayTeamId,
 }: Props) {
+  function contributionScore(line: BoxScorePlayerLine): number {
+    const rebounds = line.reboundsDef + line.reboundsOff;
+    const missedFg = Math.max(0, line.fgAttempts - line.fgMade);
+    const missedFt = Math.max(0, line.ftAttempts - line.ftMade);
+
+    return (
+      line.points
+      + (rebounds * 1.2)
+      + (line.assists * 1.2)
+      + (line.steals * 2)
+      + (line.blocks * 2)
+      - (line.turnovers * 1.5)
+      - (line.fouls * 0.7)
+      - (missedFg * 0.5)
+      - (missedFt * 0.35)
+    );
+  }
+
   return (
     <section className="card box-score-card">
       <div className="box-score-header">
@@ -118,7 +136,13 @@ export function BoxScoreSection({
               number: rosterPlayer?.number ?? "",
             };
           })
-          .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));
+          .sort((left, right) => {
+            const contributionDiff = contributionScore(right) - contributionScore(left);
+            if (contributionDiff !== 0) return contributionDiff;
+            const pointsDiff = right.points - left.points;
+            if (pointsDiff !== 0) return pointsDiff;
+            return left.name.localeCompare(right.name);
+          });
 
         const canonicalId = canonicalTeamId(teamId);
         const ourRawSideId = vcSide === "away" ? stateAwayTeamId : stateHomeTeamId;

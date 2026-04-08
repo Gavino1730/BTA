@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { normalizeTeamColor } from "@bta/shared-schema";
-import { apiBase, apiKeyHeader } from "../platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
 import {
   type RosterPlayer,
   type RosterTeam,
@@ -13,6 +13,7 @@ import {
 } from "../helpers/index.js";
 
 export function useRosterManager() {
+  const hasTenantScope = Boolean(resolveActiveSchoolId());
   const [rosterTeams, setRosterTeamsState] = useState<RosterTeam[]>(loadRosterTeams);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
@@ -34,6 +35,10 @@ export function useRosterManager() {
   function setRosterTeams(next: RosterTeam[]) {
     setRosterTeamsState(next);
     saveRosterTeams(next);
+
+    if (!hasTenantScope) {
+      return;
+    }
 
     void (async () => {
       try {
@@ -58,6 +63,10 @@ export function useRosterManager() {
   }
 
   useEffect(() => {
+    if (!hasTenantScope) {
+      return;
+    }
+
     let isMounted = true;
     async function hydrateRosterFromApi() {
       try {
@@ -86,7 +95,7 @@ export function useRosterManager() {
       isMounted = false;
       clearInterval(pollInterval);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addTeam() {
     if (!newTeamName.trim()) return;

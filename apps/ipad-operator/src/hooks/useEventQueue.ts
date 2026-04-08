@@ -47,10 +47,21 @@ export function useEventQueue(deps: EventQueueDeps) {
     onHydrateState,
   } = deps;
 
+  function canCallTenantScopedEventApi(setup: GameSetup = gameSetup, targetGameId: string = gameId): boolean {
+    const normalizedGameId = targetGameId.trim();
+    const hasTenantScope = Boolean(setup.schoolId?.trim());
+    const hasApiUrl = Boolean(setup.apiUrl?.trim());
+    const isPlaceholderPreGame = gamePhase === "pre-game"
+      && normalizedGameId === "game-1"
+      && !setup.syncedConnectionId?.trim();
+
+    return Boolean(normalizedGameId) && hasApiUrl && hasTenantScope && !isPlaceholderPreGame;
+  }
+
   async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
     const latest = loadAppData();
     const apiUrl = latest.gameSetup.apiUrl?.trim();
-    if (!apiUrl || !gid) return false;
+    if (!apiUrl || !gid || !canCallTenantScopedEventApi(latest.gameSetup, gid)) return false;
     try {
       const res = await fetch(`${apiUrl}/api/games`, {
         method: "POST",
@@ -76,6 +87,9 @@ export function useEventQueue(deps: EventQueueDeps) {
   // --- Submit a single event to the API ---
   async function submitEvent(event: GameEvent): Promise<boolean> {
     const normalizedEvent = normalizeEventTeamId(event);
+    if (!canCallTenantScopedEventApi()) {
+      return false;
+    }
     try {
       const submitWithCurrentPayload = () => fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events`, {
         method: "POST",
@@ -118,6 +132,7 @@ export function useEventQueue(deps: EventQueueDeps) {
     if (isFlushingRef.current) return;
     if (Date.now() < flushBackoffUntilRef.current) return;
     if (!navigator.onLine || pendingEvents.length === 0) return;
+    if (!canCallTenantScopedEventApi()) return;
     isFlushingRef.current = true;
     let successCount = 0;
     let serverErrorCount = 0;
@@ -153,6 +168,10 @@ export function useEventQueue(deps: EventQueueDeps) {
       showInlineNotice("Still offline. Check Wi-Fi and tap again to retry.", "warning", 3200);
       return;
     }
+    if (!canCallTenantScopedEventApi()) {
+      showInlineNotice("Waiting for school sync before submitting events.", "info", 2200);
+      return;
+    }
     if (pendingEvents.length === 0) {
       showInlineNotice("Connection looks good. No pending events to resubmit.", "info", 2200);
       return;
@@ -170,6 +189,10 @@ export function useEventQueue(deps: EventQueueDeps) {
     const eventWithReservedSequence = normalizeEventTeamId({ ...event, sequence: reservedSequence });
     setPendingEvents(cur => [...cur, eventWithReservedSequence].sort((a, b) => a.sequence - b.sequence));
     triggerFeedback("event", 30);
+    if (!canCallTenantScopedEventApi()) {
+      showInlineNotice("Event saved locally. It will sync after school setup is connected.", "info", 2500);
+      return;
+    }
     await submitEvent(eventWithReservedSequence);
   }
 
@@ -186,6 +209,10 @@ export function useEventQueue(deps: EventQueueDeps) {
     }
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     if (submittedEvents.some(e => e.id === last.id)) {
+      if (!canCallTenantScopedEventApi()) {
+        showInlineNotice("Removed locally. Server sync will resume after school setup is connected.", "warning", 3000);
+        return;
+      }
       const res = await fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events/${last.id}`, {
         method: "DELETE",
         headers: apiKeyHeader(gameSetup),
@@ -217,13 +244,7 @@ export function useEventQueue(deps: EventQueueDeps) {
     setPendingEvents(localPending);
     setSequence(localSeq);
 
-    const normalizedGameId = gameId.trim();
-    const hasTenantScope = Boolean(gameSetup.schoolId?.trim());
-    const isPlaceholderPreGame = gamePhase === "pre-game"
-      && normalizedGameId === "game-1"
-      && !gameSetup.syncedConnectionId?.trim();
-
-    if (!normalizedGameId || !hasTenantScope || isPlaceholderPreGame) {
+    if (!canCallTenantScopedEventApi()) {
       setSubmittedEvents([]);
       return;
     }

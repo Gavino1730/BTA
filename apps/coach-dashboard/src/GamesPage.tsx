@@ -121,6 +121,20 @@ const inputSt: CSSProperties = {
   background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.16)",
   color: "var(--text)", borderRadius: 8, padding: "0.55rem 0.7rem", width: "100%", boxSizing: "border-box",
 };
+const readOnlyFieldSt: CSSProperties = {
+  background: "rgba(255,255,255,0.03)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  color: "var(--text)",
+  borderRadius: 8,
+  padding: "0.55rem 0.7rem",
+  width: "100%",
+  boxSizing: "border-box",
+  minHeight: 42,
+  display: "flex",
+  alignItems: "center",
+  cursor: "default",
+  userSelect: "text",
+};
 const cellSt: CSSProperties = {
   background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
   color: "var(--text)", borderRadius: 5, padding: "0.32rem 0.4rem", textAlign: "center", width: "100%", boxSizing: "border-box",
@@ -285,7 +299,7 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
             ] as [string, string, React.ReactNode][]).map(([lbl, viewVal, editEl]) => (
               <div key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
                 <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{lbl}</span>
-                {isEditing ? editEl : <span style={{ ...inputSt, display: "block", cursor: "default", userSelect: "text" }}>{viewVal}</span>}
+                {isEditing ? editEl : <div style={readOnlyFieldSt} aria-readonly="true">{viewVal}</div>}
               </div>
             ))}
           </div>
@@ -361,7 +375,7 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
 function safePct(made: number | undefined, attempted: number | undefined): string {
   const attempts = Number(attempted ?? 0);
   if (attempts <= 0) {
-    return "0.0%";
+    return "-";
   }
   return `${((Number(made ?? 0) / attempts) * 100).toFixed(1)}%`;
 }
@@ -470,7 +484,7 @@ export function GamesPage() {
                 <p className={`stats-diff ${pointDiff > 0 ? "positive" : pointDiff < 0 ? "negative" : "neutral"}`}>
                   {pointDiff > 0 ? `+${pointDiff}` : `${pointDiff}`}
                 </p>
-                <div className="stats-game-card-metrics">
+                <div className="stats-game-card-metrics stats-game-card-metrics-game">
                   <div>
                     <span>FG</span>
                     <strong>{safePct(game.team_stats?.fg, game.team_stats?.fga)}</strong>
@@ -494,6 +508,14 @@ export function GamesPage() {
                   <div>
                     <span>REB</span>
                     <strong>{Number(game.team_stats?.oreb ?? 0) + Number(game.team_stats?.dreb ?? 0)}</strong>
+                  </div>
+                  <div>
+                    <span>STL</span>
+                    <strong>{Number(game.team_stats?.stl ?? 0)}</strong>
+                  </div>
+                  <div>
+                    <span>BLK</span>
+                    <strong>{Number(game.team_stats?.blk ?? 0)}</strong>
                   </div>
                 </div>
                 <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--teal)", opacity: 0.8 }}>Click to view box score →</p>

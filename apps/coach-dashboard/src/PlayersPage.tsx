@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiBase, apiKeyHeader } from "./platform.js";
 import {
   buildPlayerGameHistory,
+  type GamePlayerStat,
   getPlayerDisplayName,
   getPlayerGamesPlayed,
   normalizePlayerLookupKey,
@@ -67,10 +68,65 @@ function ScoreTrend({ history }: { history: PlayerGameHistoryRow[] }) {
   );
 }
 
-function PlayerDetailModal({ player, history, onClose }: { player: PlayerSummary; history: PlayerGameHistoryRow[]; onClose: () => void }) {
+interface PlayerGameBoxScore {
+  game: GameSummary;
+  stat: GamePlayerStat;
+}
+
+function findPlayerBoxScoreForGame(player: PlayerSummary, game: GameSummary): GamePlayerStat | null {
+  const targetKeys = new Set(
+    [player.playerId, player.full_name, player.name]
+      .map((value) => normalizePlayerLookupKey(value))
+      .filter(Boolean)
+  );
+  const targetNumber = normalizePlayerLookupKey(String(player.number ?? ""));
+
+  for (const stat of game.player_stats ?? []) {
+    const nameKey = normalizePlayerLookupKey(stat.name);
+    const idKey = normalizePlayerLookupKey(stat.playerId);
+    const numberKey = normalizePlayerLookupKey(String(stat.number ?? ""));
+
+    if ((nameKey && targetKeys.has(nameKey)) || (idKey && targetKeys.has(idKey))) {
+      return stat;
+    }
+    if (targetNumber && numberKey && targetNumber === numberKey) {
+      return stat;
+    }
+  }
+
+  return null;
+}
+
+function PlayerDetailModal({ player, history, games, onClose }: { player: PlayerSummary; history: PlayerGameHistoryRow[]; games: GameSummary[]; onClose: () => void }) {
   const [advanced, setAdvanced] = useState<PlayerAdvancedPayload | null>(null);
   const [status, setStatus] = useState("Loading player details...");
+  const [selectedGameId, setSelectedGameId] = useState("");
   const playerName = getPlayerDisplayName(player);
+
+  const playerGameBoxScores = useMemo<PlayerGameBoxScore[]>(() => {
+    return games
+      .map((game) => {
+        const stat = findPlayerBoxScoreForGame(player, game);
+        return stat ? { game, stat } : null;
+      })
+      .filter((entry): entry is PlayerGameBoxScore => Boolean(entry))
+      .sort((left, right) => new Date(right.game.date).getTime() - new Date(left.game.date).getTime());
+  }, [games, player]);
+
+  useEffect(() => {
+    if (playerGameBoxScores.length === 0) {
+      setSelectedGameId("");
+      return;
+    }
+
+    if (!selectedGameId || !playerGameBoxScores.some((entry) => String(entry.game.gameId) === selectedGameId)) {
+      setSelectedGameId(String(playerGameBoxScores[0].game.gameId));
+    }
+  }, [playerGameBoxScores, selectedGameId]);
+
+  const selectedGameBoxScore = useMemo(() => {
+    return playerGameBoxScores.find((entry) => String(entry.game.gameId) === selectedGameId) ?? null;
+  }, [playerGameBoxScores, selectedGameId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,46 +276,82 @@ function PlayerDetailModal({ player, history, onClose }: { player: PlayerSummary
 
         <section className="stats-page-card">
           <div className="stats-page-card-head">
-            <h3>Previous Games</h3>
-            <span className="stats-page-status">Click any game in the Games tab to view the box score, then select Edit if changes are needed.</span>
+            <h3>Game Box Scores</h3>
+            <span className="stats-page-status">Select a game to view this player's full box score line.</span>
           </div>
 
-          {history.length === 0 ? (
+          {playerGameBoxScores.length === 0 ? (
             <p className="stats-empty-copy">As soon as box scores are logged, they will appear here.</p>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="team-comparison-table" style={{ marginTop: 0 }}>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Opponent</th>
-                    <th>Result</th>
-                    <th>PTS</th>
-                    <th>REB</th>
-                    <th>AST</th>
-                    <th>STL</th>
-                    <th>FG</th>
-                    <th>3PT</th>
-                    <th>FT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((row) => (
-                    <tr key={row.gameId}>
-                      <td>{row.date || "—"}</td>
-                      <td>{row.location === "away" ? "@ " : "vs "}{row.opponent}</td>
-                      <td>{row.result} {row.teamScore}-{row.oppScore}</td>
-                      <td>{row.pts}</td>
-                      <td>{row.reb}</td>
-                      <td>{row.asst}</td>
-                      <td>{row.stl}</td>
-                      <td>{row.fgDisplay}</td>
-                      <td>{row.fg3Display}</td>
-                      <td>{row.ftDisplay}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ display: "grid", gap: "0.9rem" }}>
+              <label className="stats-filter-field short" style={{ maxWidth: 320 }}>
+                <span>Game</span>
+                <select value={selectedGameId} onChange={(event) => setSelectedGameId(event.target.value)}>
+                  {playerGameBoxScores.map((entry) => {
+                    const gameId = String(entry.game.gameId);
+                    const dateLabel = entry.game.date || "No date";
+                    const opponentLabel = entry.game.location === "away" ? `@ ${entry.game.opponent}` : `vs ${entry.game.opponent}`;
+                    const scoreLabel = `${entry.game.vc_score}-${entry.game.opp_score}`;
+                    return (
+                      <option key={gameId} value={gameId}>
+                        {dateLabel} - {opponentLabel} ({entry.game.result || "-"} {scoreLabel})
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+
+              {selectedGameBoxScore ? (
+                <div style={{ overflowX: "auto" }}>
+                  <table className="team-comparison-table" style={{ marginTop: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Opponent</th>
+                        <th>Result</th>
+                        <th>PTS</th>
+                        <th>REB</th>
+                        <th>AST</th>
+                        <th>STL</th>
+                        <th>BLK</th>
+                        <th>TO</th>
+                        <th>PF</th>
+                        <th>+/-</th>
+                        <th>FG</th>
+                        <th>3PT</th>
+                        <th>FT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const { game, stat } = selectedGameBoxScore;
+                        const rebounds = Number(stat.reb ?? (Number(stat.oreb ?? 0) + Number(stat.dreb ?? 0)));
+                        const fgDisplay = `${Number(stat.fg_made ?? 0)}-${Number(stat.fg_att ?? 0)}`;
+                        const fg3Display = `${Number(stat.fg3_made ?? 0)}-${Number(stat.fg3_att ?? 0)}`;
+                        const ftDisplay = `${Number(stat.ft_made ?? 0)}-${Number(stat.ft_att ?? 0)}`;
+                        return (
+                          <tr>
+                            <td>{game.date || "-"}</td>
+                            <td>{game.location === "away" ? "@ " : "vs "}{game.opponent || "Opponent"}</td>
+                            <td>{game.result || "-"} {Number(game.vc_score ?? 0)}-{Number(game.opp_score ?? 0)}</td>
+                            <td>{Number(stat.pts ?? ((Number(stat.fg_made ?? 0) - Number(stat.fg3_made ?? 0)) * 2 + (Number(stat.fg3_made ?? 0) * 3) + Number(stat.ft_made ?? 0)))}</td>
+                            <td>{rebounds}</td>
+                            <td>{Number(stat.asst ?? 0)}</td>
+                            <td>{Number(stat.stl ?? 0)}</td>
+                            <td>{Number(stat.blk ?? 0)}</td>
+                            <td>{Number(stat.to ?? 0)}</td>
+                            <td>{Number(stat.fouls ?? 0)}</td>
+                            <td>{Number(stat.plus_minus ?? 0)}</td>
+                            <td>{fgDisplay}</td>
+                            <td>{fg3Display}</td>
+                            <td>{ftDisplay}</td>
+                          </tr>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </div>
           )}
         </section>
@@ -272,6 +364,8 @@ export function PlayersPage() {
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"ppg" | "apg" | "rpg" | "fg_pct" | "defense">("ppg");
+  const [minimumGames, setMinimumGames] = useState("0");
   const [status, setStatus] = useState("Loading players...");
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerSummary | null>(null);
 
@@ -316,20 +410,29 @@ export function PlayersPage() {
 
   const filtered = useMemo(() => {
     const normalized = normalizePlayerLookupKey(query);
+    const minGamesValue = Number.parseInt(minimumGames, 10) || 0;
     const nextPlayers = [...players].filter((player) => {
       if (!normalized) {
-        return true;
+        return getPlayerGamesPlayed(player) >= minGamesValue;
       }
 
       const name = normalizePlayerLookupKey(getPlayerDisplayName(player));
       const number = normalizePlayerLookupKey(String(player.number ?? ""));
-      return name.includes(normalized) || number.includes(normalized);
+      return (name.includes(normalized) || number.includes(normalized)) && getPlayerGamesPlayed(player) >= minGamesValue;
     });
 
     return nextPlayers.sort((left, right) => {
+      if (sortBy === "apg") return Number(right.apg ?? 0) - Number(left.apg ?? 0);
+      if (sortBy === "rpg") return Number(right.rpg ?? 0) - Number(left.rpg ?? 0);
+      if (sortBy === "fg_pct") return Number(right.fg_pct ?? 0) - Number(left.fg_pct ?? 0);
+      if (sortBy === "defense") {
+        const rightDefense = Number(right.spg ?? 0) + Number(right.bpg ?? 0);
+        const leftDefense = Number(left.spg ?? 0) + Number(left.bpg ?? 0);
+        if (rightDefense !== leftDefense) return rightDefense - leftDefense;
+      }
       return Number(right.ppg ?? 0) - Number(left.ppg ?? 0);
     });
-  }, [players, query]);
+  }, [minimumGames, players, query, sortBy]);
 
   const selectedHistory = useMemo(() => {
     return selectedPlayer ? buildPlayerGameHistory(selectedPlayer, games) : [];
@@ -341,6 +444,7 @@ export function PlayersPage() {
         <PlayerDetailModal
           player={selectedPlayer}
           history={selectedHistory}
+          games={games}
           onClose={() => setSelectedPlayer(null)}
         />
       ) : null}
@@ -357,6 +461,25 @@ export function PlayersPage() {
         <label className="stats-filter-field">
           <span>Search name or number</span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search players" />
+        </label>
+        <label className="stats-filter-field short">
+          <span>Sort by</span>
+          <select value={sortBy} onChange={(event) => setSortBy(event.target.value as "ppg" | "apg" | "rpg" | "fg_pct" | "defense")}>
+            <option value="ppg">PPG</option>
+            <option value="apg">APG</option>
+            <option value="rpg">RPG</option>
+            <option value="fg_pct">FG%</option>
+            <option value="defense">Defense (SPG+BPG)</option>
+          </select>
+        </label>
+        <label className="stats-filter-field short">
+          <span>Min games</span>
+          <select value={minimumGames} onChange={(event) => setMinimumGames(event.target.value)}>
+            <option value="0">All</option>
+            <option value="3">3+</option>
+            <option value="5">5+</option>
+            <option value="10">10+</option>
+          </select>
         </label>
       </section>
 
@@ -410,6 +533,14 @@ export function PlayersPage() {
                   <div>
                     <span>FT%</span>
                     <strong>{safeNum(player.ft_pct)}%</strong>
+                  </div>
+                  <div>
+                    <span>SPG</span>
+                    <strong>{safeNum(player.spg)}</strong>
+                  </div>
+                  <div>
+                    <span>BPG</span>
+                    <strong>{safeNum(player.bpg)}</strong>
                   </div>
                 </div>
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiBase, apiKeyHeader } from "../platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
 import {
   type CoachAiSettings,
   type CoachInsightFocus,
@@ -19,6 +19,7 @@ interface UseCoachAiOptions {
 
 export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoachAiOptions) {
   const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasTenantScope = Boolean(resolveActiveSchoolId());
 
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
   const [aiRefreshError, setAiRefreshError] = useState("");
@@ -42,6 +43,15 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
 
   // Hydrate AI settings whenever gameId changes
   useEffect(() => {
+    if (!hasTenantScope) {
+      setAiSettings(defaultCoachAiSettings());
+      setAiSettingsDraft(defaultCoachAiSettings());
+      setAiSettingsStatus("Connect to your school workspace to load AI settings.");
+      setPromptPreview(null);
+      setPromptPreviewStatus("Connect to your school workspace to load prompt preview.");
+      return;
+    }
+
     if (!gameId) {
       setAiSettings(defaultCoachAiSettings());
       setAiSettingsDraft(defaultCoachAiSettings());
@@ -99,9 +109,14 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
     return () => {
       cancelled = true;
     };
-  }, [gameId]);
+  }, [gameId, hasTenantScope]);
 
   async function saveAiSettings(): Promise<void> {
+    if (!hasTenantScope) {
+      setAiSettingsStatus("Connect to your school workspace first.");
+      return;
+    }
+
     if (!gameId) {
       setAiSettingsStatus("Connect to a live game first, then save AI settings.");
       return;
@@ -131,6 +146,11 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
   }
 
   async function loadPromptPreview(): Promise<void> {
+    if (!hasTenantScope) {
+      setPromptPreviewStatus("Connect to your school workspace first.");
+      return;
+    }
+
     if (!gameId) {
       setPromptPreviewStatus("Connect to a live game first.");
       return;
@@ -158,6 +178,11 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
 
   async function sendAiChat(questionOverride?: string): Promise<void> {
     const question = (questionOverride ?? aiChatInput).trim();
+    if (!hasTenantScope) {
+      setAiChatStatus("Connect to your school workspace first.");
+      return;
+    }
+
     if (!gameId) {
       setAiChatStatus("Connect to a live game first.");
       return;
@@ -251,7 +276,7 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
   }
 
   async function refreshAiBenchCalls(): Promise<void> {
-    if (!gameId || isRefreshingAiInsights) {
+    if (!hasTenantScope || !gameId || isRefreshingAiInsights) {
       return;
     }
 

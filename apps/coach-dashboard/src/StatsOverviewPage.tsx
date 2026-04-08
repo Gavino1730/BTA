@@ -57,6 +57,8 @@ interface LeaderboardPlayer {
   reb?: number;
   asst?: number;
   fg_pct?: number;
+  fg3_pct?: number;
+  ft_pct?: number;
   stl?: number;
   blk?: number;
 }
@@ -66,6 +68,8 @@ interface LeaderboardsPayload {
   reb: LeaderboardPlayer[];
   asst: LeaderboardPlayer[];
   fg_pct?: LeaderboardPlayer[];
+  fg3_pct?: LeaderboardPlayer[];
+  ft_pct?: LeaderboardPlayer[];
   stl?: LeaderboardPlayer[];
   blk?: LeaderboardPlayer[];
 }
@@ -78,17 +82,38 @@ interface GameSummary {
   result?: string;
   vc_score: number;
   opp_score: number;
+  team_stats?: {
+    stl?: number;
+    blk?: number;
+    to?: number;
+  };
 }
 
-type LeaderStatKey = "pts" | "reb" | "asst" | "fg_pct" | "stl" | "blk";
+type LeaderStatKey = "pts" | "reb" | "asst" | "fg_pct" | "fg3_pct" | "ft_pct" | "stl" | "blk";
+
+function average(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
 
 function formatNumber(value: number | undefined, digits = 1): string {
   return Number.isFinite(value) ? Number(value).toFixed(digits) : digits === 0 ? "0" : (0).toFixed(digits);
 }
 
+function formatDelta(current: number, baseline: number, digits = 1): string {
+  const delta = current - baseline;
+  const formatted = formatNumber(Math.abs(delta), digits);
+  if (delta > 0) return `+${formatted}`;
+  if (delta < 0) return `-${formatted}`;
+  return `0.${"0".repeat(Math.max(0, digits - 1))}`;
+}
+
 function formatLeaderValue(statKey: LeaderStatKey, player: LeaderboardPlayer): string {
   const value = Number(player[statKey] ?? 0);
-  if (statKey === "fg_pct") {
+  if (statKey === "fg_pct" || statKey === "fg3_pct" || statKey === "ft_pct") {
     return `${formatNumber(value)}%`;
   }
   return formatNumber(value, 0);
@@ -99,6 +124,7 @@ function PlayerLeaders({ title, statKey, players }: { title: string; statKey: Le
     <section className="stats-page-card">
       <div className="stats-page-card-head">
         <h3>{title}</h3>
+        <span className="stats-page-status">Top {Math.min(players.length, 5)}</span>
       </div>
       {players.length === 0 ? (
         <p className="stats-empty-copy">No player data yet.</p>
@@ -187,6 +213,11 @@ export function StatsOverviewPage() {
   const winPct = totalGames > 0 ? ((seasonStats?.win ?? 0) / totalGames) * 100 : 0;
   const currentStreak = computeCurrentStreak(recentGames);
   const recentAverageMargin = computeAverageMargin(recentGames);
+  const recentPpg = average(recentGames.map((game) => Number(game.vc_score ?? 0)));
+  const recentOppPpg = average(recentGames.map((game) => Number(game.opp_score ?? 0)));
+  const recentSteals = average(recentGames.map((game) => Number(game.team_stats?.stl ?? 0)));
+  const recentBlocks = average(recentGames.map((game) => Number(game.team_stats?.blk ?? 0)));
+  const recentDefensiveEvents = recentSteals + recentBlocks;
   const assistTurnoverRatio = Number(seasonStats?.to_avg ?? 0) > 0
     ? Number(seasonStats?.apg ?? 0) / Math.max(Number(seasonStats?.to_avg ?? 0), 1)
     : Number(seasonStats?.apg ?? 0);
@@ -215,7 +246,7 @@ export function StatsOverviewPage() {
         <div className="stats-metric-card">
           <span className="stats-metric-label">PPG</span>
           <strong className="stats-metric-value">{formatNumber(seasonStats?.ppg)}</strong>
-          <span className="stats-metric-detail">Opponent PPG {formatNumber(seasonStats?.opp_ppg)}</span>
+          <span className="stats-metric-detail">Recent 5 {formatNumber(recentPpg)} ({formatDelta(recentPpg, Number(seasonStats?.ppg ?? 0))})</span>
         </div>
         <div className="stats-metric-card">
           <span className="stats-metric-label">FG%</span>
@@ -240,7 +271,7 @@ export function StatsOverviewPage() {
         <div className="stats-metric-card">
           <span className="stats-metric-label">Defensive Events</span>
           <strong className="stats-metric-value">{formatNumber((seasonStats?.stl_pg ?? 0) + (seasonStats?.blk_pg ?? 0))}</strong>
-          <span className="stats-metric-detail">STL {formatNumber(seasonStats?.stl_pg)} · BLK {formatNumber(seasonStats?.blk_pg)}</span>
+          <span className="stats-metric-detail">Recent 5 {formatNumber(recentDefensiveEvents)} (STL {formatNumber(recentSteals)} · BLK {formatNumber(recentBlocks)})</span>
         </div>
       </section>
 
@@ -284,6 +315,10 @@ export function StatsOverviewPage() {
               <strong>{formatNumber(advancedStats?.ball_movement?.assisted_scoring_rate)}%</strong>
             </div>
             <div>
+              <span>Opp PPG</span>
+              <strong>{formatNumber(seasonStats?.opp_ppg)}</strong>
+            </div>
+            <div>
               <span>Home Record</span>
               <strong>{formatRecord(patterns?.home_record?.wins, patterns?.home_record?.losses)}</strong>
             </div>
@@ -303,6 +338,10 @@ export function StatsOverviewPage() {
               <span>TO Std Dev</span>
               <strong>{formatNumber(volatility?.team_volatility?.to_std_dev)}</strong>
             </div>
+            <div>
+              <span>Recent Opp PPG</span>
+              <strong>{formatNumber(recentOppPpg)}</strong>
+            </div>
           </div>
           <div className="stats-focus-panel" style={{ marginTop: "1rem" }}>
             <strong>{formatNumber(patterns?.home_avg_score)}</strong>
@@ -314,14 +353,16 @@ export function StatsOverviewPage() {
         </section>
       </section>
 
-      <section className="stats-page-grid three-column" style={{ marginBottom: "1rem" }}>
+      <section className="stats-page-grid four-column" style={{ marginBottom: "1rem" }}>
         <PlayerLeaders title="Top Scorers" statKey="pts" players={leaderboards?.pts ?? []} />
         <PlayerLeaders title="Top Rebounders" statKey="reb" players={leaderboards?.reb ?? []} />
         <PlayerLeaders title="Top Assist Leaders" statKey="asst" players={leaderboards?.asst ?? []} />
+        <PlayerLeaders title="Top Shooters" statKey="fg_pct" players={leaderboards?.fg_pct ?? []} />
       </section>
 
-      <section className="stats-page-grid three-column">
-        <PlayerLeaders title="Top Shooters" statKey="fg_pct" players={leaderboards?.fg_pct ?? []} />
+      <section className="stats-page-grid four-column">
+        <PlayerLeaders title="Top 3PT Shooters" statKey="fg3_pct" players={leaderboards?.fg3_pct ?? []} />
+        <PlayerLeaders title="Top FT Shooters" statKey="ft_pct" players={leaderboards?.ft_pct ?? []} />
         <PlayerLeaders title="Steal Leaders" statKey="stl" players={leaderboards?.stl ?? []} />
         <PlayerLeaders title="Block Leaders" statKey="blk" players={leaderboards?.blk ?? []} />
       </section>
