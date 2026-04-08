@@ -139,27 +139,24 @@ html, body {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: clamp(0.95rem, 2vw, 1.4rem);
+  column-gap: clamp(0.95rem, 2vw, 1.4rem);
+  row-gap: clamp(0.85rem, 1.9vw, 1.2rem);
   margin-top: 0.4rem;
-}
-
-.classic-score-col {
-  display: grid;
-  gap: clamp(0.85rem, 1.9vw, 1.2rem);
   justify-items: center;
-  align-content: start;
+  align-items: center;
 }
 
-.classic-score-col .shot-grid-team-label {
+.classic-score-grid .shot-grid-team-label {
   width: 100%;
   margin: 0;
   padding: 0 0.2rem;
   font-size: 0.72rem;
 }
 
-.classic-score-col .shot-grid-team-label-opp {
+.classic-score-grid .shot-grid-team-label-opp {
   border-top: none;
   padding-top: 0;
+  margin-top: 0;
 }
 
 .classic-score-btn {
