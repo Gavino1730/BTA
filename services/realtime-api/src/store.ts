@@ -352,6 +352,34 @@ interface PersistedGameSession {
   submitted?: boolean;
 }
 
+export interface GameEditOverride {
+  gameId: string;
+  date: string;
+  opponent: string;
+  location: "home" | "away" | "neutral";
+  vc_score: number;
+  opp_score: number;
+  result: "W" | "L" | "T";
+  team_stats: {
+    fg: number;
+    fga: number;
+    fg3: number;
+    fg3a: number;
+    ft: number;
+    fta: number;
+    oreb: number;
+    dreb: number;
+    reb: number;
+    asst: number;
+    to: number;
+    stl: number;
+    blk: number;
+    fouls: number;
+  };
+  player_stats: Array<Record<string, unknown>>;
+  updatedAtIso: string;
+}
+
 interface PersistedSnapshot {
   sessions: PersistedGameSession[];
   rosterTeams?: RosterTeam[];
@@ -360,6 +388,7 @@ interface PersistedSnapshot {
   onboardingAccountsBySchool?: Record<string, OnboardingAccountState>;
   organizationMembersBySchool?: Record<string, OrganizationMember[]>;
   localAuthAccountsBySchool?: Record<string, LocalAuthAccount[]>;
+  gameOverridesBySchool?: Record<string, Record<string, GameEditOverride>>;
 }
 
 export interface TenantScope {
@@ -397,6 +426,7 @@ const organizationProfilesBySchool = new Map<string, OrganizationProfile>();
 const onboardingAccountsBySchool = new Map<string, OnboardingAccountState>();
 const organizationMembersBySchool = new Map<string, OrganizationMember[]>();
 const localAuthAccountsBySchool = new Map<string, LocalAuthAccount[]>();
+const gameOverridesBySchool = new Map<string, Map<string, GameEditOverride>>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -1860,6 +1890,12 @@ function buildPersistedSnapshot(): PersistedSnapshot {
     onboardingAccountsBySchool: Object.fromEntries(onboardingAccountsBySchool.entries()),
     organizationMembersBySchool: Object.fromEntries(organizationMembersBySchool.entries()),
     localAuthAccountsBySchool: Object.fromEntries(localAuthAccountsBySchool.entries()),
+    gameOverridesBySchool: Object.fromEntries(
+      [...gameOverridesBySchool.entries()].map(([schoolId, overrideMap]) => [
+        schoolId,
+        Object.fromEntries(overrideMap.entries())
+      ])
+    ),
     // Backward compatibility for older readers expecting a top-level rosterTeams array.
     rosterTeams: getRosterTeamsForSchool(DEFAULT_SCHOOL_ID)
   };
@@ -1907,6 +1943,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedOnboardingAccounts = Array.isArray(payload) ? undefined : payload.onboardingAccountsBySchool;
   const persistedOrganizationMembers = Array.isArray(payload) ? undefined : payload.organizationMembersBySchool;
   const persistedLocalAuthAccounts = Array.isArray(payload) ? undefined : payload.localAuthAccountsBySchool;
+  const persistedGameOverrides = Array.isArray(payload) ? undefined : payload.gameOverridesBySchool;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
@@ -1914,6 +1951,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   onboardingAccountsBySchool.clear();
   organizationMembersBySchool.clear();
   localAuthAccountsBySchool.clear();
+  gameOverridesBySchool.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -1944,6 +1982,18 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   if (persistedLocalAuthAccounts && typeof persistedLocalAuthAccounts === "object") {
     for (const [schoolId, accounts] of Object.entries(persistedLocalAuthAccounts)) {
       setLocalAuthAccountsForSchool(normalizeSchoolId(schoolId), Array.isArray(accounts) ? accounts : []);
+    }
+  }
+
+  if (persistedGameOverrides && typeof persistedGameOverrides === "object") {
+    for (const [schoolId, overrides] of Object.entries(persistedGameOverrides)) {
+      const overrideMap = new Map<string, GameEditOverride>();
+      if (overrides && typeof overrides === "object") {
+        for (const [gameId, override] of Object.entries(overrides)) {
+          overrideMap.set(gameId, override as GameEditOverride);
+        }
+      }
+      gameOverridesBySchool.set(normalizeSchoolId(schoolId), overrideMap);
     }
   }
 
@@ -2263,6 +2313,7 @@ export function resetAllData(scope?: TenantScope): void {
     onboardingAccountsBySchool.clear();
     organizationMembersBySchool.clear();
     localAuthAccountsBySchool.clear();
+    gameOverridesBySchool.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -2278,6 +2329,7 @@ export function resetAllData(scope?: TenantScope): void {
   onboardingAccountsBySchool.delete(schoolId);
   organizationMembersBySchool.delete(schoolId);
   localAuthAccountsBySchool.delete(schoolId);
+  gameOverridesBySchool.delete(schoolId);
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
 }
@@ -2345,6 +2397,22 @@ export function recordLocalAuthLogin(accountId: string, scope?: TenantScope): Lo
     persistLocalAuthAccountsForSchool(schoolId, localAuthAccountsBySchool.get(schoolId) ?? []);
   }
   return saved;
+}
+
+export function getGameOverrideMap(schoolId: string): Map<string, GameEditOverride> {
+  const existing = gameOverridesBySchool.get(normalizeSchoolId(schoolId));
+  if (existing) {
+    return existing;
+  }
+
+  const created = new Map<string, GameEditOverride>();
+  gameOverridesBySchool.set(normalizeSchoolId(schoolId), created);
+  return created;
+}
+
+export function setGameOverride(schoolId: string, override: GameEditOverride): void {
+  getGameOverrideMap(schoolId).set(override.gameId, override);
+  persistSessions();
 }
 
 export function saveOrganizationMember(member: OrganizationMemberInput, scope?: TenantScope): OrganizationMember {
@@ -2757,6 +2825,7 @@ function buildSchoolAnalytics(scope?: TenantScope): {
   };
 
   const games: SeasonGameSummary[] = [];
+  const overrideMap = gameOverridesBySchool.get(schoolId) ?? new Map<string, GameEditOverride>();
   const sessionsForSchool = getSessionsForSchool(schoolId)
     .filter((session) => (rosterTeamIds.has(session.homeTeamId) || rosterTeamIds.has(session.awayTeamId)) && session.submitted === true);
 
@@ -2764,8 +2833,6 @@ function buildSchoolAnalytics(scope?: TenantScope): {
     const ourTeamId = rosterTeamIds.has(session.homeTeamId) ? session.homeTeamId : session.awayTeamId;
     const opponentTeamId = ourTeamId === session.homeTeamId ? session.awayTeamId : session.homeTeamId;
     const teamStats = session.state.teamStats[ourTeamId];
-    const ourScore = session.state.scoreByTeam[ourTeamId] ?? 0;
-    const oppScore = session.state.scoreByTeam[opponentTeamId] ?? 0;
     const playerStats = session.state.playerStatsByTeam[ourTeamId] ?? {};
     const orderedEvents = listOrderedEvents(session);
     const latestTimestampIso = orderedEvents[orderedEvents.length - 1]?.timestampIso ?? "";
@@ -2793,52 +2860,77 @@ function buildSchoolAnalytics(scope?: TenantScope): {
     const steals = Object.values(playerStats).reduce((sum, player) => sum + player.steals, 0);
     const blocks = Object.values(playerStats).reduce((sum, player) => sum + player.blocks, 0);
 
-    aggregatedTeam.fg += teamStats?.shooting.fgMade ?? 0;
-    aggregatedTeam.fga += teamStats?.shooting.fgAttempts ?? 0;
-    aggregatedTeam.fg3 += fg3;
-    aggregatedTeam.fg3a += fg3a;
-    aggregatedTeam.ft += teamStats?.shooting.ftMade ?? 0;
-    aggregatedTeam.fta += teamStats?.shooting.ftAttempts ?? 0;
-    aggregatedTeam.oreb += teamStats?.reboundsOff ?? 0;
-    aggregatedTeam.dreb += teamStats?.reboundsDef ?? 0;
-    aggregatedTeam.reb += (teamStats?.reboundsOff ?? 0) + (teamStats?.reboundsDef ?? 0);
-    aggregatedTeam.asst += assists;
-    aggregatedTeam.to += teamStats?.turnovers ?? 0;
-    aggregatedTeam.stl += steals;
-    aggregatedTeam.blk += blocks;
-    aggregatedTeam.fouls += teamStats?.fouls ?? 0;
-    aggregatedTeam.pointsFor += ourScore;
-    aggregatedTeam.pointsAgainst += oppScore;
-    if (ourScore > oppScore) {
+    // Build base game stats from events
+    let gameDate = latestTimestampIso ? latestTimestampIso.slice(0, 10) : "";
+    let gameOpponent = session.opponentName?.trim() || resolveTeamLabelFromRoster(opponentTeamId, schoolId);
+    let gameLocation: "home" | "away" = ourTeamId === session.homeTeamId ? "home" : "away";
+    let gameVcScore = session.state.scoreByTeam[ourTeamId] ?? 0;
+    let gameOppScore = session.state.scoreByTeam[opponentTeamId] ?? 0;
+    let gameTeamStats = {
+      fg: teamStats?.shooting.fgMade ?? 0,
+      fga: teamStats?.shooting.fgAttempts ?? 0,
+      fg3,
+      fg3a,
+      ft: teamStats?.shooting.ftMade ?? 0,
+      fta: teamStats?.shooting.ftAttempts ?? 0,
+      oreb: teamStats?.reboundsOff ?? 0,
+      dreb: teamStats?.reboundsDef ?? 0,
+      reb: (teamStats?.reboundsOff ?? 0) + (teamStats?.reboundsDef ?? 0),
+      asst: assists,
+      to: teamStats?.turnovers ?? 0,
+      stl: steals,
+      blk: blocks,
+      fouls: teamStats?.fouls ?? 0
+    };
+
+    // Apply override if one exists for this game
+    const override = overrideMap.get(session.state.gameId);
+    if (override) {
+      gameDate = override.date || gameDate;
+      gameOpponent = override.opponent || gameOpponent;
+      gameLocation = override.location === "neutral" ? "away" : (override.location || gameLocation);
+      gameVcScore = override.vc_score;
+      gameOppScore = override.opp_score;
+      // Only use override team_stats if they contain non-zero data
+      const ots = override.team_stats;
+      if (ots && (ots.fg > 0 || ots.fga > 0 || ots.ft > 0 || ots.reb > 0)) {
+        gameTeamStats = { ...ots };
+      }
+    }
+
+    const gameResult = gameVcScore > gameOppScore ? "W" as const : gameVcScore < gameOppScore ? "L" as const : "T" as const;
+
+    aggregatedTeam.fg += gameTeamStats.fg;
+    aggregatedTeam.fga += gameTeamStats.fga;
+    aggregatedTeam.fg3 += gameTeamStats.fg3;
+    aggregatedTeam.fg3a += gameTeamStats.fg3a;
+    aggregatedTeam.ft += gameTeamStats.ft;
+    aggregatedTeam.fta += gameTeamStats.fta;
+    aggregatedTeam.oreb += gameTeamStats.oreb;
+    aggregatedTeam.dreb += gameTeamStats.dreb;
+    aggregatedTeam.reb += gameTeamStats.reb;
+    aggregatedTeam.asst += gameTeamStats.asst;
+    aggregatedTeam.to += gameTeamStats.to;
+    aggregatedTeam.stl += gameTeamStats.stl;
+    aggregatedTeam.blk += gameTeamStats.blk;
+    aggregatedTeam.fouls += gameTeamStats.fouls;
+    aggregatedTeam.pointsFor += gameVcScore;
+    aggregatedTeam.pointsAgainst += gameOppScore;
+    if (gameResult === "W") {
       aggregatedTeam.win += 1;
-    } else if (ourScore < oppScore) {
+    } else if (gameResult === "L") {
       aggregatedTeam.loss += 1;
     }
 
     games.push({
       gameId: session.state.gameId,
-      date: latestTimestampIso ? latestTimestampIso.slice(0, 10) : "",
-      opponent: session.opponentName?.trim() || resolveTeamLabelFromRoster(opponentTeamId, schoolId),
-      location: ourTeamId === session.homeTeamId ? "home" : "away",
-      vc_score: ourScore,
-      opp_score: oppScore,
-      result: ourScore > oppScore ? "W" : ourScore < oppScore ? "L" : "T",
-      team_stats: {
-        fg: teamStats?.shooting.fgMade ?? 0,
-        fga: teamStats?.shooting.fgAttempts ?? 0,
-        fg3,
-        fg3a,
-        ft: teamStats?.shooting.ftMade ?? 0,
-        fta: teamStats?.shooting.ftAttempts ?? 0,
-        oreb: teamStats?.reboundsOff ?? 0,
-        dreb: teamStats?.reboundsDef ?? 0,
-        reb: (teamStats?.reboundsOff ?? 0) + (teamStats?.reboundsDef ?? 0),
-        asst: assists,
-        to: teamStats?.turnovers ?? 0,
-        stl: steals,
-        blk: blocks,
-        fouls: teamStats?.fouls ?? 0
-      }
+      date: gameDate,
+      opponent: gameOpponent,
+      location: gameLocation,
+      vc_score: gameVcScore,
+      opp_score: gameOppScore,
+      result: gameResult,
+      team_stats: gameTeamStats
     });
 
     for (const statLine of Object.values(playerStats)) {

@@ -60,7 +60,10 @@ import {
   recordLocalAuthLogin,
   saveOrganizationMember,
   deleteOrganizationMember,
-  type LocalAuthAccount
+  type LocalAuthAccount,
+  type GameEditOverride,
+  getGameOverrideMap,
+  setGameOverride
 } from "./store.js";
 import {
   extractBearerToken,
@@ -703,35 +706,6 @@ function findPlayerRecord(teams: RosterTeam[], playerName: string): { team: Rost
 }
 
 
-interface GameEditOverride {
-  gameId: string;
-  date: string;
-  opponent: string;
-  location: "home" | "away" | "neutral";
-  vc_score: number;
-  opp_score: number;
-  result: "W" | "L" | "T";
-  team_stats: {
-    fg: number;
-    fga: number;
-    fg3: number;
-    fg3a: number;
-    ft: number;
-    fta: number;
-    oreb: number;
-    dreb: number;
-    reb: number;
-    asst: number;
-    to: number;
-    stl: number;
-    blk: number;
-    fouls: number;
-  };
-  player_stats: Array<Record<string, unknown>>;
-  updatedAtIso: string;
-}
-
-const gameOverridesBySchool = new Map<string, Map<string, GameEditOverride>>();
 const seasonAnalysisBySchool = new Map<string, { generated_at: string; season_summary: string; per_game_analysis: unknown[] }>();
 const playerAnalysisCacheBySchool = new Map<string, Map<string, unknown>>();
 
@@ -747,17 +721,6 @@ function resolveGameResult(vcScore: number, oppScore: number): "W" | "L" | "T" {
     return "L";
   }
   return "T";
-}
-
-function getGameOverrideMap(schoolId: string): Map<string, GameEditOverride> {
-  const existing = gameOverridesBySchool.get(schoolId);
-  if (existing) {
-    return existing;
-  }
-
-  const created = new Map<string, GameEditOverride>();
-  gameOverridesBySchool.set(schoolId, created);
-  return created;
 }
 
 function getRosterPlayerByIdForSchool(schoolId: string): Map<string, { name: string; number?: string }> {
@@ -2951,7 +2914,7 @@ app.put("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
     updatedAtIso: new Date().toISOString()
   };
 
-  getGameOverrideMap(schoolId).set(gameId, override);
+  setGameOverride(schoolId, override);
   res.json({ message: "Game updated successfully", game: override });
 });
 
@@ -2985,7 +2948,6 @@ app.post("/api/games/:gameId/submit", requireApiKey, requireWriteRole, (req, res
 app.post("/api/reset", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   resetAllData({ schoolId });
-  gameOverridesBySchool.delete(schoolId);
   res.json({ ok: true, message: "Reset complete", schoolId });
 });
 
