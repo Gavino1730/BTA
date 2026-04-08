@@ -35,7 +35,57 @@ function safeNum(value: number | undefined, digits = 1): string {
   return Number.isFinite(value) ? Number(value).toFixed(digits) : (0).toFixed(digits);
 }
 
-function ScoreTrend({ history }: { history: PlayerGameHistoryRow[] }) {
+function toPct(value: number | undefined, digits = 1): string {
+  if (!Number.isFinite(value)) {
+    return `0.${"0".repeat(Math.max(0, digits - 1))}%`;
+  }
+  const numeric = Number(value);
+  const normalized = numeric > 0 && numeric <= 1 ? numeric * 100 : numeric;
+  return `${normalized.toFixed(digits)}%`;
+}
+
+function inferPosition(role: string | undefined): string {
+  const clean = (role ?? "").trim();
+  if (!clean) return "Player";
+  const lower = clean.toLowerCase();
+  if (lower.includes("guard")) return "Guard";
+  if (lower.includes("forward")) return "Forward";
+  if (lower.includes("center")) return "Center";
+  return clean;
+}
+
+function buildPlayerInsights(player: PlayerSummary, history: PlayerGameHistoryRow[], advanced: PlayerAdvancedPayload | null): string[] {
+  const notes: string[] = [];
+  const recent = history.slice(0, 5);
+  const seasonPpg = Number(player.ppg ?? 0);
+  const recentAvg = recent.length > 0 ? recent.reduce((sum, row) => sum + row.pts, 0) / recent.length : seasonPpg;
+
+  if (Math.abs(recentAvg - seasonPpg) <= 1.2) {
+    notes.push(`Scoring has been consistent across recent games (${safeNum(recentAvg)} vs ${safeNum(seasonPpg)} season PPG).`);
+  } else if (recentAvg > seasonPpg) {
+    notes.push(`Trending up: last 5 scoring average is ${safeNum(recentAvg)}, above season average (${safeNum(seasonPpg)}).`);
+  } else {
+    notes.push(`Recent scoring dip: last 5 average is ${safeNum(recentAvg)} versus ${safeNum(seasonPpg)} on the season.`);
+  }
+
+  const ts = Number(advanced?.scoring_efficiency?.ts_pct ?? 0);
+  if (ts >= 56) {
+    notes.push(`High efficiency profile with TS% at ${toPct(ts)}.`);
+  } else if (ts > 0) {
+    notes.push(`Efficiency check: TS% is ${toPct(ts)} with room to optimize shot quality.`);
+  }
+
+  const apg = Number(player.apg ?? 0);
+  if (apg < 2.5) {
+    notes.push(`Playmaking volume is low for a primary handler (${safeNum(apg)} APG).`);
+  } else {
+    notes.push(`Playmaking support is solid at ${safeNum(apg)} APG.`);
+  }
+
+  return notes.slice(0, 3);
+}
+
+function ScoreTrend({ history, onSelectGame }: { history: PlayerGameHistoryRow[]; onSelectGame: (gameId: string) => void }) {
   const rows = [...history].slice(0, 5).reverse();
   const maxPts = Math.max(...rows.map((row) => row.pts), 1);
 
@@ -48,7 +98,14 @@ function ScoreTrend({ history }: { history: PlayerGameHistoryRow[] }) {
       {rows.map((row) => {
         const height = Math.max(16, Math.round((row.pts / maxPts) * 96));
         return (
-          <div key={row.gameId} style={{ display: "grid", gap: "0.35rem", justifyItems: "center" }}>
+          <button
+            key={row.gameId}
+            type="button"
+            onClick={() => onSelectGame(String(row.gameId))}
+            className="player-trend-bar"
+            title={`${row.date || "No date"} vs ${row.opponent} • ${row.result} ${row.teamScore}-${row.oppScore} • ${row.pts} pts, ${row.reb} reb, ${row.ast} ast`}
+            style={{ display: "grid", gap: "0.35rem", justifyItems: "center", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
+          >
             <strong style={{ fontSize: "0.85rem", color: "var(--text)" }}>{row.pts}</strong>
             <div
               aria-hidden="true"
@@ -60,8 +117,8 @@ function ScoreTrend({ history }: { history: PlayerGameHistoryRow[] }) {
                 background: row.result === "W" ? "linear-gradient(180deg, #4f8cff, #295ecf)" : "linear-gradient(180deg, #f59e0b, #b45309)",
               }}
             />
-            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>{row.opponent}</span>
-          </div>
+            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>{row.result} • {row.opponent}</span>
+          </button>
         );
       })}
     </div>
@@ -177,6 +234,15 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
     ? recentRows.reduce((sum, row) => sum + row.pts, 0) / recentRows.length
     : Number(player.ppg ?? 0);
   const highGame = history.reduce((max, row) => Math.max(max, row.pts), 0);
+  const seasonAvg = Number(player.ppg ?? 0);
+  const trendDelta = recentAvg - seasonAvg;
+  const twentyPlusStreak = history.reduce((streak, row) => {
+    if (row.pts >= 20 && streak === history.indexOf(row)) {
+      return streak + 1;
+    }
+    return streak;
+  }, 0);
+  const playerInsights = useMemo(() => buildPlayerInsights(player, history, advanced), [advanced, history, player]);
 
   return (
     <div
@@ -185,12 +251,19 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
     >
       <div className="stats-page-card" style={{ width: "100%", maxWidth: 1080, alignSelf: "flex-start", padding: "1.15rem 1.15rem 1.25rem" }}>
         <div className="stats-game-card-head" style={{ marginBottom: "1rem", alignItems: "flex-start" }}>
-          <div>
-            <p className="stats-page-eyebrow">#{player.number ?? "-"} · {getPlayerGamesPlayed(player)} GP</p>
-            <h2 style={{ margin: 0 }}>{playerName}</h2>
-            <p className="stats-page-subcopy" style={{ marginTop: "0.3rem" }}>
-              {player.role ? `${player.role} · ` : ""}Season averages, recent form, and previous game stats.
-            </p>
+          <div className="player-profile-hero">
+            <div className="player-profile-avatar" aria-hidden="true">{playerName.slice(0, 1).toUpperCase()}</div>
+            <div>
+              <p className="stats-page-eyebrow">Valley Catholic • Varsity</p>
+              <h2 style={{ margin: 0 }}>{playerName}</h2>
+              <p className="stats-page-subcopy" style={{ marginTop: "0.3rem" }}>
+                #{player.number ?? "-"} • {inferPosition(player.role)} • {getPlayerGamesPlayed(player)} GP
+              </p>
+              <div className="player-hero-ppg">
+                <span>{safeNum(player.ppg)}</span>
+                <small>PPG</small>
+              </div>
+            </div>
           </div>
           <div style={{ display: "grid", gap: "0.45rem", justifyItems: "end" }}>
             {status ? <span className="stats-page-status">{status}</span> : null}
@@ -204,8 +277,8 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           </div>
         </div>
 
-        <section className="stats-metric-grid" style={{ marginBottom: "1rem" }}>
-          <div className="stats-metric-card accent-blue">
+        <section className="stats-metric-grid player-top-metrics" style={{ marginBottom: "1rem" }}>
+          <div className="stats-metric-card accent-blue player-metric-primary">
             <span className="stats-metric-label">PPG</span>
             <strong className="stats-metric-value">{safeNum(player.ppg)}</strong>
             <span className="stats-metric-detail">Recent 5 avg {safeNum(recentAvg)}</span>
@@ -220,10 +293,10 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
             <strong className="stats-metric-value">{safeNum(player.apg)}</strong>
             <span className="stats-metric-detail">AST/TO {safeNum(advanced?.ball_handling?.ast_to_ratio)}</span>
           </div>
-          <div className="stats-metric-card">
-            <span className="stats-metric-label">Shooting</span>
-            <strong className="stats-metric-value">{safeNum(player.fg_pct)}%</strong>
-            <span className="stats-metric-detail">3PT {safeNum(player.fg3_pct)}% · FT {safeNum(player.ft_pct)}%</span>
+          <div className="stats-metric-card player-shooting-split">
+            <span className="stats-metric-label">FG%</span>
+            <strong className="stats-metric-value">{toPct(player.fg_pct)}</strong>
+            <span className="stats-metric-detail">3PT {toPct(player.fg3_pct)} · FT {toPct(player.ft_pct)}</span>
           </div>
         </section>
 
@@ -236,7 +309,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
             {history.length === 0 ? (
               <p className="stats-empty-copy">No previous box scores have been logged for this player yet.</p>
             ) : (
-              <ScoreTrend history={history} />
+              <ScoreTrend history={history} onSelectGame={setSelectedGameId} />
             )}
           </article>
 
@@ -245,26 +318,26 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
               <h3>Season Snapshot</h3>
               <span className="stats-page-status">{advanced?.impact?.efficiency_grade ? `${advanced.impact.efficiency_grade} impact` : "Live"}</span>
             </div>
-            <div className="stats-game-card-metrics">
+            <div className="stats-game-card-metrics player-snapshot-grid">
               <div>
                 <span>PER</span>
                 <strong>{safeNum(advanced?.scoring_efficiency?.per)}</strong>
               </div>
               <div>
                 <span>eFG%</span>
-                <strong>{safeNum(advanced?.scoring_efficiency?.efg_pct)}%</strong>
+                <strong>{toPct(advanced?.scoring_efficiency?.efg_pct)}</strong>
               </div>
               <div>
                 <span>TS%</span>
-                <strong>{safeNum(advanced?.scoring_efficiency?.ts_pct)}%</strong>
+                <strong>{toPct(advanced?.scoring_efficiency?.ts_pct)}</strong>
               </div>
               <div>
                 <span>Usage</span>
-                <strong>{safeNum(advanced?.usage_role?.usage_proxy)}%</strong>
+                <strong>{toPct(advanced?.usage_role?.usage_proxy)}</strong>
               </div>
               <div>
                 <span>Shot Share</span>
-                <strong>{safeNum(advanced?.usage_role?.scoring_share)}%</strong>
+                <strong>{toPct(advanced?.usage_role?.scoring_share)}</strong>
               </div>
               <div>
                 <span>PTS/Shot</span>
@@ -274,10 +347,49 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           </article>
         </section>
 
+        <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+          <article className="stats-page-card">
+            <div className="stats-page-card-head">
+              <h3>Player Insights</h3>
+              <span className="stats-page-status">Intelligence Layer</span>
+            </div>
+            <ul className="game-insight-list" style={{ marginTop: "0.25rem" }}>
+              {playerInsights.map((note, idx) => (
+                <li key={`player-insight-${idx}`}>{note}</li>
+              ))}
+            </ul>
+          </article>
+
+          <article className="stats-page-card">
+            <div className="stats-page-card-head">
+              <h3>Consistency & Trend</h3>
+              <span className="stats-page-status">Last 5 vs Season</span>
+            </div>
+            <div className="stats-game-card-metrics player-snapshot-grid">
+              <div>
+                <span>Season PPG</span>
+                <strong>{safeNum(seasonAvg)}</strong>
+              </div>
+              <div>
+                <span>Last 5 PPG</span>
+                <strong>{safeNum(recentAvg)}</strong>
+              </div>
+              <div>
+                <span>Trend Delta</span>
+                <strong style={{ color: trendDelta >= 0 ? "#4ade80" : "#f87171" }}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
+              </div>
+              <div>
+                <span>20+ Streak</span>
+                <strong>{twentyPlusStreak}</strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
         <section className="stats-page-card">
           <div className="stats-page-card-head">
-            <h3>Game Box Scores</h3>
-            <span className="stats-page-status">Select a game to view this player's full box score line.</span>
+            <h3>Previous Games</h3>
+            <span className="stats-page-status">Click a row to focus. Use Open Game to jump to the full game view.</span>
           </div>
 
           {playerGameBoxScores.length === 0 ? (
@@ -300,6 +412,44 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
                   })}
                 </select>
               </label>
+
+              <div style={{ overflowX: "auto" }}>
+                <table className="team-comparison-table player-history-table" style={{ marginTop: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Opponent</th>
+                      <th>Result</th>
+                      <th>PTS</th>
+                      <th>REB</th>
+                      <th>AST</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((row) => (
+                      <tr
+                        key={`history-${row.gameId}`}
+                        className={`player-history-row ${row.result === "W" ? "is-win" : "is-loss"} ${row.pts >= 20 ? "big-game" : ""} ${String(row.gameId) === selectedGameId ? "selected" : ""}`}
+                        onClick={() => setSelectedGameId(String(row.gameId))}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            setSelectedGameId(String(row.gameId));
+                          }
+                        }}
+                      >
+                        <td>{row.date || "-"}</td>
+                        <td>{row.opponent}</td>
+                        <td><span className={`player-history-result ${row.result === "W" ? "win" : "loss"}`}>{row.result}</span> {row.teamScore}-{row.oppScore}</td>
+                        <td>{row.pts}</td>
+                        <td>{row.reb}</td>
+                        <td>{row.ast}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               {selectedGameBoxScore ? (
                 <div style={{ overflowX: "auto" }}>
@@ -350,6 +500,18 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
                       })()}
                     </tbody>
                   </table>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.55rem" }}>
+                    <button
+                      type="button"
+                      className="shell-nav-link"
+                      onClick={() => {
+                        window.history.pushState({}, "", "/stats/games");
+                        window.dispatchEvent(new PopStateEvent("popstate"));
+                      }}
+                    >
+                      Open Game Page
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>

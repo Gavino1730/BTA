@@ -50,6 +50,14 @@ interface GameSummary {
   player_stats?: PlayerStat[];
 }
 
+interface LiveInsightItem {
+  id?: string;
+  type?: string;
+  priority?: "urgent" | "important" | "info";
+  message?: string;
+  explanation?: string;
+}
+
 const STAT_COLS = [
   { key: "fg_made", label: "FGM" },
   { key: "fg_att",  label: "FGA" },
@@ -148,7 +156,61 @@ const thSt: CSSProperties = {
   background: "var(--surface-2)",
 };
 
-function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
+function pctValue(made: number, attempted: number): number | null {
+  if (attempted <= 0) {
+    return null;
+  }
+  return (made / attempted) * 100;
+}
+
+function formatPct(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+  return `${value.toFixed(1)}%`;
+}
+
+function formatDateDisplay(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value || "Date TBD";
+  }
+  return parsed.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
+
+function teamInitials(value: string): string {
+  const clean = value.trim();
+  if (!clean) return "--";
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase();
+}
+
+function computeRecordAfterGame(games: GameSummary[], gameId: string | number): string | null {
+  const sorted = [...games].sort((a, b) => {
+    const aDate = new Date(a.date).getTime();
+    const bDate = new Date(b.date).getTime();
+    const safeA = Number.isNaN(aDate) ? 0 : aDate;
+    const safeB = Number.isNaN(bDate) ? 0 : bDate;
+    if (safeA !== safeB) return safeA - safeB;
+    return String(a.gameId).localeCompare(String(b.gameId));
+  });
+
+  let wins = 0;
+  let losses = 0;
+  let ties = 0;
+  for (const item of sorted) {
+    if (item.result === "W") wins += 1;
+    if (item.result === "L") losses += 1;
+    if (item.result === "T") ties += 1;
+    if (String(item.gameId) === String(gameId)) {
+      return ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+    }
+  }
+  return null;
+}
+
+function GameModal({ game, games, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; games: GameSummary[]; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
   const [mode, setMode] = useState<"view" | "edit">(initialMode);
   const [date, setDate] = useState(game.date ?? "");
   const [opponent, setOpponent] = useState(game.opponent ?? "");
@@ -164,6 +226,9 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
   const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [boxMode, setBoxMode] = useState<"basic" | "advanced">("basic");
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insights, setInsights] = useState<LiveInsightItem[]>([]);
 
   const isEditing = mode === "edit";
 
@@ -171,6 +236,85 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
   const playerPts = useMemo(() => rows.reduce((s, r) => s + rowPts(r), 0), [rows]);
   const namedRows = useMemo(() => rows.filter(r => r.name.trim()), [rows]);
   const mismatch = namedRows.length > 0 && (Number(vcScore) || 0) !== playerPts;
+  const recordAfterGame = useMemo(() => computeRecordAfterGame(games, game.gameId), [games, game.gameId]);
+  const fgPct = useMemo(() => pctValue(ts.fg, ts.fga), [ts.fg, ts.fga]);
+  const fg3Pct = useMemo(() => pctValue(ts.fg3, ts.fg3a), [ts.fg3, ts.fg3a]);
+  const ftPct = useMemo(() => pctValue(ts.ft, ts.fta), [ts.ft, ts.fta]);
+  const astToRatio = useMemo(() => (ts.to > 0 ? ts.asst / ts.to : ts.asst), [ts.asst, ts.to]);
+  const scoreDiff = Number(vcScore || 0) - Number(oppScore || 0);
+  const inferredResult = scoreDiff > 0 ? "W" : scoreDiff < 0 ? "L" : "T";
+  const resultCode = (game.result || inferredResult).toUpperCase();
+  const resultLabel = resultCode === "W" ? "WIN" : resultCode === "L" ? "LOSS" : "TIE";
+  const isWin = resultCode === "W";
+  const isLoss = resultCode === "L";
+
+  const topPerformers = useMemo(() => {
+    return [...namedRows]
+      .sort((a, b) => {
+        const ptsDiff = rowPts(b) - rowPts(a);
+        if (ptsDiff !== 0) return ptsDiff;
+        const rebDiff = rowReb(b) - rowReb(a);
+        if (rebDiff !== 0) return rebDiff;
+        return b.asst - a.asst;
+      })
+      .slice(0, 3);
+  }, [namedRows]);
+
+  const maxPts = useMemo(() => Math.max(0, ...namedRows.map((row) => rowPts(row))), [namedRows]);
+  const maxReb = useMemo(() => Math.max(0, ...namedRows.map((row) => rowReb(row))), [namedRows]);
+  const maxAst = useMemo(() => Math.max(0, ...namedRows.map((row) => row.asst)), [namedRows]);
+
+  const visibleCols = useMemo(() => {
+    if (boxMode === "advanced") return STAT_COLS;
+    const allowed = new Set<StatKey>(["fg_made", "fg_att", "fg3_made", "fg3_att", "ft_made", "ft_att", "asst", "to", "oreb", "dreb"]);
+    return STAT_COLS.filter((col) => allowed.has(col.key));
+  }, [boxMode]);
+
+  const groupedCols = useMemo(() => {
+    const shooting = visibleCols.filter((col) => ["fg_made", "fg_att", "fg3_made", "fg3_att", "ft_made", "ft_att"].includes(col.key));
+    const playmaking = visibleCols.filter((col) => ["asst", "to", "plus_minus"].includes(col.key));
+    const defense = visibleCols.filter((col) => ["oreb", "dreb", "stl", "blk", "fouls"].includes(col.key));
+    return { shooting, playmaking, defense };
+  }, [visibleCols]);
+
+  const keyStoryPoints = useMemo(() => {
+    const notes: string[] = [];
+    if (isLoss && fgPct !== null && fgPct >= 45) {
+      notes.push(`Lost despite shooting ${formatPct(fgPct)} from the field.`);
+    }
+    if (ts.to >= 15) {
+      notes.push(`Turnovers were high at ${ts.to}, creating extra opponent possessions.`);
+    }
+    if (ftPct !== null && ftPct < 68) {
+      notes.push(`Free throws were a swing factor: ${ts.ft}/${ts.fta} (${formatPct(ftPct)}).`);
+    }
+    if (astToRatio >= 1.5) {
+      notes.push(`Ball movement held up with an AST/TO of ${astToRatio.toFixed(2)}.`);
+    }
+    if (notes.length === 0) {
+      notes.push(`Final margin was ${scoreDiff > 0 ? "+" : ""}${scoreDiff}.`);
+    }
+    return notes.slice(0, 3);
+  }, [isLoss, fgPct, ts.to, ftPct, ts.ft, ts.fta, astToRatio, scoreDiff]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setInsightsLoading(true);
+    fetch(`${apiBase}/api/games/${encodeURIComponent(String(game.gameId))}/insights`, { headers: apiKeyHeader() })
+      .then((res) => (res.ok ? res.json() as Promise<LiveInsightItem[]> : Promise.reject(new Error("Could not load game insights"))))
+      .then((payload) => {
+        if (!cancelled) setInsights(Array.isArray(payload) ? payload : []);
+      })
+      .catch(() => {
+        if (!cancelled) setInsights([]);
+      })
+      .finally(() => {
+        if (!cancelled) setInsightsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [game.gameId]);
 
   function setField(i: number, key: keyof EditPlayerRow, val: string) {
     setRows(prev => prev.map((r, idx) => {
@@ -246,22 +390,22 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, overflowY: "auto", display: "flex", justifyContent: "center", padding: "1.5rem 1rem" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{ background: "var(--surface)", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 16, width: "100%", maxWidth: 1200, alignSelf: "flex-start" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 16, width: "100%", maxWidth: 1220, alignSelf: "flex-start" }}>
         {/* header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.1rem 1.4rem", borderBottom: "1px solid var(--border)" }}>
           <div>
             <p style={{ margin: 0, fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.06em" }}>{isEditing ? "Edit" : "View"} Game #{game.gameId}</p>
-            <h2 style={{ margin: "0.2rem 0 0" }}>{game.location === "away" ? "@" : "vs"} {game.opponent}</h2>
+            <h2 style={{ margin: "0.2rem 0 0" }}>{location === "away" ? "@" : "vs"} {opponent}</h2>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
+            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "var(--text-muted)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
             {!isEditing && (
               <button type="button" onClick={() => setMode("edit")} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1rem", cursor: "pointer", fontWeight: 600 }}>
                 Edit
               </button>
             )}
             {!isEditing && (
-              <button type="button" onClick={() => void handleDelete()} disabled={deleting} style={{ background: "rgba(248,113,113,0.16)", border: "1px solid rgba(248,113,113,0.3)", color: "var(--red)", borderRadius: 8, padding: "0.45rem 1rem", cursor: deleting ? "default" : "pointer", fontWeight: 600, opacity: deleting ? 0.75 : 1 }}>
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} style={{ background: "transparent", border: "1px solid rgba(248,113,113,0.25)", color: "rgba(248,113,113,0.95)", borderRadius: 8, padding: "0.45rem 1rem", cursor: deleting ? "default" : "pointer", fontWeight: 600, opacity: deleting ? 0.75 : 1 }}>
                 {deleting ? "Deleting..." : "Delete Game"}
               </button>
             )}
@@ -282,62 +426,182 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
           {saveError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{saveError}</p>}
           {deleteError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{deleteError}</p>}
 
-          {/* meta fields */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
-            {([
-              ["Date", date || "—", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />],
-              ["Opponent", opponent || "—", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} />],
-              ["Location", location === "away" ? "Away" : location === "neutral" ? "Neutral" : "Home", (
-                <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt}>
-                  <option value="home">Home</option>
-                  <option value="away">Away</option>
-                  <option value="neutral">Neutral</option>
-                </select>
-              )],
-              ["Team Score", vcScore, <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} />],
-              ["Opp Score", oppScore, <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} />],
-            ] as [string, string, React.ReactNode][]).map(([lbl, viewVal, editEl]) => (
-              <div key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
-                <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{lbl}</span>
-                {isEditing ? editEl : <div style={readOnlyFieldSt} aria-readonly="true">{viewVal}</div>}
-              </div>
-            ))}
-          </div>
+          {isEditing ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
+              {([
+                ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />],
+                ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} />],
+                ["Location", (
+                  <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt}>
+                    <option value="home">Home</option>
+                    <option value="away">Away</option>
+                    <option value="neutral">Neutral</option>
+                  </select>
+                )],
+                ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} />],
+                ["Opp Score", <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} />],
+              ] as [string, JSX.Element][]).map(([lbl, editEl]) => (
+                <div key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
+                  <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{lbl}</span>
+                  {editEl}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <section className={`game-detail-hero ${isWin ? "is-win" : isLoss ? "is-loss" : "is-tie"}`}>
+                <div className="game-detail-team game-detail-team-home">
+                  <div className="game-detail-logo">VC</div>
+                  <div>
+                    <p className="game-detail-team-label">Valley Catholic</p>
+                    <h3 className="game-detail-team-name">VC</h3>
+                  </div>
+                </div>
+                <div className="game-detail-score-wrap">
+                  <p className="game-detail-matchup">{teamInitials(opponent)} @ VC</p>
+                  <div className="game-detail-scoreline">
+                    <span>{vcScore}</span>
+                    <em>—</em>
+                    <span>{oppScore}</span>
+                  </div>
+                  <p className="game-detail-result">{resultLabel}</p>
+                  <p className="game-detail-meta">{formatDateDisplay(date)} • {location === "away" ? "Away" : location === "neutral" ? "Neutral" : "Home"}{recordAfterGame ? ` • Record ${recordAfterGame}` : ""}</p>
+                </div>
+                <div className="game-detail-team game-detail-team-away">
+                  <div className="game-detail-logo">{teamInitials(opponent)}</div>
+                  <div>
+                    <p className="game-detail-team-label">Opponent</p>
+                    <h3 className="game-detail-team-name">{opponent || "TBD"}</h3>
+                  </div>
+                </div>
+              </section>
 
-          {/* derived summary */}
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: "0.8rem 1rem", marginBottom: "0.85rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "0.5rem" }}>
-            {([["FG", `${ts.fg}-${ts.fga}`], ["3P", `${ts.fg3}-${ts.fg3a}`], ["FT", `${ts.ft}-${ts.fta}`], ["REB", String(ts.reb)], ["AST/TO", `${ts.asst}/${ts.to}`], ["Plyr PTS", String(playerPts)]] as [string, string][]).map(([lbl, val]) => (
-              <div key={lbl}>
-                <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase" }}>{lbl}</div>
-                <div style={{ fontWeight: 700, color: lbl === "Plyr PTS" && mismatch ? "var(--red)" : "var(--text)" }}>{val}</div>
-              </div>
-            ))}
-          </div>
+              <section className="game-summary-strip">
+                <article className="game-summary-card neutral">
+                  <span>FG</span>
+                  <strong>{ts.fg}/{ts.fga}</strong>
+                  <small>{formatPct(fgPct)}</small>
+                </article>
+                <article className={`game-summary-card ${(fg3Pct ?? 0) >= 35 ? "good" : "bad"}`}>
+                  <span>3PT</span>
+                  <strong>{ts.fg3}/{ts.fg3a}</strong>
+                  <small>{formatPct(fg3Pct)}</small>
+                </article>
+                <article className={`game-summary-card ${(ftPct ?? 0) >= 70 ? "good" : "bad"}`}>
+                  <span>FT</span>
+                  <strong>{ts.ft}/{ts.fta}</strong>
+                  <small>{formatPct(ftPct)}</small>
+                </article>
+                <article className="game-summary-card neutral">
+                  <span>REB</span>
+                  <strong>{ts.reb}</strong>
+                  <small>OR {ts.oreb} / DR {ts.dreb}</small>
+                </article>
+                <article className={`game-summary-card ${astToRatio >= 1.5 ? "good" : astToRatio < 1.1 ? "bad" : "neutral"}`}>
+                  <span>AST / TO</span>
+                  <strong>{ts.asst} / {ts.to}</strong>
+                  <small>{astToRatio.toFixed(2)} ratio</small>
+                </article>
+              </section>
+
+              <section className="game-detail-grid">
+                <article className="game-detail-panel">
+                  <div className="game-detail-panel-head">
+                    <h3>Key Insights</h3>
+                    <span>{insightsLoading ? "Loading AI" : "Game Story"}</span>
+                  </div>
+                  <ul className="game-insight-list">
+                    {keyStoryPoints.map((point, idx) => <li key={`story-${idx}`}>{point}</li>)}
+                    {insights.slice(0, 3).map((insight, idx) => (
+                      <li key={insight.id ?? `ai-${idx}`}>{insight.message || insight.explanation || "AI insight unavailable."}</li>
+                    ))}
+                    {insights.length === 0 && !insightsLoading && (
+                      <li>AI insights are currently unavailable for this game. Save notes in AI Context to enrich this section.</li>
+                    )}
+                  </ul>
+                </article>
+
+                <article className="game-detail-panel">
+                  <div className="game-detail-panel-head">
+                    <h3>Top Performers</h3>
+                    <span>Quick Read</span>
+                  </div>
+                  {topPerformers.length === 0 ? (
+                    <p className="stats-empty-copy">No player stats recorded yet.</p>
+                  ) : (
+                    <div className="top-performer-list">
+                      {topPerformers.map((row, idx) => (
+                        <div key={`${row.name}-${idx}`} className="top-performer-card">
+                          <strong>{row.name}</strong>
+                          <p>{rowPts(row)} pts • {row.fg_made}/{row.fg_att} FG • {rowReb(row)} reb • {row.asst} ast</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+
+                <article className="game-detail-panel">
+                  <div className="game-detail-panel-head">
+                    <h3>Game Flow</h3>
+                    <span>Snapshot</span>
+                  </div>
+                  <div className="game-flow-metrics">
+                    <div>
+                      <span>Final Margin</span>
+                      <strong className={scoreDiff > 0 ? "positive" : scoreDiff < 0 ? "negative" : "neutral"}>{scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff}</strong>
+                    </div>
+                    <div>
+                      <span>Possession Load</span>
+                      <strong>{Math.round(ts.fga + (0.44 * ts.fta) + ts.to)}</strong>
+                    </div>
+                    <div>
+                      <span>Quarter Splits</span>
+                      <strong style={{ fontSize: "0.95rem" }}>Not recorded</strong>
+                    </div>
+                  </div>
+                </article>
+              </section>
+            </>
+          )}
+
           {mismatch && <p style={{ color: "var(--red)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Player totals ({playerPts}) don't match team score ({vcScore}).</p>}
 
           {/* box score table */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
             <h3 style={{ margin: 0 }}>Box Score</h3>
-            {isEditing && (
-              <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
-            )}
+            <div style={{ display: "flex", gap: "0.45rem" }}>
+              {!isEditing && (
+                <>
+                  <button type="button" onClick={() => setBoxMode("basic")} style={{ background: boxMode === "basic" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Basic Stats</button>
+                  <button type="button" onClick={() => setBoxMode("advanced")} style={{ background: boxMode === "advanced" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Advanced Stats</button>
+                </>
+              )}
+              {isEditing && (
+                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
+              )}
+            </div>
           </div>
-          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 820, fontSize: "0.83rem", fontVariantNumeric: "tabular-nums" }}>
+          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }} className="game-box-wrap">
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 820, fontSize: "0.83rem", fontVariantNumeric: "tabular-nums" }} className="game-box-score-table">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  <th style={{ ...thSt, textAlign: "left", minWidth: 140 }}>Player</th>
-                  <th style={{ ...thSt, minWidth: 44 }}>#</th>
-                  {STAT_COLS.map(c => <th key={c.key} style={thSt}>{c.label}</th>)}
-                  <th style={thSt}>REB</th>
-                  <th style={{ ...thSt, color: "var(--teal)" }}>PTS</th>
-                  {isEditing && <th style={thSt}></th>}
+                  <th style={{ ...thSt, textAlign: "left", minWidth: 140 }} className="sticky-col" rowSpan={2}>Player</th>
+                  <th style={{ ...thSt, minWidth: 44 }} rowSpan={2}>#</th>
+                  {groupedCols.shooting.length > 0 && <th style={thSt} colSpan={groupedCols.shooting.length}>Shooting</th>}
+                  {groupedCols.playmaking.length > 0 && <th style={thSt} colSpan={groupedCols.playmaking.length}>Playmaking</th>}
+                  {groupedCols.defense.length > 0 && <th style={thSt} colSpan={groupedCols.defense.length}>Defense / Glass</th>}
+                  <th style={thSt} rowSpan={2}>REB</th>
+                  <th style={{ ...thSt, color: "var(--teal)" }} rowSpan={2}>PTS</th>
+                  {isEditing && <th style={thSt} rowSpan={2}></th>}
+                </tr>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => <th key={c.key} style={thSt}>{c.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.025)" }}>
-                    <td style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }}>
+                  <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.025)" }} className={`game-box-row ${!isEditing && rowPts(row) === maxPts && maxPts > 0 ? "leader-points" : ""} ${!isEditing && rowReb(row) === maxReb && maxReb > 0 ? "leader-reb" : ""} ${!isEditing && row.asst === maxAst && maxAst > 0 ? "leader-ast" : ""}`}>
+                    <td style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }} className="sticky-col">
                       {isEditing
                         ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} />
                         : <span style={{ padding: "0 0.3rem" }}>{row.name || "—"}</span>}
@@ -347,7 +611,7 @@ function GameModal({ game, onClose, onSaved, onDeleted, initialMode = "view" }: 
                         ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} />
                         : <span>{row.number || "—"}</span>}
                     </td>
-                    {STAT_COLS.map(c => (
+                    {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => (
                       <td key={c.key} style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
                         {isEditing
                           ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} />
@@ -421,6 +685,7 @@ export function GamesPage() {
       {selectedGame && (
         <GameModal
           game={selectedGame}
+          games={games}
           onClose={() => setSelectedGame(null)}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
