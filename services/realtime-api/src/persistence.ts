@@ -147,6 +147,10 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         FOREIGN KEY (school_id, team_id) REFERENCES ${teamsTableName}(school_id, id) ON DELETE CASCADE
       )
     `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS ${playersTableName}_school_team_idx
+        ON ${playersTableName}(school_id, team_id)
+    `);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ${gamesTableName} (
@@ -265,6 +269,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       )
     `);
 
+    await pool.query(`ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${teamsTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${playersTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${gamesTableName} ENABLE ROW LEVEL SECURITY`);
@@ -272,6 +278,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     await pool.query(`ALTER TABLE ${orgProfilesTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${orgMembersTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${localAuthTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${tableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${teamsTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${playersTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${gamesTableName} FORCE ROW LEVEL SECURITY`);
@@ -285,11 +293,41 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       BEGIN
         IF NOT EXISTS (
           SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${tableName}' AND policyname = '${tableName}_service_policy'
+        ) THEN
+          CREATE POLICY ${tableName}_service_policy ON ${tableName}
+            USING ((select current_setting('app.school_id', true)) = '*')
+            WITH CHECK ((select current_setting('app.school_id', true)) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${schoolsTableName}' AND policyname = '${schoolsTableName}_school_policy'
+        ) THEN
+          CREATE POLICY ${schoolsTableName}_school_policy ON ${schoolsTableName}
+            USING (id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
+        END IF;
+      END
+      $$;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
           WHERE schemaname = 'public' AND tablename = '${teamsTableName}' AND policyname = '${teamsTableName}_school_policy'
         ) THEN
           CREATE POLICY ${teamsTableName}_school_policy ON ${teamsTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -303,8 +341,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${playersTableName}' AND policyname = '${playersTableName}_school_policy'
         ) THEN
           CREATE POLICY ${playersTableName}_school_policy ON ${playersTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -318,8 +356,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${gamesTableName}' AND policyname = '${gamesTableName}_school_policy'
         ) THEN
           CREATE POLICY ${gamesTableName}_school_policy ON ${gamesTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -333,8 +371,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${eventsTableName}' AND policyname = '${eventsTableName}_school_policy'
         ) THEN
           CREATE POLICY ${eventsTableName}_school_policy ON ${eventsTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -348,8 +386,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${orgProfilesTableName}' AND policyname = '${orgProfilesTableName}_school_policy'
         ) THEN
           CREATE POLICY ${orgProfilesTableName}_school_policy ON ${orgProfilesTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -363,8 +401,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${orgMembersTableName}' AND policyname = '${orgMembersTableName}_school_policy'
         ) THEN
           CREATE POLICY ${orgMembersTableName}_school_policy ON ${orgMembersTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -378,8 +416,8 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           WHERE schemaname = 'public' AND tablename = '${localAuthTableName}' AND policyname = '${localAuthTableName}_school_policy'
         ) THEN
           CREATE POLICY ${localAuthTableName}_school_policy ON ${localAuthTableName}
-            USING (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*')
-            WITH CHECK (school_id = current_setting('app.school_id', true) OR current_setting('app.school_id', true) = '*');
+            USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+            WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
         END IF;
       END
       $$;
@@ -398,6 +436,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     kind: "postgres",
     async load(): Promise<unknown | null> {
       await ensureSchema();
+      await setTenantContext(pool, "*");
       const result = await pool.query<{ payload: unknown }>(
         `SELECT payload FROM ${tableName} WHERE snapshot_key = $1 LIMIT 1`,
         ["global"]
@@ -406,6 +445,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     },
     async save(payload: unknown): Promise<void> {
       await ensureSchema();
+      await setTenantContext(pool, "*");
       await pool.query(
         `
           INSERT INTO ${tableName} (snapshot_key, payload, updated_at)

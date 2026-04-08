@@ -31,8 +31,8 @@ describe("coach route helpers", () => {
   });
 
   it("avoids pinning public deployments to the shared default school", () => {
-    expect(resolveDefaultSchoolId("localhost")).toBe("default");
-    expect(resolveDefaultSchoolId("192.168.1.25")).toBe("default");
+    expect(resolveDefaultSchoolId("localhost")).toBe("");
+    expect(resolveDefaultSchoolId("192.168.1.25")).toBe("");
     expect(resolveDefaultSchoolId("bta-demo.up.railway.app")).toBe("");
   });
 

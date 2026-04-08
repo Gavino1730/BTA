@@ -14,7 +14,7 @@ export const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(def
 export const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
 export const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD
   ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : "");
-export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "default").toString().trim();
+export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "").toString().trim();
 
 export const STORE = "operator-console";
 export const OPERATOR_ID_KEY = "operator-console:operator-id";

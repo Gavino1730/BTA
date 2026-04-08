@@ -16,7 +16,8 @@ export function resolveDefaultApiBase(hostname: string, origin: string): string 
 }
 
 export function resolveDefaultSchoolId(hostname: string): string {
-  return isLocalNetworkHost(hostname) ? "default" : "";
+  void hostname;
+  return "";
 }
 
 function normalizeSchoolId(value: unknown): string {
