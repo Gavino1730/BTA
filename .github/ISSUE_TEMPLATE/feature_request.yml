@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose an enhancement for product workflows, reliability, or developer experience.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Include the user need and expected impact.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Target area
+      options:
+        - coach-dashboard
+        - ipad-operator
+        - realtime-api
+        - insight-engine
+        - shared-schema
+        - game-state
+        - dev tooling/docs
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What pain point does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe what should happen.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] ...

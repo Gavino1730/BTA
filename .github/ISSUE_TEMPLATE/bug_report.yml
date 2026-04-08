@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a reproducible defect in apps, packages, or services.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please provide detailed reproduction information.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - coach-dashboard
+        - ipad-operator
+        - realtime-api
+        - insight-engine
+        - shared-schema
+        - game-state
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include exact steps and sample data if relevant.
+      placeholder: |
+        1. Start API with ...
+        2. Open operator app ...
+        3. Submit event ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Paste logs, traces, screenshots, or recordings.
+      render: shell
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, browser/device, Node version, and branch/commit.
+      placeholder: macOS 14, Safari 17 on iPad, Node 20.12, commit abc123
+    validations:
+      required: true

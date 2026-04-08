@@ -1,5 +1,8 @@
 # BTA Platform — Improvements Backlog
 
+Canonical consolidated tracker: `improvements/IMPROVEMENTS.md`.
+Use that file for all new and ongoing improvement planning.
+
 Last updated: April 7, 2026.
 
 ---
