@@ -144,6 +144,7 @@ export function LiveCenterPanel({
         </span>
         {(vcSideSetup === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
         {possessionTeamId === myTeamId && <span className={`score-chip possession-chip possession-chip-${vcSideSetup}`}>POSS</span>}
+        {trackPossession && possessionTeamId !== myTeamId && <span className="score-chip poss-hint-chip">tap for poss</span>}
       </div>
     </div>
   );
@@ -166,6 +167,7 @@ export function LiveCenterPanel({
         </span>
         {(oppSide === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
         {possessionTeamId === oppTeamId && <span className={`score-chip possession-chip possession-chip-${oppSide}`}>POSS</span>}
+        {trackPossession && possessionTeamId !== oppTeamId && <span className="score-chip poss-hint-chip">tap for poss</span>}
       </div>
     </div>
   );
@@ -232,18 +234,7 @@ export function LiveCenterPanel({
                 </span>
                 {d.detail && <span className="feed-detail">{d.detail}</span>}
               </button>
-              {isLast && (
-                <button
-                  className="feed-undo-btn"
-                  title="Undo: Quick delete this event"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void deleteEventRecord({ event, pending });
-                  }}
-                >
-                  Undo
-                </button>
-              )}
+
             </div>
           );
         })}
@@ -288,6 +279,11 @@ export function LiveCenterPanel({
 
       {trackClock && (
         <div className="clock-row">
+          {!clockVisible && (
+            <button className="clock-show-btn" onClick={onToggleClockVisible}>
+              ▼ Show Clock
+            </button>
+          )}
           {clockVisible && (
             <>
               <button

@@ -18,6 +18,7 @@ interface PresenceStatus {
   operatorCount?: number;
   operators?: Array<{
     deviceId: string | null;
+    deviceName: string | null;
     gameId: string | null;
     lastSeenIso: string | null;
     connectedAtIso: string | null;
@@ -34,7 +35,7 @@ export interface UseCoachSocketOptions {
   setServerConnected: (connected: boolean) => void;
   setDeviceConnected: (connected: boolean) => void;
   setConnectedOperatorCount: (count: number) => void;
-  setConnectedOperators: (operators: Array<{ deviceId: string | null; gameId: string | null; lastSeenIso: string | null; connectedAtIso: string | null }>) => void;
+  setConnectedOperators: (operators: Array<{ deviceId: string | null; deviceName: string | null; gameId: string | null; lastSeenIso: string | null; connectedAtIso: string | null }>) => void;
   setDashboardStatus: (status: string) => void;
   setInsights: (insights: Insight[]) => void;
   setRosterTeamsFromRemote: (teams: RosterTeam[]) => void;

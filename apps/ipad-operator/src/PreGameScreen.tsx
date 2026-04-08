@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { normalizeConnectionId, isConnectionReadyForStart } from "./helpers/network.js";
 import { DEFAULT_CONNECTION_SYNC_STATUS } from "./hooks/index.js";
 import type { AppData, Team, SettingsView } from "./types.js";
@@ -7,6 +7,8 @@ export interface PreGameScreenProps {
   appData: AppData;
   myTeam: Team | undefined;
   opponentName: string;
+  scoringTeamColor: string;
+  opponentTeamColor: string;
   connectionSyncStatus: string;
   lineupSyncStatus: string;
   selectedStarters: Set<string>;
@@ -28,6 +30,8 @@ export function PreGameScreen({
   appData,
   myTeam,
   opponentName,
+  scoringTeamColor,
+  opponentTeamColor,
   connectionSyncStatus,
   lineupSyncStatus,
   selectedStarters,
@@ -53,6 +57,8 @@ export function PreGameScreen({
     ? "Lineup is locked because this game is already live on another device."
     : "";
   const myTeamDisplay = myTeam?.name ?? null;
+  const scoringPillStyle = { ["--pregame-team-color" as string]: scoringTeamColor } as CSSProperties;
+  const opponentPillStyle = { ["--pregame-team-color" as string]: opponentTeamColor } as CSSProperties;
 
   const handleStarterToggle = (playerId: string) => {
     const next = new Set(selectedStarters);
@@ -135,14 +141,18 @@ export function PreGameScreen({
         )}
 
         <div className="pregame-opponent-row">
-          <div className="pregame-team my-team">
-            {myTeamDisplay ?? <span className="pregame-no-team">No team</span>}
+          <div className="pregame-team pregame-team-pill" style={scoringPillStyle}>
+            <span className="pregame-team-role">Scoring For</span>
+            <span className={`pregame-team-name${myTeamDisplay ? "" : " pregame-team-name-empty"}`}>
+              {myTeamDisplay ?? "No team"}
+            </span>
           </div>
           <div className="pregame-vs">vs</div>
-          <div className="pregame-team opp-team">
-            {opponentName
-              ? <span>{opponentName}</span>
-              : <span className="pregame-no-team">Opponent TBD</span>}
+          <div className="pregame-team pregame-team-pill" style={opponentPillStyle}>
+            <span className="pregame-team-role">Opponent</span>
+            <span className={`pregame-team-name${opponentName ? "" : " pregame-team-name-empty"}`}>
+              {opponentName || "Opponent TBD"}
+            </span>
           </div>
         </div>
 

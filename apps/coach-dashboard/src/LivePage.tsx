@@ -71,6 +71,7 @@ export function LivePage() {
         >
           Scoreboard
         </button>
+        <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
         <button
           className={activePage === "live" && liveSubPage === "operators" ? "nav-active" : ""}
           onClick={() => {
@@ -80,7 +81,6 @@ export function LivePage() {
         >
           Manage Operators ({connectedOperatorCount})
         </button>
-        <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
       </div>
       {!gameId && activePage === "ai" && (
         <div className="idle-screen">
@@ -217,7 +217,7 @@ export function LivePage() {
               {orderedOperators.map((operator, index) => (
                 <div key={`${operator.deviceId ?? "unknown"}-${operator.lastSeenIso ?? index}`} className="operator-row">
                   <div>
-                    <p className="operator-device">{operator.deviceId || "Unknown device"}</p>
+                    <p className="operator-device">{operator.deviceName || operator.deviceId || "Unknown device"}</p>
                     <p className="operator-meta">Game: {operator.gameId || "n/a"}</p>
                   </div>
                   <p className="operator-meta">Last seen: {operator.lastSeenIso ? new Date(operator.lastSeenIso).toLocaleTimeString() : "n/a"}</p>

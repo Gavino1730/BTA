@@ -75,6 +75,7 @@ export interface GameSetup {
   awayTeamColor?: string;
   statsGameId?: number;
   startingLineup?: string[];
+  deviceName?: string;
   /** @deprecated use myTeamId + vcSide instead */
   homeTeamId?: string;
   /** @deprecated use myTeamId + vcSide instead */

@@ -25,6 +25,16 @@ interface ConnectedNavActionsProps {
 
 function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsProps) {
   const { connectionId, deviceConnected, serverConnected, operatorConsoleUrl } = useGameSession();
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  function handleCopyCode() {
+    if (!connectionId) return;
+    void navigator.clipboard?.writeText(connectionId).then(() => {
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    });
+  }
+
   return (
     <>
       <a href={operatorConsoleUrl} className="coach-nav-ext-link">
@@ -39,38 +49,32 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
       </button>
       <button
         type="button"
-        className="coach-nav-ext-link"
-        onClick={() => {
-          if (!connectionId) {
-            return;
-          }
-          void navigator.clipboard?.writeText(connectionId);
-        }}
-        title="Copy the 6-digit operator code"
-      >
-        Copy Code
-      </button>
-      <button
-        type="button"
         onClick={onShowTutorial}
         title="Help &amp; Tutorial"
         aria-label="Open help and tutorial"
         className="coach-nav-help-button"
       >?</button>
-      <div
+      <button
+        type="button"
         className={`connection-pill ${deviceConnected ? "online" : "offline"}`}
-        style={{ flexShrink: 0 }}
-        title={`Operator pairing code: ${connectionId}`}
+        style={{ flexShrink: 0, cursor: "pointer" }}
+        onClick={handleCopyCode}
+        title={codeCopied ? "Copied!" : "Click to copy operator code"}
+        aria-label={codeCopied ? "Code copied" : `Copy operator code ${connectionId}`}
       >
         <span className="connection-pill-dot" aria-hidden="true" />
         <span className="connection-pill-status">
-          {deviceConnected ? "Live" : serverConnected ? "Waiting" : "Offline"}
+          {codeCopied ? "Copied!" : deviceConnected ? "Live" : serverConnected ? "Waiting" : "Offline"}
         </span>
-        <span className="connection-pill-sep" aria-hidden="true">·</span>
-        <span className="connection-pill-code" aria-label={`Code ${connectionId}`}>
-          {connectionId}
-        </span>
-      </div>
+        {!codeCopied && (
+          <>
+            <span className="connection-pill-sep" aria-hidden="true">·</span>
+            <span className="connection-pill-code">
+              {connectionId}
+            </span>
+          </>
+        )}
+      </button>
     </>
   );
 }

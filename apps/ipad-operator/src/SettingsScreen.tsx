@@ -50,6 +50,7 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
   );
   const [gsHomeTeamColor, setGsHomeTeamColor] = useState(normalizeTeamColor(appData.gameSetup.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR);
   const [gsAwayTeamColor, setGsAwayTeamColor] = useState(normalizeTeamColor(appData.gameSetup.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR);
+  const [gsDeviceName, setGsDeviceName] = useState(appData.gameSetup.deviceName ?? "");
   const gsMyTeam = appData.teams.find(t => t.id === gsMyTeamId);
 
   const gsMyTeamName = gsMyTeam?.name ?? "Your Team";
@@ -115,6 +116,7 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
           awayTeamColor: normalizeTeamColor(gsAwayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
           statsGameId: appData.gameSetup.statsGameId,
           startingLineup: appData.gameSetup.startingLineup,
+          deviceName: gsDeviceName.trim() || undefined,
         },
         appData.teams,
         gsMyTeamId,
@@ -157,6 +159,16 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
               <span className="settings-badge">{trackingBadges.length > 0 ? trackingBadges.join(" • ") : "Manual stats only"}</span>
             </div>
           </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Device Name</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>A label for this device shown to the coach on the Manage Operators screen.</p>
+          <input
+            placeholder="e.g. iPad 1, Scorer's Table"
+            value={gsDeviceName}
+            onChange={e => setGsDeviceName(e.target.value)}
+          />
         </section>
 
         <div className="settings-grid-2">

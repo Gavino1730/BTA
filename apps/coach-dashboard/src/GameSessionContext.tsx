@@ -31,6 +31,7 @@ export interface AppConnectionInfo {
 
 export interface ConnectedOperatorInfo {
   deviceId: string | null;
+  deviceName: string | null;
   gameId: string | null;
   lastSeenIso: string | null;
   connectedAtIso: string | null;

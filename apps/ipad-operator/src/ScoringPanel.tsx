@@ -39,18 +39,22 @@ export function ScoringPanel({
         {trackTimeouts && (
           <>
             <div className="shot-timeout-title">Record Timeout</div>
-            <div className={`shot-timeout-cell shot-timeout-cell-${vcSideSetup}`}>
-              <div className="shot-timeout-counts">{myName}: {myTO.short} short · {myTO.full} full left</div>
-              <div className="timeout-btn-row">
-                <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>Use 30s</button>
-                <button className="timeout-btn timeout-btn-full"  disabled={myTO.full <= 0}                   onClick={() => takeTimeout(vcSideSetup, "full")}>Use 60s</button>
+            <div className="shot-timeout-strip-wrapper">
+              <div className={`shot-timeout-strip shot-timeout-strip-${vcSideSetup}`}>
+                <span className="shot-timeout-strip-name">{myName}</span>
+                <span className="shot-timeout-strip-counts">{myTO.short}s · {myTO.full}f left</span>
+                <div className="shot-timeout-strip-btns">
+                  <button className="to-pill to-pill-short" disabled={inOvertimeNow || myTO.short <= 0} onClick={() => takeTimeout(vcSideSetup, "short")}>30s</button>
+                  <button className="to-pill to-pill-full" disabled={myTO.full <= 0} onClick={() => takeTimeout(vcSideSetup, "full")}>60s</button>
+                </div>
               </div>
-            </div>
-            <div className={`shot-timeout-cell shot-timeout-cell-${opponentSide}`}>
-              <div className="shot-timeout-counts">{oppName}: {oppTO.short} short · {oppTO.full} full left</div>
-              <div className="timeout-btn-row">
-                <button className="timeout-btn timeout-btn-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>Use 30s</button>
-                <button className="timeout-btn timeout-btn-full"  disabled={oppTO.full <= 0}                    onClick={() => takeTimeout(opponentSide, "full")}>Use 60s</button>
+              <div className={`shot-timeout-strip shot-timeout-strip-${opponentSide}`}>
+                <span className="shot-timeout-strip-name">{oppName}</span>
+                <span className="shot-timeout-strip-counts">{oppTO.short}s · {oppTO.full}f left</span>
+                <div className="shot-timeout-strip-btns">
+                  <button className="to-pill to-pill-short" disabled={inOvertimeNow || oppTO.short <= 0} onClick={() => takeTimeout(opponentSide, "short")}>30s</button>
+                  <button className="to-pill to-pill-full" disabled={oppTO.full <= 0} onClick={() => takeTimeout(opponentSide, "full")}>60s</button>
+                </div>
               </div>
             </div>
           </>

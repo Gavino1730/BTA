@@ -1952,6 +1952,7 @@ interface OperatorPresence {
   schoolId: string;
   userId?: string;
   deviceId?: string;
+  deviceName?: string;
   connectionId?: string;
   gameId: string;
   socketId: string;
@@ -2034,6 +2035,10 @@ function operatorLinkKey(schoolId: string, connectionId: string): string {
   return `${schoolId}:${connectionId}`;
 }
 
+function getOperatorByConnectionId(schoolId: string, connectionId: string): OperatorPresence | null {
+  return operatorPresenceByConnectionId.get(operatorLinkKey(schoolId, connectionId)) ?? null;
+}
+
 function getOperatorsByConnectionId(schoolId: string, connectionId: string): OperatorPresence[] {
   const normalizedConnectionId = normalizeConnectionKey(connectionId);
   if (!normalizedConnectionId) {
@@ -2089,7 +2094,7 @@ function buildConnectionPresencePayload(schoolId: string, connectionId: string):
   gameId: string | null;
   lastSeenIso: string | null;
   operatorCount: number;
-  operators: Array<{ deviceId: string | null; gameId: string | null; lastSeenIso: string | null; connectedAtIso: string | null }>;
+  operators: Array<{ deviceId: string | null; deviceName: string | null; gameId: string | null; lastSeenIso: string | null; connectedAtIso: string | null }>;
 } {
   const operators = getOperatorsByConnectionId(schoolId, connectionId);
   const latest = pickMostRecentOperator(operators);
@@ -2103,6 +2108,7 @@ function buildConnectionPresencePayload(schoolId: string, connectionId: string):
     operatorCount: operators.length,
     operators: operators.map((operator) => ({
       deviceId: operator.deviceId ?? null,
+      deviceName: operator.deviceName ?? null,
       gameId: operator.gameId ?? null,
       lastSeenIso: operator.lastSeenIso ?? null,
       connectedAtIso: operator.connectedAtIso ?? null,
@@ -4006,6 +4012,7 @@ io.on("connection", (socket) => {
   function registerOperator(rawPayload: unknown): void {
     const payload = (rawPayload ?? {}) as Record<string, unknown>;
     const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
+    const deviceName = typeof payload.deviceName === "string" ? payload.deviceName.trim() : "";
     const connectionId = normalizeConnectionKey(payload.connectionId);
     const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
 
@@ -4053,6 +4060,7 @@ io.on("connection", (socket) => {
       schoolId: socketSchoolId,
       userId,
       deviceId: deviceId || undefined,
+      deviceName: deviceName || undefined,
       connectionId: connectionId || undefined,
       gameId,
       socketId: socket.id,

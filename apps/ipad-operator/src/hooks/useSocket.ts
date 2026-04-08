@@ -65,7 +65,7 @@ export function useSocket({
     const startingLineupByTeam = startingLineup.length > 0
       ? { [trackedTeamId]: startingLineup }
       : undefined;
-    const payload = { connectionId, gameId, startingLineupByTeam };
+    const payload = { connectionId, gameId, startingLineupByTeam, deviceName: gameSetup.deviceName?.trim() || undefined };
     const socketAuth: Record<string, string> = { schoolId: gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID };
     if (gameSetup.apiKey) {
       if (gameSetup.apiKey.startsWith("bta.")) {

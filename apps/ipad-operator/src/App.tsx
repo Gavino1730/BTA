@@ -215,7 +215,7 @@ export function App() {
   useWakeLock(gamePhase === "live");
 
   // ---- In-game roster state ----
-  const [showRosterPanel, setShowRosterPanel] = useState(true);
+  const [showRosterPanel, setShowRosterPanel] = useState(false);
   const [activeRosterPlayerId, setActiveRosterPlayerId] = useState<string | null>(null);
   const [showClockAdmin, setShowClockAdmin] = useState(false);
 
@@ -465,6 +465,8 @@ export function App() {
         appData={appData}
         myTeam={myTeam}
         opponentName={opponentName}
+        scoringTeamColor={vcSideSetup === "home" ? homeTeamColor : awayTeamColor}
+        opponentTeamColor={opponentSide === "home" ? homeTeamColor : awayTeamColor}
         connectionSyncStatus={connectionSyncStatus}
         lineupSyncStatus={lineupSyncStatus}
         selectedStarters={selectedStarters}
