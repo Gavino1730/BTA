@@ -61,6 +61,11 @@ export function clearOperatorLocalCache(): void {
   keysToRemove.forEach((key) => localStorage.removeItem(key));
 }
 
+// Only clear cached data once per page load (initial bootstrap).
+// Subsequent loadAppData() calls during the session must not wipe
+// data that was saved after sync (e.g. the operator auth token).
+let _initialCacheClearDone = false;
+
 export function loadAppData(): AppData {
   const qp = new URLSearchParams(window.location.search);
   const urlSetup: Partial<GameSetup> = {};
@@ -86,7 +91,8 @@ export function loadAppData(): AppData {
   if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
   if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
 
-  if (!urlSetup.connectionId) {
+  if (!urlSetup.connectionId && !_initialCacheClearDone) {
+    _initialCacheClearDone = true;
     clearOperatorLocalCache();
   }
 
