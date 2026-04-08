@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useGameSession } from "./GameSessionContext.js";
 import { AiTabPanel } from "./AiTabPanel.js";
 import { BoxScoreSection } from "./BoxScoreSection.js";
@@ -20,6 +21,7 @@ export function LivePage() {
     newGameStartingLineup, setNewGameStartingLineup,
     isLaunchingGame, launchGame,
     connectionId, setConnectionId,
+    connectedOperatorCount, connectedOperators,
     isEndingGame, endGameStatus, endGameFromDashboard,
     teams, aggregatedTeams, canonicalTeamId, teamColorById,
     getScoreboardLineup, displayTeamName, displayPlayerName,
@@ -34,10 +36,50 @@ export function LivePage() {
     promptPreviewStatus, historicalPromptContext, loadPromptPreview,
   } = useGameSession();
 
+  const [liveSubPage, setLiveSubPage] = useState<"scoreboard" | "operators">("scoreboard");
+  const [operatorCopyStatus, setOperatorCopyStatus] = useState("");
+
+  const orderedOperators = useMemo(() => {
+    return [...connectedOperators].sort((a, b) => {
+      const aMs = Date.parse(a.lastSeenIso ?? "");
+      const bMs = Date.parse(b.lastSeenIso ?? "");
+      if (!Number.isFinite(aMs) && !Number.isFinite(bMs)) return 0;
+      if (!Number.isFinite(aMs)) return 1;
+      if (!Number.isFinite(bMs)) return -1;
+      return bMs - aMs;
+    });
+  }, [connectedOperators]);
+
+  async function copyOperatorConsoleLink(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(operatorConsoleUrl);
+      setOperatorCopyStatus("Operator link copied.");
+    } catch {
+      setOperatorCopyStatus("Could not copy link. Use the URL shown in Setup instead.");
+    }
+  }
+
   return (
     <div className="page">
       <div className="live-subnav">
-        <button className={activePage === "live" ? "nav-active" : ""} onClick={() => setActivePage("live")}>Scoreboard</button>
+        <button
+          className={activePage === "live" && liveSubPage === "scoreboard" ? "nav-active" : ""}
+          onClick={() => {
+            setActivePage("live");
+            setLiveSubPage("scoreboard");
+          }}
+        >
+          Scoreboard
+        </button>
+        <button
+          className={activePage === "live" && liveSubPage === "operators" ? "nav-active" : ""}
+          onClick={() => {
+            setActivePage("live");
+            setLiveSubPage("operators");
+          }}
+        >
+          Manage Operators ({connectedOperatorCount})
+        </button>
         <button className={activePage === "ai" ? "nav-active" : ""} onClick={() => setActivePage("ai")}>AI Insights</button>
       </div>
       {!gameId && activePage === "ai" && (
@@ -67,13 +109,14 @@ export function LivePage() {
           setConnectionId={setConnectionId}
         />
       )}
-      {gameId && activePage === "live" && (
+      {gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <>
           <section className="card settings-section-card">
             <div className="stats-page-card-head">
               <div>
                 <h3>Live Game Controls</h3>
                 <p className="settings-section-desc">Game ID: {gameId}</p>
+                <p className="settings-section-desc operators-online-indicator">Operators online: {connectedOperatorCount}</p>
               </div>
               <div className="settings-header-actions">
                 <button
@@ -147,6 +190,42 @@ export function LivePage() {
             displayPlayerName={displayPlayerName}
           />
         </>
+      )}
+      {gameId && activePage === "live" && liveSubPage === "operators" && (
+        <section className="card settings-section-card">
+          <div className="stats-page-card-head">
+            <div>
+              <h3>Manage Operators</h3>
+              <p className="settings-section-desc">Connection: {connectionId || "Not set"}</p>
+              <p className="settings-section-desc operators-online-indicator">Active operators: {connectedOperatorCount}</p>
+            </div>
+            <div className="settings-header-actions">
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => void copyOperatorConsoleLink()}
+              >
+                Copy Operator Link
+              </button>
+            </div>
+          </div>
+          {operatorCopyStatus ? <p className="settings-section-desc">{operatorCopyStatus}</p> : null}
+          {orderedOperators.length === 0 ? (
+            <p className="settings-section-desc">No operators connected yet.</p>
+          ) : (
+            <div className="operators-list">
+              {orderedOperators.map((operator, index) => (
+                <div key={`${operator.deviceId ?? "unknown"}-${operator.lastSeenIso ?? index}`} className="operator-row">
+                  <div>
+                    <p className="operator-device">{operator.deviceId || "Unknown device"}</p>
+                    <p className="operator-meta">Game: {operator.gameId || "n/a"}</p>
+                  </div>
+                  <p className="operator-meta">Last seen: {operator.lastSeenIso ? new Date(operator.lastSeenIso).toLocaleTimeString() : "n/a"}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
       {gameId && activePage === "ai" && (
         <AiTabPanel

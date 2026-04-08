@@ -53,10 +53,6 @@ export function useLineupSync({
         if (cancelled) return;
 
         if (!response.ok) {
-          if (response.status === 404) {
-            setLineupLockedByLiveGame(false);
-            setLineupSyncStatus("");
-          }
           return;
         }
 

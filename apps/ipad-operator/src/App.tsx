@@ -162,6 +162,7 @@ export function App() {
   const [lineupLockedByLiveGame, setLineupLockedByLiveGame] = useState(false);
   const [lineupSyncStatus, setLineupSyncStatus] = useState("");
   const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
+  const [connectedOperatorCount, setConnectedOperatorCount] = useState(0);
   const { syncFromCoachCode } = useCoachSync({ appData, setAppData, setConnectionSyncStatus, showInlineNotice });
 
   useLineupSync({
@@ -184,6 +185,7 @@ export function App() {
     setLiveAlerts,
     setDismissedAlertIds,
     setConnectionSyncStatus,
+    setConnectedOperatorCount,
     persistPhase,
     showInlineNotice,
   });
@@ -486,9 +488,7 @@ export function App() {
   if (gamePhase === "post-game") {
     return (
       <PostGameScreen
-        appData={appData}
         gameId={gameId}
-        myTeam={myTeam}
         homeTeamName={homeTeamName}
         awayTeamName={awayTeamName}
         scores={scores}
@@ -640,6 +640,7 @@ export function App() {
       {/* CENTER: Feed */}
       <LiveCenterPanel
         connectionId={appData.gameSetup.connectionId}
+        connectedOperatorCount={connectedOperatorCount}
         online={online}
         currentGameState={currentGameState}
         vcSideSetup={vcSideSetup}
@@ -720,7 +721,7 @@ export function App() {
           Summary
         </button>
         <button className="live-nav-btn live-nav-btn-secondary" onClick={() => navigateView("settings")} title="Settings">Settings</button>
-        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
+        <button className="live-nav-btn live-nav-btn-end" onClick={() => endGame()}>
           End Game
         </button>
       </div>

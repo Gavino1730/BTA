@@ -3870,6 +3870,39 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   box-shadow: inset 0 -2px 0 rgba(242,194,75,0.85);
 }
 
+.operators-online-indicator {
+  color: #86efac;
+  font-weight: 700;
+}
+
+.operators-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.operator-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  padding: 0.6rem 0.7rem;
+}
+
+.operator-device {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.operator-meta {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
 /* ---- Idle / No-Game Screen ---- */
 .idle-screen {
   display: flex;

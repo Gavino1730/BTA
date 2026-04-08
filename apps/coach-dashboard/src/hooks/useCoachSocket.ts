@@ -15,6 +15,13 @@ interface PresenceStatus {
   online: boolean;
   gameId: string | null;
   lastSeenIso: string | null;
+  operatorCount?: number;
+  operators?: Array<{
+    deviceId: string | null;
+    gameId: string | null;
+    lastSeenIso: string | null;
+    connectedAtIso: string | null;
+  }>;
 }
 
 export interface UseCoachSocketOptions {
@@ -26,6 +33,8 @@ export interface UseCoachSocketOptions {
   setState: (updater: GameState | null | ((current: GameState | null) => GameState | null)) => void;
   setServerConnected: (connected: boolean) => void;
   setDeviceConnected: (connected: boolean) => void;
+  setConnectedOperatorCount: (count: number) => void;
+  setConnectedOperators: (operators: Array<{ deviceId: string | null; gameId: string | null; lastSeenIso: string | null; connectedAtIso: string | null }>) => void;
   setDashboardStatus: (status: string) => void;
   setInsights: (insights: Insight[]) => void;
   setRosterTeamsFromRemote: (teams: RosterTeam[]) => void;
@@ -41,6 +50,8 @@ export function useCoachSocket({
   setState,
   setServerConnected,
   setDeviceConnected,
+  setConnectedOperatorCount,
+  setConnectedOperators,
   setDashboardStatus,
   setInsights,
   setRosterTeamsFromRemote,
@@ -93,6 +104,8 @@ export function useCoachSocket({
     socket.on("disconnect", () => {
       setServerConnected(false);
       setDeviceConnected(false);
+      setConnectedOperatorCount(0);
+      setConnectedOperators([]);
       // Preserve state so the scoreboard stays visible during brief reconnections.
       // The server re-pushes game:state on reconnect, keeping data fresh.
       setDashboardStatus("Reconnecting...");
@@ -110,6 +123,14 @@ export function useCoachSocket({
       }
 
       setDeviceConnected(status.online);
+      const nextOperatorCount = typeof status.operatorCount === "number"
+        ? Math.max(0, Math.floor(status.operatorCount))
+        : status.online
+          ? 1
+          : 0;
+      setConnectedOperatorCount(nextOperatorCount);
+      const nextOperators = Array.isArray(status.operators) ? status.operators : [];
+      setConnectedOperators(nextOperators);
       const activeGameId = status.gameId;
       if (status.online && activeGameId) {
         if (endedGameIdsRef.current.has(activeGameId)) {

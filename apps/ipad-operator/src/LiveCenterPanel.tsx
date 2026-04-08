@@ -15,6 +15,7 @@ type ConfirmOpts = { title: string; message: string; confirmLabel: string; tone?
 interface LiveCenterPanelProps {
   // Connection
   connectionId: string | undefined;
+  connectedOperatorCount: number;
   online: boolean;
   // Game state
   currentGameState: GameStateDisplay;
@@ -70,6 +71,7 @@ interface LiveCenterPanelProps {
 
 export function LiveCenterPanel({
   connectionId,
+  connectedOperatorCount,
   online,
   currentGameState,
   vcSideSetup,
@@ -125,8 +127,13 @@ export function LiveCenterPanel({
     ...Array.from({ length: overtimeCount }, (_, index) => `OT${index + 1}`),
   ];
 
+  const myTeamId = vcSideSetup === "home" ? homeTeamId : awayTeamId;
   const myScoreRow = (
-    <div className="scoreboard-team-card scoreboard-team-card-my">
+    <div
+      className={`scoreboard-team-card scoreboard-team-card-my${trackPossession ? " scoreboard-team-card-poss-clickable" : ""}`}
+      onClick={trackPossession ? () => setPossession(vcSideSetup) : undefined}
+      title={trackPossession ? `Set possession: ${vcSideSetup === "home" ? homeTeamName : awayTeamName}` : undefined}
+    >
       <div className="score-row">
         <span className={`team-lbl team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? homeTeamName : awayTeamName}</span>
         <span className={`score team-${vcSideSetup}-txt`}>{vcSideSetup === "home" ? scores.home : scores.away}</span>
@@ -136,14 +143,19 @@ export function LiveCenterPanel({
           Fouls: {vcSideSetup === "home" ? periodTeamFouls.home : periodTeamFouls.away}
         </span>
         {(vcSideSetup === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
-        {possessionTeamId === (vcSideSetup === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${vcSideSetup}`}>POSS</span>}
+        {possessionTeamId === myTeamId && <span className={`score-chip possession-chip possession-chip-${vcSideSetup}`}>POSS</span>}
       </div>
     </div>
   );
 
   const oppSide = vcSideSetup === "home" ? "away" : "home";
+  const oppTeamId = oppSide === "home" ? homeTeamId : awayTeamId;
   const oppScoreRow = (
-    <div className="scoreboard-team-card scoreboard-team-card-opp">
+    <div
+      className={`scoreboard-team-card scoreboard-team-card-opp${trackPossession ? " scoreboard-team-card-poss-clickable" : ""}`}
+      onClick={trackPossession ? () => setPossession(oppSide) : undefined}
+      title={trackPossession ? `Set possession: ${oppSide === "home" ? homeTeamName : awayTeamName}` : undefined}
+    >
       <div className="score-row">
         <span className={`team-lbl team-${oppSide}-txt`}>{oppSide === "home" ? homeTeamName : awayTeamName}</span>
         <span className={`score team-${oppSide}-txt`}>{oppSide === "home" ? scores.home : scores.away}</span>
@@ -153,7 +165,7 @@ export function LiveCenterPanel({
           Fouls: {oppSide === "home" ? periodTeamFouls.home : periodTeamFouls.away}
         </span>
         {(oppSide === "home" ? homeInBonus : awayInBonus) && <span className="score-chip bonus-chip">BONUS</span>}
-        {possessionTeamId === (oppSide === "home" ? homeTeamId : awayTeamId) && <span className={`score-chip possession-chip possession-chip-${oppSide}`}>POSS</span>}
+        {possessionTeamId === oppTeamId && <span className={`score-chip possession-chip possession-chip-${oppSide}`}>POSS</span>}
       </div>
     </div>
   );
@@ -167,6 +179,9 @@ export function LiveCenterPanel({
               <span>{`Connection: ${connectionId}`}</span>
               <span className={`connection-indicator ${online ? "online" : "offline"}`} title={online ? "Connected" : "Offline - events queued locally"}>
                 *
+              </span>
+              <span className="operators-count-pill" title="Operators currently connected to this game">
+                Ops: {connectedOperatorCount}
               </span>
             </div>
           )}
@@ -361,27 +376,7 @@ export function LiveCenterPanel({
               </div>
             </>
           )}
-          {trackPossession && (
-            <div>
-              <div className="shot-timeout-title" style={{ marginBottom: "0.3rem" }}>Possession</div>
-              <div className="possession-row">
-                <button
-                  className={`possession-btn possession-btn-home ${possessionTeamId === homeTeamId ? "active" : ""}`}
-                  onClick={() => setPossession("home")}
-                  title={`Set possession: ${homeTeamName}`}
-                >
-                  Home: {homeTeamName}
-                </button>
-                <button
-                  className={`possession-btn possession-btn-away ${possessionTeamId === awayTeamId ? "active" : ""}`}
-                  onClick={() => setPossession("away")}
-                  title={`Set possession: ${awayTeamName}`}
-                >
-                  Away: {awayTeamName}
-                </button>
-              </div>
-            </div>
-          )}
+
         </div>
       )}
     </div>

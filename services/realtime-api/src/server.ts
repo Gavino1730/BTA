@@ -2099,8 +2099,80 @@ function operatorLinkKey(schoolId: string, connectionId: string): string {
   return `${schoolId}:${connectionId}`;
 }
 
-function getOperatorByConnectionId(schoolId: string, connectionId: string): OperatorPresence | null {
-  return operatorPresenceByConnectionId.get(operatorLinkKey(schoolId, connectionId)) ?? null;
+function getOperatorsByConnectionId(schoolId: string, connectionId: string): OperatorPresence[] {
+  const normalizedConnectionId = normalizeConnectionKey(connectionId);
+  if (!normalizedConnectionId) {
+    return [];
+  }
+
+  const matches: OperatorPresence[] = [];
+  for (const presence of operatorPresenceBySocketId.values()) {
+    if (presence.schoolId === schoolId && presence.connectionId === normalizedConnectionId) {
+      matches.push(presence);
+    }
+  }
+  return matches;
+}
+
+function pickMostRecentOperator(operators: OperatorPresence[]): OperatorPresence | null {
+  if (operators.length === 0) {
+    return null;
+  }
+
+  return operators.reduce((latest, candidate) => {
+    const latestMs = Date.parse(latest.lastSeenIso);
+    const candidateMs = Date.parse(candidate.lastSeenIso);
+    if (!Number.isFinite(latestMs)) {
+      return candidate;
+    }
+    if (!Number.isFinite(candidateMs)) {
+      return latest;
+    }
+    return candidateMs >= latestMs ? candidate : latest;
+  });
+}
+
+function refreshOperatorConnectionIndex(schoolId: string, connectionId: string): void {
+  const normalizedConnectionId = normalizeConnectionKey(connectionId);
+  if (!normalizedConnectionId) {
+    return;
+  }
+  const key = operatorLinkKey(schoolId, normalizedConnectionId);
+  const operators = getOperatorsByConnectionId(schoolId, normalizedConnectionId);
+  const latest = pickMostRecentOperator(operators);
+  if (!latest) {
+    operatorPresenceByConnectionId.delete(key);
+    return;
+  }
+  operatorPresenceByConnectionId.set(key, latest);
+}
+
+function buildConnectionPresencePayload(schoolId: string, connectionId: string): {
+  deviceId: string | null;
+  connectionId: string;
+  online: boolean;
+  gameId: string | null;
+  lastSeenIso: string | null;
+  operatorCount: number;
+  operators: Array<{ deviceId: string | null; gameId: string | null; lastSeenIso: string | null; connectedAtIso: string | null }>;
+} {
+  const operators = getOperatorsByConnectionId(schoolId, connectionId);
+  const latest = pickMostRecentOperator(operators);
+
+  return {
+    deviceId: latest?.deviceId ?? null,
+    connectionId,
+    online: operators.length > 0,
+    gameId: latest?.gameId ?? null,
+    lastSeenIso: latest?.lastSeenIso ?? null,
+    operatorCount: operators.length,
+    operators: operators.map((operator) => ({
+      deviceId: operator.deviceId ?? null,
+      gameId: operator.gameId ?? null,
+      lastSeenIso: operator.lastSeenIso ?? null,
+      connectedAtIso: operator.connectedAtIso ?? null,
+    })),
+  };
 }
 
 function getOperatorLinkSetup(schoolId: string, connectionId: string): OperatorLinkSetup | null {
@@ -2167,14 +2239,7 @@ function emitPresenceForDevice(schoolId: string, deviceId: string): void {
 }
 
 function emitPresenceForConnection(schoolId: string, connectionId: string): void {
-  const operator = getOperatorByConnectionId(schoolId, connectionId);
-  const payload = {
-    deviceId: operator?.deviceId ?? null,
-    connectionId,
-    online: Boolean(operator),
-    gameId: operator?.gameId ?? null,
-    lastSeenIso: operator?.lastSeenIso ?? null
-  };
+  const payload = buildConnectionPresencePayload(schoolId, connectionId);
 
   io.to(connectionRoom(schoolId, connectionId)).emit("presence:status", payload);
 }
@@ -3714,7 +3779,7 @@ app.get("/api/games/active/state", requireApiKey, (req, res) => {
   const activeState = getActiveGameState({ schoolId });
 
   if (!activeState) {
-    res.status(404).json({ error: "no active game" });
+    res.json({ gameId: null });
     return;
   }
 
@@ -4071,8 +4136,10 @@ io.on("connection", (socket) => {
     }
 
     const userId = socket.data.authContext?.subject;
-    const claimedConnection = connectionId ? getOperatorByConnectionId(socketSchoolId, connectionId) : null;
-    if (claimedConnection?.userId && userId && claimedConnection.userId !== userId) {
+    const claimedByAnotherUser = connectionId
+      ? getOperatorsByConnectionId(socketSchoolId, connectionId).some((presence) => presence.userId && userId && presence.userId !== userId)
+      : false;
+    if (claimedByAnotherUser) {
       socket.emit("error", { error: "connection is already registered to another account" });
       return;
     }
@@ -4084,10 +4151,6 @@ io.on("connection", (socket) => {
     if (existing?.deviceId && existing.deviceId !== deviceId) {
       operatorPresenceByDeviceId.delete(`${socketSchoolId}:${existing.deviceId}`);
     }
-    if (existing?.connectionId && existing.connectionId !== connectionId) {
-      operatorPresenceByConnectionId.delete(`${socketSchoolId}:${existing.connectionId}`);
-    }
-
     const presence: OperatorPresence = {
       schoolId: socketSchoolId,
       userId,
@@ -4103,8 +4166,11 @@ io.on("connection", (socket) => {
     if (deviceId) {
       operatorPresenceByDeviceId.set(`${socketSchoolId}:${deviceId}`, presence);
     }
+    if (existing?.connectionId && existing.connectionId !== connectionId) {
+      refreshOperatorConnectionIndex(socketSchoolId, existing.connectionId);
+    }
     if (connectionId) {
-      operatorPresenceByConnectionId.set(`${socketSchoolId}:${connectionId}`, presence);
+      refreshOperatorConnectionIndex(socketSchoolId, connectionId);
     }
 
     socket.join(gameId);
@@ -4178,14 +4244,7 @@ io.on("connection", (socket) => {
 
     if (connectionId) {
       socket.join(connectionRoom(socketSchoolId, connectionId));
-      const operator = getOperatorByConnectionId(socketSchoolId, connectionId);
-      socket.emit("presence:status", {
-        deviceId: operator?.deviceId ?? null,
-        connectionId,
-        online: Boolean(operator),
-        gameId: operator?.gameId ?? null,
-        lastSeenIso: operator?.lastSeenIso ?? null
-      });
+      socket.emit("presence:status", buildConnectionPresencePayload(socketSchoolId, connectionId));
     }
   });
 
@@ -4201,7 +4260,7 @@ io.on("connection", (socket) => {
       socket.leave(deviceRoom(operator.schoolId, operator.deviceId));
     }
     if (operator.connectionId) {
-      operatorPresenceByConnectionId.delete(`${operator.schoolId}:${operator.connectionId}`);
+      refreshOperatorConnectionIndex(operator.schoolId, operator.connectionId);
       socket.leave(connectionRoom(operator.schoolId, operator.connectionId));
     }
     socket.leave(gameRoom(operator.schoolId, operator.gameId));
