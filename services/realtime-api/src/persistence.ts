@@ -849,50 +849,36 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     },
     async loadOrgData(): Promise<OrgDataResult> {
       await ensureSchema();
-      await setTenantContext(pool, "*");
-
-      const [profileRows, memberRows, authRows] = await Promise.all([
-        pool.query<{
-          school_id: string;
-          organization_name: string;
-          organization_slug: string | null;
-          coach_name: string;
-          coach_email: string;
-          team_name: string | null;
-          season: string | null;
-          completed_at_iso: string | null;
-          created_at_iso: string;
-          updated_at_iso: string;
-        }>(`SELECT * FROM ${orgProfilesTableName} ORDER BY school_id`),
-        pool.query<{
-          school_id: string;
-          member_id: string;
-          organization_id: string;
-          auth_subject: string | null;
-          full_name: string;
-          email: string;
-          role: string;
-          status: string;
-          invited_at_iso: string | null;
-          joined_at_iso: string | null;
-          created_at_iso: string;
-          updated_at_iso: string;
-        }>(`SELECT * FROM ${orgMembersTableName} ORDER BY school_id, email`),
-        pool.query<{
-          school_id: string;
-          account_id: string;
-          organization_id: string | null;
-          email: string;
-          full_name: string;
-          password_hash: string;
-          password_salt: string;
-          role: string;
-          status: string;
-          created_at_iso: string;
-          updated_at_iso: string;
-          last_login_at_iso: string | null;
-        }>(`SELECT * FROM ${localAuthTableName} ORDER BY school_id, email`)
-      ]);
+      // Use a single dedicated client so all three queries share the connection
+      // that had app.school_id='*' set, preventing RLS from filtering rows on
+      // different pool connections.
+      const client = await pool.connect();
+      let profileRows: { rows: {
+        school_id: string; organization_name: string; organization_slug: string | null;
+        coach_name: string; coach_email: string; team_name: string | null;
+        season: string | null; completed_at_iso: string | null;
+        created_at_iso: string; updated_at_iso: string;
+      }[] };
+      let memberRows: { rows: {
+        school_id: string; member_id: string; organization_id: string;
+        auth_subject: string | null; full_name: string; email: string;
+        role: string; status: string; invited_at_iso: string | null;
+        joined_at_iso: string | null; created_at_iso: string; updated_at_iso: string;
+      }[] };
+      let authRows: { rows: {
+        school_id: string; account_id: string; organization_id: string | null;
+        email: string; full_name: string; password_hash: string; password_salt: string;
+        role: string; status: string; created_at_iso: string;
+        updated_at_iso: string; last_login_at_iso: string | null;
+      }[] };
+      try {
+        await setTenantContext(client, "*");
+        profileRows = await client.query(`SELECT * FROM ${orgProfilesTableName} ORDER BY school_id`);
+        memberRows = await client.query(`SELECT * FROM ${orgMembersTableName} ORDER BY school_id, email`);
+        authRows = await client.query(`SELECT * FROM ${localAuthTableName} ORDER BY school_id, email`);
+      } finally {
+        client.release();
+      }
 
       const profiles: Record<string, OrganizationProfile> = {};
       for (const row of profileRows.rows) {
