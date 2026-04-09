@@ -992,62 +992,92 @@ export function TeamSettingsPage() {
 
           <form className="settings-add-player-form" onSubmit={addPlayer}>
             <h4 className="settings-sub-heading">Add Player</h4>
-            <div className="setup-grid">
-              <label className="stats-filter-field">
-                <span>Name *</span>
-                <input value={newPlayer.name} onChange={(e) => setNewPlayer((cur) => ({ ...cur, name: e.target.value }))} placeholder="Player name" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Jersey #</span>
-                <input value={newPlayer.number} onChange={(e) => setNewPlayer((cur) => ({ ...cur, number: e.target.value }))} placeholder="0" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Position</span>
-                <input value={newPlayer.position} onChange={(e) => setNewPlayer((cur) => ({ ...cur, position: e.target.value }))} placeholder="PG" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Grade</span>
-                <input value={newPlayer.grade} onChange={(e) => setNewPlayer((cur) => ({ ...cur, grade: e.target.value }))} placeholder="11" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Height</span>
-                <input value={newPlayer.height} onChange={(e) => setNewPlayer((cur) => ({ ...cur, height: e.target.value }))} placeholder='6&apos;2"' />
-              </label>
-              <label className="stats-filter-field">
-                <span>Weight</span>
-                <input value={newPlayer.weight} onChange={(e) => setNewPlayer((cur) => ({ ...cur, weight: e.target.value }))} placeholder="185 lbs" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Email</span>
-                <input type="email" value={newPlayer.email} onChange={(e) => setNewPlayer((cur) => ({ ...cur, email: e.target.value }))} placeholder="player@school.edu" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Temporary Password</span>
-                <input type="password" value={newPlayer.tempPassword} onChange={(e) => setNewPlayer((cur) => ({ ...cur, tempPassword: e.target.value }))} placeholder="Set temporary password" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Phone</span>
-                <input type="tel" value={newPlayer.phone} onChange={(e) => setNewPlayer((cur) => ({ ...cur, phone: e.target.value }))} placeholder="503-555-0100" />
-              </label>
-              <label className="stats-filter-field">
-                <span>Role / Description</span>
-                <input value={newPlayer.role} onChange={(e) => setNewPlayer((cur) => ({ ...cur, role: e.target.value }))} placeholder="Primary ball handler, shoots 3s" />
-              </label>
-              <label className="stats-filter-field stats-filter-field-full">
-                <span>Notes</span>
-                <textarea
-                  className="settings-roster-textarea"
-                  value={newPlayer.notes}
-                  onChange={(e) => setNewPlayer((cur) => ({ ...cur, notes: e.target.value }))}
-                  placeholder="Injuries, tendencies, rotation notes..."
-                  rows={2}
-                />
-              </label>
-            </div>
-            <div className="settings-form-footer">
-              <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving || !newPlayer.name.trim()}>
-                {saving ? "Adding..." : "Add to Roster"}
-              </button>
+            <div className="settings-roster-row-card">
+              <div className="settings-roster-row-main">
+                <div className="settings-roster-row-fields">
+                  <input
+                    className="settings-roster-input settings-roster-input-num"
+                    value={newPlayer.number}
+                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, number: e.target.value }))}
+                    placeholder="#"
+                    aria-label="Jersey number"
+                  />
+                  <input
+                    className="settings-roster-input settings-roster-input-name"
+                    value={newPlayer.name}
+                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, name: e.target.value }))}
+                    placeholder="Player name"
+                    aria-label="Player name"
+                  />
+                  <input
+                    className="settings-roster-input settings-roster-input-sm"
+                    value={newPlayer.position}
+                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, position: e.target.value }))}
+                    placeholder="Pos"
+                    aria-label="Position"
+                  />
+                  <input
+                    className="settings-roster-input settings-roster-input-sm"
+                    value={newPlayer.grade}
+                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, grade: e.target.value }))}
+                    placeholder="Yr"
+                    aria-label="Grade/Year"
+                  />
+                </div>
+                <div className="settings-roster-row-actions">
+                  <button
+                    type="button"
+                    className="settings-roster-expand-btn"
+                    onClick={() => setNewPlayerExpanded((v) => !v)}
+                    title="More player details"
+                  >
+                    {newPlayerExpanded ? "▴ Details" : "▾ Details"}
+                  </button>
+                  <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving || !newPlayer.name.trim()}>
+                    {saving ? "Adding..." : "Add"}
+                  </button>
+                </div>
+              </div>
+              {newPlayerExpanded && (
+                <div className="settings-roster-row-expanded">
+                  <div className="setup-grid">
+                    <label className="stats-filter-field">
+                      <span>Height</span>
+                      <input value={newPlayer.height} onChange={(e) => setNewPlayer((cur) => ({ ...cur, height: e.target.value }))} placeholder='6&apos;2"' />
+                    </label>
+                    <label className="stats-filter-field">
+                      <span>Weight</span>
+                      <input value={newPlayer.weight} onChange={(e) => setNewPlayer((cur) => ({ ...cur, weight: e.target.value }))} placeholder="185 lbs" />
+                    </label>
+                    <label className="stats-filter-field">
+                      <span>Email</span>
+                      <input type="email" value={newPlayer.email} onChange={(e) => setNewPlayer((cur) => ({ ...cur, email: e.target.value }))} placeholder="player@school.edu" />
+                    </label>
+                    <label className="stats-filter-field">
+                      <span>Temporary Password</span>
+                      <input type="password" value={newPlayer.tempPassword} onChange={(e) => setNewPlayer((cur) => ({ ...cur, tempPassword: e.target.value }))} placeholder="Set temporary password" />
+                    </label>
+                    <label className="stats-filter-field">
+                      <span>Phone</span>
+                      <input type="tel" value={newPlayer.phone} onChange={(e) => setNewPlayer((cur) => ({ ...cur, phone: e.target.value }))} placeholder="503-555-0100" />
+                    </label>
+                    <label className="stats-filter-field">
+                      <span>Role / Description</span>
+                      <input value={newPlayer.role} onChange={(e) => setNewPlayer((cur) => ({ ...cur, role: e.target.value }))} placeholder="Primary ball handler, shoots 3s" />
+                    </label>
+                    <label className="stats-filter-field stats-filter-field-full">
+                      <span>Notes</span>
+                      <textarea
+                        className="settings-roster-textarea"
+                        value={newPlayer.notes}
+                        onChange={(e) => setNewPlayer((cur) => ({ ...cur, notes: e.target.value }))}
+                        placeholder="Injuries, tendencies, rotation notes..."
+                        rows={2}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </form>
         </section>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
+import { apiBase, apiKeyHeader } from "./platform.js";
 import {
   buildPlayerGameHistory,
   type GamePlayerStat,
@@ -154,12 +154,11 @@ function findPlayerBoxScoreForGame(player: PlayerSummary, game: GameSummary): Ga
   return null;
 }
 
-function PlayerDetailModal({ player, history, games, onClose }: { player: PlayerSummary; history: PlayerGameHistoryRow[]; games: GameSummary[]; onClose: () => void }) {
+function PlayerDetailModal({ player, history, games, teamName, onClose }: { player: PlayerSummary; history: PlayerGameHistoryRow[]; games: GameSummary[]; teamName: string; onClose: () => void }) {
   const [advanced, setAdvanced] = useState<PlayerAdvancedPayload | null>(null);
   const [status, setStatus] = useState("Loading player details...");
   const [selectedGameId, setSelectedGameId] = useState("");
   const playerName = getPlayerDisplayName(player);
-  const schoolLabel = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
 
   const playerGameBoxScores = useMemo<PlayerGameBoxScore[]>(() => {
     return games
@@ -255,7 +254,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           <div className="player-profile-hero">
             <div className="player-profile-avatar" aria-hidden="true">{playerName.slice(0, 1).toUpperCase()}</div>
             <div>
-              <p className="stats-page-eyebrow">{schoolLabel} • Varsity</p>
+              <p className="stats-page-eyebrow">{teamName || "Our Team"}</p>
               <h2 style={{ margin: 0 }}>{playerName}</h2>
               <p className="stats-page-subcopy" style={{ marginTop: "0.3rem" }}>
                 #{player.number ?? "-"} • {inferPosition(player.role)} • {getPlayerGamesPlayed(player)} GP
@@ -526,6 +525,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
 export function PlayersPage() {
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [games, setGames] = useState<GameSummary[]>([]);
+  const [teamName, setTeamName] = useState("");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"ppg" | "apg" | "rpg" | "fg_pct" | "defense">("ppg");
   const [minimumGames, setMinimumGames] = useState("0");
@@ -538,9 +538,10 @@ export function PlayersPage() {
     async function loadPlayers() {
       setStatus("Loading players...");
 
-      const [playersResult, gamesResult] = await Promise.allSettled([
+      const [playersResult, gamesResult, teamsResult] = await Promise.allSettled([
         fetch(`${apiBase}/api/players`, { headers: apiKeyHeader() }),
         fetch(`${apiBase}/api/games`, { headers: apiKeyHeader() }),
+        fetch(`${apiBase}/api/teams`, { headers: apiKeyHeader() }),
       ]);
 
       if (cancelled) {
@@ -562,6 +563,12 @@ export function PlayersPage() {
       } else {
         setGames([]);
         setStatus("Player cards loaded. Previous game history is still syncing.");
+      }
+
+      if (teamsResult.status === "fulfilled" && teamsResult.value.ok) {
+        const teamsPayload = await teamsResult.value.json() as { teams?: { name?: string }[] };
+        const firstName = teamsPayload.teams?.[0]?.name;
+        if (firstName) setTeamName(firstName);
       }
     }
 
@@ -608,6 +615,7 @@ export function PlayersPage() {
           player={selectedPlayer}
           history={selectedHistory}
           games={games}
+          teamName={teamName}
           onClose={() => setSelectedPlayer(null)}
         />
       ) : null}

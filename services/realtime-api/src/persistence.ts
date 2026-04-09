@@ -536,6 +536,11 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        // Serialize concurrent replacePersistedSessions calls at the DB level.
+        // pg_advisory_xact_lock is released automatically at COMMIT/ROLLBACK.
+        // This prevents deadlocks when multiple node processes (or pooled connections)
+        // race to DELETE+INSERT the same rows.
+        await client.query("SELECT pg_advisory_xact_lock(847361290)");
         await setTenantContext(client, "*");
         await client.query(`DELETE FROM ${eventsTableName}`);
         await client.query(`DELETE FROM ${gamesTableName}`);

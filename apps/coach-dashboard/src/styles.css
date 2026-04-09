@@ -3403,10 +3403,10 @@ body {
 }
 
 .settings-roster-row-card {
-  border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.28);
 }
 
 .settings-roster-row-main {
@@ -3433,19 +3433,19 @@ body {
 
 .settings-roster-expand-btn {
   font-size: 0.72rem;
-  font-weight: 700;
-  background: var(--surface-3);
-  border: 1px solid var(--border-hi);
+  font-weight: 600;
+  background: transparent;
+  border: none;
   border-radius: 6px;
   color: var(--text-muted);
   padding: 0.28rem 0.55rem;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .settings-roster-expand-btn:hover {
-  background: var(--border-hi);
+  background: rgba(255,255,255,0.08);
   color: var(--text);
 }
 
@@ -3556,8 +3556,8 @@ body {
   gap: 1rem;
   padding: 0.7rem 0.85rem;
   border-radius: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.28);
   flex-wrap: wrap;
 }
 

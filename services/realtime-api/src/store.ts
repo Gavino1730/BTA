@@ -2217,14 +2217,36 @@ function persistRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): voi
   });
 }
 
+let normalizedSessionsPersistInFlight = false;
+let normalizedSessionsPersistQueued = false;
+
 function persistNormalizedSessions(): void {
   if (!persistenceProvider) {
     return;
   }
 
-  void persistenceProvider.replacePersistedSessions(buildPersistedSessions()).catch((error) => {
-    console.warn("[realtime-api] Failed to persist normalized game sessions", error);
-  });
+  // If a write is already running, mark that we need another pass once it
+  // finishes rather than launching a second concurrent transaction.  This
+  // collapses rapid bursts of events into at-most-two DB writes and prevents
+  // the deadlocks that arise when concurrent DELETE+INSERT transactions race.
+  if (normalizedSessionsPersistInFlight) {
+    normalizedSessionsPersistQueued = true;
+    return;
+  }
+
+  normalizedSessionsPersistInFlight = true;
+  void persistenceProvider
+    .replacePersistedSessions(buildPersistedSessions())
+    .catch((error) => {
+      console.warn("[realtime-api] Failed to persist normalized game sessions", error);
+    })
+    .finally(() => {
+      normalizedSessionsPersistInFlight = false;
+      if (normalizedSessionsPersistQueued) {
+        normalizedSessionsPersistQueued = false;
+        persistNormalizedSessions();
+      }
+    });
 }
 
 function clearPersistedRosterTeams(): void {

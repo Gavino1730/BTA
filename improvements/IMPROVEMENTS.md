@@ -59,6 +59,31 @@ Priority keys:
 
 ## P1 — High-Value Improvements (Pre-Season)
 
+### UX / Usability (pre-deploy blockers identified Apr 8 2026)
+- [ ] P0 Add forgot-password / self-service reset flow to coach dashboard login.
+  - Current gap: no recovery path if a coach forgets their password. The API endpoint `POST /api/auth/coach-account/reset-password` exists but is never surfaced in the UI.
+  - Action: add a "Forgot password?" link on LoginPage that collects email and calls the reset endpoint; display a confirmation message.
+- [ ] P0 Add confirm dialog before destructive Remove actions (player, member).
+  - Current gap: Remove buttons on Roster and Members pages fire immediately with no confirmation. A fat-finger on a touchscreen deletes a player permanently mid-season.
+  - Action: wrap `removePlayer` and `removeMember` calls with a `window.confirm` or the existing `useConfirmDialog` hook already in the iPad operator.
+- [ ] P0 Add empty-state CTAs throughout stats pages.
+  - Current gap: when roster is empty, all stats pages show blank/no-data states with no direction to the user. First-time users get stuck.
+  - Action: add "Add players in Settings →" link on Players, Games, and Trends pages when the respective data set is empty.
+- [ ] P1 Add visible offline/queued indicator on iPad operator.
+  - Current gap: `isNetworkOnline` is tracked internally but there is no clear visual banner when the operator is offline mid-game. Operators may double-tap stats thinking events didn't register.
+  - Action: render a persistent top banner (e.g. "Offline — X events queued") whenever `isNetworkOnline` is false and the queue is non-empty.
+- [ ] P1 Add coach-side stat correction UI on the Live dashboard.
+  - Current gap: if the operator logs a wrong stat, the coach has no way to correct it from the dashboard. The API has correction endpoints but no correction UI is wired up.
+  - Action: add an "Edit / Correct" action on box-score rows in the Live page that calls the existing correction endpoint.
+- [ ] P2 Add session expiry warning banner on coach dashboard.
+  - Current gap: the JWT expires silently and the coach is kicked to login with no warning, potentially mid-game.
+  - Action: decode the JWT exp claim on load, show an in-app banner ~5 min before expiry with a "Stay signed in" refresh action.
+- [ ] P2 Add export box score to clipboard / printable view.
+  - Current gap: coaches expect to share stats with parents or media after a game; no export path exists.
+  - Action: add a "Copy box score" button on Games page that formats a plain-text or CSV summary to the clipboard.
+- [ ] P2 Player profile eyebrow now shows real team name (fixed Apr 8 2026).
+  - Was showing raw school ID slug (e.g. "GAVINO1730 · VARSITY"); now fetches `/api/teams` and displays the actual team name.
+
 ### AI Safety, Cost, and UX
 - [ ] P1 Add configurable per-game AI budget and enforcement.
   - Proposed envs:
