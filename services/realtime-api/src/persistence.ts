@@ -76,6 +76,11 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
   const orgMembersTableName = `${tableName}_org_members`;
   const localAuthTableName = `${tableName}_local_auth`;
   const pool = new Pool({ connectionString: options.connectionString });
+  pool.on("error", (error) => {
+    // Handle background/idle client disconnects so Node does not terminate
+    // from an unhandled EventEmitter "error" while preserving diagnostics.
+    console.error("[realtime-api] PostgreSQL pool error", error);
+  });
   let schemaReady = false;
 
   async function ensureSchema(): Promise<void> {
