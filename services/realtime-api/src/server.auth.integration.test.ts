@@ -650,4 +650,84 @@ describe("server auth integration", () => {
 
     expect(connected).toBe(true);
   });
+
+  it("blocks player role from mutation endpoints (write-role enforcement)", async () => {
+    const playerToken = makeTestToken({
+      sub: "player-user-1",
+      schoolId: "player-school",
+      role: "player"
+    });
+
+    const res = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${playerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-school"
+      },
+      body: JSON.stringify({ gameId: "player-block-game", homeTeamId: "home", awayTeamId: "away" })
+    });
+
+    expect(res.status).toBe(403);
+
+    const eventRes = await fetch(`${API_BASE}/api/games/player-block-game/events`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${playerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-school"
+      },
+      body: JSON.stringify({ id: "e1", type: "rebound", playerId: "p1", offensive: false })
+    });
+
+    expect(eventRes.status).toBe(403);
+  });
+
+  it("allows self-service profile update and enforces current-password check on credential change", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Self Update Coach",
+        email: "self-update@school.org",
+        password: "OldPass123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const { token } = await registerRes.json() as { token: string };
+
+    // Wrong current password is rejected
+    const wrongPassRes = await fetch(`${API_BASE}/api/auth/me`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ currentPassword: "WrongPass!", newPassword: "Another123!" })
+    });
+
+    expect(wrongPassRes.status).toBe(401);
+
+    // Correct current password is accepted
+    const correctPassRes = await fetch(`${API_BASE}/api/auth/me`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ currentPassword: "OldPass123!", newPassword: "NewPass456!" })
+    });
+
+    expect(correctPassRes.status).toBe(200);
+
+    // New password works at login
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "self-update@school.org", password: "NewPass456!" })
+    });
+
+    expect(loginRes.status).toBe(200);
+  });
 });

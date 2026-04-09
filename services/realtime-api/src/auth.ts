@@ -118,7 +118,7 @@ export function issueLocalAuthToken(input: {
     email,
     name: input.name?.trim() || undefined,
     schoolId: input.schoolId?.trim().toLowerCase() || undefined,
-    role: input.role?.trim().toLowerCase() || "owner",
+    role: input.role?.trim().toLowerCase() || "viewer",
     authType: "local",
     iat: nowSeconds,
     exp: nowSeconds + (durationHours * 60 * 60),

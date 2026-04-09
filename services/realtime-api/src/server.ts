@@ -3507,7 +3507,7 @@ app.get("/api/comprehensive-insights", (req, res) => {
   res.json(buildComprehensiveInsightsPayload(schoolId));
 });
 
-app.post("/api/ai/chat", async (req, res) => {
+app.post("/api/ai/chat", requireApiKey, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const message = sanitizeTextField((req.body as Record<string, unknown> | undefined)?.message, 1200);
   const history = (req.body as Record<string, unknown> | undefined)?.history;
@@ -3535,12 +3535,12 @@ app.post("/api/ai/chat", async (req, res) => {
   });
 });
 
-app.get("/api/ai/team-summary", (req, res) => {
+app.get("/api/ai/team-summary", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json({ summary: buildTeamSummaryText(schoolId) });
 });
 
-app.post("/api/ai/analyze", (req, res) => {
+app.post("/api/ai/analyze", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const query = sanitizeTextField((req.body as Record<string, unknown> | undefined)?.query, 1200)
     || sanitizeTextField((req.body as Record<string, unknown> | undefined)?.message, 1200);
@@ -3576,7 +3576,7 @@ app.get("/api/ai/game-analysis/:gameId", (req, res) => {
   res.json({ gameId: req.params.gameId, analysis });
 });
 
-app.delete("/api/ai/team-summary", requireApiKey, (_req, res) => {
+app.delete("/api/ai/team-summary", requireApiKey, requireWriteRole, (_req, res) => {
   // No persistent cache to clear in this implementation — return success.
   res.json({ message: "Cache cleared" });
 });
@@ -3587,7 +3587,7 @@ app.get("/api/season-analysis", (req, res) => {
   res.json(buildSeasonAnalysisPayload(schoolId, force));
 });
 
-app.delete("/api/season-analysis", requireApiKey, (req, res) => {
+app.delete("/api/season-analysis", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   seasonAnalysisBySchool.delete(schoolId);
   res.json({ message: "Cache cleared" });
@@ -3621,7 +3621,7 @@ app.get("/api/ai/player-analysis/:playerName", (req, res) => {
   res.json(payload);
 });
 
-app.delete("/api/ai/player-analysis/:playerName", requireApiKey, (req, res) => {
+app.delete("/api/ai/player-analysis/:playerName", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const playerName = sanitizeTextField(req.params.playerName, 100) ?? "";
   playerAnalysisCacheBySchool.get(schoolId)?.delete(playerName);

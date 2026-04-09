@@ -85,7 +85,7 @@ export function App() {
 
     async function checkRoleAccess() {
       const token = appData.gameSetup.apiKey?.trim();
-      if (!token || !token.startsWith("bta.")) {
+      if (!token) {
         if (!cancelled) {
           setAccessBlockedMessage(null);
         }
