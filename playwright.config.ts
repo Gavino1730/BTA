@@ -9,7 +9,10 @@ export default defineConfig({
     timeout: 20_000,
   },
   use: {
-    headless: true,
+    headless: process.env.PW_HEADED !== "1",
+    launchOptions: {
+      slowMo: process.env.PW_SLOWMO ? parseInt(process.env.PW_SLOWMO, 10) : 0,
+    },
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
