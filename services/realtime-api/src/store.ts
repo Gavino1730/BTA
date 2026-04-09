@@ -2445,7 +2445,10 @@ export async function initializeStore(): Promise<void> {
     }
   }
 
-  if (!restoredSnapshot) {
+  // When PostgreSQL persistence is enabled, never fall back to local file
+  // snapshots. Those files can be stale on long-lived hosts and reintroduce
+  // deleted tenants/accounts after a clean DB reset.
+  if (!restoredSnapshot && !persistenceProvider) {
     restoreSessionsFromFile();
   }
 
