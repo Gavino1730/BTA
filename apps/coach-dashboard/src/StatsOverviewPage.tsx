@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak, formatRecord } from "./stats-page-utils.js";
 
 interface SeasonStats {
@@ -143,6 +143,7 @@ function PlayerLeaders({ title, statKey, players }: { title: string; statKey: Le
 }
 
 export function StatsOverviewPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [seasonStats, setSeasonStats] = useState<SeasonStats | null>(null);
   const [advancedStats, setAdvancedStats] = useState<AdvancedTeamStats | null>(null);
   const [patterns, setPatterns] = useState<PatternPayload | null>(null);
@@ -152,6 +153,11 @@ export function StatsOverviewPage() {
   const [status, setStatus] = useState("Loading stats overview...");
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Waiting for school context before loading stats overview.");
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -201,7 +207,7 @@ export function StatsOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   const recentGames = useMemo(() => {
     return [...games]

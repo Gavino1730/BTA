@@ -7,6 +7,9 @@ export interface RuntimeConfig {
   allowedOriginsConfigured: boolean;
   databaseUrlConfigured: boolean;
   localAuthSecretConfigured: boolean;
+  emailProvider: string;
+  emailFromConfigured: boolean;
+  resendApiKeyConfigured: boolean;
 }
 
 export interface RuntimeValidationResult {
@@ -16,6 +19,7 @@ export interface RuntimeValidationResult {
 
 export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
   const nodeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+  const emailProvider = (process.env.BTA_EMAIL_PROVIDER ?? "").trim().toLowerCase();
   return {
     nodeEnv,
     requireTenant: process.env.BTA_REQUIRE_TENANT !== "0",
@@ -27,6 +31,9 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     localAuthSecretConfigured: Boolean(
       process.env.BTA_LOCAL_AUTH_SECRET?.trim() || process.env.BTA_AUTH_SECRET?.trim()
     ),
+    emailProvider,
+    emailFromConfigured: Boolean(process.env.BTA_EMAIL_FROM?.trim()),
+    resendApiKeyConfigured: Boolean(process.env.RESEND_API_KEY?.trim()),
   };
 }
 
@@ -67,6 +74,15 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
       "BTA_LOCAL_AUTH_SECRET is not set; built-in email/password auth cannot issue signed local tokens. " +
       "Set a dedicated BTA_LOCAL_AUTH_SECRET to enable local auth safely in production."
     );
+  }
+
+  if (config.emailProvider) {
+    if (!config.emailFromConfigured) {
+      warnings.push("BTA_EMAIL_FROM is not set; transactional emails cannot be delivered.");
+    }
+    if (config.emailProvider === "resend" && !config.resendApiKeyConfigured) {
+      warnings.push("RESEND_API_KEY is not set; Resend email delivery is disabled.");
+    }
   }
 
   return { errors, warnings };

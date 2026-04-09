@@ -51,6 +51,17 @@ interface AuthSessionPayload {
   error?: string;
 }
 
+interface InvitationLookupPayload {
+  invitation?: {
+    email?: string;
+    fullName?: string;
+    role?: string;
+    organizationName?: string;
+    expiresAtIso?: string;
+  } | null;
+  error?: string;
+}
+
 const PROFILE_KEY = "bta.coach.setupProfile";
 
 function buildEmptyRosterRow(id: number): RosterRow {
@@ -59,6 +70,7 @@ function buildEmptyRosterRow(id: number): RosterRow {
 
 export function SetupPage({ onComplete }: SetupPageProps) {
   const schoolPlaceholder = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
+  const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite")?.trim() ?? "", []);
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
   const [coachEmail, setCoachEmail] = useState("");
@@ -75,8 +87,13 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [authSession, setAuthSession] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState("Create a coach account with email and password to secure this workspace.");
   const [authBusy, setAuthBusy] = useState(false);
+  const activeSchoolId = resolveActiveSchoolId();
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      return;
+    }
+
     void (async () => {
       try {
         const [sessionResponse, accountResponse] = await Promise.all([
@@ -134,7 +151,47 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         // best effort prefill only
       }
     })();
-  }, []);
+  }, [activeSchoolId]);
+
+  useEffect(() => {
+    if (!activeSchoolId || !inviteToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/auth/invitations/${encodeURIComponent(inviteToken)}`, {
+          headers: {
+            "x-school-id": activeSchoolId,
+          },
+        });
+
+        const payload = await response.json() as InvitationLookupPayload;
+        if (!response.ok || !payload.invitation || cancelled) {
+          if (!cancelled) {
+            setAuthStatus(payload.error || "This invitation is no longer valid. Ask your organization owner to resend it.");
+          }
+          return;
+        }
+
+        setAuthMode("register");
+        setCoachEmail((current) => current || payload.invitation?.email || "");
+        setCoachName((current) => current || payload.invitation?.fullName || "");
+        setSchoolName((current) => current || payload.invitation?.organizationName || "");
+        setAuthStatus(`Invitation loaded for ${payload.invitation.email ?? "your coach account"}. Create your password to join this workspace.`);
+      } catch {
+        if (!cancelled) {
+          setAuthStatus("Could not load the invite details. Ask your organization owner to resend the invitation.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSchoolId, inviteToken]);
 
   const validRows = useMemo(() => {
     return rows
@@ -198,6 +255,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           fullName: normalizedName,
           email: normalizedEmail,
           password: normalizedPassword,
+          inviteToken: authMode === "register" && inviteToken ? inviteToken : undefined,
           schoolName: schoolName.trim() || undefined,
           teamName: teamName.trim() || undefined,
         }),

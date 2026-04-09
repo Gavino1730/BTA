@@ -59,6 +59,17 @@ npm run dev:all
 - `npm run audit:ui`: Run UI audit script
 - `npm run validate:env`: Validate API environment configuration
 
+## Transactional email
+
+The realtime API can now send transactional emails for coach invites and self-service password resets.
+
+- Set `BTA_EMAIL_PROVIDER=resend` to enable delivery through Resend.
+- Set `RESEND_API_KEY` with your Resend API key.
+- Set `BTA_EMAIL_FROM` to the verified sender address, for example `BTA <no-reply@yourdomain.com>`.
+- Optionally set `COACH_DASHBOARD_ORIGIN` so invite and reset links always point at the correct deployed coach app origin.
+
+When email delivery is not configured, the API still creates invite/reset tokens in non-production environments so you can test the flow locally.
+
 ## Reliability guardrails
 
 - Shared event contracts must originate from `packages/shared-schema`.

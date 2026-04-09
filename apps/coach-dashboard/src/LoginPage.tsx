@@ -1,10 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId, storeAuthSession } from "./platform.js";
 
 interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
   onBackHome: () => void;
   onCreateAccount: () => void;
+  onForgotPassword: () => void;
 }
 
 interface AuthUser {
@@ -26,13 +27,24 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageProps) {
+export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword }: LoginPageProps) {
+  const activeSchoolId = resolveActiveSchoolId();
+  const hasInviteLink = Boolean(new URLSearchParams(window.location.search).get("invite"));
   const [coachEmail, setCoachEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
+  const [status, setStatus] = useState(
+    hasInviteLink
+      ? "You were invited to this workspace. Sign in if you already have an account, or create one with the invited email."
+      : "Private preview only. Sign in with an approved coach account.",
+  );
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Waiting for school context before checking your session.");
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -63,10 +75,16 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageP
     return () => {
       cancelled = true;
     };
-  }, [onSuccess]);
+  }, [activeSchoolId, onSuccess]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!activeSchoolId) {
+      setStatus("Cannot sign in until school context is available.");
+      return;
+    }
+
     const normalizedEmail = coachEmail.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
@@ -137,9 +155,15 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageP
           </p>
 
           <div className="marketing-login-note">
-            <strong>Temporary access enabled</strong>
-            <p>If you do not have a coach login yet, create one first and then finish setup.</p>
-            <button type="button" className="shell-nav-link" onClick={onCreateAccount}>Create Account</button>
+            <strong>{hasInviteLink ? "Invite detected" : "Temporary access enabled"}</strong>
+            <p>
+              {hasInviteLink
+                ? "Use the invited email address to create your account and finish joining this workspace."
+                : "If you do not have a coach login yet, create one first and then finish setup."}
+            </p>
+            <button type="button" className="shell-nav-link" onClick={onCreateAccount}>
+              {hasInviteLink ? "Accept Invite" : "Create Account"}
+            </button>
           </div>
 
           <form className="marketing-login-form" onSubmit={handleSubmit}>
@@ -156,6 +180,10 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageP
               {busy ? "Signing In..." : "Sign In"}
             </button>
           </form>
+
+          <div style={{ marginTop: "0.65rem" }}>
+            <button type="button" className="shell-nav-link" onClick={onForgotPassword}>Forgot password?</button>
+          </div>
 
           <p className="stats-page-status">{status}</p>
         </section>

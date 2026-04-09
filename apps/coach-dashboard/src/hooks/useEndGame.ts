@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { apiBase, apiKeyHeader } from "../platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
 
 interface UseEndGameParams {
   gameId: string;
@@ -63,6 +63,13 @@ export function useEndGame({
 
   async function endGameFromDashboard(): Promise<void> {
     if (!gameId || isEndingGame) {
+      return;
+    }
+
+    if (!resolveActiveSchoolId()) {
+      const message = "Cannot end game until school context is available.";
+      setEndGameStatus(message);
+      setDashboardStatus(message);
       return;
     }
 

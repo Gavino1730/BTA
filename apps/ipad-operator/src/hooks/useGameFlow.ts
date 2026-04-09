@@ -2,6 +2,7 @@ import type { GameEvent } from "@bta/shared-schema";
 import {
   apiKeyHeader,
   buildAiContextFromSetup,
+  generateFreshGameId,
   generateGameId,
   isConnectionReadyForStart,
   isLegacyStatsExportConfigured,
@@ -437,8 +438,7 @@ export function useGameFlow({
 
   function resetFromPostGame() {
     const edits = applyPostGameEdits();
-    const baseId = edits.gameId || generateGameId(edits.opponent, edits.date);
-    const freshId = `${baseId}-reset-${Date.now().toString().slice(-4)}`;
+    const freshId = generateFreshGameId(edits.opponent || edits.gameId, edits.date, "reset");
     persistData({
       ...appData,
       gameSetup: {
@@ -483,7 +483,7 @@ export function useGameFlow({
     }
 
     const edits = applyPostGameEdits();
-    const freshId = generateGameId(edits.opponent, new Date().toISOString().slice(0, 10));
+    const freshId = generateFreshGameId(edits.opponent || edits.gameId, new Date().toISOString().slice(0, 10), "discard");
     persistData({
       ...appData,
       gameSetup: {

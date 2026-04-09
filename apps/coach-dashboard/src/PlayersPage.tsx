@@ -524,6 +524,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
 }
 
 export function PlayersPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
@@ -533,6 +534,13 @@ export function PlayersPage() {
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerSummary | null>(null);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setPlayers([]);
+      setGames([]);
+      setStatus("Waiting for school context before loading players.");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadPlayers() {
@@ -569,7 +577,7 @@ export function PlayersPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   const filtered = useMemo(() => {
     const normalized = normalizePlayerLookupKey(query);

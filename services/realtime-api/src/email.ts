@@ -1,0 +1,121 @@
+interface EmailMessage {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  replyTo?: string;
+}
+
+export interface EmailDeliveryResult {
+  delivered: boolean;
+  skipped: boolean;
+  provider: string;
+  id?: string;
+  reason?: string;
+}
+
+export interface TestEmailMessage extends EmailMessage {
+  sentAtIso: string;
+}
+
+const testEmailOutbox: TestEmailMessage[] = [];
+
+function resolveProvider(): string {
+  if (process.env.BTA_AUTH_TEST_MODE === "1") {
+    return "test";
+  }
+
+  return (process.env.BTA_EMAIL_PROVIDER ?? "").trim().toLowerCase();
+}
+
+function resolveFromAddress(): string {
+  return (process.env.BTA_EMAIL_FROM ?? "").trim();
+}
+
+async function sendViaResend(message: EmailMessage): Promise<EmailDeliveryResult> {
+  const apiKey = (process.env.RESEND_API_KEY ?? "").trim();
+  const from = resolveFromAddress();
+
+  if (!apiKey || !from) {
+    return {
+      delivered: false,
+      skipped: true,
+      provider: "resend",
+      reason: "RESEND_API_KEY and BTA_EMAIL_FROM are required for Resend delivery.",
+    };
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [message.to],
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+      reply_to: message.replyTo,
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Resend delivery failed (${response.status}): ${details || "unknown error"}`);
+  }
+
+  const payload = await response.json() as { id?: string };
+  return {
+    delivered: true,
+    skipped: false,
+    provider: "resend",
+    id: payload.id,
+  };
+}
+
+export async function sendTransactionalEmail(message: EmailMessage): Promise<EmailDeliveryResult> {
+  const provider = resolveProvider();
+
+  if (provider === "test") {
+    testEmailOutbox.push({
+      ...message,
+      sentAtIso: new Date().toISOString(),
+    });
+    return {
+      delivered: true,
+      skipped: false,
+      provider,
+      id: `test-${testEmailOutbox.length}`,
+    };
+  }
+
+  if (!provider) {
+    return {
+      delivered: false,
+      skipped: true,
+      provider: "none",
+      reason: "BTA_EMAIL_PROVIDER is not configured.",
+    };
+  }
+
+  if (provider === "resend") {
+    return sendViaResend(message);
+  }
+
+  return {
+    delivered: false,
+    skipped: true,
+    provider,
+    reason: `Unsupported email provider: ${provider}`,
+  };
+}
+
+export function readTestEmailOutbox(): TestEmailMessage[] {
+  return testEmailOutbox.slice();
+}
+
+export function clearTestEmailOutbox(): void {
+  testEmailOutbox.length = 0;
+}

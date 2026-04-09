@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 
 interface RecommendationEntry {
   category?: string;
@@ -199,6 +199,7 @@ function playerDisplayLabel(player: PlayerSummary): string {
 }
 
 export function AiInsightsPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [insights, setInsights] = useState<ComprehensiveInsightsPayload | null>(null);
   const [analysis, setAnalysis] = useState<SeasonAnalysis | null>(null);
   const [teamSummary, setTeamSummary] = useState("");
@@ -217,6 +218,11 @@ export function AiInsightsPage() {
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Waiting for school context before loading AI insights.");
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -281,7 +287,7 @@ export function AiInsightsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   // Scroll chat to bottom when messages arrive
   useEffect(() => {
@@ -289,6 +295,11 @@ export function AiInsightsPage() {
   }, [chatHistory]);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setPlayerInsight("");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadPlayerInsight() {
@@ -316,7 +327,7 @@ export function AiInsightsPage() {
 
     void loadPlayerInsight();
     return () => { cancelled = true; };
-  }, [selectedPlayer]);
+  }, [activeSchoolId, selectedPlayer]);
 
   async function askAiQuestion(message: string) {
     const trimmed = message.trim();

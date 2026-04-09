@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode } from "./platform.js";
+import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, resolveActiveSchoolId } from "./platform.js";
 
 interface TeamDto {
   id: string;
@@ -161,6 +161,7 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
 }
 
 export function TeamSettingsPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
   const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
@@ -194,6 +195,11 @@ export function TeamSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Select or sign in to a school before loading team settings.");
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -273,7 +279,7 @@ export function TeamSettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

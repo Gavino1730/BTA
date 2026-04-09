@@ -112,6 +112,18 @@ export function generateGameId(opponent: string, date: string): string {
   return `${d}-${slug}`;
 }
 
+export function generateFreshGameId(
+  opponent: string,
+  date: string,
+  reason: "reset" | "discard" = "discard",
+  nowMs: number = Date.now(),
+): string {
+  const base = generateGameId(opponent, date);
+  // Keep IDs readable but unique enough to avoid restoring stale server events.
+  const suffix = String(nowMs).slice(-6);
+  return `${base}-${reason}-${suffix}`;
+}
+
 export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkResponse): AppData {
   const convertedTeams = Array.isArray(snapshot.teams)
     ? snapshot.teams.map(convertRosterTeamToAppTeam)

@@ -86,7 +86,7 @@ function getGameMomentOptions(period: string): Array<{ value: string; label: str
 
 export function GameSummaryModal(props: GameSummaryModalProps) {
   const {
-    onClose, onQuickAction, onPlayerQuickShot, onPlayerQuickStat,
+    onClose, onPlayerQuickShot, onPlayerQuickStat,
     period, overtimeCount, clockInput, setClockInput, changePeriod, getPeriodOrder,
     gameMoment, setGameMoment, vcSideSetup, homeTeamName, awayTeamName, homeTeamAbbr, awayTeamAbbr,
     scores, homeTeamStats, awayTeamStats, periodTeamFouls, totalTimeoutsLeft,
@@ -380,7 +380,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                   {summaryPeriodEditOpen ? (
                     <select
                       autoFocus
-                      className="summary-inline-select"
+                      className="summary-inline-select summary-period-control"
                       value={period}
                       onBlur={() => setSummaryPeriodEditOpen(false)}
                       onChange={e => {
@@ -393,7 +393,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                       ))}
                     </select>
                   ) : (
-                    <button className="summary-display-pill" onClick={() => setSummaryPeriodEditOpen(true)}>{period}</button>
+                    <button className="summary-display-pill summary-period-control" onClick={() => setSummaryPeriodEditOpen(true)}>{period}</button>
                   )}
                 </div>
                 <span className="summary-meta-divider">•</span>
@@ -426,7 +426,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                   {summaryMomentEditOpen ? (
                     <select
                       autoFocus
-                      className="summary-inline-select"
+                      className="summary-inline-select summary-moment-control"
                       value={gameMoment}
                       onBlur={() => setSummaryMomentEditOpen(false)}
                       onChange={e => {
@@ -440,7 +440,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                       ))}
                     </select>
                   ) : (
-                    <button className="summary-display-pill summary-display-pill-moment" onClick={() => setSummaryMomentEditOpen(true)}>
+                    <button className="summary-display-pill summary-display-pill-moment summary-moment-control" onClick={() => setSummaryMomentEditOpen(true)}>
                       {getGameMomentOptions(period).find((opt) => opt.value === gameMoment)?.label ?? "Set moment"}
                     </button>
                   )}
@@ -502,13 +502,6 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
         <div className="summary-body">
           {/* Teams tab */}
           {summaryTab === "teams" && (<>
-            <div className="summary-quick-actions">
-              <button className="summary-qa-btn" onClick={() => onQuickAction("plus2")}>+2 PTS</button>
-              <button className="summary-qa-btn" onClick={() => onQuickAction("plus3")}>+3 PTS</button>
-              <button className="summary-qa-btn summary-qa-btn-alert" onClick={() => onQuickAction("turnover")}>TURNOVER</button>
-              <button className="summary-qa-btn summary-qa-btn-alert" onClick={() => onQuickAction("foul")}>FOUL</button>
-            </div>
-
             <div className="summary-compare-card">
               <div className="summary-compare-header">
                 <span className="summary-compare-label">Stat</span>

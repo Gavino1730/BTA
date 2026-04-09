@@ -667,14 +667,21 @@ function compareGamesMostRecent(left: GameSummary, right: GameSummary): number {
 }
 
 export function GamesPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("");
   const [status, setStatus] = useState("Loading games...");
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
-  const teamName = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
+  const teamName = useMemo(() => formatSchoolNameFromId(activeSchoolId), [activeSchoolId]);
 
   function loadGames() {
+    if (!activeSchoolId) {
+      setGames([]);
+      setStatus("Waiting for school context before loading games.");
+      return () => { /* no-op */ };
+    }
+
     setStatus("Loading games...");
     let cancelled = false;
     fetch(`${apiBase}/api/games`, { headers: apiKeyHeader() })
@@ -684,7 +691,7 @@ export function GamesPage() {
     return () => { cancelled = true; };
   }
 
-  useEffect(loadGames, []);
+  useEffect(loadGames, [activeSchoolId]);
 
   const filteredGames = useMemo(() => {
     return [...games]

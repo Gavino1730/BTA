@@ -74,6 +74,7 @@ import {
   type AuthContext
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
+import { sendTransactionalEmail } from "./email.js";
 import {
   hasWriteRole,
   normalizeSchoolId,
@@ -201,6 +202,116 @@ function createRateLimitMiddleware(bucket: string, maxRequests: number, windowMs
 }
 const eventRateLimiter = createRateLimitMiddleware("events", 100, 60000); // 100 events/min per IP
 const authRateLimiter = createRateLimitMiddleware("auth", 20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
+const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const INVITATION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
+const EXPOSE_INVITATION_TOKEN = process.env.BTA_EXPOSE_INVITATION_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
+
+interface PasswordResetTokenRecord {
+  token: string;
+  schoolId: string;
+  accountId: string;
+  email: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+interface InvitationTokenRecord {
+  token: string;
+  schoolId: string;
+  memberId: string;
+  email: string;
+  fullName: string;
+  role: OrganizationMember["role"];
+  organizationName: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+const passwordResetTokens = new Map<string, PasswordResetTokenRecord>();
+const invitationTokens = new Map<string, InvitationTokenRecord>();
+
+function pruneExpiredPasswordResetTokens(now = Date.now()): void {
+  for (const [token, record] of passwordResetTokens.entries()) {
+    if (record.expiresAt <= now) {
+      passwordResetTokens.delete(token);
+    }
+  }
+}
+
+function pruneExpiredInvitationTokens(now = Date.now()): void {
+  for (const [token, record] of invitationTokens.entries()) {
+    if (record.expiresAt <= now) {
+      invitationTokens.delete(token);
+    }
+  }
+}
+
+function buildResetPath(schoolId: string, token: string): string {
+  return `/reset-password?schoolId=${encodeURIComponent(schoolId)}&token=${encodeURIComponent(token)}`;
+}
+
+function buildInvitePath(schoolId: string, token: string): string {
+  return `/setup?schoolId=${encodeURIComponent(schoolId)}&invite=${encodeURIComponent(token)}`;
+}
+
+function buildAbsoluteCoachUrl(req: Request, pathname: string): string {
+  return new URL(pathname, `${resolveCoachRedirectOrigin(req)}/`).toString();
+}
+
+async function deliverPasswordResetEmail(
+  req: Request,
+  schoolId: string,
+  account: LocalAuthAccount,
+  token: string,
+){
+  const resetPath = buildResetPath(schoolId, token);
+  const resetUrl = buildAbsoluteCoachUrl(req, resetPath);
+  return sendTransactionalEmail({
+    to: account.email,
+    subject: "Reset your BTA coach password",
+    text: [
+      `Hi ${account.fullName || "Coach"},`,
+      "",
+      "We received a request to reset your BTA password.",
+      `Use this link within 30 minutes: ${resetUrl}`,
+      "",
+      "If you did not request this, you can ignore this email.",
+    ].join("\n"),
+    html: [
+      `<p>Hi ${account.fullName || "Coach"},</p>`,
+      "<p>We received a request to reset your BTA password.</p>",
+      `<p><a href=\"${resetUrl}\">Reset your password</a></p>`,
+      "<p>This link expires in 30 minutes. If you did not request this, you can ignore this email.</p>",
+    ].join(""),
+  });
+}
+
+async function deliverInvitationEmail(
+  req: Request,
+  invitation: InvitationTokenRecord,
+){
+  const invitePath = buildInvitePath(invitation.schoolId, invitation.token);
+  const inviteUrl = buildAbsoluteCoachUrl(req, invitePath);
+  return sendTransactionalEmail({
+    to: invitation.email,
+    subject: `You're invited to ${invitation.organizationName} on BTA`,
+    text: [
+      `Hi ${invitation.fullName || "Coach"},`,
+      "",
+      `You've been invited to join ${invitation.organizationName} on BTA as a ${invitation.role}.`,
+      `Accept your invite here: ${inviteUrl}`,
+      "",
+      "If you already have a BTA login for this email, sign in from the same link and your membership will be activated.",
+    ].join("\n"),
+    html: [
+      `<p>Hi ${invitation.fullName || "Coach"},</p>`,
+      `<p>You've been invited to join <strong>${invitation.organizationName}</strong> on BTA as a ${invitation.role}.</p>`,
+      `<p><a href=\"${inviteUrl}\">Accept your invite</a></p>`,
+      "<p>If you already have a BTA login for this email, sign in from the same link and your membership will be activated.</p>",
+    ].join(""),
+  });
+}
 const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
   "substitutions",
@@ -2270,6 +2381,7 @@ app.get("/api/auth/session", (req, res) => {
 
 app.post("/api/auth/register", authRateLimiter, (req, res) => {
   const payload = (req.body ?? {}) as Record<string, unknown>;
+  const inviteToken = String(payload.inviteToken ?? "").trim();
   const fullName = sanitizeTextField(payload.fullName ?? payload.coachName, 120);
   const email = sanitizeTextField(payload.email ?? payload.coachEmail, 160).toLowerCase();
   const password = String(payload.password ?? "").trim();
@@ -2286,6 +2398,20 @@ app.post("/api/auth/register", authRateLimiter, (req, res) => {
   }
 
   const schoolId = schoolResolution.schoolId;
+
+  let invitation: InvitationTokenRecord | null = null;
+  if (inviteToken) {
+    pruneExpiredInvitationTokens();
+    invitation = invitationTokens.get(inviteToken) ?? null;
+    if (!invitation || invitation.schoolId !== schoolId) {
+      res.status(400).json({ error: "Invalid or expired invite token" });
+      return;
+    }
+    if (invitation.email !== email) {
+      res.status(400).json({ error: "Invite token does not match this email address" });
+      return;
+    }
+  }
 
   if (!isValidEmail(email)) {
     res.status(400).json({ error: "Enter a valid email address" });
@@ -2340,6 +2466,10 @@ app.post("/api/auth/register", authRateLimiter, (req, res) => {
   if (!token) {
     res.status(500).json({ error: "Local auth token signing is not configured" });
     return;
+  }
+
+  if (invitation) {
+    invitationTokens.delete(invitation.token);
   }
 
   res.status(201).json(buildAuthSessionResponse(schoolId, account, currentMember, token));
@@ -2403,6 +2533,124 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
 
 app.post("/api/auth/logout", (_req, res) => {
   res.status(204).send();
+});
+
+app.get("/api/auth/invitations/:token", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const token = sanitizeTextField(req.params.token, 120);
+
+  pruneExpiredInvitationTokens();
+  const invitation = invitationTokens.get(token);
+  if (!invitation || invitation.schoolId !== schoolId) {
+    res.status(404).json({ error: "Invitation not found or expired" });
+    return;
+  }
+
+  res.json({
+    invitation: {
+      email: invitation.email,
+      fullName: invitation.fullName,
+      role: invitation.role,
+      organizationName: invitation.organizationName,
+      expiresAtIso: new Date(invitation.expiresAt).toISOString(),
+      invitePath: buildInvitePath(schoolId, invitation.token),
+    },
+  });
+});
+
+app.post("/api/auth/password-reset/request", authRateLimiter, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address" });
+    return;
+  }
+
+  pruneExpiredPasswordResetTokens();
+  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  if (!account) {
+    res.json({ message: "If this email exists for your organization, reset instructions have been sent." });
+    return;
+  }
+
+  for (const [token, record] of passwordResetTokens.entries()) {
+    if (record.schoolId === schoolId && record.accountId === account.accountId) {
+      passwordResetTokens.delete(token);
+    }
+  }
+
+  const token = randomBytes(24).toString("hex");
+  const now = Date.now();
+  passwordResetTokens.set(token, {
+    token,
+    schoolId,
+    accountId: account.accountId,
+    email: account.email,
+    createdAt: now,
+    expiresAt: now + PASSWORD_RESET_TOKEN_TTL_MS,
+  });
+
+  try {
+    await deliverPasswordResetEmail(req, schoolId, account, token);
+  } catch (error) {
+    console.warn("[realtime-api] Failed to deliver password reset email", error);
+  }
+
+  res.json({
+    message: "If this email exists for your organization, reset instructions have been sent.",
+    expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
+    resetPath: buildResetPath(schoolId, token),
+    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { resetToken: token } : {}),
+  });
+});
+
+app.post("/api/auth/password-reset/confirm", authRateLimiter, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const token = String(payload.token ?? "").trim();
+  const nextPassword = String(payload.password ?? "").trim();
+
+  if (!token || !nextPassword) {
+    res.status(400).json({ error: "token and password are required" });
+    return;
+  }
+
+  if (nextPassword.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  pruneExpiredPasswordResetTokens();
+  const resetRecord = passwordResetTokens.get(token);
+  if (!resetRecord || resetRecord.schoolId !== schoolId) {
+    res.status(400).json({ error: "Invalid or expired reset token" });
+    return;
+  }
+
+  const account = getLocalAuthAccountsByScope({ schoolId }).find((entry) => entry.accountId === resetRecord.accountId) ?? null;
+  if (!account) {
+    passwordResetTokens.delete(token);
+    res.status(400).json({ error: "Invalid or expired reset token" });
+    return;
+  }
+
+  const credentials = hashPassword(nextPassword);
+  saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: credentials.passwordHash,
+    passwordSalt: credentials.passwordSalt,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+  }, { schoolId });
+
+  passwordResetTokens.delete(token);
+  res.json({ message: "Password reset successful" });
 });
 
 app.get("/api/onboarding/state", (req, res) => {
@@ -2548,9 +2796,10 @@ app.get("/api/org/members", (req, res) => {
   });
 });
 
-app.post("/api/org/members", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  if (!requireOrganizationOwner(req, res)) {
+  const actingOwner = requireOrganizationOwner(req, res);
+  if (!actingOwner) {
     return;
   }
   const account = getOnboardingAccountStateByScope({ schoolId });
@@ -2579,7 +2828,50 @@ app.post("/api/org/members", requireApiKey, requireWriteRole, (req, res) => {
     invitedAtIso: new Date().toISOString(),
   }, { schoolId });
 
-  res.status(201).json({ member, members: getOrganizationMembersByScope({ schoolId }) });
+  pruneExpiredInvitationTokens();
+  for (const [token, invitation] of invitationTokens.entries()) {
+    if (invitation.schoolId === schoolId && invitation.memberId === member.memberId) {
+      invitationTokens.delete(token);
+    }
+  }
+
+  const inviteToken = randomBytes(24).toString("hex");
+  const createdAt = Date.now();
+  const organizationName = account.organization.organizationName || buildOnboardingProfileView(schoolId)?.organizationName || schoolId;
+  const invitation: InvitationTokenRecord = {
+    token: inviteToken,
+    schoolId,
+    memberId: member.memberId,
+    email: member.email,
+    fullName: member.fullName,
+    role: member.role,
+    organizationName,
+    createdAt,
+    expiresAt: createdAt + INVITATION_TOKEN_TTL_MS,
+  };
+  invitationTokens.set(inviteToken, invitation);
+
+  let emailDelivery: { delivered: boolean; skipped: boolean; provider: string; reason?: string } | null = null;
+  try {
+    emailDelivery = await deliverInvitationEmail(req, invitation);
+  } catch (error) {
+    console.warn("[realtime-api] Failed to deliver invitation email", error);
+    emailDelivery = {
+      delivered: false,
+      skipped: false,
+      provider: "error",
+      reason: error instanceof Error ? error.message : "Invitation email delivery failed",
+    };
+  }
+
+  res.status(201).json({
+    member,
+    members: getOrganizationMembersByScope({ schoolId }),
+    emailDelivery,
+    invitePath: buildInvitePath(schoolId, inviteToken),
+    ...(EXPOSE_INVITATION_TOKEN ? { inviteToken } : {}),
+    invitedBy: actingOwner.email,
+  });
 });
 
 app.put("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {

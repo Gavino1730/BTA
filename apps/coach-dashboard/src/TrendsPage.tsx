@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak } from "./stats-page-utils.js";
 
 interface TrendsPayload {
@@ -282,6 +282,7 @@ function PlayerComparisonTable({ comparison }: { comparison: PlayerComparisonPay
 }
 
 export function TrendsPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [rows, setRows] = useState<TrendRow[]>([]);
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState("");
@@ -291,6 +292,13 @@ export function TrendsPage() {
   const [status, setStatus] = useState("Loading trends...");
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setRows([]);
+      setPlayers([]);
+      setStatus("Waiting for school context before loading trends.");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadTrends() {
@@ -351,7 +359,7 @@ export function TrendsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   useEffect(() => {
     let cancelled = false;

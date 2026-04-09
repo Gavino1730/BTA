@@ -1,6 +1,8 @@
 export type AppRoute =
   | "marketing"
   | "login"
+  | "forgot-password"
+  | "reset-password"
   | "live"
   | "setup"
   | "stats-overview"
@@ -22,6 +24,7 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/onboarding": "/setup",
   "/signin": "/login",
   "/sign-in": "/login",
+  "/forgot": "/forgot-password",
   "/home": "/",
 };
 
@@ -37,6 +40,12 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/login") {
     return "login";
+  }
+  if (canonical === "/forgot-password") {
+    return "forgot-password";
+  }
+  if (canonical === "/reset-password") {
+    return "reset-password";
   }
   if (canonical === "/setup") {
     return "setup";

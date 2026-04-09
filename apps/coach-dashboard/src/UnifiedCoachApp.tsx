@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
+import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
 import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
+import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -111,7 +113,15 @@ export function UnifiedCoachApp() {
   }, []);
 
   useEffect(() => {
-    if (route === "marketing" || route === "demo") {
+    if (route === "marketing" || route === "demo" || route === "forgot-password" || route === "reset-password") {
+      return;
+    }
+
+    const activeSchoolId = resolveActiveSchoolId();
+    if (!activeSchoolId) {
+      const storedSession = readStoredAuthSession();
+      setIsAuthenticated(Boolean(storedSession?.token));
+      setRequiresSetup(!Boolean(storedSession?.token));
       return;
     }
 
@@ -169,7 +179,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route === "marketing" || route === "login" || route === "setup" || route === "demo") {
+    if (route === "marketing" || route === "login" || route === "forgot-password" || route === "reset-password" || route === "setup" || route === "demo") {
       return;
     }
 
@@ -183,7 +193,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route !== "marketing" && route !== "login") {
+    if (route !== "marketing" && route !== "login" && route !== "forgot-password" && route !== "reset-password") {
       return;
     }
 
@@ -216,7 +226,7 @@ export function UnifiedCoachApp() {
   }, []);
 
   function navigate(nextPath: string) {
-    const isPublicPath = nextPath === "/" || nextPath === "/login" || nextPath === "/demo";
+    const isPublicPath = nextPath === "/" || nextPath === "/login" || nextPath === "/forgot-password" || nextPath === "/reset-password" || nextPath === "/demo";
 
     if (requiresSetup && !isAuthenticated && !isPublicPath && nextPath !== "/setup") {
       nextPath = "/login";
@@ -246,7 +256,26 @@ export function UnifiedCoachApp() {
       <LoginPage
         onBackHome={() => navigate("/")}
         onCreateAccount={() => navigate("/setup")}
+        onForgotPassword={() => navigate("/forgot-password")}
         onSuccess={handleAuthSuccess}
+      />
+    );
+  }
+
+  if (route === "forgot-password") {
+    return (
+      <ForgotPasswordPage
+        onBackHome={() => navigate("/")}
+        onBackLogin={() => navigate("/login")}
+      />
+    );
+  }
+
+  if (route === "reset-password") {
+    return (
+      <ResetPasswordPage
+        onBackForgot={() => navigate("/forgot-password")}
+        onBackLogin={() => navigate("/login")}
       />
     );
   }

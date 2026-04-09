@@ -45,6 +45,12 @@ export function useLineupSync({
       return;
     }
 
+    if (!appData.gameSetup.schoolId?.trim()) {
+      setLineupLockedByLiveGame(false);
+      setLineupSyncStatus("");
+      return;
+    }
+
     let cancelled = false;
 
     async function syncActiveGameLockAndLineup() {
