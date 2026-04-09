@@ -55,11 +55,14 @@ export function TermsPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
       title="Terms of Service"
-      subtitle="Formal legal terms are coming soon. This preproduction page will be replaced with counsel-reviewed terms before production launch."
+      subtitle="These pilot terms describe acceptable use, data responsibilities, and service expectations during preproduction. They apply to all coaches, operators, and staff accounts using this environment."
       bullets={[
-        "Scope of use and acceptable use policy",
-        "Account responsibilities and termination terms",
-        "Liability and service limitation language",
+        "Authorized use: This platform is for school basketball operations, roster management, and game analytics. Do not use it for unlawful activity or unauthorized account access.",
+        "Account security: Keep credentials private, rotate temporary passwords quickly, and remove access for staff who no longer need team data.",
+        "Data accuracy: Coaches are responsible for verifying game entries, corrections, and submitted reports before external sharing.",
+        "Service level during pilot: Features may change rapidly, and temporary downtime or resets can occur while reliability work is in progress.",
+        "Termination and access control: Admins can revoke member access at any time; platform operators may suspend accounts that violate policy.",
+        "Liability scope: Pilot features are provided as-is for evaluation, and should not be treated as the sole official record without coach review.",
       ]}
       onPrimary={() => onNavigate("/privacy")}
       primaryLabel="View Privacy Policy"
@@ -73,11 +76,13 @@ export function HelpCenterPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
       title="Help Center"
-      subtitle="Quick-start guidance for coaches and operators during preproduction rollout."
+      subtitle="Use this page as the first stop for game-day setup, troubleshooting, and escalation during preproduction."
       bullets={[
-        "Game-day setup checklist and pairing steps",
-        "Live sync troubleshooting for operator and coach devices",
-        "Stat entry workflow and correction tips",
+        "Game-day checklist: confirm school scope, roster readiness, operator pairing code, and active game session before tip-off.",
+        "Live sync troubleshooting: if dashboard status is waiting/offline, verify both devices are on the same game and refresh from Live page.",
+        "Stat correction flow: use game event corrections quickly during play, then run a post-game review in Games before final submission.",
+        "Account access issues: use Forgot Password, then contact support with school ID and impacted account email if reset fails.",
+        "Escalation path: critical game-day failures should be sent through Support with severity and callback details for faster triage.",
       ]}
       onPrimary={() => onNavigate("/support")}
       primaryLabel="Open Support Hub"
@@ -91,11 +96,14 @@ export function PrivacyPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
       title="Privacy Policy"
-      subtitle="Data handling details are being finalized for preproduction."
+      subtitle="This preproduction privacy summary explains what operational data is collected, how it is used, and how deletion/export requests are handled."
       bullets={[
-        "What data is collected and why",
-        "How long data is retained and when it is deleted",
-        "How to request data export and deletion",
+        "Collected data: account identity, organization membership, roster data, game events, game summaries, and support/contact intake details.",
+        "Purpose of processing: provide live game workflows, team analytics, access control, and operational support.",
+        "Access model: data is tenant-scoped by school context; authorized members can view and manage their own organization records.",
+        "Retention: pilot data may be retained for product validation and reliability testing, then pruned according to school requests.",
+        "Security expectations: password-based access, role checks, and scoped API behavior are enforced, but pilot environments should still be treated with caution.",
+        "Your controls: admins can remove users, request data deletion, and contact support for export/deletion review.",
       ]}
       onPrimary={() => onNavigate("/contact")}
       primaryLabel="Contact Support"
@@ -109,11 +117,13 @@ export function DataDeletionPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
       title="Data Deletion Request"
-      subtitle="Need account or team data removed? Submit a request and we will process it manually during preproduction."
+      subtitle="Request deletion of account, roster, or game data for your school tenant. Deletions are reviewed manually during preproduction to prevent accidental loss."
       bullets={[
-        "Include account email and school name in your request",
-        "Deletion requests are reviewed and confirmed by support",
-        "Pilot response target: 3-5 business days",
+        "Include school ID, affected account emails, and specific data categories (accounts, roster, games, or full tenant reset).",
+        "If requesting full tenant deletion, include an admin confirmation and a preferred execution window.",
+        "Support will confirm request scope before execution and provide completion confirmation when finished.",
+        "Pilot response target: acknowledgement within 1 business day, completion target within 3-5 business days.",
+        "For urgent corrections during active events, use Support first so operations can stabilize before deletion actions.",
       ]}
       onPrimary={() => onNavigate("/contact")}
       primaryLabel="Request Deletion"
@@ -163,11 +173,12 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
       title="Billing"
-      subtitle="Billing is not live yet. Pricing is currently pilot-based."
+      subtitle="Billing is still pilot-managed. This page outlines current pricing workflow and what billing controls will be available at launch."
       bullets={[
-        "Contact for pilot pricing",
-        "Plan and invoice management modules coming soon",
-        "Usage and renewal details will appear here once billing is active",
+        "Pilot pricing and renewal terms are handled through direct school agreements.",
+        "Invoice and payment portal access is not yet self-serve in this environment.",
+        "Planned launch features: plan selection, seat tracking, invoice history, and downloadable receipts.",
+        "Subscription alerts and renewal reminders will appear in Notifications once billing integrations are live.",
       ]}
       onPrimary={() => onNavigate("/contact")}
       primaryLabel="Contact for Pilot"

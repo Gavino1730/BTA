@@ -797,21 +797,38 @@ export function GamesPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading games...");
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
   const teamName = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
 
   function loadGames() {
+    setIsLoading(true);
+    setLoadError("");
     setStatus("Loading games...");
     let cancelled = false;
     fetch(`${apiBase}/api/games`, { headers: apiKeyHeader() })
       .then(r => r.ok ? r.json() as Promise<GameSummary[]> : Promise.reject(new Error("Games API failed")))
-      .then(payload => { if (!cancelled) { setGames(Array.isArray(payload) ? payload : []); setStatus(""); } })
-      .catch(() => { if (!cancelled) setStatus("Could not load games."); });
+      .then(payload => {
+        if (!cancelled) {
+          setGames(Array.isArray(payload) ? payload : []);
+          setStatus("");
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStatus("Could not load games.");
+          setLoadError("Could not load games from the realtime API.");
+          setIsLoading(false);
+        }
+      });
     return () => { cancelled = true; };
   }
 
-  useEffect(loadGames, []);
+  useEffect(loadGames, [retryKey]);
 
   const filteredGames = useMemo(() => {
     return [...games]
@@ -851,6 +868,31 @@ export function GamesPage() {
         {status && <p className="stats-page-status">{status}</p>}
       </section>
 
+      {isLoading && (
+        <section className="stats-page-card">
+          <div className="loading-indicator">
+            <div className="loading-spinner" />
+            <p className="loading-text">Loading game history...</p>
+          </div>
+        </section>
+      )}
+
+      {!isLoading && loadError && (
+        <section className="stats-page-card">
+          <p className="stats-empty-copy">{loadError}</p>
+          <button
+            type="button"
+            className="shell-nav-link"
+            style={{ marginTop: "0.65rem" }}
+            onClick={() => setRetryKey((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </section>
+      )}
+
+      {!isLoading && !loadError && (
+      <>
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
           <span>Search opponent</span>
@@ -949,6 +991,8 @@ export function GamesPage() {
             );
           })}
         </section>
+      )}
+      </>
       )}
     </div>
   );

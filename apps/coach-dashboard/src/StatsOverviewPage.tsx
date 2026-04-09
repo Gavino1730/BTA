@@ -149,12 +149,17 @@ export function StatsOverviewPage() {
   const [volatility, setVolatility] = useState<VolatilityPayload | null>(null);
   const [leaderboards, setLeaderboards] = useState<LeaderboardsPayload | null>(null);
   const [games, setGames] = useState<GameSummary[]>([]);
+  const [retryKey, setRetryKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading stats overview...");
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      setIsLoading(true);
+      setLoadError("");
       setStatus("Loading stats overview...");
       try {
         const [seasonRes, advancedRes, leadersRes, gamesRes, patternsRes, volatilityRes] = await Promise.all([
@@ -190,9 +195,12 @@ export function StatsOverviewPage() {
         setPatterns(patternsPayload);
         setVolatility(volatilityPayload);
         setStatus("Overview, leaderboards, and trend features are synced.");
+        setIsLoading(false);
       } catch {
         if (!cancelled) {
+          setLoadError("Could not load the stats overview from the realtime API.");
           setStatus("Could not load the stats overview from the realtime API.");
+          setIsLoading(false);
         }
       }
     }
@@ -201,7 +209,7 @@ export function StatsOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryKey]);
 
   const recentGames = useMemo(() => {
     return [...games]
@@ -232,6 +240,31 @@ export function StatsOverviewPage() {
         <p className="stats-page-status">{status}</p>
       </section>
 
+      {isLoading && (
+        <section className="stats-page-card">
+          <div className="loading-indicator">
+            <div className="loading-spinner" />
+            <p className="loading-text">Loading overview cards and leaderboards...</p>
+          </div>
+        </section>
+      )}
+
+      {!isLoading && loadError && (
+        <section className="stats-page-card">
+          <p className="stats-empty-copy">{loadError}</p>
+          <button
+            type="button"
+            className="shell-nav-link"
+            style={{ marginTop: "0.65rem" }}
+            onClick={() => setRetryKey((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </section>
+      )}
+
+      {!isLoading && !loadError && (
+      <>
       <section className="stats-metric-grid stats-metric-grid-overview">
         <div className="stats-metric-card accent-blue">
           <span className="stats-metric-label">Record</span>
@@ -366,6 +399,8 @@ export function StatsOverviewPage() {
         <PlayerLeaders title="Steal Leaders" statKey="stl" players={leaderboards?.stl ?? []} />
         <PlayerLeaders title="Block Leaders" statKey="blk" players={leaderboards?.blk ?? []} />
       </section>
+      </>
+      )}
     </div>
   );
 }

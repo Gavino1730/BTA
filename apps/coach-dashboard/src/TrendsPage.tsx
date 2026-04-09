@@ -293,12 +293,17 @@ export function TrendsPage() {
   const [comparePlayer, setComparePlayer] = useState("");
   const [playerRows, setPlayerRows] = useState<PlayerTrendRow[]>([]);
   const [comparison, setComparison] = useState<PlayerComparisonPayload | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading trends...");
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadTrends() {
+      setIsLoading(true);
+      setLoadError("");
       setStatus("Loading trends...");
       const [teamResult, playersResult] = await Promise.allSettled([
         fetch(`${apiBase}/api/team-trends`, { headers: apiKeyHeader() }),
@@ -310,7 +315,9 @@ export function TrendsPage() {
       }
 
       if (teamResult.status !== "fulfilled" || !teamResult.value.ok) {
+        setLoadError("Could not load trends from the realtime API.");
         setStatus("Could not load trends from the realtime API.");
+        setIsLoading(false);
         return;
       }
 
@@ -350,13 +357,14 @@ export function TrendsPage() {
       }
 
       setStatus("Team and player trend features are synced.");
+      setIsLoading(false);
     }
 
     void loadTrends();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -498,6 +506,31 @@ export function TrendsPage() {
         {status && <p className="stats-page-status">{status}</p>}
       </section>
 
+      {isLoading && (
+        <section className="stats-page-card">
+          <div className="loading-indicator">
+            <div className="loading-spinner" />
+            <p className="loading-text">Loading trend lines and player form data...</p>
+          </div>
+        </section>
+      )}
+
+      {!isLoading && loadError && (
+        <section className="stats-page-card">
+          <p className="stats-empty-copy">{loadError}</p>
+          <button
+            type="button"
+            className="shell-nav-link"
+            style={{ marginTop: "0.65rem" }}
+            onClick={() => setRetryKey((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </section>
+      )}
+
+      {!isLoading && !loadError && (
+      <>
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
           <span>Focus player</span>
@@ -651,6 +684,8 @@ export function TrendsPage() {
             </div>
           </section>
         </>
+      )}
+      </>
       )}
     </div>
   );

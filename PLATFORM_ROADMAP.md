@@ -92,21 +92,28 @@ Demo Page (`/demo`) - ✅ Done
 
 ## Section 6: In-App Dashboard Extras
 
-Notification Center - ❌ Not Started
-- Needed: game issues, billing alerts, sync failed, export complete, subscription warnings, invite updates.
+Notification Center - 🔄 Partial
+- ✅ Initial `/stats/notifications` page with live-context alerts and game-based activity feed
+- ✅ Client-side persistence and read/unread controls for notifications
+- ✅ Dedicated `/api/notifications` feed now provides invite + system + results event sources
+- 🚧 Remaining: billing and export pipeline notification sources
 
-Recent Activity Feed - ❌ Not Started
+Recent Activity Feed - 🔄 Partial
+- ✅ Initial recent activity timeline sourced from latest games
+- 🚧 Remaining: richer event sources (roster/settings/auth/export actions)
 Global Search - ❌ Not Started
 
 Empty States - 🔄 Partial
-- Empty-state CTA work has started, but complete coverage is still in progress.
+- Expanded coverage now ships on core stats pages (`/stats`, `/stats/games`, `/stats/players`, `/stats/trends`) with actionable empty-state CTAs and retry paths.
+- Remaining: tighten edge-case empty copy on secondary stats/live subpanels.
 
 Error States - 🔄 Partial
 - ✅ Dedicated 404 / 403 / 500 / offline / expired-session pages
 - 🚧 Unauthorized page variant and deeper route-specific recovery copy
 
 Loading States / Skeletons - 🔄 Partial
-- Basic loading indicators exist, but no shared skeleton system.
+- Explicit loading indicators and retry flows now ship across core stats pages.
+- Remaining: introduce shared skeleton components and expand to non-core panels.
 
 ## Section 7: Admin and Management
 
@@ -188,13 +195,18 @@ Missing / Needed:
 
 ## Section 12: Build Order
 
-1. Loading/empty-state pass expansion across stats/live surfaces
-2. Notification center + recent activity
-3. Org settings standalone page
-4. Admin panel starter UI
-5. CSV/PDF export expansion
-6. Premium pages (features/pricing/about/changelog/roadmap)
-7. Dedicated docs center (`/docs`) and richer help content
+1. Notification center category expansion (billing/export/system integrations)
+2. Org settings deepening (audit logs, policy controls, org-level preferences)
+3. Admin panel starter UI
+4. CSV/PDF export expansion
+5. Premium pages (features/pricing/about/changelog/roadmap)
+6. Dedicated docs center (`/docs`) and richer help content
+7. Shared skeleton system + loading-state design unification
+
+Org Settings Standalone Page - 🔄 Partial
+- ✅ Dedicated `/org/settings` route and navigation entry
+- ✅ Organization profile and member management wired to existing onboarding/org APIs
+- 🚧 Remaining: org policy controls, audit log panel, and advanced permissions matrix
 
 ## Notes
 

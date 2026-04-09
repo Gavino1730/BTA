@@ -8,6 +8,8 @@ import { ForbiddenPage, NotFoundPage, OfflinePage, ServerErrorPage, SessionExpir
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
+import { NotificationsPage } from "./NotificationsPage.js";
+import { OrgSettingsPage } from "./OrgSettingsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
 import { BillingPage, DataDeletionPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
@@ -389,7 +391,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route !== "live" && route !== "stats-settings" && route !== "setup") {
+    if (route !== "live" && route !== "stats-settings" && route !== "org-settings" && route !== "setup") {
       return;
     }
 
@@ -426,7 +428,7 @@ export function UnifiedCoachApp() {
       nextPath = "/setup";
     }
 
-    if (isAuthenticated && !requiresSetup && isPlayerRole(currentRole) && (nextPath === "/live" || nextPath === "/stats/settings" || nextPath === "/setup")) {
+    if (isAuthenticated && !requiresSetup && isPlayerRole(currentRole) && (nextPath === "/live" || nextPath === "/stats/settings" || nextPath === "/org/settings" || nextPath === "/setup")) {
       nextPath = "/stats";
     }
 
@@ -572,7 +574,9 @@ export function UnifiedCoachApp() {
             {navBtn("Players", "stats-players", "/stats/players")}
             {navBtn("Trends", "stats-trends", "/stats/trends")}
             {navBtn("AI Insights", "stats-insights", "/stats/insights")}
+            {navBtn("Notifications", "stats-notifications", "/stats/notifications")}
             {!playerView && navBtn("Settings", "stats-settings", "/stats/settings")}
+            {!playerView && navBtn("Org", "org-settings", "/org/settings")}
           </ul>
           <div className="coach-nav-actions">
             <ConnectedNavActions
@@ -633,7 +637,9 @@ export function UnifiedCoachApp() {
       {route === "stats-players" && <PlayersPage />}
       {route === "stats-trends" && <TrendsPage />}
       {route === "stats-insights" && <AiInsightsPage />}
+      {route === "stats-notifications" && <NotificationsPage onNavigate={navigate} />}
       {route === "stats-settings" && <TeamSettingsPage />}
+      {route === "org-settings" && <OrgSettingsPage onNavigate={navigate} />}
       {route === "account" && (
         <AccountPage
           onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))}

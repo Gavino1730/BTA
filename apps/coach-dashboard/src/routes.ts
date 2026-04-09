@@ -24,7 +24,9 @@ export type AppRoute =
   | "stats-players"
   | "stats-trends"
   | "stats-insights"
+  | "stats-notifications"
   | "stats-settings"
+  | "org-settings"
   | "demo";
 
 const LEGACY_ROUTE_ALIASES: Record<string, string> = {
@@ -34,6 +36,10 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/trends": "/stats/trends",
   "/ai-insights": "/stats/insights",
   "/analysis": "/stats/insights",
+  "/notifications": "/stats/notifications",
+  "/activity": "/stats/notifications",
+  "/organization": "/org/settings",
+  "/org": "/org/settings",
   "/team-settings": "/stats/settings",
   "/profile": "/account",
   "/onboarding": "/setup",
@@ -101,9 +107,6 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/settings") {
     return "settings";
   }
-  if (canonical === "/live") {
-    return "live";
-  }
   if (canonical === "/setup") {
     return "setup";
   }
@@ -122,8 +125,14 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/stats/insights") {
     return "stats-insights";
   }
+  if (canonical === "/stats/notifications") {
+    return "stats-notifications";
+  }
   if (canonical === "/stats/settings") {
     return "stats-settings";
+  }
+  if (canonical === "/org/settings") {
+    return "org-settings";
   }
   if (canonical === "/stats") {
     return "stats-overview";

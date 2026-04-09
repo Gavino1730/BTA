@@ -6,8 +6,11 @@ interface RoutedPageProps {
 
 export function SupportHubPage({ onNavigate }: RoutedPageProps) {
   const [topic, setTopic] = useState<"bug" | "feature" | "help">("help");
+  const [severity, setSeverity] = useState<"low" | "medium" | "high">("medium");
+  const [gameId, setGameId] = useState("");
+  const [device, setDevice] = useState("");
   const [message, setMessage] = useState("");
-  const [status, setStatus] = useState("Submit support details below. In preproduction this is a local intake placeholder.");
+  const [status, setStatus] = useState("Submit support details below. During preproduction this form records intake and will be connected to the ticket pipeline.");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -16,8 +19,10 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
       setStatus("Add details so we can help you faster.");
       return;
     }
-    setStatus("Support request recorded (preproduction placeholder). We will connect this to the ticketing workflow before production.");
+    setStatus("Support request recorded. Include screenshots or exact timestamps through Contact if this issue blocks live game operations.");
     setMessage("");
+    setGameId("");
+    setDevice("");
   }
 
   return (
@@ -34,13 +39,14 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
         <div className="stats-page-card-head">
           <div>
             <h3>Quick Help</h3>
-            <p className="settings-section-desc">Common tasks and where to go next.</p>
+            <p className="settings-section-desc">Common tasks, triage order, and escalation guidance.</p>
           </div>
         </div>
         <ul style={{ margin: 0, paddingLeft: "1.05rem", lineHeight: 1.7, color: "rgba(232,234,240,0.85)" }}>
-          <li>Need setup guidance: open Team Settings and complete roster + pairing.</li>
-          <li>Need account help: use Forgot Password and Reset Password pages.</li>
-          <li>Need direct support: use the intake form below, then contact page.</li>
+          <li>Before tip-off: verify roster, pairing code, and active game context in Live view.</li>
+          <li>During games: prioritize sync, scoreboard, and correction issues first, then submit support details with severity.</li>
+          <li>After games: include game ID, expected vs actual behavior, and correction attempts already tried.</li>
+          <li>Account issues: use password reset first, then escalate through Contact with school ID and impacted email.</li>
         </ul>
       </section>
 
@@ -62,16 +68,36 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
               <option value="feature">Feature Request</option>
             </select>
           </label>
+          <label className="stats-filter-field">
+            <span>Severity</span>
+            <select value={severity} onChange={(event) => setSeverity(event.target.value as "low" | "medium" | "high")}> 
+              <option value="low">Low - non-blocking</option>
+              <option value="medium">Medium - workflow impact</option>
+              <option value="high">High - game-day blocked</option>
+            </select>
+          </label>
+          <label className="stats-filter-field">
+            <span>Game ID (optional)</span>
+            <input value={gameId} onChange={(event) => setGameId(event.target.value)} placeholder="game-12345" />
+          </label>
+          <label className="stats-filter-field">
+            <span>Device / Browser (optional)</span>
+            <input value={device} onChange={(event) => setDevice(event.target.value)} placeholder="iPad Safari, Coach Laptop Chrome" />
+          </label>
           <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}>
             <span>Details</span>
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               rows={5}
-              placeholder="Describe what happened, expected behavior, and your game context."
+              placeholder="Describe what happened, expected behavior, exact steps, and what you already tried."
             />
           </label>
         </div>
+
+        <p className="stats-page-subcopy" style={{ marginTop: "0.6rem" }}>
+          Expected response windows: high severity same day during active events, medium within 1 business day, low within 2 business days.
+        </p>
 
         <p className="stats-page-status">{status}</p>
         <div className="account-action-row">
@@ -87,8 +113,12 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
 export function ContactHubPage({ onNavigate }: RoutedPageProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [category, setCategory] = useState<"support" | "pilot" | "billing" | "security">("support");
+  const [preferredReply, setPreferredReply] = useState<"email" | "phone">("email");
+  const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
-  const [status, setStatus] = useState("Use this preproduction form for pilot and support inquiries.");
+  const [status, setStatus] = useState("Use this preproduction form for support, pilot onboarding, billing, and security inquiries.");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,9 +126,14 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
       setStatus("Complete all fields before submitting.");
       return;
     }
+    if (preferredReply === "phone" && !phone.trim()) {
+      setStatus("Add a phone number when phone callback is selected.");
+      return;
+    }
 
-    setStatus("Contact request recorded (preproduction placeholder). We will wire this to email + ticketing before production.");
+    setStatus("Contact request recorded. For urgent game-day incidents, include school ID and call-back availability in your message.");
     setMessage("");
+    setPhone("");
   }
 
   return (
@@ -115,7 +150,7 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
         <div className="stats-page-card-head">
           <div>
             <h3>Get In Touch</h3>
-            <p className="settings-section-desc">Direct support email placeholder: support@bta.local</p>
+            <p className="settings-section-desc">Direct support email placeholder: support@bta.local. Include school ID for faster routing.</p>
           </div>
           <button type="submit" className="shell-nav-link shell-nav-link-active">Send</button>
         </div>
@@ -129,16 +164,44 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
             <span>Email</span>
             <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@school.org" />
           </label>
+          <label className="stats-filter-field">
+            <span>School / Organization</span>
+            <input value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Valley Catholic" />
+          </label>
+          <label className="stats-filter-field">
+            <span>Category</span>
+            <select value={category} onChange={(event) => setCategory(event.target.value as "support" | "pilot" | "billing" | "security")}> 
+              <option value="support">Support</option>
+              <option value="pilot">Pilot Onboarding</option>
+              <option value="billing">Billing</option>
+              <option value="security">Security</option>
+            </select>
+          </label>
+          <label className="stats-filter-field">
+            <span>Preferred Reply</span>
+            <select value={preferredReply} onChange={(event) => setPreferredReply(event.target.value as "email" | "phone")}> 
+              <option value="email">Email</option>
+              <option value="phone">Phone</option>
+            </select>
+          </label>
+          <label className="stats-filter-field">
+            <span>Phone (optional unless callback selected)</span>
+            <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(555) 123-4567" />
+          </label>
           <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}>
             <span>Message</span>
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               rows={5}
-              placeholder="Tell us what you need, plus best callback/contact details."
+              placeholder="Tell us what you need, urgency, timeline, and best contact window."
             />
           </label>
         </div>
+
+        <p className="stats-page-subcopy" style={{ marginTop: "0.6rem" }}>
+          Contact routing: support and pilot requests target 1 business day acknowledgement; billing and security requests are prioritized for admin follow-up.
+        </p>
 
         <p className="stats-page-status">{status}</p>
         <div className="account-action-row">

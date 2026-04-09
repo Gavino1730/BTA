@@ -534,6 +534,9 @@ export function PlayersPage() {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"ppg" | "apg" | "rpg" | "fg_pct" | "defense">("ppg");
   const [minimumGames, setMinimumGames] = useState("0");
+  const [retryKey, setRetryKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading players...");
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerSummary | null>(null);
 
@@ -541,6 +544,8 @@ export function PlayersPage() {
     let cancelled = false;
 
     async function loadPlayers() {
+      setIsLoading(true);
+      setLoadError("");
       setStatus("Loading players...");
 
       const [playersResult, gamesResult, teamsResult] = await Promise.allSettled([
@@ -554,7 +559,9 @@ export function PlayersPage() {
       }
 
       if (playersResult.status !== "fulfilled" || !playersResult.value.ok) {
+        setLoadError("Could not load player summaries from the realtime API.");
         setStatus("Could not load player summaries from the realtime API.");
+        setIsLoading(false);
         return;
       }
 
@@ -575,13 +582,15 @@ export function PlayersPage() {
         const firstName = teamsPayload.teams?.[0]?.name;
         if (firstName) setTeamName(firstName);
       }
+
+      setIsLoading(false);
     }
 
     void loadPlayers();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryKey]);
 
   const filtered = useMemo(() => {
     const normalized = normalizePlayerLookupKey(query);
@@ -633,6 +642,31 @@ export function PlayersPage() {
         <p className="stats-page-status">{status}</p>
       </section>
 
+      {isLoading && (
+        <section className="stats-page-card">
+          <div className="loading-indicator">
+            <div className="loading-spinner" />
+            <p className="loading-text">Loading player summaries...</p>
+          </div>
+        </section>
+      )}
+
+      {!isLoading && loadError && (
+        <section className="stats-page-card">
+          <p className="stats-empty-copy">{loadError}</p>
+          <button
+            type="button"
+            className="shell-nav-link"
+            style={{ marginTop: "0.65rem" }}
+            onClick={() => setRetryKey((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </section>
+      )}
+
+      {!isLoading && !loadError && (
+      <>
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
           <span>Search name or number</span>
@@ -737,6 +771,8 @@ export function PlayersPage() {
             );
           })}
         </section>
+      )}
+      </>
       )}
     </div>
   );
