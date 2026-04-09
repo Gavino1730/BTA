@@ -56,8 +56,22 @@ npm run dev:all
 - `npm run dev:coach`: Start coach dashboard (port 5173)
 - `npm run dev:operator`: Start iPad operator app (port 5174)
 - `npm run smoke-test`: Run smoke test script
+- `npm run stress-test`: Run API stress simulation script
+- `npm run test:full-sim`: Run full simulation (E2E fake game + stress test)
 - `npm run audit:ui`: Run UI audit script
 - `npm run validate:env`: Validate API environment configuration
+
+### Full Simulation Options
+
+Use `npm run test:full-sim -- --help` to see options.
+
+Examples:
+
+```bash
+npm run test:full-sim -- --games 8 --events 80 --concurrency 4
+npm run test:full-sim -- --attempts 3 --retry-delay-ms 1000 --wait-timeout-ms 240000 --games 4 --events 60 --concurrency 2
+npm run test:full-sim -- --report-json artifacts/full-sim-last.json --games 2 --events 10 --concurrency 2
+```
 
 ## Reliability guardrails
 
