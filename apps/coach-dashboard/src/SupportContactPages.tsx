@@ -43,8 +43,8 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
           </div>
         </div>
         <ul style={{ margin: 0, paddingLeft: "1.05rem", lineHeight: 1.7, color: "rgba(232,234,240,0.85)" }}>
-          <li>Before tip-off: verify roster, pairing code, and active game context in Live view.</li>
-          <li>During games: prioritize sync, scoreboard, and correction issues first, then submit support details with severity.</li>
+          <li>Before tip-off: verify roster readiness, pairing code, and active game context in Live view.</li>
+          <li>During games: prioritize sync, scoreboard, and correction issues first, then submit severity-tagged support details.</li>
           <li>After games: include game ID, expected vs actual behavior, and correction attempts already tried.</li>
           <li>Account issues: use password reset first, then escalate through Contact with school ID and impacted email.</li>
         </ul>
@@ -156,7 +156,7 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
           </div>
         </div>
         <ul style={{ margin: 0, paddingLeft: "1.05rem", lineHeight: 1.7, color: "rgba(232,234,240,0.85)" }}>
-          <li>School ID and role of impacted user (coach/operator/player).</li>
+          <li>School ID and role of impacted user (coach, operator, or player).</li>
           <li>Exact timestamp and game ID where issue occurred.</li>
           <li>Expected behavior versus observed behavior.</li>
           <li>Workarounds already attempted.</li>

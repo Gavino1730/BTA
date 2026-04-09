@@ -77,19 +77,19 @@ function PolicyContentPage({
   secondaryLabel,
 }: PolicyContentPageProps) {
   return (
-    <div className="stats-page">
-      <section className="stats-page-card" style={{ maxWidth: "900px", margin: "2rem auto 1rem" }}>
+    <div className="stats-page policy-page">
+      <section className="stats-page-card policy-page-hero">
         <p className="stats-page-eyebrow">Preproduction Policy Draft</p>
         <h1>{title}</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
       </section>
 
       {sections.map((section) => (
-        <section key={section.heading} className="stats-page-card" style={{ maxWidth: "900px", margin: "0.9rem auto" }}>
-          <h3 style={{ marginTop: 0 }}>{section.heading}</h3>
-          <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>{section.body}</p>
+        <section key={section.heading} className="stats-page-card policy-page-section">
+          <h3 className="policy-section-heading">{section.heading}</h3>
+          <p className="stats-page-subcopy policy-section-body">{section.body}</p>
           {(section.bullets ?? []).length > 0 && (
-            <ul style={{ marginTop: "0.7rem", lineHeight: 1.6, color: "rgba(232,234,240,0.9)" }}>
+            <ul className="policy-section-list">
               {section.bullets?.map((bullet) => (
                 <li key={bullet}>{bullet}</li>
               ))}
@@ -98,8 +98,8 @@ function PolicyContentPage({
         </section>
       ))}
 
-      <section className="stats-page-card" style={{ maxWidth: "900px", margin: "1rem auto 2.2rem" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem" }}>
+      <section className="stats-page-card policy-page-actions-wrap">
+        <div className="policy-page-actions">
           {onPrimary && primaryLabel && (
             <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
               {primaryLabel}

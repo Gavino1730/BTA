@@ -3317,6 +3317,51 @@ body {
   margin: 0.2rem 0 0;
 }
 
+.policy-page-hero,
+.policy-page-section,
+.policy-page-actions-wrap {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.policy-page-hero {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.policy-page-section {
+  margin-top: 0.9rem;
+  margin-bottom: 0.9rem;
+}
+
+.policy-section-heading {
+  margin-top: 0;
+  margin-bottom: 0.2rem;
+}
+
+.policy-section-body {
+  margin-top: 0.35rem;
+}
+
+.policy-section-list {
+  margin-top: 0.7rem;
+  margin-bottom: 0;
+  line-height: 1.6;
+  color: rgba(232,234,240,0.9);
+}
+
+.policy-page-actions-wrap {
+  margin-top: 1rem;
+  margin-bottom: 2.2rem;
+}
+
+.policy-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 /* AI Context two-column textarea grid */
 .settings-ai-grid {
   display: grid;
