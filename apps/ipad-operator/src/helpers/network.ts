@@ -28,6 +28,17 @@ export function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Rec
   return buildAuthHeaders(setup, { allowBearerToken: true });
 }
 
+export function operatorLinkHeaders(setup: { schoolId?: string }): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  const schoolId = setup.schoolId?.trim();
+  if (schoolId) {
+    headers["x-school-id"] = schoolId;
+  }
+  return headers;
+}
+
 export function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
   return { headers: apiKeyHeader(setup) };
 }

@@ -7,6 +7,7 @@ import {
   isLegacyStatsExportConfigured,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
+  operatorLinkHeaders,
 } from "../helpers/network.js";
 import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
@@ -99,7 +100,7 @@ export function useGameFlow({
     try {
       const response = await fetch(
         `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
-        { headers: apiKeyHeader(current.gameSetup) },
+        { headers: operatorLinkHeaders(current.gameSetup) },
       );
       if (!response.ok) {
         return current;
