@@ -2529,12 +2529,26 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
     return;
   }
 
-  const schoolId = schoolResolution.schoolId;
+  let schoolId = schoolResolution.schoolId;
 
-  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  let account = getLocalAuthAccountByEmail(email, { schoolId });
   if (!account || !verifyPassword(password, account.passwordSalt, account.passwordHash)) {
-    res.status(401).json({ error: "Invalid email or password" });
-    return;
+    // Some clients may still send a stale school scope (for example "default")
+    // even though auth bootstrap should resolve tenant by email. Fall back to
+    // a cross-tenant password check and require a unique match.
+    const matches = getLocalAuthAccountsByEmailAcrossSchools(email)
+      .filter((entry) => verifyPassword(password, entry.passwordSalt, entry.passwordHash));
+
+    if (matches.length === 1 && matches[0]) {
+      account = matches[0];
+      schoolId = account.schoolId ?? schoolId;
+    } else if (matches.length > 1) {
+      res.status(409).json({ error: "Multiple workspaces match this email. Reopen your school link or include schoolId." });
+      return;
+    } else {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
   }
 
   const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
