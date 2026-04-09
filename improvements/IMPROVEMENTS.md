@@ -31,7 +31,7 @@ Priority keys:
   - Notes: Keep ALLOWED_ORIGINS explicit for coach/operator domains.
 - [!] P0 Ensure BTA_REQUIRE_TENANT=1 and BTA_JWT_WRITE_REQUIRED=1 in production.
   - Source: DEPLOYMENT.md
-- [ ] P0 Harden AI output safety before rendering on coach UI.
+- [x] P0 Harden AI output safety before rendering on coach UI.
   - Source: existing backlog + current AI paths
   - Current gap: length guards and control-char stripping are minimal.
   - Action: add strict response validation and safe rendering policy.
@@ -51,7 +51,7 @@ Priority keys:
     - npm run validate:env
     - npm run test -w @bta/realtime-api
     - npm run build
-- [ ] P0 Document AI rate-limit behavior and degraded mode for coaches.
+- [x] P0 Document AI rate-limit behavior and degraded mode for coaches.
   - Source: existing backlog
   - Current gap: unclear user-facing behavior when AI is throttled/unavailable.
 
@@ -63,25 +63,25 @@ Priority keys:
 - [ ] P0 Add forgot-password / self-service reset flow to coach dashboard login.
   - Current gap: no recovery path if a coach forgets their password. The API endpoint `POST /api/auth/coach-account/reset-password` exists but is never surfaced in the UI.
   - Action: add a "Forgot password?" link on LoginPage that collects email and calls the reset endpoint; display a confirmation message.
-- [ ] P0 Add confirm dialog before destructive Remove actions (player, member).
+- [x] P0 Add confirm dialog before destructive Remove actions (player, member).
   - Current gap: Remove buttons on Roster and Members pages fire immediately with no confirmation. A fat-finger on a touchscreen deletes a player permanently mid-season.
   - Action: wrap `removePlayer` and `removeMember` calls with a `window.confirm` or the existing `useConfirmDialog` hook already in the iPad operator.
-- [ ] P0 Add empty-state CTAs throughout stats pages.
+- [x] P0 Add empty-state CTAs throughout stats pages.
   - Current gap: when roster is empty, all stats pages show blank/no-data states with no direction to the user. First-time users get stuck.
   - Action: add "Add players in Settings →" link on Players, Games, and Trends pages when the respective data set is empty.
-- [ ] P1 Add visible offline/queued indicator on iPad operator.
+- [x] P1 Add visible offline/queued indicator on iPad operator.
   - Current gap: `isNetworkOnline` is tracked internally but there is no clear visual banner when the operator is offline mid-game. Operators may double-tap stats thinking events didn't register.
   - Action: render a persistent top banner (e.g. "Offline — X events queued") whenever `isNetworkOnline` is false and the queue is non-empty.
-- [ ] P1 Add coach-side stat correction UI on the Live dashboard.
+- [x] P1 Add coach-side stat correction UI on the Live dashboard.
   - Current gap: if the operator logs a wrong stat, the coach has no way to correct it from the dashboard. The API has correction endpoints but no correction UI is wired up.
-  - Action: add an "Edit / Correct" action on box-score rows in the Live page that calls the existing correction endpoint.
-- [ ] P2 Add session expiry warning banner on coach dashboard.
+  - Action: add a recent-events correction panel on the Live page with coach "Undo" controls that call the existing event correction endpoint.
+- [x] P2 Add session expiry warning banner on coach dashboard.
   - Current gap: the JWT expires silently and the coach is kicked to login with no warning, potentially mid-game.
   - Action: decode the JWT exp claim on load, show an in-app banner ~5 min before expiry with a "Stay signed in" refresh action.
-- [ ] P2 Add export box score to clipboard / printable view.
+- [x] P2 Add export box score to clipboard / printable view.
   - Current gap: coaches expect to share stats with parents or media after a game; no export path exists.
   - Action: add a "Copy box score" button on Games page that formats a plain-text or CSV summary to the clipboard.
-- [ ] P2 Player profile eyebrow now shows real team name (fixed Apr 8 2026).
+- [x] P2 Player profile eyebrow now shows real team name (fixed Apr 8 2026).
   - Was showing raw school ID slug (e.g. "GAVINO1730 · VARSITY"); now fetches `/api/teams` and displays the actual team name.
 
 ### AI Safety, Cost, and UX
@@ -93,7 +93,7 @@ Priority keys:
   - Action: route metrics to push endpoint + thresholds.
 
 ### iPad Operator Reliability
-- [ ] P1 Guard pre-game/queue behavior until school scope is resolved.
+- [x] P1 Guard pre-game/queue behavior until school scope is resolved.
   - Source: reliability notes
   - Action: prevent tenant-scoped event flushes before schoolId sync.
 
@@ -104,7 +104,7 @@ Priority keys:
   - Operator starts game and submits events
   - Coach receives realtime updates
   - Session persists and reload/replay is deterministic
-- [ ] P1 Add AI integration failure tests:
+- [x] P1 Add AI integration failure tests:
   - timeout
   - rate limit
   - malformed model output
@@ -205,6 +205,36 @@ Priority keys:
 - [x] P1 Added structured AI failure telemetry in realtime API insights flow.
   - Files: services/realtime-api/src/store.ts, services/realtime-api/src/server.ts
   - Detail: tracks AI health state and error codes (rate-limited/timeout/invalid payload/upstream/network), logs degradation context, and returns structured error payloads on forced AI refresh failures.
+- [x] P0 Added destructive-action confirmation dialogs on Team Settings removals.
+  - File: apps/coach-dashboard/src/TeamSettingsPage.tsx
+  - Detail: member removal and roster player removal now require explicit confirm before DELETE actions.
+- [x] P0 Added empty-state CTAs on key stats pages.
+  - Files: apps/coach-dashboard/src/GamesPage.tsx, apps/coach-dashboard/src/PlayersPage.tsx, apps/coach-dashboard/src/TrendsPage.tsx
+  - Detail: when datasets are empty, pages now show an "Add players in Settings" CTA that navigates directly to /stats/settings.
+- [x] P1 Added explicit offline queue banner on iPad operator.
+  - Files: apps/ipad-operator/src/App.tsx, apps/ipad-operator/src/styles.css
+  - Detail: added a persistent top banner when offline with queued events, while preserving reconnect/pending badges for other sync states.
+- [x] P2 Added Games-page box score export to clipboard.
+  - File: apps/coach-dashboard/src/GamesPage.tsx
+  - Detail: Game modal now includes a Copy Box Score action that copies a plain-text summary (game header, team stats, player lines, and coach notes) with clipboard fallback.
+- [x] P2 Added coach session expiry warning banner + refresh action.
+  - Files: apps/coach-dashboard/src/UnifiedCoachApp.tsx, apps/coach-dashboard/src/platform.ts, apps/coach-dashboard/src/styles.css, services/realtime-api/src/server.ts
+  - Detail: dashboard now decodes token exp and warns when <=5 minutes remain; "Stay Signed In" rechecks session and stores refreshed local token from `/api/auth/session`.
+- [x] P1 Hardened queue sync UX until school scope is available.
+  - File: apps/ipad-operator/src/App.tsx
+  - Detail: when queued events exist but school scope is missing, UI now shows a dedicated "waiting for school sync" message and avoids misleading resubmit prompts.
+- [x] P0 Hardened AI insight text validation at API boundary.
+  - Files: services/realtime-api/src/store.ts, services/realtime-api/src/store.test.ts
+  - Detail: added stricter AI insight normalization and prompt-injection/script pattern filtering before coach UI payloads are emitted, with regression tests for unsafe payload rejection.
+- [x] P1 Expanded AI failure-mode tests in realtime store.
+  - File: services/realtime-api/src/store.test.ts
+  - Detail: added explicit assertions for ai status degradation on OpenAI rate-limit (429), malformed JSON payload, and timeout (AbortError), alongside existing force-refresh and safety filtering tests.
+- [x] P0 Documented AI degraded-mode and rate-limit behavior in runbooks.
+  - Files: DEPLOYMENT.md, HOSTING_SETUP.md
+  - Detail: added explicit coach-facing degraded-mode contract, expected HTTP failure semantics, fallback expectations, and staging validation checks.
+- [x] P1 Added coach-side live stat correction controls.
+  - Files: apps/coach-dashboard/src/GameSessionContext.tsx, apps/coach-dashboard/src/LivePage.tsx, apps/coach-dashboard/src/BoxScoreSection.tsx, apps/coach-dashboard/src/styles.css
+  - Detail: Live dashboard now surfaces recent stat events with per-event Undo actions that call `DELETE /api/games/:gameId/events/:eventId`, update session state/insights, and show correction status feedback.
 
 ---
 

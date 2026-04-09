@@ -3767,7 +3767,25 @@ html, body {
   border-radius: 20px;
   z-index: 999;
   letter-spacing: 0.06em;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.offline-queue-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1200;
+  border: 0;
+  border-bottom: 1px solid rgba(248, 113, 113, 0.45);
+  background: linear-gradient(90deg, rgba(185, 28, 28, 0.96), rgba(220, 38, 38, 0.96));
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
 }
 
 /* ---- Foul badge in player row ---- */

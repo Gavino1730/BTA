@@ -7,7 +7,7 @@ import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -26,6 +26,23 @@ function normalizeUserRole(role: string | null | undefined): string | null {
 
 function isPlayerRole(role: string | null | undefined): boolean {
   return normalizeUserRole(role) === "player";
+}
+
+const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
+
+interface SessionCheckPayload {
+  authenticated?: boolean;
+  token?: string | null;
+  user?: {
+    email?: string;
+    fullName?: string;
+    role?: string;
+    schoolId?: string;
+    lastLoginAtIso?: string | null;
+  } | null;
+  onboarding?: {
+    completed?: boolean;
+  } | null;
 }
 
 interface ConnectedNavActionsProps {
@@ -127,6 +144,32 @@ export function UnifiedCoachApp() {
   const [currentRole, setCurrentRole] = useState<string | null>(() => normalizeUserRole(initialAuthSession?.role));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [refreshingSession, setRefreshingSession] = useState(false);
+  const [sessionRefreshStatus, setSessionRefreshStatus] = useState("");
+  const [dismissedExpiryAtMs, setDismissedExpiryAtMs] = useState<number | null>(null);
+
+  const currentSession = readStoredAuthSession();
+  const sessionExpiryAtMs = decodeTokenExpiryMs(currentSession?.token);
+  const msUntilExpiry = sessionExpiryAtMs === null ? null : sessionExpiryAtMs - nowMs;
+  const showSessionExpiryWarning = Boolean(
+    isAuthenticated
+    && sessionExpiryAtMs !== null
+    && msUntilExpiry !== null
+    && msUntilExpiry <= SESSION_WARNING_WINDOW_MS
+    && dismissedExpiryAtMs !== sessionExpiryAtMs,
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (dismissedExpiryAtMs !== null && dismissedExpiryAtMs !== sessionExpiryAtMs) {
+      setDismissedExpiryAtMs(null);
+    }
+  }, [dismissedExpiryAtMs, sessionExpiryAtMs]);
 
   useEffect(() => {
     const canonicalPath = canonicalizeCoachPath(window.location.pathname);
@@ -151,7 +194,7 @@ export function UnifiedCoachApp() {
         ]);
 
         const sessionPayload = sessionResponse.ok
-          ? await sessionResponse.json() as { authenticated?: boolean; user?: { role?: string } | null }
+          ? await sessionResponse.json() as SessionCheckPayload
           : null;
         const onboardingPayload = onboardingResponse.ok
           ? await onboardingResponse.json() as { completed?: boolean }
@@ -245,6 +288,46 @@ export function UnifiedCoachApp() {
     window.history.replaceState({}, "", nextPath);
     setRoute(resolveCoachRoute(nextPath));
   }, []);
+
+  async function handleStaySignedIn() {
+    setRefreshingSession(true);
+    setSessionRefreshStatus("Refreshing session...");
+    try {
+      const response = await fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() });
+      if (!response.ok) {
+        throw new Error("Session refresh failed.");
+      }
+
+      const payload = await response.json() as SessionCheckPayload;
+      if (!payload.authenticated) {
+        clearAuthSession();
+        setSessionRefreshStatus("Session expired. Please sign in again.");
+        navigate("/login");
+        return;
+      }
+
+      if (payload.token && payload.user) {
+        storeAuthSession({
+          token: payload.token,
+          email: payload.user.email,
+          fullName: payload.user.fullName,
+          role: payload.user.role,
+          schoolId: payload.user.schoolId,
+          lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
+        });
+        setSessionRefreshStatus("Session extended.");
+        setDismissedExpiryAtMs(null);
+        setNowMs(Date.now());
+        return;
+      }
+
+      setSessionRefreshStatus("Session checked. Sign in again soon to stay active.");
+    } catch {
+      setSessionRefreshStatus("Could not refresh session right now.");
+    } finally {
+      setRefreshingSession(false);
+    }
+  }
 
   useEffect(() => {
     if (!isAuthenticated || requiresSetup) {
@@ -376,6 +459,42 @@ export function UnifiedCoachApp() {
           </div>
         </div>
       </nav>
+      {showSessionExpiryWarning && (
+        <section className="session-expiry-banner" role="status" aria-live="polite">
+          <div className="session-expiry-banner-content">
+            <p>
+              {msUntilExpiry !== null && msUntilExpiry > 0
+                ? `Session expires in ${Math.max(1, Math.ceil(msUntilExpiry / 60000))} minute${Math.ceil(msUntilExpiry / 60000) === 1 ? "" : "s"}.`
+                : "Session expired. Sign in again to continue."}
+            </p>
+            <div className="session-expiry-actions">
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => void handleStaySignedIn()}
+                disabled={refreshingSession}
+              >
+                {refreshingSession ? "Refreshing..." : "Stay Signed In"}
+              </button>
+              <button
+                type="button"
+                className="coach-nav-ext-link"
+                onClick={() => navigate("/login")}
+              >
+                Sign In Again
+              </button>
+              <button
+                type="button"
+                className="coach-nav-ext-link"
+                onClick={() => setDismissedExpiryAtMs(sessionExpiryAtMs)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          {sessionRefreshStatus && <p className="session-expiry-status">{sessionRefreshStatus}</p>}
+        </section>
+      )}
       {isLive && <LivePage />}
       {route === "stats-overview" && <StatsOverviewPage />}
       {route === "stats-games" && <GamesPage />}

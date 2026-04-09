@@ -66,6 +66,24 @@ Set `BTA_DATA_RETENTION_DAYS` to `0` or negative to disable pruning.
 - `BTA_SECURITY_METRICS_PUSH_URL` (HTTP endpoint for Prometheus text payload pushes)
 - `BTA_SECURITY_METRICS_PUSH_INTERVAL_MS` (default `10000`)
 
+## AI Degraded-Mode Contract (Coach-Facing)
+
+The live coaching experience is designed so AI is additive, not required.
+
+- Rules-based insights remain authoritative and continue to render even if OpenAI fails.
+- AI refresh failures do not blank the panel; the API keeps existing AI insights (if any) and always returns combined fallback insights.
+- Coach chat/refresh surfaces explicit status messages for common failures:
+  - `429`: AI temporarily rate-limited. Retry after a short delay.
+  - `503`: AI service unavailable or network/runtime error.
+  - `504`: upstream timeout.
+  - `401/403`: auth/role scope mismatch.
+- API tracks game-scoped AI health (`healthy`, `lastErrorCode`, `lastErrorStatus`, `lastErrorMessage`) and logs degraded events for operations triage.
+
+Operational expectations:
+
+- During incidents or spend throttling, coaches should continue to use rules-based calls and scoreboard/box score data without interruption.
+- Treat AI as best-effort guidance; no gameplay-critical workflow should depend on successful model responses.
+
 ## Security Observability
 
 The API tracks security counters in memory and exposes them via:

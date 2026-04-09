@@ -32,7 +32,8 @@ export function LivePage() {
     lineupUnitStats, coachedTeamId, rotationContext,
     aiInsights, rulesInsights, hasGameStarted,
     aiRefreshError, isRefreshingAiInsights, refreshAiBenchCalls, prettifyInsightText,
-    boxScorePeriods, boxScoreByTeam, setupNames,
+    boxScorePeriods, filteredBoxScoreEvents, boxScoreByTeam, setupNames,
+    deleteGameEvent, deletingGameEventId,
     aiQuickQuestions, sendAiChat, isSendingAiChat,
     aiChatMessages, aiChatInput, setAiChatInput, aiChatStatus,
     aiSubSuggestionCards, aiFoulAlertCards, aiEfficiencyCards,
@@ -187,6 +188,7 @@ export function LivePage() {
             boxScorePeriods={boxScorePeriods}
             boxScoreFilter={boxScoreFilter}
             setBoxScoreFilter={setBoxScoreFilter}
+            filteredBoxScoreEvents={filteredBoxScoreEvents}
             boxScoreByTeam={boxScoreByTeam}
             currentPeriod={state?.currentPeriod}
             displayTeamName={displayTeamName}
@@ -197,6 +199,8 @@ export function LivePage() {
             vcSide={setupNames.vcSide}
             stateHomeTeamId={state?.homeTeamId}
             stateAwayTeamId={state?.awayTeamId}
+            deletingGameEventId={deletingGameEventId}
+            deleteGameEvent={deleteGameEvent}
           />
           <LineupUnitPanel
             lineupUnitStats={lineupUnitStats}

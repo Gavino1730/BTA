@@ -5,12 +5,14 @@ import {
   type RosterTeam,
   emptyBoxScoreTotals,
 } from "./helpers/index.js";
+import type { GameEvent } from "@bta/shared-schema";
 
 interface Props {
   teams: string[];
   boxScorePeriods: string[];
   boxScoreFilter: BoxScoreFilter;
   setBoxScoreFilter: React.Dispatch<React.SetStateAction<BoxScoreFilter>>;
+  filteredBoxScoreEvents: GameEvent[];
   boxScoreByTeam: Record<string, { totals: BoxScoreTeamTotals; players: Record<string, BoxScorePlayerLine> }>;
   currentPeriod: string | undefined;
   displayTeamName: (teamId: string) => string;
@@ -21,6 +23,8 @@ interface Props {
   vcSide: string;
   stateHomeTeamId: string | undefined;
   stateAwayTeamId: string | undefined;
+  deletingGameEventId: string | null;
+  deleteGameEvent: (eventId: string) => Promise<void>;
 }
 
 export function BoxScoreSection({
@@ -28,6 +32,7 @@ export function BoxScoreSection({
   boxScorePeriods,
   boxScoreFilter,
   setBoxScoreFilter,
+  filteredBoxScoreEvents,
   boxScoreByTeam,
   currentPeriod,
   displayTeamName,
@@ -38,6 +43,8 @@ export function BoxScoreSection({
   vcSide,
   stateHomeTeamId,
   stateAwayTeamId,
+  deletingGameEventId,
+  deleteGameEvent,
 }: Props) {
   function contributionScore(line: BoxScorePlayerLine): number {
     const rebounds = line.reboundsDef + line.reboundsOff;
@@ -55,6 +62,64 @@ export function BoxScoreSection({
       - (missedFg * 0.5)
       - (missedFt * 0.35)
     );
+  }
+
+  const correctionEvents = filteredBoxScoreEvents
+    .filter((event) => {
+      return event.type !== "period_transition" && event.type !== "possession_start" && event.type !== "possession_end";
+    })
+    .slice()
+    .sort((left, right) => right.sequence - left.sequence)
+    .slice(0, 12);
+
+  function eventActorLabel(event: GameEvent): string {
+    switch (event.type) {
+      case "substitution":
+        return `${displayPlayerName(event.teamId, event.playerOutId)} -> ${displayPlayerName(event.teamId, event.playerInId)}`;
+      case "timeout":
+        return displayTeamName(event.teamId);
+      case "turnover":
+        return event.playerId
+          ? displayPlayerName(event.teamId, event.playerId)
+          : displayTeamName(event.teamId);
+      case "shot_attempt":
+      case "free_throw_attempt":
+      case "rebound":
+      case "foul":
+      case "assist":
+      case "steal":
+      case "block":
+        return displayPlayerName(event.teamId, event.playerId);
+      default:
+        return displayTeamName(event.teamId);
+    }
+  }
+
+  function eventSummary(event: GameEvent): string {
+    switch (event.type) {
+      case "shot_attempt":
+        return `${event.made ? "Made" : "Missed"} ${event.points}PT FG`;
+      case "free_throw_attempt":
+        return `${event.made ? "Made" : "Missed"} FT (${event.attemptNumber}/${event.totalAttempts})`;
+      case "rebound":
+        return event.offensive ? "Offensive rebound" : "Defensive rebound";
+      case "turnover":
+        return `Turnover (${event.turnoverType.replace("_", " ")})`;
+      case "foul":
+        return `${event.foulType} foul`;
+      case "assist":
+        return `Assist -> ${displayPlayerName(event.teamId, event.scorerPlayerId)}`;
+      case "steal":
+        return "Steal";
+      case "block":
+        return "Block";
+      case "substitution":
+        return "Substitution";
+      case "timeout":
+        return `${event.timeoutType} timeout`;
+      default:
+        return event.type;
+    }
   }
 
   return (
@@ -230,6 +295,41 @@ export function BoxScoreSection({
           </section>
         );
       })}
+
+      <section className="box-score-team-section">
+        <h3>Recent Stat Events</h3>
+        <div className="box-score-corrections">
+          {correctionEvents.length === 0 ? (
+            <p className="settings-section-desc">No recent events available for correction.</p>
+          ) : (
+            correctionEvents.map((event) => {
+              const isDeleting = deletingGameEventId === event.id;
+              return (
+                <div key={event.id} className="box-score-correction-row">
+                  <div>
+                    <p className="box-score-correction-title">{eventSummary(event)}</p>
+                    <p className="box-score-correction-meta">
+                      {displayTeamName(event.teamId)} | {eventActorLabel(event)} | {event.period} | Seq {event.sequence}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shell-nav-link"
+                    disabled={Boolean(deletingGameEventId)}
+                    onClick={() => {
+                      const ok = window.confirm("Undo this event? This will recalculate game stats.");
+                      if (!ok) return;
+                      void deleteGameEvent(event.id);
+                    }}
+                  >
+                    {isDeleting ? "Undoing..." : "Undo"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
     </section>
   );
 }

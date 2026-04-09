@@ -76,6 +76,8 @@ export interface GameSession {
 
   // Actions
   clearActiveGame: (statusMessage: string) => void;
+  deleteGameEvent: (eventId: string) => Promise<void>;
+  deletingGameEventId: string | null;
 
   // Roster
   rosterTeams: RosterTeam[];
@@ -281,6 +283,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     () => (sessionStorage.getItem("coach:live-tab") as "live" | "ai" | null) ?? "live"
   );
   const [boxScoreFilter, setBoxScoreFilter] = useState<BoxScoreFilter>([]);
+  const [deletingGameEventId, setDeletingGameEventId] = useState<string | null>(null);
 
   const setActivePage = useCallback((page: "live" | "ai") => {
     setActivePageState(page);
@@ -412,6 +415,58 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     setDashboardStatus(statusMessage);
   }, [gameId, resetAiState, resetNewGameForm]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const deleteGameEvent = useCallback(async (eventId: string): Promise<void> => {
+    if (!gameId || !eventId) {
+      setDashboardStatus("Connect to a live game before correcting events.");
+      return;
+    }
+
+    setDeletingGameEventId(eventId);
+    setDashboardStatus("Applying stat correction...");
+
+    try {
+      const response = await fetch(`${apiBase}/api/games/${gameId}/events/${encodeURIComponent(eventId)}`, {
+        method: "DELETE",
+        headers: apiKeyHeader(),
+      });
+
+      if (!response.ok) {
+        let detail = "";
+        try {
+          const payload = await response.json() as { error?: unknown; message?: unknown };
+          const text = typeof payload.error === "string"
+            ? payload.error
+            : typeof payload.message === "string"
+              ? payload.message
+              : "";
+          detail = text.trim();
+        } catch {
+          detail = "";
+        }
+        setDashboardStatus(detail ? `Correction failed: ${detail}` : `Correction failed (${response.status}).`);
+        return;
+      }
+
+      const payload = await response.json() as {
+        state?: GameState;
+        insights?: Insight[];
+      };
+
+      if (payload.state) {
+        setState(payload.state);
+      }
+      if (payload.insights) {
+        setInsights(payload.insights);
+      }
+
+      setDashboardStatus("Stat correction saved.");
+    } catch {
+      setDashboardStatus("Could not apply correction. Realtime API may be unavailable.");
+    } finally {
+      setDeletingGameEventId(null);
+    }
+  }, [gameId]);
+
   // Socket hook
   useCoachSocket({
     connectionId, gameIdRef, endedGameIdsRef, clearActiveGame,
@@ -492,6 +547,8 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     activePage, setActivePage, boxScoreFilter, setBoxScoreFilter,
     // Actions
     clearActiveGame,
+    deleteGameEvent,
+    deletingGameEventId,
     // Roster
     rosterTeams, setRosterTeams, expandedTeamId, setExpandedTeamId,
     editingPlayerId, setEditingPlayerId, editPlayerDraft, setEditPlayerDraft,

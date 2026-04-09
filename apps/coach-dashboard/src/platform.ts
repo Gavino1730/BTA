@@ -107,6 +107,44 @@ function decodeSchoolIdFromToken(token: string | undefined): string {
   );
 }
 
+function decodeTokenPayload(token: string | undefined): Record<string, unknown> | null {
+  if (!token) {
+    return null;
+  }
+
+  const normalized = token.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    if (normalized.startsWith("bta.")) {
+      const [, encodedPayload] = normalized.split(".");
+      if (!encodedPayload) {
+        return null;
+      }
+      return parseJsonSafely(decodeBase64Url(encodedPayload));
+    }
+
+    const jwtParts = normalized.split(".");
+    if (jwtParts.length < 2) {
+      return null;
+    }
+    return parseJsonSafely(decodeBase64Url(jwtParts[1]!));
+  } catch {
+    return null;
+  }
+}
+
+export function decodeTokenExpiryMs(token: string | undefined): number | null {
+  const payload = decodeTokenPayload(token);
+  const exp = Number(payload?.exp ?? 0);
+  if (!Number.isFinite(exp) || exp <= 0) {
+    return null;
+  }
+  return exp * 1000;
+}
+
 export function resolveActiveSchoolId(locationSearch?: string): string {
   const params = typeof locationSearch === "string"
     ? new URLSearchParams(locationSearch)

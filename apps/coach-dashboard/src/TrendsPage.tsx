@@ -83,6 +83,11 @@ interface PlayerComparisonPayload {
   players?: ComparisonPlayer[];
 }
 
+function openSettingsPage(): void {
+  window.history.pushState({}, "", "/stats/settings");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function safeNum(value: number | undefined, digits = 1): string {
   return Number.isFinite(value) ? Number(value).toFixed(digits) : (0).toFixed(digits);
 }
@@ -550,6 +555,16 @@ export function TrendsPage() {
       {rows.length === 0 ? (
         <section className="stats-page-card">
           <p className="stats-empty-copy">No trend data available yet.</p>
+          {players.length === 0 && (
+            <button
+              type="button"
+              className="shell-nav-link"
+              style={{ marginTop: "0.6rem" }}
+              onClick={openSettingsPage}
+            >
+              Add players in Settings
+            </button>
+          )}
         </section>
       ) : (
         <>

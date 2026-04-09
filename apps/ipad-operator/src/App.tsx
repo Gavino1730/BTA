@@ -367,6 +367,17 @@ export function App() {
     possessionOverrideTeamId,
   });
 
+  const hasSchoolScope = Boolean(appData.gameSetup.schoolId?.trim());
+  const hasOfflineQueue = !online && pendingEvents.length > 0;
+
+  function handleQueueSyncPress() {
+    if (!hasSchoolScope) {
+      showInlineNotice("Waiting for school sync before submitting queued events. Open Settings > Game Setup and connect to coach.", "info", 3200);
+      return;
+    }
+    void reconnectAndResubmit();
+  }
+
   // Keep the ref current so the interval always has the latest values
   useEffect(() => {
     autoSaveCtx.current.run = () => {
@@ -690,11 +701,24 @@ export function App() {
           awayTeamId={awayTeamId}
         />
       )}
-      {(!online || pendingEvents.length > 0) && (
-        <button className="offline-badge pending-badge" onClick={() => void reconnectAndResubmit()}>
-          {!online
-            ? `OFFLINE${pendingEvents.length > 0 ? ` | ${pendingEvents.length} unsaved` : ""} - Tap to reconnect`
-            : `${pendingEvents.length} pending upload - Tap to resubmit`}
+      {!hasSchoolScope && pendingEvents.length > 0 && (
+        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
+          {pendingEvents.length} queued locally - waiting for school sync
+        </button>
+      )}
+      {hasOfflineQueue && hasSchoolScope && (
+        <button className="offline-queue-banner" onClick={handleQueueSyncPress}>
+          Offline - {pendingEvents.length} event{pendingEvents.length === 1 ? "" : "s"} queued. Tap to retry sync.
+        </button>
+      )}
+      {!hasOfflineQueue && !online && (
+        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
+          OFFLINE - Tap to reconnect
+        </button>
+      )}
+      {hasSchoolScope && !hasOfflineQueue && online && pendingEvents.length > 0 && (
+        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
+          {pendingEvents.length} pending upload - Tap to resubmit
         </button>
       )}
 

@@ -130,6 +130,11 @@ interface PlayerGameBoxScore {
   stat: GamePlayerStat;
 }
 
+function openSettingsPage(): void {
+  window.history.pushState({}, "", "/stats/settings");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function findPlayerBoxScoreForGame(player: PlayerSummary, game: GameSummary): GamePlayerStat | null {
   const targetKeys = new Set(
     [player.playerId, player.full_name, player.name]
@@ -657,6 +662,16 @@ export function PlayersPage() {
       {filtered.length === 0 ? (
         <section className="stats-page-card">
           <p className="stats-empty-copy">No players available for the current filters.</p>
+          {players.length === 0 && (
+            <button
+              type="button"
+              className="shell-nav-link"
+              style={{ marginTop: "0.6rem" }}
+              onClick={openSettingsPage}
+            >
+              Add players in Settings
+            </button>
+          )}
         </section>
       ) : (
         <section className="stats-game-grid">

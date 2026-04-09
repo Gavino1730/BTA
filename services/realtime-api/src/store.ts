@@ -398,6 +398,7 @@ export interface GameEditOverride {
     fouls: number;
   };
   player_stats: Array<Record<string, unknown>>;
+  coach_notes?: string;
   updatedAtIso: string;
 }
 
@@ -1503,6 +1504,32 @@ function trimToLength(value: unknown, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
+function normalizeAiInsightText(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function hasUnsafeAiInsightText(value: string): boolean {
+  if (!value) {
+    return true;
+  }
+
+  const lower = value.toLowerCase();
+  if (lower.includes("```") || /<\s*script/i.test(value)) {
+    return true;
+  }
+
+  return /(ignore\s+(all\s+)?previous\s+instructions|disregard\s+previous\s+instructions|reveal\s+system\s+prompt|show\s+system\s+prompt|developer\s+message|prompt\s+injection|jailbreak)/i.test(value);
+}
+
 function summarizeHistoricalPlayers(playersPayload: SeasonPlayerSummary[], session: GameSession): string {
   if (playersPayload.length === 0) {
     return "";
@@ -1837,14 +1864,17 @@ function parseAiInsightResponse(content: string, session: GameSession, latestEve
       }
 
       const raw = item as Record<string, unknown>;
-      const message = typeof raw.message === "string" ? raw.message.trim() : "";
-      const explanation = typeof raw.explanation === "string" ? raw.explanation.trim() : "";
+      const message = normalizeAiInsightText(raw.message, 280);
+      const explanation = normalizeAiInsightText(raw.explanation, 500);
       if (!message || !explanation) {
         return null;
       }
 
-      // Length guard: discard suspiciously short (<10 chars) or bloated (>300 chars) messages
-      if (message.length < 10 || message.length > 300) {
+      // Discard suspiciously short/bloated insights and obvious prompt-injection patterns.
+      if (message.length < 12 || explanation.length < 20) {
+        return null;
+      }
+      if (hasUnsafeAiInsightText(message) || hasUnsafeAiInsightText(explanation)) {
         return null;
       }
 

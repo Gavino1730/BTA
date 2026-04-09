@@ -48,6 +48,7 @@ interface GameSummary {
   opp_score: number;
   team_stats?: GameTeamStats;
   player_stats?: PlayerStat[];
+  coach_notes?: string;
 }
 
 interface LiveInsightItem {
@@ -210,6 +211,52 @@ function computeRecordAfterGame(games: GameSummary[], gameId: string | number): 
   return null;
 }
 
+function formatBoxScoreForClipboard(input: {
+  gameId: string | number;
+  date: string;
+  location: string;
+  opponent: string;
+  teamName: string;
+  vcScore: number;
+  oppScore: number;
+  resultCode: string;
+  teamStats: Required<GameTeamStats>;
+  playerRows: EditPlayerRow[];
+  coachNotes: string;
+}): string {
+  const locationLabel = input.location === "away" ? "Away" : input.location === "neutral" ? "Neutral" : "Home";
+  const lines: string[] = [
+    `${input.teamName} ${input.vcScore} - ${input.oppScore} ${input.opponent}`,
+    `Result: ${input.resultCode} | ${locationLabel} | ${formatDateDisplay(input.date)} | Game #${input.gameId}`,
+    "",
+    "Team Stats",
+    `FG ${input.teamStats.fg}/${input.teamStats.fga} (${formatPct(pctValue(input.teamStats.fg, input.teamStats.fga))})`,
+    `3PT ${input.teamStats.fg3}/${input.teamStats.fg3a} (${formatPct(pctValue(input.teamStats.fg3, input.teamStats.fg3a))})`,
+    `FT ${input.teamStats.ft}/${input.teamStats.fta} (${formatPct(pctValue(input.teamStats.ft, input.teamStats.fta))})`,
+    `REB ${input.teamStats.reb} (OR ${input.teamStats.oreb}, DR ${input.teamStats.dreb})`,
+    `AST ${input.teamStats.asst} | TO ${input.teamStats.to} | STL ${input.teamStats.stl} | BLK ${input.teamStats.blk} | PF ${input.teamStats.fouls}`,
+    "",
+    "Player Stats",
+  ];
+
+  const players = input.playerRows.filter((row) => row.name.trim().length > 0);
+  if (players.length === 0) {
+    lines.push("No player stats recorded.");
+  } else {
+    for (const row of players) {
+      lines.push(
+        `${row.number ? `#${row.number} ` : ""}${row.name}: ${rowPts(row)} pts, ${rowReb(row)} reb, ${row.asst} ast, FG ${row.fg_made}/${row.fg_att}, 3PT ${row.fg3_made}/${row.fg3_att}, FT ${row.ft_made}/${row.ft_att}`
+      );
+    }
+  }
+
+  if (input.coachNotes.trim()) {
+    lines.push("", "Coach Notes", input.coachNotes.trim());
+  }
+
+  return lines.join("\n");
+}
+
 function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; games: GameSummary[]; teamName: string; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
   const [mode, setMode] = useState<"view" | "edit">(initialMode);
   const [date, setDate] = useState(game.date ?? "");
@@ -222,8 +269,10 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
       ? game.player_stats.map(toEditRow)
       : [emptyRow()]
   );
+  const [coachNotes, setCoachNotes] = useState(game.coach_notes ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [boxMode, setBoxMode] = useState<"basic" | "advanced">("basic");
@@ -336,6 +385,7 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
         opp_score: Number(oppScore) || 0,
         team_stats: ts,
         player_stats: namedRows.map(r => ({ ...r, reb: rowReb(r), pts: rowPts(r) })),
+        coach_notes: coachNotes.trim() || undefined,
       };
       const res = await fetch(`${apiBase}/api/games/${encodeURIComponent(String(game.gameId))}`, {
         method: "PUT",
@@ -381,6 +431,42 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
     }
   }
 
+  async function handleCopyBoxScore() {
+    const text = formatBoxScoreForClipboard({
+      gameId: game.gameId,
+      date,
+      location,
+      opponent,
+      teamName: ourTeamName,
+      vcScore: Number(vcScore) || 0,
+      oppScore: Number(oppScore) || 0,
+      resultCode,
+      teamStats: ts,
+      playerRows: rows,
+      coachNotes,
+    });
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "true");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopyStatus("Box score copied.");
+      window.setTimeout(() => setCopyStatus(""), 1800);
+    } catch {
+      setCopyStatus("Could not copy. Please try again.");
+    }
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -401,6 +487,11 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "var(--text-muted)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
+            {!isEditing && (
+              <button type="button" onClick={() => void handleCopyBoxScore()} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer", fontWeight: 600 }}>
+                Copy Box Score
+              </button>
+            )}
             {!isEditing && (
               <button type="button" onClick={() => setMode("edit")} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1rem", cursor: "pointer", fontWeight: 600 }}>
                 Edit
@@ -425,6 +516,7 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
         </div>
 
         <div style={{ padding: "1.1rem 1.4rem" }}>
+          {copyStatus && <p style={{ color: copyStatus.startsWith("Could not") ? "var(--red)" : "var(--teal)", marginBottom: "0.75rem" }}>{copyStatus}</p>}
           {saveError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{saveError}</p>}
           {deleteError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{deleteError}</p>}
 
@@ -563,7 +655,37 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
                   </div>
                 </article>
               </section>
+
+              {/* Coach Notes (visible to players) */}
+              {coachNotes.trim() && (
+                <section style={{ margin: "1.1rem 0 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.55rem" }}>
+                    <h3 style={{ margin: 0, fontSize: "1rem" }}>Coach Notes</h3>
+                    <span style={{ fontSize: "0.71rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Visible to players</span>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.9rem 1rem", whiteSpace: "pre-wrap", lineHeight: 1.65, color: "var(--text)", fontSize: "0.9rem" }}>
+                    {coachNotes}
+                  </div>
+                </section>
+              )}
             </>
+          )}
+
+          {/* Coach Notes edit field */}
+          {isEditing && (
+            <div style={{ margin: "0 0 1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
+                <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>Coach Notes <em style={{ fontStyle: "normal", opacity: 0.7 }}>(visible to players)</em></span>
+                <span style={{ fontSize: "0.7rem", color: coachNotes.length > 1900 ? "var(--red)" : "var(--text-muted)" }}>{coachNotes.length}/2000</span>
+              </div>
+              <textarea
+                value={coachNotes}
+                onChange={e => setCoachNotes(e.target.value.slice(0, 2000))}
+                placeholder="Add game notes, strategy reminders, or feedback for your players..."
+                rows={5}
+                style={{ ...inputSt, resize: "vertical", minHeight: 100, fontFamily: "inherit", lineHeight: 1.6 }}
+              />
+            </div>
           )}
 
           {mismatch && <p style={{ color: "var(--red)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Player totals ({playerPts}) don't match team score ({vcScore}).</p>}
@@ -666,6 +788,11 @@ function compareGamesMostRecent(left: GameSummary, right: GameSummary): number {
   return String(right.gameId).localeCompare(String(left.gameId));
 }
 
+function openSettingsPage(): void {
+  window.history.pushState({}, "", "/stats/settings");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 export function GamesPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
@@ -743,6 +870,16 @@ export function GamesPage() {
       {filteredGames.length === 0 ? (
         <section className="stats-page-card">
           <p className="stats-empty-copy">No games match the current filters.</p>
+          {games.length === 0 && (
+            <button
+              type="button"
+              className="shell-nav-link"
+              style={{ marginTop: "0.6rem" }}
+              onClick={openSettingsPage}
+            >
+              Add players in Settings
+            </button>
+          )}
         </section>
       ) : (
         <section className="stats-game-grid">

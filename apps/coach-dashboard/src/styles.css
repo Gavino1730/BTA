@@ -2663,6 +2663,39 @@ body {
   color: var(--text-muted);
 }
 
+.box-score-corrections {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  background: rgba(9, 20, 40, 0.45);
+  display: grid;
+}
+
+.box-score-correction-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.box-score-correction-row:last-child {
+  border-bottom: none;
+}
+
+.box-score-correction-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.box-score-correction-meta {
+  margin: 0.18rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.77rem;
+}
+
 /* Foul trouble visualization */
 .foul-badge {
   display: inline-block;
@@ -4241,6 +4274,43 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
 .coach-nav-actions .connection-pill-code {
   font-size: 0.78rem;
+}
+
+.session-expiry-banner {
+  max-width: 1380px;
+  margin: 0.7rem auto 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(180, 83, 9, 0.25), rgba(113, 63, 18, 0.2));
+  color: #fde68a;
+}
+
+.session-expiry-banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.session-expiry-banner-content p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.session-expiry-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.session-expiry-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(255, 243, 199, 0.95);
 }
 
 @media (max-width: 1200px) {

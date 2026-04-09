@@ -91,6 +91,10 @@ Then verify:
 2. operator app can submit an event
 3. coach dashboard updates live
 4. data persists to Supabase
+5. AI degraded behavior is clear and safe:
+   - Temporarily unset `OPENAI_API_KEY` (or force an upstream failure in staging) and verify rules-based insights still render.
+   - Trigger AI refresh/chat from coach dashboard and confirm user-facing error states are explicit (rate-limited, unavailable, timeout, auth).
+   - Restore AI envs and verify AI guidance resumes without requiring app restart.
 
 ## Gym use note
 
