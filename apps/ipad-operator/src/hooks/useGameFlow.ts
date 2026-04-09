@@ -91,6 +91,23 @@ export function useGameFlow({
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
 
+  function clearCachedOperatorAuth(current: AppData): AppData {
+    if (!current.gameSetup.apiKey) {
+      return current;
+    }
+
+    const next: AppData = {
+      ...current,
+      gameSetup: {
+        ...current.gameSetup,
+        apiKey: undefined,
+      },
+    };
+    saveAppData(next);
+    setAppData(next);
+    return next;
+  }
+
   async function refreshOperatorAuthFromConnection(current: AppData): Promise<AppData> {
     const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
     if (!connectionId) {
@@ -98,11 +115,19 @@ export function useGameFlow({
     }
 
     try {
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (current.gameSetup.schoolId?.trim()) {
+        headers["x-school-id"] = current.gameSetup.schoolId.trim();
+      }
+
       const response = await fetch(
         `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
-        { headers: apiKeyHeader(current.gameSetup) },
+        { headers },
       );
       if (!response.ok) {
+        if (response.status === 404) {
+          return clearCachedOperatorAuth(current);
+        }
         return current;
       }
 

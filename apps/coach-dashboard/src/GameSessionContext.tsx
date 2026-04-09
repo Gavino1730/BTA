@@ -11,6 +11,7 @@ import {
 } from "./hooks/index.js";
 import {
   type GameState, type BoxScoreFilter, type Insight,
+  generateGameId,
   ACTIVE_GAME_KEY,
 } from "./helpers/index.js";
 import type {
@@ -373,6 +374,57 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameStartingLineup, setNewGameStartingLineup,
     isLaunchingGame, launchGame,
   } = useNewGameForm({ rosterTeams, endedGameIdsRef, connectionId, setGameId, setSetupNames, setDashboardStatus });
+
+  useEffect(() => {
+    const schoolId = resolveActiveSchoolId();
+    if (!connectionId || !schoolId || !newGameMyTeamId) {
+      return;
+    }
+
+    const opponentName = newGameOpponent.trim();
+    if (!opponentName) {
+      return;
+    }
+
+    const selectedTeam = rosterTeams.find((team) => team.id === newGameMyTeamId);
+    if (!selectedTeam) {
+      return;
+    }
+
+    const rosterPlayerIds = new Set((selectedTeam.players ?? []).map((player) => player.id));
+    const selectedStartingLineup = [...new Set(newGameStartingLineup)]
+      .filter((playerId) => rosterPlayerIds.has(playerId))
+      .slice(0, 5);
+    const myTeamColor = selectedTeam.teamColor?.trim() || "#4f8cff";
+    const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
+    const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
+    const previewGameId = gameId || generateGameId(opponentName, new Date().toISOString().slice(0, 10));
+
+    void fetch(`${apiBase}/api/operator-links/${encodeURIComponent(connectionId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+      body: JSON.stringify({
+        gameId: previewGameId,
+        myTeamId: newGameMyTeamId,
+        myTeamName: selectedTeam.name ?? "",
+        opponentName,
+        vcSide: newGameVcSide,
+        homeTeamColor: homeColor,
+        awayTeamColor: awayColor,
+        dashboardUrl: window.location.href,
+        startingLineup: selectedStartingLineup,
+      }),
+    });
+  }, [
+    connectionId,
+    gameId,
+    newGameMyTeamId,
+    newGameOpponent,
+    newGameOppColor,
+    newGameStartingLineup,
+    newGameVcSide,
+    rosterTeams,
+  ]);
 
   // URL sync
   useEffect(() => {

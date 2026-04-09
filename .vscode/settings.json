@@ -1,4 +1,7 @@
 {
-  "git.autoRepositoryDetection": "openEditors",
-  "git.openRepositoryInParentFolders": "never"
+  "git.autoRepositoryDetection": false,
+  "git.openRepositoryInParentFolders": "never",
+  "git.scanRepositories": [
+    "/Users/ggalan/BTA"
+  ]
 }

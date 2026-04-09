@@ -33,6 +33,22 @@ export function useCoachSync({
   setConnectionSyncStatus,
   showInlineNotice,
 }: CoachSyncDeps) {
+  function clearCachedOperatorAuth(current: AppData): AppData {
+    if (!current.gameSetup.apiKey) {
+      return current;
+    }
+
+    const next: AppData = {
+      ...current,
+      gameSetup: {
+        ...current.gameSetup,
+        apiKey: undefined,
+      },
+    };
+    saveAppData(next);
+    return next;
+  }
+
   // ---- Periodic team sync from realtime API ----
   useEffect(() => {
     let active = true;
@@ -129,6 +145,7 @@ export function useCoachSync({
           // Link is temporarily gone but the operator already has a synced game session.
           // Preserve all in-game state so a transient 404 (e.g. server restart, coach reset)
           // does not kick the operator out mid-game.
+          setAppData((current) => clearCachedOperatorAuth(current));
           setConnectionSyncStatus(
             "Coach link temporarily unavailable. Your last synced roster and lineup are saved locally.",
           );
