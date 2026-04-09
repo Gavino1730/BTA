@@ -1,6 +1,16 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode } from "./platform.js";
 
+type SettingsSection = "pairing" | "roster" | "profile" | "ai" | "members";
+
+function normalizeSettingsSection(value: string | null | undefined, fallback: SettingsSection): SettingsSection {
+  if (value === "pairing" || value === "roster" || value === "profile" || value === "ai" || value === "members") {
+    return value;
+  }
+
+  return fallback;
+}
+
 interface TeamDto {
   id: string;
   name: string;
@@ -175,7 +185,11 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
   );
 }
 
-export function TeamSettingsPage() {
+interface TeamSettingsPageProps {
+  initialSection?: SettingsSection;
+}
+
+export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
   const currentSeason = String(new Date().getFullYear());
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
@@ -188,10 +202,13 @@ export function TeamSettingsPage() {
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string; tempPassword: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
   const [newPlayerExpanded, setNewPlayerExpanded] = useState(false);
-  const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
-    const saved = localStorage.getItem("coach:settings-section");
-    if (saved === "pairing" || saved === "roster" || saved === "profile" || saved === "ai" || saved === "members") return saved;
-    return "pairing";
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    const fallback = initialSection ?? "pairing";
+    if (typeof window === "undefined") {
+      return fallback;
+    }
+
+    return normalizeSettingsSection(window.localStorage.getItem("coach:settings-section"), fallback);
   });
   const [copyConfirmed, setCopyConfirmed] = useState(false);
   const [playingStyle, setPlayingStyle] = useState("");
@@ -301,6 +318,17 @@ export function TeamSettingsPage() {
 
     window.localStorage.setItem("coach-bound-connection-id", connectionCode);
   }, [connectionCode]);
+
+  useEffect(() => {
+    if (!initialSection) {
+      return;
+    }
+
+    setActiveSection(initialSection);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("coach:settings-section", initialSection);
+    }
+  }, [initialSection]);
 
   async function saveOrganizationProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -800,7 +828,7 @@ export function TeamSettingsPage() {
   const SECTIONS = [
     { key: "pairing", label: "Live Pairing" },
     { key: "roster", label: "Roster" },
-    { key: "profile", label: "Profile" },
+    { key: "profile", label: "Organization" },
     { key: "ai", label: "AI Context" },
     { key: "members", label: "Members" },
   ] as const;
