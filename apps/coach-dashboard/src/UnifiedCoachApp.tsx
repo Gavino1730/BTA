@@ -4,12 +4,13 @@ import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
 import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
+import { ForbiddenPage, NotFoundPage, OfflinePage, ServerErrorPage, SessionExpiredPage } from "./ErrorStatePages.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { BillingPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { BillingPage, DataDeletionPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -40,8 +41,15 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "login",
   "forgot-password",
   "reset-password",
+  "not-found",
+  "forbidden",
+  "server-error",
+  "offline",
+  "session-expired",
+  "help",
   "terms",
   "privacy",
+  "data-deletion",
   "support",
   "contact",
 ]);
@@ -60,11 +68,13 @@ function AppFooter({ onNavigate }: AppFooterProps) {
       <div className="coach-app-footer-inner">
         <span className="coach-app-footer-brand">BTA Courtside Platform</span>
         <nav className="coach-app-footer-links" aria-label="App footer links">
+          <button type="button" onClick={() => onNavigate("/help")}>Help</button>
           <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
           <button type="button" onClick={() => onNavigate("/billing")}>Billing</button>
           <button type="button" onClick={() => onNavigate("/terms")}>Terms</button>
           <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
+          <button type="button" onClick={() => onNavigate("/data-deletion")}>Data Deletion</button>
         </nav>
       </div>
     </footer>
@@ -343,7 +353,7 @@ export function UnifiedCoachApp() {
       if (!payload.authenticated) {
         clearAuthSession();
         setSessionRefreshStatus("Session expired. Please sign in again.");
-        navigate("/login");
+        navigate("/session-expired");
         return;
       }
 
@@ -394,8 +404,15 @@ export function UnifiedCoachApp() {
       "/login",
       "/forgot-password",
       "/reset-password",
+      "/404",
+      "/403",
+      "/500",
+      "/offline",
+      "/session-expired",
+      "/help",
       "/terms",
       "/privacy",
+      "/data-deletion",
       "/support",
       "/contact",
     ]);
@@ -457,12 +474,40 @@ export function UnifiedCoachApp() {
     );
   }
 
+  if (route === "not-found") {
+    return <NotFoundPage onNavigate={navigate} />;
+  }
+
+  if (route === "forbidden") {
+    return <ForbiddenPage onNavigate={navigate} />;
+  }
+
+  if (route === "server-error") {
+    return <ServerErrorPage onNavigate={navigate} />;
+  }
+
+  if (route === "offline") {
+    return <OfflinePage onNavigate={navigate} />;
+  }
+
+  if (route === "session-expired") {
+    return <SessionExpiredPage onNavigate={navigate} />;
+  }
+
   if (route === "terms") {
     return <TermsPage onNavigate={navigate} />;
   }
 
+  if (route === "help") {
+    return <HelpCenterPage onNavigate={navigate} />;
+  }
+
   if (route === "privacy") {
     return <PrivacyPage onNavigate={navigate} />;
+  }
+
+  if (route === "data-deletion") {
+    return <DataDeletionPage onNavigate={navigate} />;
   }
 
   if (route === "support") {
@@ -589,7 +634,19 @@ export function UnifiedCoachApp() {
       {route === "stats-trends" && <TrendsPage />}
       {route === "stats-insights" && <AiInsightsPage />}
       {route === "stats-settings" && <TeamSettingsPage />}
-      {route === "account" && <AccountPage onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))} />}
+      {route === "account" && (
+        <AccountPage
+          onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))}
+          onSignOutRequested={() => {
+            clearAuthSession();
+            setIsAuthenticated(false);
+            setCurrentRole(null);
+            setRequiresSetup(true);
+            window.history.replaceState({}, "", "/login");
+            setRoute("login");
+          }}
+        />
+      )}
       {route === "billing" && <BillingPage onNavigate={navigate} />}
       {route === "settings" && <UserSettingsPage onNavigate={navigate} />}
       <AppFooter onNavigate={navigate} />

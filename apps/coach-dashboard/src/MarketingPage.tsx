@@ -517,10 +517,12 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           <nav className="mkt-footer-links">
             <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
             <button type="button" onClick={() => onNavigate("/login")}>Sign In</button>
+            <button type="button" onClick={() => onNavigate("/help")}>Help</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
             <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
             <button type="button" onClick={() => onNavigate("/terms")}>Terms</button>
             <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
+            <button type="button" onClick={() => onNavigate("/data-deletion")}>Data Deletion</button>
           </nav>
         </div>
       </footer>

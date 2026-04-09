@@ -56,6 +56,7 @@ import {
   getLocalAuthAccountByEmail,
   getLocalAuthAccountsByEmailAcrossSchools,
   getLocalAuthAccountsByScope,
+  deleteLocalAuthAccount,
   saveLocalAuthAccount,
   recordLocalAuthLogin,
   saveOrganizationMember,
@@ -313,6 +314,32 @@ function sanitizeTextField(value: unknown, maxLength: number): string {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
+function sanitizeProfilePhotoDataUrl(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const validDataUrl = /^data:image\/(png|jpeg|jpg|webp);base64,[a-z0-9+/=]+$/i.test(trimmed);
+  if (!validDataUrl) {
+    return "";
+  }
+
+  if (trimmed.length > 350_000) {
+    return "";
+  }
+
+  return trimmed;
+}
+
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -361,6 +388,7 @@ function buildAuthUserView(account: LocalAuthAccount, currentMember: Organizatio
     schoolId: account.schoolId,
     organizationId: currentMember?.organizationId ?? account.organizationId,
     lastLoginAtIso: account.lastLoginAtIso,
+    profilePhotoDataUrl: account.profilePhotoDataUrl ?? null,
   };
 }
 
@@ -576,6 +604,53 @@ function resolveAuthenticatedLocalAccount(req: Request, schoolId: string): Local
   }
 
   return null;
+}
+
+function resolveLocalAuthAccountFromContext(authContext: AuthContext, schoolId: string): LocalAuthAccount | null {
+  const subject = resolveAuthSubject(authContext);
+  const email = sanitizeTextField(readAuthClaim(authContext, "email"), 160).toLowerCase();
+  const accounts = getLocalAuthAccountsByScope({ schoolId });
+
+  if (subject) {
+    const bySubject = accounts.find((account) => account.accountId === subject) ?? null;
+    if (bySubject) {
+      return bySubject;
+    }
+  }
+
+  if (email) {
+    return accounts.find((account) => account.email === email) ?? null;
+  }
+
+  return null;
+}
+
+function isLocalAuthContextRevoked(authContext: AuthContext): boolean {
+  if (readAuthClaim(authContext, "authType") !== "local") {
+    return false;
+  }
+
+  const schoolId = normalizeSchoolId(authContext.schoolId);
+  if (!schoolId) {
+    return false;
+  }
+
+  const account = resolveLocalAuthAccountFromContext(authContext, schoolId);
+  if (!account) {
+    return true;
+  }
+
+  const issuedAt = Number(readAuthClaim(authContext, "iat"));
+  if (!Number.isFinite(issuedAt) || issuedAt <= 0) {
+    return false;
+  }
+
+  const invalidBeforeMs = Date.parse(account.sessionInvalidBeforeIso ?? "");
+  if (!Number.isFinite(invalidBeforeMs)) {
+    return false;
+  }
+
+  return issuedAt < Math.floor(invalidBeforeMs / 1000);
 }
 
 function withSuggestedOnboardingIdentity(req: Request, payload: Record<string, unknown>): Record<string, unknown> {
@@ -1874,6 +1949,15 @@ async function attachAuthContext(req: Request, _res: Response, next: NextFunctio
 
   const authContext = await verifyBearerToken(token);
   if (authContext) {
+    if (isLocalAuthContextRevoked(authContext)) {
+      trackSecurityEvent("unauthorizedHttp", {
+        reason: "revoked-local-session",
+        path: req.path,
+        method: req.method,
+      });
+      next();
+      return;
+    }
     scopedReq.authContext = authContext;
   }
 
@@ -2489,6 +2573,34 @@ app.post("/api/auth/logout", (_req, res) => {
   res.status(204).send();
 });
 
+app.post("/api/auth/logout-all", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const account = resolveAuthenticatedLocalAccount(req, schoolId);
+  if (!account) {
+    res.status(401).json({ error: "Authenticated account required" });
+    return;
+  }
+
+  const invalidateBeforeIso = new Date(Date.now() + 1000).toISOString();
+
+  // Touch account updatedAt to invalidate all previously issued local tokens.
+  saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: account.passwordHash,
+    passwordSalt: account.passwordSalt,
+    profilePhotoDataUrl: account.profilePhotoDataUrl,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+    sessionInvalidBeforeIso: invalidateBeforeIso,
+  }, { schoolId });
+
+  res.status(204).send();
+});
+
 app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
@@ -2572,6 +2684,7 @@ app.post("/api/auth/password-reset/confirm", authRateLimiter, requireApiKey, (re
     fullName: account.fullName,
     passwordHash: credentials.passwordHash,
     passwordSalt: credentials.passwordSalt,
+    profilePhotoDataUrl: account.profilePhotoDataUrl,
     role: account.role,
     status: account.status,
     lastLoginAtIso: account.lastLoginAtIso,
@@ -2605,16 +2718,28 @@ app.put("/api/auth/me", requireApiKey, (req, res) => {
   }
 
   const payload = (req.body ?? {}) as Record<string, unknown>;
+  const hasProfilePhotoUpdate = Object.prototype.hasOwnProperty.call(payload, "profilePhotoDataUrl");
   const nextEmail = sanitizeTextField(payload.email, 160).toLowerCase() || account.email;
   const nextFullName = sanitizeTextField(payload.fullName, 120) || account.fullName;
+  const nextProfilePhotoDataUrl = hasProfilePhotoUpdate
+    ? sanitizeProfilePhotoDataUrl(payload.profilePhotoDataUrl)
+    : undefined;
   const currentPassword = String(payload.currentPassword ?? "").trim();
   const newPassword = String(payload.newPassword ?? "").trim();
   const isEmailChange = nextEmail !== account.email;
   const isNameChange = nextFullName !== account.fullName;
+  const isPhotoChange = hasProfilePhotoUpdate
+    && nextProfilePhotoDataUrl !== ""
+    && (nextProfilePhotoDataUrl ?? undefined) !== (account.profilePhotoDataUrl ?? undefined);
   const isPasswordChange = Boolean(newPassword);
 
-  if (!isEmailChange && !isNameChange && !isPasswordChange) {
+  if (!isEmailChange && !isNameChange && !isPasswordChange && !isPhotoChange) {
     res.status(400).json({ error: "No account changes provided" });
+    return;
+  }
+
+  if (hasProfilePhotoUpdate && nextProfilePhotoDataUrl === "") {
+    res.status(400).json({ error: "Profile photo must be a valid png/jpeg/webp image" });
     return;
   }
 
@@ -2651,6 +2776,9 @@ app.put("/api/auth/me", requireApiKey, (req, res) => {
     fullName: nextFullName,
     passwordHash: nextCredentials.passwordHash,
     passwordSalt: nextCredentials.passwordSalt,
+    profilePhotoDataUrl: hasProfilePhotoUpdate
+      ? (nextProfilePhotoDataUrl === null ? undefined : nextProfilePhotoDataUrl)
+      : account.profilePhotoDataUrl,
     role: account.role,
     status: account.status,
     lastLoginAtIso: account.lastLoginAtIso,
@@ -2680,6 +2808,47 @@ app.put("/api/auth/me", requireApiKey, (req, res) => {
   });
 
   res.json(buildAuthSessionResponse(schoolId, savedAccount, savedMember, token));
+});
+
+app.delete("/api/auth/me", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const account = resolveAuthenticatedLocalAccount(req, schoolId);
+  if (!account) {
+    res.status(401).json({ error: "Authenticated account required" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const currentPassword = String(payload.currentPassword ?? "").trim();
+  const confirmation = String(payload.confirmation ?? "").trim().toUpperCase();
+
+  if (confirmation !== "DELETE") {
+    res.status(400).json({ error: "Type DELETE to confirm account deletion" });
+    return;
+  }
+
+  if (!verifyPassword(currentPassword, account.passwordSalt, account.passwordHash)) {
+    res.status(401).json({ error: "Current password is incorrect" });
+    return;
+  }
+
+  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+  if (currentMember?.role === "owner") {
+    const activeOwnerCount = getOrganizationMembersByScope({ schoolId })
+      .filter((member) => member.status === "active" && member.role === "owner")
+      .length;
+    if (activeOwnerCount <= 1) {
+      res.status(409).json({ error: "Add another active owner before deleting this owner account" });
+      return;
+    }
+  }
+
+  if (currentMember) {
+    deleteOrganizationMember(currentMember.memberId, { schoolId });
+  }
+  deleteLocalAuthAccount(account.accountId, { schoolId });
+
+  res.status(204).send();
 });
 
 function normalizeStaffRole(value: unknown, fallback: LocalAuthAccount["role"] = "coach"): LocalAuthAccount["role"] {

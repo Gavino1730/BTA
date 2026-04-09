@@ -808,10 +808,18 @@ describe("server auth integration", () => {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ currentPassword: "OldPass123!", newPassword: "NewPass456!" })
+      body: JSON.stringify({
+        currentPassword: "OldPass123!",
+        newPassword: "NewPass456!",
+        profilePhotoDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sVhM0sAAAAASUVORK5CYII=",
+      })
     });
 
     expect(correctPassRes.status).toBe(200);
+    const updateBody = await correctPassRes.json() as {
+      user?: { profilePhotoDataUrl?: string | null } | null;
+    };
+    expect(updateBody.user?.profilePhotoDataUrl).toContain("data:image/png;base64,");
 
     // New password works at login
     const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
@@ -821,5 +829,108 @@ describe("server auth integration", () => {
     });
 
     expect(loginRes.status).toBe(200);
+  });
+
+  it("revokes prior local tokens when signing out all sessions", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Revoke Coach",
+        email: "revoke-all@school.org",
+        password: "RevokePass123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      token?: string;
+      user?: { schoolId?: string };
+    };
+    const token = registerBody.token ?? "";
+    const schoolId = registerBody.user?.schoolId ?? "";
+    expect(token).toBeTruthy();
+    expect(schoolId).toBeTruthy();
+
+    const revokeRes = await fetch(`${API_BASE}/api/auth/logout-all`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "x-api-key": "rollout-api-key"
+      },
+    });
+    expect(revokeRes.status).toBe(204);
+
+    const staleProfileRes = await fetch(`${API_BASE}/api/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(staleProfileRes.status).toBe(401);
+
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        email: "revoke-all@school.org",
+        password: "RevokePass123!",
+      }),
+    });
+    expect(loginRes.status).toBe(200);
+  });
+
+  it("supports self-service account deletion with password confirmation", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Delete Coach",
+        email: "delete-me@school.org",
+        password: "DeletePass123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      token?: string;
+      user?: { schoolId?: string };
+    };
+    const token = registerBody.token ?? "";
+    const schoolId = registerBody.user?.schoolId ?? "";
+    expect(token).toBeTruthy();
+    expect(schoolId).toBeTruthy();
+
+    const deleteRes = await fetch(`${API_BASE}/api/auth/me`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "x-api-key": "rollout-api-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        currentPassword: "DeletePass123!",
+        confirmation: "DELETE",
+      }),
+    });
+    expect(deleteRes.status).toBe(204);
+
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        email: "delete-me@school.org",
+        password: "DeletePass123!",
+      }),
+    });
+    expect(loginRes.status).toBe(401);
   });
 });

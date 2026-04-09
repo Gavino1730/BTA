@@ -69,6 +69,24 @@ export function TermsPage({ onNavigate }: RoutedPageProps) {
   );
 }
 
+export function HelpCenterPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <RouteShellPage
+      title="Help Center"
+      subtitle="Quick-start guidance for coaches and operators during preproduction rollout."
+      bullets={[
+        "Game-day setup checklist and pairing steps",
+        "Live sync troubleshooting for operator and coach devices",
+        "Stat entry workflow and correction tips",
+      ]}
+      onPrimary={() => onNavigate("/support")}
+      primaryLabel="Open Support Hub"
+      onSecondary={() => onNavigate("/")}
+      secondaryLabel="Back to Home"
+    />
+  );
+}
+
 export function PrivacyPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
@@ -83,6 +101,24 @@ export function PrivacyPage({ onNavigate }: RoutedPageProps) {
       primaryLabel="Contact Support"
       onSecondary={() => onNavigate("/")}
       secondaryLabel="Back to Home"
+    />
+  );
+}
+
+export function DataDeletionPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <RouteShellPage
+      title="Data Deletion Request"
+      subtitle="Need account or team data removed? Submit a request and we will process it manually during preproduction."
+      bullets={[
+        "Include account email and school name in your request",
+        "Deletion requests are reviewed and confirmed by support",
+        "Pilot response target: 3-5 business days",
+      ]}
+      onPrimary={() => onNavigate("/contact")}
+      primaryLabel="Request Deletion"
+      onSecondary={() => onNavigate("/privacy")}
+      secondaryLabel="Back to Privacy"
     />
   );
 }

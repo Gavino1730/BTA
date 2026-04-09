@@ -3,8 +3,15 @@ export type AppRoute =
   | "login"
   | "forgot-password"
   | "reset-password"
+  | "not-found"
+  | "forbidden"
+  | "server-error"
+  | "offline"
+  | "session-expired"
+  | "help"
   | "terms"
   | "privacy"
+  | "data-deletion"
   | "support"
   | "contact"
   | "billing"
@@ -33,6 +40,7 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/signin": "/login",
   "/sign-in": "/login",
   "/home": "/",
+  "/docs": "/help",
 };
 
 export function canonicalizeCoachPath(pathname: string): string {
@@ -54,11 +62,32 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/reset-password") {
     return "reset-password";
   }
+  if (canonical === "/404") {
+    return "not-found";
+  }
+  if (canonical === "/403") {
+    return "forbidden";
+  }
+  if (canonical === "/500") {
+    return "server-error";
+  }
+  if (canonical === "/offline") {
+    return "offline";
+  }
+  if (canonical === "/session-expired") {
+    return "session-expired";
+  }
+  if (canonical === "/help") {
+    return "help";
+  }
   if (canonical === "/terms") {
     return "terms";
   }
   if (canonical === "/privacy") {
     return "privacy";
+  }
+  if (canonical === "/data-deletion") {
+    return "data-deletion";
   }
   if (canonical === "/support") {
     return "support";
@@ -99,5 +128,5 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/demo") {
     return "demo";
   }
-  return "live";
+  return "not-found";
 }

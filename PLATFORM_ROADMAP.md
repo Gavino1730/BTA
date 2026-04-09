@@ -16,17 +16,17 @@ Account Page (`/account`) - 🔄 Partial
 - ✅ Edit full name
 - ✅ Edit email
 - ✅ Change password (single form, calls `PUT /api/auth/me`)
-- 🚧 Sign out all sessions
-- 🚧 Delete account
-- 🚧 Profile photo
+- ✅ Sign out all sessions (`POST /api/auth/logout-all`)
+- ✅ Delete account (`DELETE /api/auth/me`) with password + DELETE confirmation
+- ✅ Profile photo upload (png/jpeg/webp avatar)
 - Note: organization profile is currently managed in Team Settings, not Account.
 
-Settings Page (`/settings`) - 🚧 Coming Soon
-- No dedicated user preferences page exists yet.
+Settings Page (`/settings`) - 🔄 Partial
+- Implemented: dedicated settings placeholder page.
 - Needed: theme, notifications, default school, timezone, display options, game defaults, sound toggles, privacy, device management.
 
-Billing Page (`/billing`) - 🚧 Placeholder Needed
-- Add placeholder with "Contact for pilot pricing" CTA.
+Billing Page (`/billing`) - 🔄 Partial
+- Implemented: billing placeholder with pilot pricing CTA.
 - Future fields: plan, price, renewal date, payment method, invoices, usage, cancel/upgrade, trial status.
 
 Team / Organization Management - 🔄 Partial
@@ -47,8 +47,8 @@ Support Page (`/support`) - 🔄 Partial
 Help Center / Docs (`/help` or `/docs`) - 🔄 Partial
 - ✅ iPad tips page in operator app
 - ✅ Tutorial overlays in both apps
-- ❌ Standalone coach help center page
-- ❌ Quick setup, game creation, operator sync, connection troubleshooting guides
+- ✅ Standalone coach help center page
+- 🔄 Quick setup, game creation, operator sync, connection troubleshooting guides
 
 Contact Page (`/contact`) - 🔄 Partial
 - Implemented: preproduction contact form and support/pilot intake surface.
@@ -56,10 +56,10 @@ Contact Page (`/contact`) - 🔄 Partial
 
 ## Section 3: Legal Pages
 
-- ❌ Terms of Service (`/terms`)
-- ❌ Privacy Policy (`/privacy`)
+- 🔄 Terms of Service (`/terms`) placeholder page shipped; counsel-reviewed final copy pending
+- 🔄 Privacy Policy (`/privacy`) placeholder page shipped; final policy language pending
 - ❌ Cookie notice/banner
-- ❌ Data deletion request (`/data-deletion`)
+- 🔄 Data deletion request (`/data-deletion`) preproduction request page shipped
 
 ## Section 4: Product / Marketing Pages
 
@@ -102,7 +102,8 @@ Empty States - 🔄 Partial
 - Empty-state CTA work has started, but complete coverage is still in progress.
 
 Error States - 🔄 Partial
-- ❌ Dedicated 404 / 403 / 500 / offline / unauthorized / expired-session pages
+- ✅ Dedicated 404 / 403 / 500 / offline / expired-session pages
+- 🚧 Unauthorized page variant and deeper route-specific recovery copy
 
 Loading States / Skeletons - 🔄 Partial
 - Basic loading indicators exist, but no shared skeleton system.
@@ -137,8 +138,8 @@ Audit Log UI - 🚧 Planned
 
 Public marketing footer - ✅ Done
 Authenticated app footer - 🔄 Partial
-- Implemented: support, contact, billing, terms, privacy links in authenticated shell.
-- Remaining: product/pricing/docs links, copyright and social/legal polish.
+- Implemented: help, support, contact, billing, terms, privacy, data deletion links in authenticated shell.
+- Remaining: product/pricing links, copyright and social/legal polish.
 
 ## Section 10: Premium Feel Pages
 
@@ -156,8 +157,23 @@ Existing:
 - ✅ `/`
 - ✅ `/demo`
 - ✅ `/login`
+- ✅ `/forgot-password`
+- ✅ `/reset-password`
 - ✅ `/setup`
 - ✅ `/account` (partial feature set)
+- ✅ `/terms`
+- ✅ `/privacy`
+- ✅ `/support`
+- ✅ `/contact`
+- ✅ `/billing`
+- ✅ `/settings`
+- ✅ `/help`
+- ✅ `/data-deletion`
+- ✅ `/404`
+- ✅ `/403`
+- ✅ `/500`
+- ✅ `/offline`
+- ✅ `/session-expired`
 - ✅ `/live`
 - ✅ `/stats`
 - ✅ `/stats/games`
@@ -167,26 +183,18 @@ Existing:
 - ✅ `/stats/settings`
 
 Missing / Needed:
-- P0: `/forgot-password`, `/reset-password`
-- P1: `/terms`, `/privacy`, `/support`, `/contact`, `/billing`, `/settings`
-- P2: `/features`, `/pricing`, `/about`, `/notifications`, `/org/settings`, `/admin`, `/help`, `/data-deletion`
+- P2: `/features`, `/pricing`, `/about`, `/notifications`, `/org/settings`, `/admin`, `/docs`
 - P3: `/changelog`, `/roadmap`
 
 ## Section 12: Build Order
 
-1. Forgot password + reset password (P0)
-2. Terms + Privacy pages
-3. Support + Contact pages
-4. Footer links update (public + app)
-5. Account completion (sign out all sessions, delete account, profile photo)
-6. Billing placeholder
-7. User settings page
-8. Error/loading/empty-state pass
-9. Notification center + recent activity
-10. Org settings standalone page
-11. Admin panel starter UI
-12. CSV/PDF export expansion
-13. Premium pages (features/pricing/about/changelog/roadmap)
+1. Loading/empty-state pass expansion across stats/live surfaces
+2. Notification center + recent activity
+3. Org settings standalone page
+4. Admin panel starter UI
+5. CSV/PDF export expansion
+6. Premium pages (features/pricing/about/changelog/roadmap)
+7. Dedicated docs center (`/docs`) and richer help content
 
 ## Notes
 

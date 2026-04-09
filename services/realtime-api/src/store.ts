@@ -117,11 +117,13 @@ export interface LocalAuthAccount {
   fullName: string;
   passwordHash: string;
   passwordSalt: string;
+  profilePhotoDataUrl?: string;
   role: "owner" | "coach" | "analyst" | "player";
   status: "active" | "invited";
   createdAtIso: string;
   updatedAtIso: string;
   lastLoginAtIso?: string;
+  sessionInvalidBeforeIso?: string;
 }
 
 export interface LocalAuthAccountInput {
@@ -131,9 +133,11 @@ export interface LocalAuthAccountInput {
   fullName?: string;
   passwordHash?: string;
   passwordSalt?: string;
+  profilePhotoDataUrl?: string;
   role?: LocalAuthAccount["role"];
   status?: LocalAuthAccount["status"];
   lastLoginAtIso?: string;
+  sessionInvalidBeforeIso?: string;
 }
 
 export interface CoachAiSettings {
@@ -920,11 +924,13 @@ function sanitizeLocalAuthAccount(
     fullName: trimProfileField(input.fullName ?? existing?.fullName, 120),
     passwordHash: trimProfileField(input.passwordHash ?? existing?.passwordHash, 240),
     passwordSalt: trimProfileField(input.passwordSalt ?? existing?.passwordSalt, 240),
+    profilePhotoDataUrl: trimProfileField(input.profilePhotoDataUrl ?? existing?.profilePhotoDataUrl, 350_000) || undefined,
     role,
     status,
     createdAtIso: existing?.createdAtIso ?? now,
     updatedAtIso: now,
     lastLoginAtIso: trimProfileField(input.lastLoginAtIso ?? existing?.lastLoginAtIso, 64) || undefined,
+    sessionInvalidBeforeIso: trimProfileField(input.sessionInvalidBeforeIso ?? existing?.sessionInvalidBeforeIso, 64) || undefined,
   };
 }
 
@@ -2569,6 +2575,20 @@ export function recordLocalAuthLogin(accountId: string, scope?: TenantScope): Lo
     persistLocalAuthAccountsForSchool(schoolId, localAuthAccountsBySchool.get(schoolId) ?? []);
   }
   return saved;
+}
+
+export function deleteLocalAuthAccount(accountId: string, scope?: TenantScope): boolean {
+  const schoolId = resolveSchoolId(scope);
+  const accounts = localAuthAccountsBySchool.get(schoolId) ?? [];
+  const next = accounts.filter((account) => account.accountId !== accountId);
+  if (next.length === accounts.length) {
+    return false;
+  }
+
+  setLocalAuthAccountsForSchool(schoolId, next);
+  persistSessions();
+  persistLocalAuthAccountsForSchool(schoolId, next);
+  return true;
 }
 
 export function getGameOverrideMap(schoolId: string): Map<string, GameEditOverride> {

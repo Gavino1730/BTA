@@ -1,8 +1,9 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, storeAuthSession } from "./platform.js";
 
 interface AccountPageProps {
   onSessionUpdated: (role: string | null) => void;
+  onSignOutRequested: () => void;
 }
 
 interface AuthMePayload {
@@ -12,18 +13,24 @@ interface AuthMePayload {
     role?: string;
     schoolId?: string;
     lastLoginAtIso?: string | null;
+    profilePhotoDataUrl?: string | null;
   } | null;
   token?: string | null;
   error?: string;
 }
 
-export function AccountPage({ onSessionUpdated }: AccountPageProps) {
+export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPageProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
+  const [profilePhotoDataUrl, setProfilePhotoDataUrl] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [saving, setSaving] = useState(false);
+  const [processingSessionAction, setProcessingSessionAction] = useState(false);
+  const [processingDelete, setProcessingDelete] = useState(false);
   const [status, setStatus] = useState("Loading account...");
 
   useEffect(() => {
@@ -41,6 +48,7 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
           setFullName(payload.user.fullName ?? "");
           setEmail(payload.user.email ?? "");
           setRole(payload.user.role ?? "");
+          setProfilePhotoDataUrl(payload.user.profilePhotoDataUrl ?? null);
           setStatus("Account loaded.");
           onSessionUpdated(payload.user.role ?? null);
         }
@@ -69,13 +77,21 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
         body: JSON.stringify({
           fullName: fullName.trim(),
           email: email.trim(),
+          profilePhotoDataUrl,
           currentPassword: currentPassword.trim() || undefined,
           newPassword: newPassword.trim() || undefined,
         }),
       });
 
       const payload = await response.json() as {
-        user?: { fullName?: string; email?: string; role?: string; schoolId?: string; lastLoginAtIso?: string | null } | null;
+        user?: {
+          fullName?: string;
+          email?: string;
+          role?: string;
+          schoolId?: string;
+          lastLoginAtIso?: string | null;
+          profilePhotoDataUrl?: string | null;
+        } | null;
         token?: string | null;
         error?: string;
       };
@@ -96,6 +112,7 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
       }
 
       setRole(payload.user.role ?? role);
+      setProfilePhotoDataUrl(payload.user.profilePhotoDataUrl ?? null);
       setCurrentPassword("");
       setNewPassword("");
       setStatus("Account updated.");
@@ -104,6 +121,111 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
       setStatus(error instanceof Error ? error.message : "Could not save account changes");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleProfilePhotoPicked(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    const validType = ["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type);
+    if (!validType) {
+      setStatus("Only PNG, JPEG, and WEBP profile photos are supported.");
+      return;
+    }
+
+    if (file.size > 256 * 1024) {
+      setStatus("Profile photo must be 256KB or smaller.");
+      return;
+    }
+
+    try {
+      const photoDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(new Error("Could not read selected image"));
+        reader.readAsDataURL(file);
+      });
+
+      setProfilePhotoDataUrl(photoDataUrl || null);
+      setStatus("Profile photo ready. Click Save to apply.");
+    } catch {
+      setStatus("Could not read selected image");
+    }
+  }
+
+  function clearProfilePhoto() {
+    setProfilePhotoDataUrl(null);
+    setStatus("Profile photo removed. Click Save to apply.");
+  }
+
+  async function handleSignOutAllSessions() {
+    const shouldContinue = window.confirm("Sign out all active sessions for this account? You will be returned to login.");
+    if (!shouldContinue) {
+      return;
+    }
+
+    setProcessingSessionAction(true);
+    setStatus("Signing out all sessions...");
+    try {
+      const response = await fetch(`${apiBase}/api/auth/logout-all`, {
+        method: "POST",
+        headers: apiKeyHeader(),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(payload.error || "Could not sign out all sessions");
+      }
+
+      clearAuthSession();
+      onSignOutRequested();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not sign out all sessions");
+    } finally {
+      setProcessingSessionAction(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (deleteConfirmation.trim().toUpperCase() !== "DELETE") {
+      setStatus("Type DELETE to confirm account deletion.");
+      return;
+    }
+    if (!deletePassword.trim()) {
+      setStatus("Current password is required to delete account.");
+      return;
+    }
+
+    const shouldDelete = window.confirm("Delete this account permanently? This cannot be undone.");
+    if (!shouldDelete) {
+      return;
+    }
+
+    setProcessingDelete(true);
+    setStatus("Deleting account...");
+    try {
+      const response = await fetch(`${apiBase}/api/auth/me`, {
+        method: "DELETE",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          currentPassword: deletePassword,
+          confirmation: deleteConfirmation,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(payload.error || "Could not delete account");
+      }
+
+      clearAuthSession();
+      onSignOutRequested();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete account");
+    } finally {
+      setProcessingDelete(false);
     }
   }
 
@@ -150,11 +272,39 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
         <div className="stats-page-card-head">
           <div>
             <h3>Profile Photo</h3>
-            <p className="settings-section-desc">Preproduction placeholder. Avatar upload is coming soon.</p>
+            <p className="settings-section-desc">Upload a PNG/JPEG/WEBP avatar (max 256KB).</p>
           </div>
         </div>
         <div className="account-photo-placeholder" role="img" aria-label="Profile photo placeholder">
-          <span>{(fullName.trim().charAt(0) || email.trim().charAt(0) || "C").toUpperCase()}</span>
+          {profilePhotoDataUrl ? (
+            <img src={profilePhotoDataUrl} alt="Profile avatar" className="account-photo-image" />
+          ) : (
+            <span>{(fullName.trim().charAt(0) || email.trim().charAt(0) || "C").toUpperCase()}</span>
+          )}
+        </div>
+        <div className="account-action-row">
+          <label className="shell-nav-link" style={{ cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>
+            Upload Photo
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style={{ display: "none" }}
+              disabled={saving || processingDelete || processingSessionAction}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                void handleProfilePhotoPicked(file);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="shell-nav-link"
+            onClick={clearProfilePhoto}
+            disabled={!profilePhotoDataUrl || saving || processingDelete || processingSessionAction}
+          >
+            Remove Photo
+          </button>
         </div>
       </section>
 
@@ -162,11 +312,18 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
         <div className="stats-page-card-head">
           <div>
             <h3>Session Controls</h3>
-            <p className="settings-section-desc">Sign out all sessions will be enabled before production launch.</p>
+            <p className="settings-section-desc">Invalidate all active sessions and require fresh sign-in on every device.</p>
           </div>
         </div>
         <div className="account-action-row">
-          <button type="button" className="shell-nav-link" disabled>Sign Out All Sessions (Coming Soon)</button>
+          <button
+            type="button"
+            className="shell-nav-link"
+            onClick={() => void handleSignOutAllSessions()}
+            disabled={processingSessionAction || saving || processingDelete}
+          >
+            {processingSessionAction ? "Signing Out..." : "Sign Out All Sessions"}
+          </button>
         </div>
       </section>
 
@@ -174,11 +331,37 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
         <div className="stats-page-card-head">
           <div>
             <h3>Danger Zone</h3>
-            <p className="settings-section-desc">Account deletion is intentionally disabled in preproduction.</p>
+            <p className="settings-section-desc">Delete your account by confirming with your current password.</p>
           </div>
         </div>
+        <div className="setup-grid" style={{ marginTop: "0.75rem" }}>
+          <label className="stats-filter-field">
+            <span>Type DELETE to confirm</span>
+            <input
+              value={deleteConfirmation}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              placeholder="DELETE"
+            />
+          </label>
+          <label className="stats-filter-field">
+            <span>Current Password</span>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={(event) => setDeletePassword(event.target.value)}
+              placeholder="Required"
+            />
+          </label>
+        </div>
         <div className="account-action-row">
-          <button type="button" className="shell-nav-link account-danger-btn" disabled>Delete Account (Coming Soon)</button>
+          <button
+            type="button"
+            className="shell-nav-link account-danger-btn"
+            onClick={() => void handleDeleteAccount()}
+            disabled={processingDelete || saving || processingSessionAction}
+          >
+            {processingDelete ? "Deleting..." : "Delete Account"}
+          </button>
         </div>
       </section>
     </div>
