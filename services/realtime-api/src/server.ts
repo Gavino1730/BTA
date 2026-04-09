@@ -1950,11 +1950,16 @@ async function attachAuthContext(req: Request, _res: Response, next: NextFunctio
   const authContext = await verifyBearerToken(token);
   if (authContext) {
     if (isLocalAuthContextRevoked(authContext)) {
-      trackSecurityEvent("unauthorizedHttp", {
-        reason: "revoked-local-session",
-        path: req.path,
-        method: req.method,
-      });
+      // Suppress security noise for the session-check endpoint — it is
+      // intentionally called with potentially-revoked tokens to discover
+      // that a session is no longer valid.
+      if (req.path !== "/api/auth/session") {
+        trackSecurityEvent("unauthorizedHttp", {
+          reason: "revoked-local-session",
+          path: req.path,
+          method: req.method,
+        });
+      }
       next();
       return;
     }
