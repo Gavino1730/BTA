@@ -638,8 +638,8 @@ export function UnifiedCoachApp() {
       {route === "stats-trends" && <TrendsPage />}
       {route === "stats-insights" && <AiInsightsPage />}
       {route === "stats-notifications" && <NotificationsPage onNavigate={navigate} />}
-      {route === "stats-settings" && <TeamSettingsPage />}
-      {route === "org-settings" && <TeamSettingsPage initialSection="profile" />}
+      {route === "stats-settings" && <TeamSettingsPage onNavigate={navigate} />}
+      {route === "org-settings" && <TeamSettingsPage initialSection="profile" onNavigate={navigate} />}
       {route === "account" && (
         <AccountPage
           onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))}

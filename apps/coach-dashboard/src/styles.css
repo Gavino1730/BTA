@@ -3682,6 +3682,27 @@ body {
   border-bottom-color: var(--accent, #2563eb);
 }
 
+.settings-member-password-input {
+  min-width: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--border-hi);
+  background: var(--surface-3, var(--surface-2));
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.38rem 0.6rem;
+}
+
+.settings-member-password-input:focus {
+  outline: none;
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22);
+}
+
+.settings-member-password-input::placeholder {
+  color: var(--text-muted);
+}
+
 .settings-member-email {
   display: block;
   font-size: 0.78rem;

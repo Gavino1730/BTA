@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode } from "./platform.js";
+import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
 
 type SettingsSection = "pairing" | "roster" | "profile" | "ai" | "members";
 
@@ -187,9 +187,10 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
 
 interface TeamSettingsPageProps {
   initialSection?: SettingsSection;
+  onNavigate?: (path: string) => void;
 }
 
-export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
+export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPageProps) {
   const currentSeason = String(new Date().getFullYear());
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
@@ -332,8 +333,12 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
 
   async function saveOrganizationProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!profile?.organizationName?.trim() || !profile.coachName?.trim() || !profile.coachEmail?.trim()) {
-      setStatus("Organization, coach name, and coach email are required.");
+    const authSession = readStoredAuthSession();
+    const coachName = profile?.coachName?.trim() || authSession?.fullName?.trim() || "";
+    const coachEmail = profile?.coachEmail?.trim() || authSession?.email?.trim().toLowerCase() || "";
+
+    if (!profile?.organizationName?.trim() || !coachName || !coachEmail) {
+      setStatus("Organization details are incomplete. Update your name and email in My Account first.");
       return;
     }
 
@@ -346,8 +351,8 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
         headers: apiKeyHeader(true),
         body: JSON.stringify({
           organizationName: profile.organizationName.trim(),
-          coachName: profile.coachName.trim(),
-          coachEmail: profile.coachEmail.trim(),
+          coachName,
+          coachEmail,
           teamName: team?.name?.trim() || profile.teamName?.trim() || undefined,
           season: team?.season?.trim() || profile.season?.trim() || undefined,
         }),
@@ -776,6 +781,11 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
       return;
     }
 
+    if (password.length < 8) {
+      setStatus("Temporary password must be at least 8 characters.");
+      return;
+    }
+
     setSaving(true);
     setStatus(`Setting password for ${fullName}...`);
 
@@ -838,7 +848,7 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
       <section className="stats-page-hero compact">
         <div>
           <h1>Settings</h1>
-          <p className="stats-page-subtitle">Manage your program, roster, AI context, and team access.</p>
+          <p className="stats-page-subtitle">Manage your program, team configuration, AI context, and access. Personal profile lives in My Account.</p>
         </div>
         <p className="stats-page-status">{status}</p>
       </section>
@@ -1129,7 +1139,7 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
             <div className="stats-page-card-head">
               <div>
                 <h3>Organization</h3>
-                <p className="settings-section-desc">Your school or athletic program details.</p>
+                <p className="settings-section-desc">Your school or athletic program details. Personal identity is managed separately.</p>
               </div>
               <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>Save</button>
             </div>
@@ -1142,23 +1152,18 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
                   placeholder="School or athletic program"
                 />
               </label>
-              <label className="stats-filter-field">
-                <span>Coach Name</span>
-                <input
-                  value={profile?.coachName ?? ""}
-                  onChange={(event) => setProfile((current) => ({ ...(current ?? {}), coachName: event.target.value }))}
-                  placeholder="Coach Name"
-                />
-              </label>
-              <label className="stats-filter-field">
-                <span>Coach Email</span>
-                <input
-                  type="email"
-                  value={profile?.coachEmail ?? ""}
-                  onChange={(event) => setProfile((current) => ({ ...(current ?? {}), coachEmail: event.target.value }))}
-                  placeholder="coach@school.org"
-                />
-              </label>
+            </div>
+            <div className="stats-page-subcopy" style={{ marginTop: "0.9rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+              <span>
+                Primary contact: <strong>{profile?.coachName?.trim() || readStoredAuthSession()?.fullName || "Not set"}</strong>
+                {" · "}
+                <strong>{profile?.coachEmail?.trim() || readStoredAuthSession()?.email || "No email"}</strong>
+              </span>
+              {onNavigate ? (
+                <button type="button" className="shell-nav-link" onClick={() => onNavigate("/account")}>
+                  Manage in My Account
+                </button>
+              ) : null}
             </div>
           </form>
 
@@ -1293,17 +1298,18 @@ export function TeamSettingsPage({ initialSection }: TeamSettingsPageProps) {
                     {member.role !== "player" && (
                       <input
                         type="password"
-                        className="settings-member-name-input"
+                        className="settings-member-password-input"
                         value={member.tempPassword}
                         onChange={(event) => setMembers((current) => current.map((entry) => entry.memberId === member.memberId ? { ...entry, tempPassword: event.target.value } : entry))}
-                        placeholder="Temporary password"
+                        placeholder="Temporary password (min 8)"
+                        aria-label={`Temporary password for ${member.fullName}`}
                         disabled={currentMember?.role !== "admin"}
                       />
                     )}
                     {currentMember?.role === "admin" && (
                       <>
                         {member.role !== "player" && (
-                          <button type="button" className="shell-nav-link" disabled={saving || !member.tempPassword.trim()} onClick={() => void setCoachPassword(member)}>
+                          <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void setCoachPassword(member)}>
                             Set Password
                           </button>
                         )}
