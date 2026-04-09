@@ -9,7 +9,6 @@ import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
-import { OrgSettingsPage } from "./OrgSettingsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
 import { BillingPage, DataDeletionPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
@@ -547,11 +546,13 @@ export function UnifiedCoachApp() {
   const playerView = isPlayerRole(currentRole);
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
+    const isActive = route === targetRoute || (targetRoute === "stats-settings" && route === "org-settings");
+
     return (
       <li key={targetRoute}>
         <button
           type="button"
-          className={route === targetRoute ? "nav-active" : ""}
+          className={isActive ? "nav-active" : ""}
           onClick={() => navigate(path)}
         >
           {label}
@@ -576,7 +577,6 @@ export function UnifiedCoachApp() {
             {navBtn("AI Insights", "stats-insights", "/stats/insights")}
             {navBtn("Notifications", "stats-notifications", "/stats/notifications")}
             {!playerView && navBtn("Settings", "stats-settings", "/stats/settings")}
-            {!playerView && navBtn("Org", "org-settings", "/org/settings")}
           </ul>
           <div className="coach-nav-actions">
             <ConnectedNavActions
@@ -639,7 +639,7 @@ export function UnifiedCoachApp() {
       {route === "stats-insights" && <AiInsightsPage />}
       {route === "stats-notifications" && <NotificationsPage onNavigate={navigate} />}
       {route === "stats-settings" && <TeamSettingsPage />}
-      {route === "org-settings" && <OrgSettingsPage onNavigate={navigate} />}
+      {route === "org-settings" && <TeamSettingsPage initialSection="profile" />}
       {route === "account" && (
         <AccountPage
           onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))}
