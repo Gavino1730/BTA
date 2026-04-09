@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startServer, stopServer } from "./server.js";
 
 /**
@@ -18,6 +18,10 @@ const API_KEY = process.env.BTA_API_KEY || "test-key-xyz";
 beforeEach(() => {
   // Reset env for each test
   delete process.env.BTA_API_KEY;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 async function resetSchool(schoolId: string): Promise<void> {
@@ -233,6 +237,56 @@ describe("operator pairing endpoints", () => {
     expect(body.setup.gameId).toBe("pairing-noscope-game");
     expect(typeof body.operatorToken).toBe("string");
     expect(body.operatorToken?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("reissues a fresh operator token when the iPad re-syncs the operator link", async () => {
+    await resetSchool("pairing-refresh-token");
+    vi.useFakeTimers();
+
+    vi.setSystemTime(new Date("2026-04-09T12:00:00.000Z"));
+    const putRes = await fetch(`${API_BASE}/api/operator-links/conn-refresh-1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-refresh-token" },
+      body: JSON.stringify({
+        gameId: "pairing-refresh-game",
+        myTeamId: "vc-varsity",
+        myTeamName: "Home Team Varsity",
+        opponentName: "Central Christian",
+        vcSide: "home"
+      })
+    });
+    expect(putRes.status).toBe(200);
+
+    const initialBody = await putRes.json() as { operatorToken?: string };
+    expect(typeof initialBody.operatorToken).toBe("string");
+
+    vi.setSystemTime(new Date("2026-04-09T12:00:02.000Z"));
+    const getRes = await fetch(`${API_BASE}/api/operator-links/conn-refresh-1`, {
+      headers: { "x-school-id": "pairing-refresh-token" }
+    });
+    expect(getRes.status).toBe(200);
+
+    const refreshedBody = await getRes.json() as { operatorToken?: string };
+    expect(typeof refreshedBody.operatorToken).toBe("string");
+    expect(refreshedBody.operatorToken).not.toBe(initialBody.operatorToken);
+
+    const createGameRes = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "pairing-refresh-token",
+        Authorization: `Bearer ${refreshedBody.operatorToken ?? ""}`,
+      },
+      body: JSON.stringify({
+        gameId: "pairing-refresh-game",
+        homeTeamId: "vc-varsity",
+        awayTeamId: "team-central-christian",
+        opponentName: "Central Christian",
+        opponentTeamId: "team-central-christian",
+      })
+    });
+
+    expect(createGameRes.status).toBe(201);
   });
 
   it("rejects operator link lookup without school scope when connection code is ambiguous", async () => {
