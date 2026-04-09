@@ -1,6 +1,14 @@
 export type AppRoute =
   | "marketing"
   | "login"
+  | "forgot-password"
+  | "reset-password"
+  | "terms"
+  | "privacy"
+  | "support"
+  | "contact"
+  | "billing"
+  | "settings"
   | "live"
   | "setup"
   | "account"
@@ -19,7 +27,7 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/trends": "/stats/trends",
   "/ai-insights": "/stats/insights",
   "/analysis": "/stats/insights",
-  "/settings": "/stats/settings",
+  "/team-settings": "/stats/settings",
   "/profile": "/account",
   "/onboarding": "/setup",
   "/signin": "/login",
@@ -39,6 +47,30 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/login") {
     return "login";
+  }
+  if (canonical === "/forgot-password") {
+    return "forgot-password";
+  }
+  if (canonical === "/reset-password") {
+    return "reset-password";
+  }
+  if (canonical === "/terms") {
+    return "terms";
+  }
+  if (canonical === "/privacy") {
+    return "privacy";
+  }
+  if (canonical === "/support") {
+    return "support";
+  }
+  if (canonical === "/contact") {
+    return "contact";
+  }
+  if (canonical === "/billing") {
+    return "billing";
+  }
+  if (canonical === "/settings") {
+    return "settings";
   }
   if (canonical === "/setup") {
     return "setup";

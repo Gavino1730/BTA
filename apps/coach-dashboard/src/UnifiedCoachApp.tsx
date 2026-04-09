@@ -3,11 +3,13 @@ import { AccountPage } from "./AccountPage.js";
 import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
 import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
+import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
+import { BillingPage, ContactPage, PrivacyPage, ResetPasswordPage, SupportPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -29,6 +31,22 @@ function isPlayerRole(role: string | null | undefined): boolean {
 }
 
 const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
+
+const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
+  "marketing",
+  "demo",
+  "login",
+  "forgot-password",
+  "reset-password",
+  "terms",
+  "privacy",
+  "support",
+  "contact",
+]);
+
+function isPublicRoute(route: AppRoute): boolean {
+  return PUBLIC_ROUTES.has(route);
+}
 
 interface SessionCheckPayload {
   authenticated?: boolean;
@@ -180,7 +198,7 @@ export function UnifiedCoachApp() {
   }, []);
 
   useEffect(() => {
-    if (route === "marketing" || route === "demo") {
+    if (isPublicRoute(route)) {
       return;
     }
 
@@ -241,7 +259,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route === "marketing" || route === "login" || route === "setup" || route === "demo") {
+    if (isPublicRoute(route) || route === "setup") {
       return;
     }
 
@@ -255,7 +273,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route !== "marketing" && route !== "login") {
+    if (route !== "marketing" && route !== "login" && route !== "forgot-password" && route !== "reset-password") {
       return;
     }
 
@@ -347,7 +365,18 @@ export function UnifiedCoachApp() {
   }, [currentRole, isAuthenticated, requiresSetup, route]);
 
   function navigate(nextPath: string) {
-    const isPublicPath = nextPath === "/" || nextPath === "/login" || nextPath === "/demo";
+    const publicPaths = new Set([
+      "/",
+      "/demo",
+      "/login",
+      "/forgot-password",
+      "/reset-password",
+      "/terms",
+      "/privacy",
+      "/support",
+      "/contact",
+    ]);
+    const isPublicPath = publicPaths.has(nextPath);
 
     if (requiresSetup && !isAuthenticated && !isPublicPath && nextPath !== "/setup") {
       nextPath = "/login";
@@ -381,9 +410,39 @@ export function UnifiedCoachApp() {
       <LoginPage
         onBackHome={() => navigate("/")}
         onCreateAccount={() => navigate("/setup")}
+        onForgotPassword={() => navigate("/forgot-password")}
         onSuccess={handleAuthSuccess}
       />
     );
+  }
+
+  if (route === "forgot-password") {
+    return (
+      <ForgotPasswordPage
+        onBackHome={() => navigate("/")}
+        onBackLogin={() => navigate("/login")}
+      />
+    );
+  }
+
+  if (route === "reset-password") {
+    return <ResetPasswordPage onNavigate={navigate} />;
+  }
+
+  if (route === "terms") {
+    return <TermsPage onNavigate={navigate} />;
+  }
+
+  if (route === "privacy") {
+    return <PrivacyPage onNavigate={navigate} />;
+  }
+
+  if (route === "support") {
+    return <SupportPage onNavigate={navigate} />;
+  }
+
+  if (route === "contact") {
+    return <ContactPage onNavigate={navigate} />;
   }
 
   if (requiresSetup === null) {
@@ -503,6 +562,8 @@ export function UnifiedCoachApp() {
       {route === "stats-insights" && <AiInsightsPage />}
       {route === "stats-settings" && <TeamSettingsPage />}
       {route === "account" && <AccountPage onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))} />}
+      {route === "billing" && <BillingPage onNavigate={navigate} />}
+      {route === "settings" && <UserSettingsPage onNavigate={navigate} />}
     </GameSessionProvider>
   );
 }

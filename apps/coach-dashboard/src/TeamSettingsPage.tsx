@@ -176,6 +176,7 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
 }
 
 export function TeamSettingsPage() {
+  const currentSeason = String(new Date().getFullYear());
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
   const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
@@ -1110,7 +1111,7 @@ export function TeamSettingsPage() {
                 <input
                   value={profile?.organizationName ?? ""}
                   onChange={(event) => setProfile((current) => ({ ...(current ?? {}), organizationName: event.target.value }))}
-                  placeholder="Your School Athletics"
+                  placeholder="School or athletic program"
                 />
               </label>
               <label className="stats-filter-field">
@@ -1147,7 +1148,7 @@ export function TeamSettingsPage() {
                 <input
                   value={team?.name ?? ""}
                   onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), name: event.target.value }))}
-                  placeholder="Varsity Boys Basketball"
+                  placeholder="Varsity basketball"
                 />
               </label>
               <label className="stats-filter-field">
@@ -1155,7 +1156,7 @@ export function TeamSettingsPage() {
                 <input
                   value={team?.abbreviation ?? ""}
                   onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), abbreviation: event.target.value.toUpperCase().slice(0, 12) }))}
-                  placeholder="VC"
+                  placeholder="TEAM"
                 />
               </label>
               <label className="stats-filter-field">
@@ -1163,7 +1164,7 @@ export function TeamSettingsPage() {
                 <input
                   value={team?.season ?? ""}
                   onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), season: event.target.value }))}
-                  placeholder="2026"
+                  placeholder={currentSeason}
                 />
               </label>
               <label className="stats-filter-field setup-color-field">

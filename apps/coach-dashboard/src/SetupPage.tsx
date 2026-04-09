@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, clearAuthSession, formatSchoolNameFromId, resolveActiveSchoolId, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, storeAuthSession } from "./platform.js";
 
 interface SetupPageProps {
   onComplete: () => void;
@@ -58,13 +58,14 @@ function buildEmptyRosterRow(id: number): RosterRow {
 }
 
 export function SetupPage({ onComplete }: SetupPageProps) {
-  const schoolPlaceholder = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
+  const currentSeason = String(new Date().getFullYear());
+  const schoolPlaceholder = "School or program name";
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
   const [coachEmail, setCoachEmail] = useState("");
   const [teamName, setTeamName] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
-  const [season, setSeason] = useState(String(new Date().getFullYear()));
+  const [season, setSeason] = useState(currentSeason);
   const [teamColor, setTeamColor] = useState("#1d4ed8");
   const [rows, setRows] = useState<RosterRow[]>([buildEmptyRosterRow(1)]);
   const [status, setStatus] = useState("Create your account and complete setup to unlock the unified coach workspace.");
@@ -118,7 +119,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           setCoachName((current) => current || account.primaryCoach?.fullName || suggestedCoach?.coachName || "");
           setCoachEmail((current) => current || account.primaryCoach?.email || suggestedCoach?.coachEmail || "");
           setTeamName(account.organization?.teamName ?? "");
-          setSeason(account.organization?.season ?? String(new Date().getFullYear()));
+          setSeason(account.organization?.season ?? currentSeason);
           if (account.primaryCoach?.email && !authSession) {
             setAuthMode("login");
             setAuthStatus("Sign in with your coach email and password to continue onboarding.");
@@ -364,11 +365,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                 <div className="setup-grid">
                   <label className="stats-filter-field">
                     <span>Coach Name</span>
-                    <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Coach Taylor" />
+                    <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Head coach name" />
                   </label>
                   <label className="stats-filter-field">
                     <span>Coach Email</span>
-                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
+                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.edu" />
                   </label>
                   <label className="stats-filter-field">
                     <span>Password</span>
@@ -435,19 +436,19 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             </label>
             <label className="stats-filter-field">
               <span>Team Name *</span>
-              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Boys Varsity" required />
+              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Varsity basketball" required />
             </label>
             <label className="stats-filter-field">
               <span>Team Abbreviation</span>
               <input
                 value={teamAbbreviation}
                 onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
-                placeholder="VCBV"
+                placeholder="TEAM"
               />
             </label>
             <label className="stats-filter-field">
               <span>Season</span>
-              <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="2026" />
+              <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder={currentSeason} />
             </label>
             <label className="stats-filter-field setup-color-field">
               <span>Team Color</span>

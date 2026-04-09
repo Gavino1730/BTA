@@ -40,6 +40,7 @@ Priority keys:
 - [!] P0 Set DATABASE_URL to durable Postgres (Supabase) for production.
   - Source: DEPLOYMENT.md, HOSTING_SETUP.md
   - Notes: file-backed persistence is dev-only.
+  - April 8, 2026 note: database was rebuilt; re-verify connection string, migration state, and persistence after restart before marking complete.
 - [ ] P0 Complete and sign off roster sync checklist end-to-end.
   - Source: existing backlog
   - Current gap: no formal full-flow verification for coach<->operator sync.

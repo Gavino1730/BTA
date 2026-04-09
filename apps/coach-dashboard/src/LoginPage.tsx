@@ -5,6 +5,7 @@ interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
   onBackHome: () => void;
   onCreateAccount: () => void;
+  onForgotPassword: () => void;
 }
 
 interface AuthUser {
@@ -26,7 +27,7 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageProps) {
+export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword }: LoginPageProps) {
   const [coachEmail, setCoachEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
@@ -156,6 +157,10 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount }: LoginPageP
               {busy ? "Signing In..." : "Sign In"}
             </button>
           </form>
+
+          <div style={{ marginTop: "0.65rem" }}>
+            <button type="button" className="shell-nav-link" onClick={onForgotPassword}>Forgot password?</button>
+          </div>
 
           <p className="stats-page-status">{status}</p>
         </section>

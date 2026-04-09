@@ -1,13 +1,9 @@
 /**
- * Full-game chaos E2E test.
- * Exercises every operator button and flow in random order each run.
- * Covers: all shot types, all stat types (with every sub-type), substitutions,
- * timeouts, assists (multi-step), chain-assist, period advancement, possession
- * toggle, event editing & deletion, undo, game-summary modal, roster quick-
- * actions panel, and end-game / post-game screen.
- *
- * Prints the RNG seed so any failing run can be reproduced:
- *   PW_RNG_SEED=<seed> npx playwright test e2e/full-game-chaos.spec.ts
+ * Full-game logical E2E test.
+ * Exercises the operator app in a realistic, ordered game flow through Q1-Q4
+ * while explicitly touching scoring, stats, fouls, turnovers, substitutions,
+ * timeouts, possession, clock controls, feed edit/delete, summary, undo,
+ * player quick actions, and end-game flow.
  */
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 
@@ -55,8 +51,8 @@ function uniqueSeed(): string { return Date.now().toString(36); }
 
 async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedResult> {
   const seed = uniqueSeed();
-  const schoolId = `chaos-${seed}`;
-  const coachEmail = `chaos.${seed}@bta.local`;
+  const schoolId = `logical-${seed}`;
+  const coachEmail = `logical.${seed}@bta.local`;
   const password = "Secret123!";
 
   const registerRes = await api.post(`${API_BASE}/api/auth/register`, {
@@ -101,17 +97,17 @@ async function resetSchoolData(api: APIRequestContext, token: string, schoolId: 
   const headers = { Authorization: `Bearer ${token}`, "x-school-id": schoolId };
   const adminResetRes = await api.delete(`${API_BASE}/admin/reset`, { headers });
   if (adminResetRes.ok()) {
-    console.log(`[chaos] cleanup complete via /admin/reset for school: ${schoolId}`);
+    console.log(`[logical] cleanup complete via /admin/reset for school: ${schoolId}`);
     return;
   }
 
   const fallbackResetRes = await api.post(`${API_BASE}/api/reset`, { headers });
   if (fallbackResetRes.ok()) {
-    console.log(`[chaos] cleanup complete via /api/reset for school: ${schoolId}`);
+    console.log(`[logical] cleanup complete via /api/reset for school: ${schoolId}`);
     return;
   }
 
-  console.warn(`[chaos] cleanup skipped; reset endpoints unavailable (admin=${adminResetRes.status()}, api=${fallbackResetRes.status()}) for school: ${schoolId}`);
+  console.warn(`[logical] cleanup skipped; reset endpoints unavailable (admin=${adminResetRes.status()}, api=${fallbackResetRes.status()}) for school: ${schoolId}`);
 }
 
 // ── Modal / overlay helpers ───────────────────────────────────────────────────
@@ -392,6 +388,43 @@ async function advancePeriod(page: Page, label: string): Promise<void> {
   }
 }
 
+async function setClockViaNumpad(page: Page, keySequence: string): Promise<void> {
+  const row = page.locator(".clock-row");
+  const display = row.locator(".clock-inp-display").first();
+  if (!await display.isVisible({ timeout: 1500 }).catch(() => false)) return;
+  await display.click({ timeout: 3000 }).catch(() => undefined);
+
+  for (const key of keySequence.split("")) {
+    const keyBtn = row.locator(".clock-numpad-key").filter({ hasText: key }).first();
+    if (await keyBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await keyBtn.click({ timeout: 2000 }).catch(() => undefined);
+    }
+  }
+
+  const setBtn = row.locator(".clock-numpad-set").first();
+  if (await setBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await setBtn.click({ timeout: 2000 }).catch(() => undefined);
+  }
+}
+
+async function clickClockButton(page: Page, label: string): Promise<void> {
+  const row = page.locator(".clock-row");
+  const btn = row.getByRole("button", { name: label }).first();
+  if (await btn.isVisible({ timeout: 1200 }).catch(() => false)) {
+    await btn.click({ timeout: 3000 }).catch(() => undefined);
+  }
+}
+
+async function openClockAdmin(page: Page): Promise<void> {
+  const toggle = page.locator(".clock-admin-toggle").first();
+  if (await toggle.isVisible({ timeout: 1200 }).catch(() => false)) {
+    const txt = (await toggle.innerText().catch(() => "")).toLowerCase();
+    if (txt.includes("clock settings") && txt.includes("▼")) {
+      await toggle.click({ timeout: 2000 }).catch(() => undefined);
+    }
+  }
+}
+
 async function editFirstFeedEvent(page: Page): Promise<void> {
   await clearModals(page);
   const items = page.locator(".feed-item");
@@ -481,9 +514,9 @@ async function runAction(page: Page, kind: ActionKind, rng: Rng): Promise<void> 
 // ── Test ──────────────────────────────────────────────────────────────────────
 test.setTimeout(240_000);
 
-test("randomized full-game chaos — all features, all buttons", async ({ browser, request }) => {
+test("logical full-game flow — all quarters and core features", async ({ browser, request }) => {
   const rng = new Rng();
-  console.log(`\n[chaos] RNG seed: ${rng.seed}  (set PW_RNG_SEED=${rng.seed} to reproduce)\n`);
+  console.log(`\n[logical] RNG seed: ${rng.seed}  (set PW_RNG_SEED=${rng.seed} to reproduce)\n`);
 
   // ── 1. Seed account + roster ───────────────────────────────────────────────
   const seed = await seedCoachAccountAndRoster(request);
@@ -582,68 +615,102 @@ test("randomized full-game chaos — all features, all buttons", async ({ browse
   await opPage.getByRole("button", { name: "Start Game" }).click();
   await expect(opPage.locator(".classic-score-grid")).toBeVisible({ timeout: 10_000 });
 
-  // ── 4. Q1 — 14 random actions ──────────────────────────────────────────────
-  console.log("[chaos] Q1 begins");
-  for (let i = 0; i < 14; i++) {
-    const kind = rng.weighted(ACTION_WEIGHTS);
-    console.log(`  Q1 action ${i + 1}: ${kind}`);
-    await runAction(opPage, kind, rng);
-    if (i === 4)  await doTimeout(opPage, true,  rng.bool() ? "short" : "full");
-    if (i === 9)  await doTimeout(opPage, false, "short");
-    if (i === 11) await doSub(opPage);
-  }
-
-  // ── 5. Q2 — 14 random actions + edit + delete + summary + undo ────────────
-  await advancePeriod(opPage, "Q2");
+  // ── 4. Q1 — opening possessions, scoring, fouls, quick actions, short TO ──
+  console.log("[logical] Q1 begins");
   await clickPossession(opPage, rng);
-  console.log("[chaos] Q2 begins");
-  for (let i = 0; i < 14; i++) {
-    const kind = rng.weighted(ACTION_WEIGHTS);
-    console.log(`  Q2 action ${i + 1}: ${kind}`);
-    await runAction(opPage, kind, rng);
-    if (i === 3)  await doSub(opPage);
-    if (i === 7)  await doTimeout(opPage, true, "full");
-    if (i === 11) { await doSub(opPage); await doSub(opPage); } // Double sub
+  await setClockViaNumpad(opPage, "800");
+  await clickClockButton(opPage, "Start");
+  await clickClockButton(opPage, "Stop");
+
+  await doShot(opPage, 2, true, rng);
+  await doShot(opPage, 2, false, rng);
+  await doShot(opPage, 3, true, rng);
+  await doShot(opPage, 3, false, rng);
+  await doFreeThrow(opPage, true, rng);
+  await doFreeThrow(opPage, false, rng);
+  await doStat(opPage, "DEF");
+  await doStat(opPage, "OFF");
+  await doStat(opPage, "foul", "Personal");
+  await doStat(opPage, "to", "Bad Pass");
+  await doAssistFlow(opPage);
+  await doSub(opPage);
+  await doTimeout(opPage, true, "short");
+  await doTimeout(opPage, false, "short");
+
+  await doQuickRosterAction(opPage, "2PT ✓", rng);
+  await doQuickRosterAction(opPage, "2PT ✗", rng);
+  await doQuickRosterAction(opPage, "3PT ✓", rng);
+  await doQuickRosterAction(opPage, "3PT ✗", rng);
+  await doQuickRosterAction(opPage, "FT", rng);
+
+  // ── 5. Q2 — full TO, clock tools, feed edit/delete, summary, undo ─────────
+  await advancePeriod(opPage, "Q2");
+  console.log("[logical] Q2 begins");
+  await clickPossession(opPage, rng);
+  await setClockViaNumpad(opPage, "600");
+  await clickClockButton(opPage, "Start");
+  await clickClockButton(opPage, "Stop");
+  await clickClockButton(opPage, "+1s");
+  await clickClockButton(opPage, "-1s");
+  await clickClockButton(opPage, "Reset");
+  await openClockAdmin(opPage);
+  await clickClockButton(opPage, "Hide Clock");
+  const showClock = opPage.locator(".clock-show-btn").first();
+  if (await showClock.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await showClock.click({ timeout: 2000 }).catch(() => undefined);
   }
-  // Edit, delete, summary, undo mid-game
+  await openClockAdmin(opPage);
+  await clickClockButton(opPage, "Disable Clock");
+  await clickClockButton(opPage, "Enable Clock");
+
+  await doTimeout(opPage, true, "full");
+  await doTimeout(opPage, false, "full");
+  await doStat(opPage, "foul", "Shooting");
+  await doStat(opPage, "to", "Travel");
+  await doStat(opPage, "stl");
+  await doStat(opPage, "blk");
+  await doQuickRosterAction(opPage, "REB", rng);
+  await doQuickRosterAction(opPage, "FOUL", rng);
+  await doQuickRosterAction(opPage, "TO", rng);
+  await doQuickRosterAction(opPage, "STL", rng);
+  await doQuickRosterAction(opPage, "ASST", rng);
+  await doQuickRosterAction(opPage, "BLK", rng);
+  await doQuickRosterAction(opPage, "SUB", rng);
+
   await editFirstFeedEvent(opPage);
   await deleteOneFeedEvent(opPage);
   await openCloseSummary(opPage);
   await doUndo(opPage);
-  await clickPossession(opPage, rng);
 
-  // ── 6. Q3 — 14 random actions ──────────────────────────────────────────────
+  // ── 6. Q3 — remaining foul/turnover types + subs/assists and possession ───
   await advancePeriod(opPage, "Q3");
-  console.log("[chaos] Q3 begins");
-  for (let i = 0; i < 14; i++) {
-    const kind = rng.weighted(ACTION_WEIGHTS);
-    console.log(`  Q3 action ${i + 1}: ${kind}`);
-    await runAction(opPage, kind, rng);
-    if (i === 6)  await doTimeout(opPage, rng.bool() ? true : false, "full");
-    if (i === 10) await doSub(opPage);
-  }
-
-  // ── 7. Q4 — 14 random actions + all remaining foul/TO subtypes ────────────
-  await advancePeriod(opPage, "Q4");
+  console.log("[logical] Q3 begins");
   await clickPossession(opPage, rng);
-  console.log("[chaos] Q4 begins");
-  // Force all foul types once each
-  for (const ft of FOUL_TYPE_LABELS) {
-    await doStat(opPage, "foul", ft);
-  }
-  // Force all turnover types once each
-  for (const tt of TURNOVER_TYPE_LABELS) {
-    await doStat(opPage, "to", tt);
-  }
-  // Continue with random actions
-  for (let i = 0; i < 10; i++) {
-    const kind = rng.weighted(ACTION_WEIGHTS);
-    console.log(`  Q4 action ${i + 1}: ${kind}`);
-    await runAction(opPage, kind, rng);
-    if (i === 5) await doTimeout(opPage, false, "full");
-    if (i === 8) await doUndo(opPage);
-  }
+  await doStat(opPage, "foul", "Offensive");
+  await doStat(opPage, "foul", "Technical");
+  await doStat(opPage, "to", "Double Dribble");
+  await doStat(opPage, "to", "Out of Bounds");
+  await doShot(opPage, 2, true, rng);
+  await doShot(opPage, 3, true, rng);
+  await doFreeThrow(opPage, true, rng);
+  await doAssistFlow(opPage);
   await doSub(opPage);
+
+  // ── 7. Q4 — final feature sweep and game closeout actions ─────────────────
+  await advancePeriod(opPage, "Q4");
+  console.log("[logical] Q4 begins");
+  await clickPossession(opPage, rng);
+  await doStat(opPage, "foul", "Flagrant");
+  await doStat(opPage, "to", "Offensive Foul");
+  await doStat(opPage, "to", "Steal");
+  await doStat(opPage, "to", "Other");
+  await doShot(opPage, 2, true, rng);
+  await doShot(opPage, 2, false, rng);
+  await doShot(opPage, 3, true, rng);
+  await doFreeThrow(opPage, false, rng);
+  await doStat(opPage, "DEF");
+  await doStat(opPage, "OFF");
+  await doUndo(opPage);
 
   // ── 8. Resolve game ID candidates and assert events before ending game ─────
   const gameIdCandidates = new Set<string>();
@@ -687,11 +754,11 @@ test("randomized full-game chaos — all features, all buttons", async ({ browse
 
   // Operator local setup uses this as a fallback gameId in this test.
   gameIdCandidates.add("game-chaos-1");
-  console.log(`[chaos] gameId candidates: ${Array.from(gameIdCandidates).join(", ")}`);
+  console.log(`[logical] gameId candidates: ${Array.from(gameIdCandidates).join(", ")}`);
 
   // ── 9. Assert heavy event volume in UI and attempt API verification ───────
   const feedCount = await opPage.locator(".feed-item").count();
-  console.log(`[chaos] feed item count before end-game: ${feedCount}`);
+  console.log(`[logical] feed item count before end-game: ${feedCount}`);
   expect(feedCount).toBeGreaterThan(0);
 
   // API verification is best-effort because some environments keep operator
@@ -724,11 +791,11 @@ test("randomized full-game chaos — all features, all buttons", async ({ browse
 
   if (resolvedEvents !== null) {
     const events = resolvedEvents;
-    console.log(`[chaos] resolved gameId: ${resolvedGameId}`);
-    console.log(`[chaos] total events in API: ${events.length}`);
+    console.log(`[logical] resolved gameId: ${resolvedGameId}`);
+    console.log(`[logical] total events in API: ${events.length}`);
     expect(events.length).toBeGreaterThan(30);
   } else {
-    console.warn(`[chaos] API events check skipped. Could not resolve gameId. Statuses: ${JSON.stringify(statusByGameId)}`);
+    console.warn(`[logical] API events check skipped. Could not resolve gameId. Statuses: ${JSON.stringify(statusByGameId)}`);
   }
 
   // ── 10. End game ───────────────────────────────────────────────────────────

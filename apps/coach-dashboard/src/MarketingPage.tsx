@@ -340,6 +340,7 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           <nav className="mkt-nav-links" aria-label="Site navigation">
             <a href="#features">Features</a>
             <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
+            <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           </nav>
           <div className="mkt-nav-actions">
             <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/login")}>Coach Login</button>
@@ -516,6 +517,10 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           <nav className="mkt-footer-links">
             <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
             <button type="button" onClick={() => onNavigate("/login")}>Sign In</button>
+            <button type="button" onClick={() => onNavigate("/support")}>Support</button>
+            <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
+            <button type="button" onClick={() => onNavigate("/terms")}>Terms</button>
+            <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
           </nav>
         </div>
       </footer>

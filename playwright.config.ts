@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
+const ENV = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+const HEADED = ENV.PW_HEADED === "1";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -9,9 +12,11 @@ export default defineConfig({
     timeout: 20_000,
   },
   use: {
-    headless: process.env.PW_HEADED !== "1",
+    headless: !HEADED,
+    viewport: HEADED ? null : { width: 1280, height: 720 },
     launchOptions: {
-      slowMo: process.env.PW_SLOWMO ? parseInt(process.env.PW_SLOWMO, 10) : 0,
+      slowMo: ENV.PW_SLOWMO ? parseInt(ENV.PW_SLOWMO, 10) : 0,
+      args: HEADED ? ["--start-maximized"] : [],
     },
     trace: "on-first-retry",
     screenshot: "only-on-failure",
