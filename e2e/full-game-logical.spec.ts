@@ -192,12 +192,12 @@ async function handleChainAssist(page: Page, rng: Rng): Promise<void> {
 
 // ── Operator action primitives ────────────────────────────────────────────────
 
-async function doShot(page: Page, points: 2 | 3, made: boolean, rng: Rng): Promise<void> {
+async function doShot(page: Page, points: 2 | 3, made: boolean, rng: Rng, team: "my" | "opp" = "my"): Promise<void> {
   await clearModals(page);
   await dismissAnyChainPrompt(page);
   const btns = page.locator(".classic-score-grid button").filter({ hasText: `${points}pt` });
   if (await btns.count() === 0) return;
-  await btns.first().click({ timeout: 5000 });
+  await btns.nth(team === "my" ? 0 : 1).click({ timeout: 5000 });
   const toggle = page.getByRole("button", { name: made ? "Made" : "Miss" }).first();
   if (await toggle.isVisible({ timeout: 1500 }).catch(() => false)) await toggle.click({ timeout: 3000 }).catch(() => undefined);
   const picked = await pickFirstPlayerInModal(page);
@@ -206,12 +206,12 @@ async function doShot(page: Page, points: 2 | 3, made: boolean, rng: Rng): Promi
   await clearModals(page);
 }
 
-async function doFreeThrow(page: Page, made: boolean, rng: Rng): Promise<void> {
+async function doFreeThrow(page: Page, made: boolean, rng: Rng, team: "my" | "opp" = "my"): Promise<void> {
   await clearModals(page);
   await dismissAnyChainPrompt(page);
   const btns = page.locator(".classic-score-grid button").filter({ hasText: "1pt" });
   if (await btns.count() === 0) return;
-  await btns.first().click({ timeout: 5000 });
+  await btns.nth(team === "my" ? 0 : 1).click({ timeout: 5000 });
   const toggle = page.getByRole("button", { name: made ? "Made" : "Miss" }).first();
   if (await toggle.isVisible({ timeout: 1500 }).catch(() => false)) await toggle.click({ timeout: 3000 }).catch(() => undefined);
   const picked = await pickFirstPlayerInModal(page);
@@ -432,6 +432,29 @@ async function getMyScore(page: Page): Promise<number> {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function getOppScore(page: Page): Promise<number> {
+  const scoreText = await page.locator(".scoreboard-team-card-opp .score").first().innerText().catch(() => "0");
+  const n = Number(scoreText.trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function getCoachScores(page: Page): Promise<{ home: number; away: number }> {
+  const values = await page.locator(".score-item .score").allInnerTexts().catch(() => [] as string[]);
+  const nums = values
+    .map((txt) => Number(txt.trim()))
+    .filter((n) => Number.isFinite(n));
+  return {
+    home: nums[0] ?? 0,
+    away: nums[1] ?? 0,
+  };
+}
+
+async function getCoachOperatorsOnline(page: Page): Promise<number> {
+  const txt = await page.locator(".operators-online-indicator").first().innerText().catch(() => "");
+  const match = txt.match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
 async function ensureOnCourtPlayers(page: Page): Promise<void> {
   await clearModals(page);
   const twoPointButtons = page.locator(".classic-score-grid button", { hasText: "2pt" });
@@ -460,6 +483,125 @@ async function runPossession(page: Page, ms: number, action: () => Promise<void>
   await action();
 }
 
+type TeamSide = "my" | "opp";
+
+function flipSide(side: TeamSide): TeamSide {
+  return side === "my" ? "opp" : "my";
+}
+
+function samplePossessionRunMs(rng: Rng): number {
+  // Real possessions are typically 5-20s, with occasional faster/slower bursts.
+  // Keep runtime practical for E2E by scaling down wall-clock delay.
+  const gameSeconds = rng.weighted<number>([
+    { v: rng.int(3, 8), w: 20 },
+    { v: rng.int(8, 20), w: 65 },
+    { v: rng.int(20, 30), w: 15 },
+  ]);
+  const runtimeScale = Math.max(0.1, Math.min(0.3, Math.max(0.1, LOGICAL_SIM_MINUTES / 8)));
+  return Math.max(400, Math.floor(gameSeconds * 1000 * runtimeScale));
+}
+
+async function runRealisticPossession(
+  page: Page,
+  rng: Rng,
+  offense: TeamSide,
+  options?: { lateGame?: boolean }
+): Promise<TeamSide> {
+  await setPossessionSide(page, offense);
+
+  let nextPossession = offense;
+  const runMs = samplePossessionRunMs(rng);
+
+  await runPossession(page, runMs, async () => {
+    const outcome = rng.weighted<"miss" | "make" | "turnover" | "foul">([
+      { v: "miss", w: 45 },
+      { v: "make", w: 35 },
+      { v: "turnover", w: 15 },
+      { v: "foul", w: 5 },
+    ]);
+
+    if (outcome === "make") {
+      const points = rng.bool(0.72) ? 2 : 3;
+      if (offense === "my") {
+        await scoreAndVerify(page, points as 2 | 3, rng);
+      } else {
+        await scoreAndVerifyOpp(page, points as 2 | 3, rng);
+      }
+      nextPossession = flipSide(offense);
+    }
+
+    if (outcome === "miss") {
+      const points = rng.bool(0.72) ? 2 : 3;
+      await doShot(page, points as 2 | 3, false, rng, offense);
+      const offensiveRebound = rng.bool(0.30);
+      await doStat(page, offensiveRebound ? "OFF" : "DEF");
+      nextPossession = offensiveRebound ? offense : flipSide(offense);
+    }
+
+    if (outcome === "turnover") {
+      await doStat(page, "to", rng.pick(TURNOVER_TYPE_LABELS));
+      if (rng.bool(0.55)) {
+        await doStat(page, "stl");
+      }
+      nextPossession = flipSide(offense);
+    }
+
+    if (outcome === "foul") {
+      const foulScenario = rng.weighted<"non_shooting" | "shooting" | "single_ft">([
+        { v: "non_shooting", w: 60 },
+        { v: "shooting", w: 30 },
+        { v: "single_ft", w: 10 },
+      ]);
+
+      const foulSubtype = foulScenario === "shooting"
+        ? "Shooting"
+        : rng.weighted<string>([
+          { v: "Personal", w: 55 },
+          { v: "Offensive", w: 25 },
+          { v: "Technical", w: 15 },
+          { v: "Flagrant", w: 5 },
+        ]);
+
+      await doStat(page, "foul", foulSubtype);
+
+      if (foulScenario === "shooting") {
+        const attempts = rng.bool(0.88) ? 2 : 3;
+        for (let i = 0; i < attempts; i++) {
+          await doFreeThrow(page, rng.bool(0.72), rng, offense);
+        }
+      }
+
+      if (foulScenario === "single_ft") {
+        await doFreeThrow(page, rng.bool(0.72), rng, offense);
+      }
+
+      nextPossession = flipSide(offense);
+    }
+
+    if (rng.bool(0.08)) {
+      await doSub(page);
+    }
+
+    const timeoutChance = options?.lateGame ? 0.10 : 0.04;
+    if (rng.bool(timeoutChance)) {
+      await doTimeout(page, offense === "my", rng.bool(0.55) ? "short" : "full");
+    }
+  });
+
+  return nextPossession;
+}
+
+async function setPossessionSide(page: Page, side: "my" | "opp"): Promise<void> {
+  const card = page
+    .locator(side === "my"
+      ? ".scoreboard-team-card-my.scoreboard-team-card-poss-clickable"
+      : ".scoreboard-team-card-opp.scoreboard-team-card-poss-clickable")
+    .first();
+  if (await card.isVisible({ timeout: 1200 }).catch(() => false)) {
+    await card.click({ timeout: 3000 }).catch(() => undefined);
+  }
+}
+
 async function scoreAndVerify(page: Page, points: 1 | 2 | 3, rng: Rng): Promise<void> {
   const before = await getMyScore(page);
   if (points === 1) {
@@ -468,6 +610,16 @@ async function scoreAndVerify(page: Page, points: 1 | 2 | 3, rng: Rng): Promise<
     await doShot(page, points, true, rng);
   }
   await expect.poll(async () => getMyScore(page), { timeout: 10_000 }).toBe(before + points);
+}
+
+async function scoreAndVerifyOpp(page: Page, points: 1 | 2 | 3, rng: Rng): Promise<void> {
+  const before = await getOppScore(page);
+  if (points === 1) {
+    await doFreeThrow(page, true, rng, "opp");
+  } else {
+    await doShot(page, points, true, rng, "opp");
+  }
+  await expect.poll(async () => getOppScore(page), { timeout: 10_000 }).toBe(before + points);
 }
 
 async function editFirstFeedEvent(page: Page): Promise<void> {
@@ -619,6 +771,8 @@ test("logical full-game flow — all quarters and core features", async ({ brows
 
   const connectionCode = (await coachPage.locator(".settings-pairing-code").first().innerText()).trim();
   expect(connectionCode).toMatch(/^\d{6}$/);
+  const liveGameIdText = await coachPage.locator(".settings-section-desc", { hasText: "Game ID:" }).first().innerText().catch(() => "");
+  const liveGameId = liveGameIdText.replace("Game ID:", "").trim() || "game-chaos-1";
 
   // ── 3. Operator browser ────────────────────────────────────────────────────
   opCtx = await browser.newContext({
@@ -637,7 +791,7 @@ test("logical full-game flow — all quarters and core features", async ({ brows
                 players: seed.team.players.map(p => ({ id: p.id, number: p.number, name: p.name, position: p.position })),
               }],
               gameSetup: {
-                gameId: "game-chaos-1",
+                gameId: liveGameId,
                 connectionId: connectionCode,
                 syncedConnectionId: connectionCode,
                 myTeamId: seed.team.id,
@@ -692,27 +846,24 @@ test("logical full-game flow — all quarters and core features", async ({ brows
   await expect(startGameBtn).toBeEnabled({ timeout: 10_000 });
   await startGameBtn.click();
   await expect(opPage.locator(".classic-score-grid")).toBeVisible({ timeout: 10_000 });
+  const operatorsOnline = await getCoachOperatorsOnline(coachPage);
+  console.log(`[logical] coach operators online indicator: ${operatorsOnline}`);
 
   const simStartedAt = Date.now();
-  const POSSESSION_MS = 10_000;
 
   await ensureOnCourtPlayers(opPage);
 
-  // ── 4. Q1 — realistic opening tempo with scoring/fouls/turnovers/subs ─────
+  // ── 4. Q1 — realistic possession model (miss-heavy + rebounds) ───────────
   console.log("[logical] Q1 begins");
-  await clickPossession(opPage, rng);
+  let possession: TeamSide = rng.bool(0.5) ? "my" : "opp";
   await setClockViaNumpad(opPage, "800");
-  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 2, rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doShot(opPage, 3, false, rng); await doStat(opPage, "DEF"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "to", "Bad Pass"); await doStat(opPage, "stl"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doAssistFlow(opPage); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Personal"); await scoreAndVerify(opPage, 1, rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doSub(opPage); await doTimeout(opPage, true, "short"); });
+  for (let i = 0; i < 16; i++) {
+    possession = await runRealisticPossession(opPage, rng, possession);
+  }
 
-  // ── 5. Q2 — clock tools, full timeouts, quick-actions, edit/delete/summary ─
+  // ── 5. Q2 — continue realistic flow + operator feature checks ─────────────
   await advancePeriod(opPage, "Q2");
   console.log("[logical] Q2 begins");
-  await clickPossession(opPage, rng);
   await setClockViaNumpad(opPage, "800");
   await clickClockButton(opPage, "+1s");
   await clickClockButton(opPage, "-1s");
@@ -727,41 +878,59 @@ test("logical full-game flow — all quarters and core features", async ({ brows
   await clickClockButton(opPage, "Disable Clock");
   await clickClockButton(opPage, "Enable Clock");
 
-  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 3, rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doTimeout(opPage, true, "full"); await doStat(opPage, "foul", "Shooting"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "2PT ✓", rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "3PT ✗", rng); await doQuickRosterAction(opPage, "REB", rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "FOUL", rng); await doQuickRosterAction(opPage, "TO", rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "ASST", rng); await doQuickRosterAction(opPage, "BLK", rng); });
+  for (let i = 0; i < 16; i++) {
+    possession = await runRealisticPossession(opPage, rng, possession);
+  }
+
+  // Explicitly touch quick actions and feed tooling in realistic mid-game.
+  await doQuickRosterAction(opPage, "2PT ✓", rng);
+  await doQuickRosterAction(opPage, "3PT ✗", rng);
+  await doQuickRosterAction(opPage, "REB", rng);
+  await doQuickRosterAction(opPage, "FOUL", rng);
+  await doQuickRosterAction(opPage, "TO", rng);
+  await doQuickRosterAction(opPage, "ASST", rng);
+  await doQuickRosterAction(opPage, "BLK", rng);
   await doTimeout(opPage, false, "full");
   await editFirstFeedEvent(opPage);
   await deleteOneFeedEvent(opPage);
   await openCloseSummary(opPage);
   await doUndo(opPage);
 
-  // ── 6. Q3 — remaining foul and turnover variants with continued tempo ─────
+  // ── 6. Q3 — possession flow with explicit subtype coverage ─────────────────
   await advancePeriod(opPage, "Q3");
   console.log("[logical] Q3 begins");
-  await clickPossession(opPage, rng);
   await setClockViaNumpad(opPage, "800");
-  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Offensive"); await doStat(opPage, "to", "Double Dribble"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 2, rng); await doStat(opPage, "to", "Out of Bounds"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Technical"); await doFreeThrow(opPage, false, rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "SUB", rng); await doSub(opPage); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "STL", rng); await doQuickRosterAction(opPage, "FT", rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doShot(opPage, 3, false, rng); await doStat(opPage, "OFF"); });
+  for (let i = 0; i < 18; i++) {
+    possession = await runRealisticPossession(opPage, rng, possession);
+  }
+  await doStat(opPage, "foul", "Offensive");
+  await doStat(opPage, "foul", "Technical");
+  await doStat(opPage, "to", "Double Dribble");
+  await doStat(opPage, "to", "Out of Bounds");
+  await doQuickRosterAction(opPage, "SUB", rng);
+  await doQuickRosterAction(opPage, "STL", rng);
+  await doQuickRosterAction(opPage, "FT", rng);
 
-  // ── 7. Q4 — closeout with final subtype coverage and scoring checks ───────
+  // ── 7. Q4 — late-game possessions with timeout clustering ─────────────────
   await advancePeriod(opPage, "Q4");
   console.log("[logical] Q4 begins");
-  await clickPossession(opPage, rng);
   await setClockViaNumpad(opPage, "800");
-  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Flagrant"); await doStat(opPage, "to", "Offensive Foul"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "to", "Steal"); await doStat(opPage, "to", "Other"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 2, rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 3, rng); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doFreeThrow(opPage, false, rng); await doStat(opPage, "DEF"); });
-  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "2PT ✗", rng); await doQuickRosterAction(opPage, "3PT ✓", rng); });
+  for (let i = 0; i < 18; i++) {
+    possession = await runRealisticPossession(opPage, rng, possession, { lateGame: true });
+  }
+
+  // Final explicit subtype coverage.
+  await doStat(opPage, "foul", "Flagrant");
+  await doStat(opPage, "to", "Offensive Foul");
+  await doStat(opPage, "to", "Steal");
+  await doStat(opPage, "to", "Other");
+  await doQuickRosterAction(opPage, "2PT ✗", rng);
+  await doQuickRosterAction(opPage, "3PT ✓", rng);
+
+  await expect.poll(async () => {
+    const scores = await getCoachScores(coachPage);
+    return scores.home > 0 && scores.away > 0;
+  }, { timeout: 20_000 }).toBe(true);
 
   // Keep runtime near 8 minutes to mimic full game tempo.
   const MIN_RUNTIME_MS = Math.max(0, LOGICAL_SIM_MINUTES) * 60 * 1000;
@@ -813,7 +982,7 @@ test("logical full-game flow — all quarters and core features", async ({ brows
   }
 
   // Operator local setup uses this as a fallback gameId in this test.
-  gameIdCandidates.add("game-chaos-1");
+  gameIdCandidates.add(liveGameId);
   console.log(`[logical] gameId candidates: ${Array.from(gameIdCandidates).join(", ")}`);
 
   // ── 9. Assert heavy event volume in UI and attempt API verification ───────

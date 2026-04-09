@@ -40,8 +40,9 @@ Team / Organization Management - 🔄 Partial
 
 ## Section 2: Support and Trust Pages
 
-Support Page (`/support`) - ❌ Not Started
-- Needed: FAQ, bug report, feature request, contact form, response expectations, status link.
+Support Page (`/support`) - 🔄 Partial
+- Implemented: preproduction support hub with quick-help guidance and support intake form UX.
+- Remaining: backend ticket routing, status page link, full FAQ content library.
 
 Help Center / Docs (`/help` or `/docs`) - 🔄 Partial
 - ✅ iPad tips page in operator app
@@ -49,7 +50,9 @@ Help Center / Docs (`/help` or `/docs`) - 🔄 Partial
 - ❌ Standalone coach help center page
 - ❌ Quick setup, game creation, operator sync, connection troubleshooting guides
 
-Contact Page (`/contact`) - ❌ Not Started
+Contact Page (`/contact`) - 🔄 Partial
+- Implemented: preproduction contact form and support/pilot intake surface.
+- Remaining: production email/ticket integration and response SLA automation.
 
 ## Section 3: Legal Pages
 
@@ -133,8 +136,9 @@ Audit Log UI - 🚧 Planned
 ## Section 9: Footer
 
 Public marketing footer - ✅ Done
-Authenticated app footer - ❌ Not Started
-- Needed: product, pricing, support, docs, contact, terms, privacy, copyright.
+Authenticated app footer - 🔄 Partial
+- Implemented: support, contact, billing, terms, privacy links in authenticated shell.
+- Remaining: product/pricing/docs links, copyright and social/legal polish.
 
 ## Section 10: Premium Feel Pages
 

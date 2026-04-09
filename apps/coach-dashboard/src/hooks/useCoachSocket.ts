@@ -69,6 +69,8 @@ export function useCoachSocket({
   useEffect(() => {
     const authSession = readStoredAuthSession();
     const schoolId = resolveActiveSchoolId();
+    const lastStateSyncAtRef = { current: 0 };
+    const activeOperatorGameIdRef = { current: "" };
     const socket = io(apiBase, {
       auth: {
         ...(schoolId ? { schoolId } : {}),
@@ -134,6 +136,8 @@ export function useCoachSocket({
       setConnectedOperators(nextOperators);
       const activeGameId = status.gameId;
       if (status.online && activeGameId) {
+        activeOperatorGameIdRef.current = activeGameId;
+        lastStateSyncAtRef.current = Date.now();
         if (endedGameIdsRef.current.has(activeGameId)) {
           setDashboardStatus("Game ended. Start a new game when ready.");
           return;
@@ -141,6 +145,17 @@ export function useCoachSocket({
         setGameId((current) => (current === activeGameId ? current : activeGameId));
         socket.emit("join:game", activeGameId);
       } else {
+        activeOperatorGameIdRef.current = "";
+        const hasLiveGame = Boolean(gameIdRef.current);
+        const recentlySyncedLiveState = Date.now() - lastStateSyncAtRef.current < 15000;
+        if (hasLiveGame && recentlySyncedLiveState) {
+          // Presence can lag briefly behind event/state fanout. If we just
+          // received live game state, keep the nav badge in Live mode.
+          setDeviceConnected(true);
+          setConnectedOperatorCount(1);
+          return;
+        }
+
         // Only reset to "waiting" state when no game has been launched by the coach.
         // If the coach already has a game open, keep it — the operator may just be
         // between actions or not yet connected.
@@ -158,14 +173,17 @@ export function useCoachSocket({
       if (endedGameIdsRef.current.has(nextState.gameId)) {
         return;
       }
-      // Only accept state for the game this dashboard is tracking. Ignore
-      // broadcasts for other games the socket may have inadvertently joined
-      // (e.g. from a stale school-room broadcast or previous session).
+      // Prefer the operator-advertised active game during reconnect/transition.
+      // This avoids dropping the first game:state packet due to React state lag.
       const currentGameId = gameIdRef.current;
-      if (currentGameId && nextState.gameId !== currentGameId) {
+      const expectedGameId = activeOperatorGameIdRef.current || currentGameId;
+      if (expectedGameId && nextState.gameId !== expectedGameId) {
         return;
       }
       stopPoll();
+      lastStateSyncAtRef.current = Date.now();
+      setDeviceConnected(true);
+      setConnectedOperatorCount(1);
       setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
       setState((current) => mergeGameState(current, nextState));
       setDashboardStatus("Live state synced");

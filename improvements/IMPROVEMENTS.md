@@ -194,6 +194,15 @@ Priority keys:
 
 ## Recently Completed
 
+- [x] P1 Added preproduction support and contact hub pages.
+  - Files: apps/coach-dashboard/src/SupportContactPages.tsx, apps/coach-dashboard/src/UnifiedCoachApp.tsx
+  - Detail: `/support` and `/contact` now provide usable intake forms and guidance while backend ticket/email integration remains pending.
+- [x] P0 Implemented self-service coach password reset flow (request + confirm).
+  - Files: services/realtime-api/src/server.ts, services/realtime-api/src/server.auth.integration.test.ts, apps/coach-dashboard/src/ForgotPasswordPage.tsx, apps/coach-dashboard/src/ResetPasswordPage.tsx, apps/coach-dashboard/src/UnifiedCoachApp.tsx
+  - Detail: added tokenized reset endpoints (`/api/auth/password-reset/request`, `/api/auth/password-reset/confirm`), wired forgot/reset routes and forms, and added integration test coverage.
+- [x] P1 Added authenticated app footer + account completion placeholders.
+  - Files: apps/coach-dashboard/src/UnifiedCoachApp.tsx, apps/coach-dashboard/src/AccountPage.tsx, apps/coach-dashboard/src/styles.css
+  - Detail: authenticated shell now includes support/contact/billing/terms/privacy footer links; account page now surfaces preproduction placeholders for profile photo, sign-out-all-sessions, and delete-account actions.
 - [x] P0 Added optional E2E checks to CI gate script.
   - File: scripts/ci-gate.mjs
   - Detail: `ci-gate` now runs `smoke-test` and `audit:ui` when `BTA_RUN_E2E_GATE=1` or when `CI=true`.

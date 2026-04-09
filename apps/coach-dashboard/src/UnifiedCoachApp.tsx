@@ -9,8 +9,9 @@ import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { BillingPage, ContactPage, PrivacyPage, SupportPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { BillingPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
+import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -465,11 +466,11 @@ export function UnifiedCoachApp() {
   }
 
   if (route === "support") {
-    return <SupportPage onNavigate={navigate} />;
+    return <SupportHubPage onNavigate={navigate} />;
   }
 
   if (route === "contact") {
-    return <ContactPage onNavigate={navigate} />;
+    return <ContactHubPage onNavigate={navigate} />;
   }
 
   if (requiresSetup === null) {

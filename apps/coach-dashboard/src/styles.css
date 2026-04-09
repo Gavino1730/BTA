@@ -4313,6 +4313,84 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   color: rgba(255, 243, 199, 0.95);
 }
 
+.account-meta-card,
+.account-danger-card {
+  margin-top: 1rem;
+}
+
+.account-photo-placeholder {
+  width: 74px;
+  height: 74px;
+  border-radius: 999px;
+  border: 1px solid rgba(79,140,255,0.35);
+  background: linear-gradient(135deg, rgba(79,140,255,0.2), rgba(32,68,138,0.35));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.account-photo-placeholder span {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #e8eaf0;
+}
+
+.account-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+}
+
+.account-danger-btn {
+  border-color: rgba(248,113,113,0.4);
+  color: #fecaca;
+}
+
+.coach-app-footer {
+  margin: 1.25rem 1.4rem 1.5rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(10,15,30,0.45);
+}
+
+.coach-app-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.coach-app-footer-brand {
+  font-size: 0.82rem;
+  color: rgba(232,234,240,0.75);
+}
+
+.coach-app-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.coach-app-footer-links button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: rgba(232,234,240,0.62);
+  font-size: 0.78rem;
+  padding: 0.24rem 0.6rem;
+  cursor: pointer;
+}
+
+.coach-app-footer-links button:hover {
+  border-color: rgba(255,255,255,0.12);
+  color: rgba(232,234,240,0.95);
+}
+
 @media (max-width: 1200px) {
   .coach-nav-container {
     gap: 0.7rem;
