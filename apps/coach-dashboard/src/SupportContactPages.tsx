@@ -50,6 +50,47 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
         </ul>
       </section>
 
+      <section className="stats-page-card settings-section-card">
+        <div className="stats-page-card-head">
+          <div>
+            <h3>Escalation Guide</h3>
+            <p className="settings-section-desc">Use severity to help us triage quickly and route to the right owner.</p>
+          </div>
+        </div>
+        <div className="stats-game-list">
+          <div className="stats-game-row">
+            <div>
+              <strong>High Severity</strong>
+              <span>Live game blocked, score mismatch, or operator unable to continue.</span>
+            </div>
+            <div className="stats-game-score-block">
+              <strong>Same Day</strong>
+              <span>During active event windows</span>
+            </div>
+          </div>
+          <div className="stats-game-row">
+            <div>
+              <strong>Medium Severity</strong>
+              <span>Workflow impacted but game can continue with workaround.</span>
+            </div>
+            <div className="stats-game-score-block">
+              <strong>1 Day</strong>
+              <span>Business day target</span>
+            </div>
+          </div>
+          <div className="stats-game-row">
+            <div>
+              <strong>Low Severity</strong>
+              <span>Quality improvements, UX polish, and non-blocking issues.</span>
+            </div>
+            <div className="stats-game-score-block">
+              <strong>2 Days</strong>
+              <span>Business day target</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <form className="stats-page-card settings-section-card" onSubmit={handleSubmit}>
         <div className="stats-page-card-head">
           <div>
@@ -106,6 +147,22 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
           <button type="button" className="shell-nav-link" onClick={() => onNavigate("/privacy")}>Privacy</button>
         </div>
       </form>
+
+      <section className="stats-page-card settings-section-card" style={{ marginBottom: "1rem" }}>
+        <div className="stats-page-card-head">
+          <div>
+            <h3>What To Include For Faster Resolution</h3>
+            <p className="settings-section-desc">Good intake detail can cut follow-up cycles significantly.</p>
+          </div>
+        </div>
+        <ul style={{ margin: 0, paddingLeft: "1.05rem", lineHeight: 1.7, color: "rgba(232,234,240,0.85)" }}>
+          <li>School ID and role of impacted user (coach/operator/player).</li>
+          <li>Exact timestamp and game ID where issue occurred.</li>
+          <li>Expected behavior versus observed behavior.</li>
+          <li>Workarounds already attempted.</li>
+          <li>Screenshot or short recording reference if available.</li>
+        </ul>
+      </section>
     </div>
   );
 }
@@ -209,6 +266,44 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
           <button type="button" className="shell-nav-link" onClick={() => onNavigate("/")}>Home</button>
         </div>
       </form>
+
+      <section className="stats-page-card settings-section-card" style={{ marginBottom: "1rem" }}>
+        <div className="stats-page-card-head">
+          <div>
+            <h3>Contact Channels and Expected Follow-Up</h3>
+            <p className="settings-section-desc">Preproduction channels are manually monitored and routed by category.</p>
+          </div>
+        </div>
+        <div className="stats-game-list">
+          <div className="stats-game-row">
+            <div>
+              <strong>Support / Pilot</strong>
+              <span>Operational questions, onboarding, and workflow help.</span>
+            </div>
+            <div className="stats-game-score-block">
+              <span>Target acknowledgement: 1 business day</span>
+            </div>
+          </div>
+          <div className="stats-game-row">
+            <div>
+              <strong>Billing</strong>
+              <span>Pilot pricing, term clarifications, and renewal planning.</span>
+            </div>
+            <div className="stats-game-score-block">
+              <span>Routed to admin contact</span>
+            </div>
+          </div>
+          <div className="stats-game-row">
+            <div>
+              <strong>Security</strong>
+              <span>Account compromise concerns or sensitive access issues.</span>
+            </div>
+            <div className="stats-game-score-block">
+              <span>Prioritized for urgent review</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

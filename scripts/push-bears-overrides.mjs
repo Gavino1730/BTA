@@ -2,9 +2,11 @@
 // Push comprehensive game overrides with player-level stats for Vancouver Bears.
 // Usage: node scripts/push-bears-overrides.mjs
 
-const API = "https://btarealtime-api-production.up.railway.app";
-const KEY = "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU";
-const SCHOOL = "vancouver-bears";
+const API = process.env.BTA_API_URL || "https://btarealtime-api-production.up.railway.app";
+const KEY = process.env.BTA_API_KEY || "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU";
+const SCHOOL = process.env.BTA_SCHOOL_ID || "vancouver-bears";
+const EMAIL = process.env.BTA_LOGIN_EMAIL || "bears@demo.com";
+const PASSWORD = process.env.BTA_LOGIN_PASSWORD || "12345678";
 
 import { readFileSync } from "node:fs";
 
@@ -49,7 +51,7 @@ async function main() {
   const loginRes = await fetch(`${API}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": KEY },
-    body: JSON.stringify({ email: "bears@demo.com", password: "12345678" }),
+    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
   });
   const { token } = await loginRes.json();
   const headers = {
@@ -202,15 +204,45 @@ async function main() {
       blk: playerStatsList.reduce((s, p) => s + p.blk, 0),
       fouls: playerStatsList.reduce((s, p) => s + p.fouls, 0),
     };
-    // vc_score = sum of player pts so scoreboard always matches box score
-    const derivedScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
-    const result = derivedScore > game.opp_score ? "W" : derivedScore < game.opp_score ? "L" : "T";
+    // Anchor to the source schedule score, then reconcile player point totals
+    // so player-level stats and scoreboard stay in sync.
+    const targetScore = Number(game.vwb_score);
+    let currentScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
+    let remaining = targetScore - currentScore;
+    if (playerStatsList.length > 0 && remaining !== 0) {
+      if (remaining > 0) {
+        playerStatsList[0].pts = Math.max(0, (playerStatsList[0].pts ?? 0) + remaining);
+        remaining = 0;
+      } else {
+        // Reduce points from players until we reach the target without going below 0.
+        for (const p of playerStatsList) {
+          if (remaining === 0) {
+            break;
+          }
+          const pts = Math.max(0, Number(p.pts ?? 0));
+          if (pts <= 0) {
+            continue;
+          }
+          const reducible = Math.min(pts, Math.abs(remaining));
+          p.pts = pts - reducible;
+          remaining += reducible;
+        }
+      }
+      currentScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
+      if (currentScore !== targetScore) {
+        const first = playerStatsList[0];
+        first.pts = Math.max(0, Number(first.pts ?? 0) + (targetScore - currentScore));
+      }
+    }
+
+    const reconciledScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
+    const result = game.result || (reconciledScore > game.opp_score ? "W" : reconciledScore < game.opp_score ? "L" : "T");
 
     const body = {
       date: game.date,
       opponent: game.opponent,
       location: loc,
-      vc_score: derivedScore,
+      vc_score: reconciledScore,
       opp_score: game.opp_score,
       result,
       team_stats: teamStats,
@@ -224,7 +256,7 @@ async function main() {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      console.log(`OK ${gid} ${derivedScore}-${game.opp_score} ${result} (${playerStatsList.length} players)`);
+      console.log(`OK ${gid} ${reconciledScore}-${game.opp_score} ${result} (${playerStatsList.length} players)`);
     } catch (e) {
       console.log(`FAIL ${gid}: ${e.message}`);
     }
