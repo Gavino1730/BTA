@@ -186,6 +186,7 @@ export function TeamSettingsPage() {
   const [inviteTempPassword, setInviteTempPassword] = useState("");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string; tempPassword: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
+  const [newPlayerExpanded, setNewPlayerExpanded] = useState(false);
   const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
     const saved = localStorage.getItem("coach:settings-section");
     if (saved === "pairing" || saved === "roster" || saved === "profile" || saved === "ai" || saved === "members") return saved;
@@ -897,9 +898,9 @@ export function TeamSettingsPage() {
                         type="button"
                         className="settings-roster-expand-btn"
                         onClick={() => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, showExpanded: !r.showExpanded } : r))}
-                        title="Edit AI context (role &amp; notes)"
+                        title="More player details"
                       >
-                        {row.showExpanded ? "▲" : "▼"} AI
+                        {row.showExpanded ? "▴ Details" : "▾ Details"}
                       </button>
                       <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void savePlayer(row)}>Save</button>
                       <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void removePlayer(row)}>Remove</button>
@@ -1218,7 +1219,6 @@ export function TeamSettingsPage() {
                       <option value="admin">Admin</option>
                       <option value="coach">Coach</option>
                       <option value="operator">Operator</option>
-                      <option value="player">Player</option>
                     </select>
                     <span className={`settings-status-badge settings-status-${member.status}`}>{member.status}</span>
                     {member.role !== "player" && (
@@ -1269,7 +1269,6 @@ export function TeamSettingsPage() {
                   <option value="admin">Admin</option>
                   <option value="coach">Coach</option>
                   <option value="operator">Operator</option>
-                  <option value="player">Player</option>
                 </select>
               </label>
               <label className="stats-filter-field">
