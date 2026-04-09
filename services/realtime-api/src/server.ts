@@ -2525,6 +2525,54 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
 
   const schoolResolution = resolveAuthSchoolId(req, payload, email);
   if (!schoolResolution.schoolId) {
+    const matches = getLocalAuthAccountsByEmailAcrossSchools(email)
+      .filter((entry) => verifyPassword(password, entry.passwordSalt, entry.passwordHash));
+
+    if (matches.length === 1 && matches[0]) {
+      const account = matches[0];
+      const schoolId = account.schoolId;
+      if (!schoolId) {
+        res.status(500).json({ error: "Account tenant scope is missing" });
+        return;
+      }
+      const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
+      saveOnboardingAccountState({
+        organization: { schoolId },
+        primaryCoach: {
+          schoolId,
+          fullName: refreshedAccount.fullName,
+          email: refreshedAccount.email,
+          role: "owner",
+          organizationId: refreshedAccount.organizationId ?? "",
+          accountId: refreshedAccount.accountId,
+          createdAtIso: "",
+          updatedAtIso: "",
+        },
+      }, { schoolId });
+
+      const currentMember = activateKnownMemberForAccount(schoolId, refreshedAccount);
+      const token = issueLocalAuthToken({
+        subject: refreshedAccount.accountId,
+        email: refreshedAccount.email,
+        name: refreshedAccount.fullName,
+        schoolId,
+        role: currentMember?.role ?? refreshedAccount.role,
+      });
+
+      if (!token) {
+        res.status(500).json({ error: "Local auth token signing is not configured" });
+        return;
+      }
+
+      res.json(buildAuthSessionResponse(schoolId, refreshedAccount, currentMember, token));
+      return;
+    }
+
+    if (matches.length > 1) {
+      res.status(409).json({ error: "Multiple workspaces match this email. Reopen your school link or include schoolId." });
+      return;
+    }
+
     res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
     return;
   }
@@ -3744,6 +3792,101 @@ app.post("/api/reset", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   resetAllData({ schoolId });
   res.json({ ok: true, message: "Reset complete", schoolId });
+});
+
+app.get("/api/notifications", (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const generatedAtIso = new Date().toISOString();
+  const onboarding = buildOnboardingCompletionSummary(schoolId);
+  const account = getOnboardingAccountStateByScope({ schoolId });
+  const members = getOrganizationMembersByScope({ schoolId });
+  const players = getSeasonPlayers({ schoolId });
+  const games = getSeasonGames({ schoolId })
+    .slice()
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
+
+  const notifications: Array<{
+    id: string;
+    category: "system" | "membership" | "results";
+    level: "info" | "warning" | "success";
+    title: string;
+    detail: string;
+    createdAtIso: string;
+  }> = [];
+
+  if (!onboarding.completed) {
+    notifications.push({
+      id: "system-onboarding-incomplete",
+      category: "system",
+      level: "warning",
+      title: "Onboarding is not complete",
+      detail: "Complete team setup, profile, and initial roster configuration to unlock all workflows.",
+      createdAtIso: generatedAtIso,
+    });
+  }
+
+  if (!account?.organization?.teamName?.trim()) {
+    notifications.push({
+      id: "system-team-name-missing",
+      category: "system",
+      level: "warning",
+      title: "Team identity is incomplete",
+      detail: "Set the team name and season in Organization Settings to improve reporting and exports.",
+      createdAtIso: generatedAtIso,
+    });
+  }
+
+  const invitedMembers = members
+    .filter((member) => member.status === "invited")
+    .slice(0, 6);
+
+  for (const member of invitedMembers) {
+    notifications.push({
+      id: `membership-invite-${member.memberId}`,
+      category: "membership",
+      level: "info",
+      title: `Invite pending: ${member.fullName}`,
+      detail: `${member.email} has not accepted the invitation yet.`,
+      createdAtIso: member.invitedAtIso || member.updatedAtIso || generatedAtIso,
+    });
+  }
+
+  if (players.length === 0) {
+    notifications.push({
+      id: "system-roster-empty",
+      category: "system",
+      level: "warning",
+      title: "Roster is empty",
+      detail: "Add players in settings so live stats and trend pages have complete context.",
+      createdAtIso: generatedAtIso,
+    });
+  }
+
+  if (games.length === 0) {
+    notifications.push({
+      id: "results-no-games",
+      category: "results",
+      level: "info",
+      title: "No games recorded yet",
+      detail: "Start and submit a live game to populate results notifications.",
+      createdAtIso: generatedAtIso,
+    });
+  } else {
+    for (const game of games.slice(0, 4)) {
+      const result = sanitizeTextField(game.result, 4).toUpperCase() || "-";
+      const level: "info" | "warning" | "success" = result === "W" ? "success" : result === "L" ? "warning" : "info";
+      notifications.push({
+        id: `results-final-${game.gameId}`,
+        category: "results",
+        level,
+        title: `Final ${result}: ${sanitizeTextField(game.opponent, 120) || "Opponent"}`,
+        detail: `${game.vc_score}-${game.opp_score} (${sanitizeTextField(game.location, 16) || "game"})`,
+        createdAtIso: sanitizeTextField(game.date, 64) || generatedAtIso,
+      });
+    }
+  }
+
+  res.json({ notifications, generatedAtIso });
 });
 
 app.get("/api/live-context", (req, res) => {
