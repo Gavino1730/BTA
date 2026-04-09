@@ -66,7 +66,7 @@ export function normalizeEventForPersistence(event: GameEvent, schoolId: string,
 }
 
 export function createPostgresPersistenceProvider(options: PostgresPersistenceOptions): PersistenceProvider {
-  const tableName = sanitizeTableName(options.tableName ?? "realtime_snapshots");
+  const tableName = sanitizeTableName(options.tableName ?? "bta");
   const teamsTableName = `${tableName}_teams`;
   const playersTableName = `${tableName}_players`;
   const schoolsTableName = `${tableName}_schools`;
@@ -1086,7 +1086,7 @@ function sanitizeTableName(input: string): string {
   const trimmed = input.trim().toLowerCase();
   const normalized = trimmed.replace(/[^a-z0-9_]/g, "");
   if (!normalized) {
-    return "realtime_snapshots";
+    return "bta";
   }
   return normalized;
 }

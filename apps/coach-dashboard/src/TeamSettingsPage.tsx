@@ -487,6 +487,11 @@ export function TeamSettingsPage() {
   }
 
   async function removeMember(member: OrganizationMemberDto) {
+    const confirmRemove = window.confirm(`Remove ${member.fullName} from the organization? This cannot be undone.`);
+    if (!confirmRemove) {
+      return;
+    }
+
     setSaving(true);
     setStatus(`Removing ${member.fullName}...`);
 
@@ -703,6 +708,11 @@ export function TeamSettingsPage() {
     const originalName = row.originalName.trim() || name;
     if (!name) {
       setRoster((current) => current.filter((r) => r.key !== row.key));
+      return;
+    }
+
+    const confirmRemove = window.confirm(`Remove ${name} from the roster? This cannot be undone.`);
+    if (!confirmRemove) {
       return;
     }
 
@@ -1136,7 +1146,7 @@ export function TeamSettingsPage() {
                 <span>Team Name</span>
                 <input
                   value={team?.name ?? ""}
-                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), name: event.target.value }))}
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), name: event.target.value }))}
                   placeholder="Varsity Boys Basketball"
                 />
               </label>
@@ -1144,7 +1154,7 @@ export function TeamSettingsPage() {
                 <span>Abbreviation</span>
                 <input
                   value={team?.abbreviation ?? ""}
-                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), abbreviation: event.target.value.toUpperCase().slice(0, 12) }))}
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), abbreviation: event.target.value.toUpperCase().slice(0, 12) }))}
                   placeholder="VC"
                 />
               </label>
@@ -1152,7 +1162,7 @@ export function TeamSettingsPage() {
                 <span>Season</span>
                 <input
                   value={team?.season ?? ""}
-                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), season: event.target.value }))}
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), season: event.target.value }))}
                   placeholder="2026"
                 />
               </label>
@@ -1162,7 +1172,7 @@ export function TeamSettingsPage() {
                   <input
                     type="color"
                     value={team?.teamColor || "#1d4ed8"}
-                    onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), teamColor: event.target.value }))}
+                    onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), teamColor: event.target.value }))}
                     aria-label="Team color"
                   />
                   <div className="setup-color-preview">

@@ -661,7 +661,7 @@ function upsertPrimaryTeam(schoolId: string, payload: Record<string, unknown>): 
   const seededTeamId = sanitizeTextField(payload.teamId ?? payload.id, 80)
     || (buildOrganizationSlug(name) ? `team-${buildOrganizationSlug(name)}` : "");
   const nextTeam: RosterTeam = {
-    id: team?.id ?? (seededTeamId || "primary-team"),
+    id: team?.id ?? (seededTeamId || "varsity-boys"),
     schoolId,
     name,
     abbreviation: sanitizeTextField(payload.abbreviation ?? team?.abbreviation ?? buildTeamAbbreviation(name), 12) || buildTeamAbbreviation(name),
@@ -2302,7 +2302,14 @@ app.get("/api/auth/session", (req, res) => {
   const localAccount = email ? getLocalAuthAccountByEmail(email, { schoolId }) : null;
 
   if (localAccount) {
-    res.json(buildAuthSessionResponse(schoolId, localAccount, currentMember));
+    const token = issueLocalAuthToken({
+      subject: localAccount.accountId,
+      email: localAccount.email,
+      name: localAccount.fullName,
+      schoolId,
+      role: currentMember?.role ?? localAccount.role,
+    });
+    res.json(buildAuthSessionResponse(schoolId, localAccount, currentMember, token));
     return;
   }
 
@@ -3158,7 +3165,7 @@ app.put("/api/roster-sync", requireApiKey, requireWriteRole, (req, res) => {
   }
 
   const existing = getPrimaryTeam(schoolId).team;
-  const teamId = existing?.id ?? "primary-team";
+  const teamId = existing?.id ?? "varsity-boys";
   const currentPlayers = new Map((existing?.players ?? []).map((player) => [normalizeNameKey(player.name), player]));
   const rosterPayload = Array.isArray(payload.roster) ? payload.roster : [];
   const players = rosterPayload
@@ -3198,7 +3205,7 @@ app.post("/api/team", requireApiKey, requireWriteRole, (req, res) => {
   const saved = upsertPrimaryTeam(schoolId, payload);
   res.status(201).json({
     message: "Team created successfully",
-    team: { id: saved[0]?.id ?? "primary-team", name: saved[0]?.name ?? name }
+    team: { id: saved[0]?.id ?? "varsity-boys", name: saved[0]?.name ?? name }
   });
 });
 
@@ -3248,7 +3255,7 @@ app.post("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) 
 
   const { teams, team } = getPrimaryTeam(schoolId);
   const primaryTeam: RosterTeam = team ?? {
-    id: "primary-team",
+    id: "varsity-boys",
     schoolId,
     name: "Team",
     abbreviation: "TEAM",
@@ -3402,6 +3409,7 @@ app.put("/api/games/:gameId", requireApiKey, requireWriteRole, async (req, res) 
       fouls: Number(baseTeamStats.fouls ?? 0)
     },
     player_stats: Array.isArray(payload.player_stats) ? payload.player_stats as Array<Record<string, unknown>> : [],
+    coach_notes: sanitizeTextField(payload.coach_notes ?? (existing as Record<string, unknown>).coach_notes, 2000) || undefined,
     updatedAtIso: new Date().toISOString()
   };
 

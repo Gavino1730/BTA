@@ -648,7 +648,7 @@ def main() -> None:
     output = {
         "teams": [
             {
-                "id": "team-vancouver-bears",
+                "id": "varsity-bears",
                 "name": as_ascii(str(team.get("full_name") or "Vancouver Bears")),
                 "abbreviation": as_ascii(str(team.get("abbreviation") or "VWB")),
                 "season": season_label,
