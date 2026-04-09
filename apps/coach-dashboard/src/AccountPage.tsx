@@ -145,6 +145,42 @@ export function AccountPage({ onSessionUpdated }: AccountPageProps) {
           </label>
         </div>
       </form>
+
+      <section className="stats-page-card settings-section-card account-meta-card">
+        <div className="stats-page-card-head">
+          <div>
+            <h3>Profile Photo</h3>
+            <p className="settings-section-desc">Preproduction placeholder. Avatar upload is coming soon.</p>
+          </div>
+        </div>
+        <div className="account-photo-placeholder" role="img" aria-label="Profile photo placeholder">
+          <span>{(fullName.trim().charAt(0) || email.trim().charAt(0) || "C").toUpperCase()}</span>
+        </div>
+      </section>
+
+      <section className="stats-page-card settings-section-card account-meta-card">
+        <div className="stats-page-card-head">
+          <div>
+            <h3>Session Controls</h3>
+            <p className="settings-section-desc">Sign out all sessions will be enabled before production launch.</p>
+          </div>
+        </div>
+        <div className="account-action-row">
+          <button type="button" className="shell-nav-link" disabled>Sign Out All Sessions (Coming Soon)</button>
+        </div>
+      </section>
+
+      <section className="stats-page-card settings-section-card account-danger-card">
+        <div className="stats-page-card-head">
+          <div>
+            <h3>Danger Zone</h3>
+            <p className="settings-section-desc">Account deletion is intentionally disabled in preproduction.</p>
+          </div>
+        </div>
+        <div className="account-action-row">
+          <button type="button" className="shell-nav-link account-danger-btn" disabled>Delete Account (Coming Soon)</button>
+        </div>
+      </section>
     </div>
   );
 }

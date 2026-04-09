@@ -158,21 +158,3 @@ export function UserSettingsPage({ onNavigate }: RoutedPageProps) {
     />
   );
 }
-
-export function ResetPasswordPage({ onNavigate }: RoutedPageProps) {
-  return (
-    <RouteShellPage
-      title="Reset Password"
-      subtitle="Token-based self-service reset is coming soon. During preproduction, password resets are handled by an organization manager."
-      bullets={[
-        "Use Forgot Password to request next steps",
-        "If urgent, contact your program admin",
-        "This flow will support secure token links before production",
-      ]}
-      onPrimary={() => onNavigate("/forgot-password")}
-      primaryLabel="Go to Forgot Password"
-      onSecondary={() => onNavigate("/login")}
-      secondaryLabel="Back to Login"
-    />
-  );
-}

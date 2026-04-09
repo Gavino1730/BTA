@@ -573,6 +573,98 @@ describe("server auth integration", () => {
     expect(updatedPasswordLogin.status).toBe(200);
   });
 
+  it("supports self-service password reset request and confirm flow", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Reset Flow Coach",
+        email: "reset-flow@school.org",
+        password: "OldReset123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      user?: { schoolId?: string };
+    };
+    const schoolId = registerBody.user?.schoolId ?? "";
+    expect(schoolId).toBeTruthy();
+
+    const requestRes = await fetch(`${API_BASE}/api/auth/password-reset/request`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org" })
+    });
+
+    expect(requestRes.status).toBe(200);
+    const requestBody = await requestRes.json() as {
+      resetToken?: string;
+      resetPath?: string;
+      message?: string;
+    };
+    expect(requestBody.message).toBeTruthy();
+    expect(requestBody.resetToken).toBeTruthy();
+    expect(requestBody.resetPath).toContain("/reset-password?token=");
+
+    const oldPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org", password: "OldReset123!" })
+    });
+    expect(oldPasswordLogin.status).toBe(200);
+
+    const confirmRes = await fetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token: requestBody.resetToken, password: "NewReset456!" })
+    });
+
+    expect(confirmRes.status).toBe(200);
+
+    const staleTokenRes = await fetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token: requestBody.resetToken, password: "Another789!" })
+    });
+    expect(staleTokenRes.status).toBe(400);
+
+    const oldLoginAfterReset = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org", password: "OldReset123!" })
+    });
+    expect(oldLoginAfterReset.status).toBe(401);
+
+    const newLoginAfterReset = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org", password: "NewReset456!" })
+    });
+    expect(newLoginAfterReset.status).toBe(200);
+  });
+
   it("exposes prometheus security metrics to authorized write role", async () => {
     const token = makeTestToken({
       sub: "metrics-coach",

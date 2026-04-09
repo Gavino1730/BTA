@@ -201,6 +201,27 @@ function createRateLimitMiddleware(bucket: string, maxRequests: number, windowMs
 }
 const eventRateLimiter = createRateLimitMiddleware("events", 100, 60000); // 100 events/min per IP
 const authRateLimiter = createRateLimitMiddleware("auth", 20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
+const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
+
+interface PasswordResetTokenRecord {
+  token: string;
+  schoolId: string;
+  accountId: string;
+  email: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+const passwordResetTokens = new Map<string, PasswordResetTokenRecord>();
+
+function pruneExpiredPasswordResetTokens(now = Date.now()): void {
+  for (const [token, record] of passwordResetTokens.entries()) {
+    if (record.expiresAt <= now) {
+      passwordResetTokens.delete(token);
+    }
+  }
+}
 const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
   "substitutions",
@@ -2466,6 +2487,98 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
 
 app.post("/api/auth/logout", (_req, res) => {
   res.status(204).send();
+});
+
+app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address" });
+    return;
+  }
+
+  pruneExpiredPasswordResetTokens();
+  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  if (!account || account.role === "player") {
+    res.json({
+      message: "If this email exists for your organization, reset instructions have been prepared.",
+    });
+    return;
+  }
+
+  // Keep one active token per account to reduce confusion during rapid retries.
+  for (const [token, record] of passwordResetTokens.entries()) {
+    if (record.schoolId === schoolId && record.accountId === account.accountId) {
+      passwordResetTokens.delete(token);
+    }
+  }
+
+  const token = randomBytes(24).toString("hex");
+  const now = Date.now();
+  passwordResetTokens.set(token, {
+    token,
+    schoolId,
+    accountId: account.accountId,
+    email: account.email,
+    createdAt: now,
+    expiresAt: now + PASSWORD_RESET_TOKEN_TTL_MS,
+  });
+
+  res.json({
+    message: "If this email exists for your organization, reset instructions have been prepared.",
+    expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
+    resetPath: `/reset-password?token=${token}`,
+    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { resetToken: token } : {}),
+  });
+});
+
+app.post("/api/auth/password-reset/confirm", authRateLimiter, requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const token = String(payload.token ?? "").trim();
+  const nextPassword = String(payload.password ?? "").trim();
+
+  if (!token || !nextPassword) {
+    res.status(400).json({ error: "token and password are required" });
+    return;
+  }
+
+  if (nextPassword.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  pruneExpiredPasswordResetTokens();
+  const resetRecord = passwordResetTokens.get(token);
+  if (!resetRecord || resetRecord.schoolId !== schoolId) {
+    res.status(400).json({ error: "Invalid or expired reset token" });
+    return;
+  }
+
+  const account = getLocalAuthAccountsByScope({ schoolId }).find((entry) => entry.accountId === resetRecord.accountId) ?? null;
+  if (!account || account.role === "player") {
+    passwordResetTokens.delete(token);
+    res.status(400).json({ error: "Invalid or expired reset token" });
+    return;
+  }
+
+  const credentials = hashPassword(nextPassword);
+  saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: credentials.passwordHash,
+    passwordSalt: credentials.passwordSalt,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+  }, { schoolId });
+
+  passwordResetTokens.delete(token);
+  res.json({ message: "Password reset successful" });
 });
 
 app.get("/api/auth/me", (req, res) => {

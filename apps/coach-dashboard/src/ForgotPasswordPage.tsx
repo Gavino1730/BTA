@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { apiBase, apiKeyHeader } from "./platform.js";
 
 interface ForgotPasswordPageProps {
   onBackLogin: () => void;
@@ -7,10 +8,11 @@ interface ForgotPasswordPageProps {
 
 export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPageProps) {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("Enter your coach email and we will guide your reset options.");
-  const [submitted, setSubmitted] = useState(false);
+  const [status, setStatus] = useState("Enter your coach email to request a password reset link.");
+  const [busy, setBusy] = useState(false);
+  const [resetPath, setResetPath] = useState<string | null>(null);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = email.trim().toLowerCase();
 
@@ -24,8 +26,34 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
       return;
     }
 
-    setSubmitted(true);
-    setStatus("Reset request noted. In preproduction, an organization manager must complete password reset for coach accounts.");
+    setBusy(true);
+    setResetPath(null);
+    setStatus("Preparing reset request...");
+
+    try {
+      const response = await fetch(`${apiBase}/api/auth/password-reset/request`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email: normalized }),
+      });
+
+      const payload = await response.json() as {
+        message?: string;
+        error?: string;
+        resetPath?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not submit password reset request.");
+      }
+
+      setResetPath(payload.resetPath ?? null);
+      setStatus(payload.message || "If this email exists, reset instructions are ready.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not submit password reset request.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -54,15 +82,36 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
               />
             </label>
 
-            <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={submitted}>
-              {submitted ? "Request Submitted" : "Request Password Reset"}
+            <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={busy}>
+              {busy ? "Submitting..." : "Request Password Reset"}
             </button>
           </form>
 
           <p className="stats-page-status">{status}</p>
-          <p style={{ marginTop: "0.5rem", fontSize: "0.82rem", color: "rgba(232,234,240,0.6)" }}>
-            Preproduction note: manager-only reset is currently enforced server-side.
-          </p>
+          {resetPath && (
+            <div style={{ marginTop: "0.65rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => {
+                  const target = resetPath.startsWith("/") ? resetPath : `/reset-password?token=${encodeURIComponent(resetPath)}`;
+                  void navigator.clipboard?.writeText(target);
+                }}
+              >
+                Copy Reset Path
+              </button>
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => {
+                  const target = resetPath.startsWith("/") ? resetPath : `/reset-password?token=${encodeURIComponent(resetPath)}`;
+                  window.location.assign(target);
+                }}
+              >
+                Open Reset Page
+              </button>
+            </div>
+          )}
         </section>
       </main>
     </div>

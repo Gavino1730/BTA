@@ -16,7 +16,7 @@ export default defineConfig({
     viewport: HEADED ? null : { width: 1280, height: 720 },
     launchOptions: {
       slowMo: ENV.PW_SLOWMO ? parseInt(ENV.PW_SLOWMO, 10) : 0,
-      args: HEADED ? ["--start-maximized"] : [],
+      args: HEADED ? ["--start-fullscreen", "--start-maximized"] : [],
     },
     trace: "on-first-retry",
     screenshot: "only-on-failure",

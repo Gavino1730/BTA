@@ -13,6 +13,7 @@ const OPERATOR_BASE = "http://localhost:5174";
 const AUTH_SESSION_KEY = "bta.coach.authSession";
 const ROSTER_STORAGE_KEY = "shared-app-data-v3";
 const PW_RNG_SEED = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PW_RNG_SEED;
+const LOGICAL_SIM_MINUTES = Number((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LOGICAL_SIM_MINUTES ?? "8");
 
 // ── Seeded LCG RNG ────────────────────────────────────────────────────────────
 class Rng {
@@ -425,6 +426,50 @@ async function openClockAdmin(page: Page): Promise<void> {
   }
 }
 
+async function getMyScore(page: Page): Promise<number> {
+  const scoreText = await page.locator(".scoreboard-team-card-my .score").first().innerText().catch(() => "0");
+  const n = Number(scoreText.trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function ensureOnCourtPlayers(page: Page): Promise<void> {
+  await clearModals(page);
+  const twoPointButtons = page.locator(".classic-score-grid button", { hasText: "2pt" });
+  expect(await twoPointButtons.count()).toBeGreaterThan(0);
+  await twoPointButtons.first().click({ timeout: 4000 }).catch(() => undefined);
+
+  const noPlayersMessage = page.getByText("No players on court yet");
+  const noPlayers = await noPlayersMessage.isVisible({ timeout: 800 }).catch(() => false);
+  expect(noPlayers, "Expected active on-court players so scoring can be recorded.").toBe(false);
+
+  const madeButton = page.getByRole("button", { name: "Made" }).first();
+  if (await madeButton.isVisible({ timeout: 800 }).catch(() => false)) {
+    await madeButton.click({ timeout: 2000 }).catch(() => undefined);
+  }
+
+  const playerRows = page.locator(".player-list .player-row");
+  const selectablePlayers = await playerRows.count();
+  expect(selectablePlayers, "Expected selectable players in scoring modal.").toBeGreaterThan(0);
+  await clearModals(page);
+}
+
+async function runPossession(page: Page, ms: number, action: () => Promise<void>): Promise<void> {
+  await clickClockButton(page, "Start");
+  await page.waitForTimeout(ms);
+  await clickClockButton(page, "Stop");
+  await action();
+}
+
+async function scoreAndVerify(page: Page, points: 1 | 2 | 3, rng: Rng): Promise<void> {
+  const before = await getMyScore(page);
+  if (points === 1) {
+    await doFreeThrow(page, true, rng);
+  } else {
+    await doShot(page, points, true, rng);
+  }
+  await expect.poll(async () => getMyScore(page), { timeout: 10_000 }).toBe(before + points);
+}
+
 async function editFirstFeedEvent(page: Page): Promise<void> {
   await clearModals(page);
   const items = page.locator(".feed-item");
@@ -512,7 +557,7 @@ async function runAction(page: Page, kind: ActionKind, rng: Rng): Promise<void> 
 }
 
 // ── Test ──────────────────────────────────────────────────────────────────────
-test.setTimeout(240_000);
+test.setTimeout(900_000);
 
 test("logical full-game flow — all quarters and core features", async ({ browser, request }) => {
   const rng = new Rng();
@@ -553,17 +598,24 @@ test("logical full-game flow — all quarters and core features", async ({ brows
   }
 
   await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
-  await expect(coachPage.getByRole("heading", { name: "Start New Game" })).toBeVisible({ timeout: 15_000 });
-  await expect(coachPage.getByRole("button", { name: seed.team.name, exact: true })).toBeVisible({ timeout: 15_000 });
-  await coachPage.getByRole("button", { name: seed.team.name, exact: true }).click();
-  await coachPage.getByPlaceholder("e.g. Opponent").fill("Chaos Rivals");
+  await coachPage.waitForLoadState("networkidle").catch(() => undefined);
+  const startHeading = coachPage.getByRole("heading", { name: "Start New Game" });
+  const liveHeading = coachPage.getByRole("heading", { name: "Live Game Controls" });
 
-  for (const p of seed.team.players.slice(0, 5)) {
-    await coachPage.getByRole("button", { name: new RegExp(p.name) }).click();
+  if (await startHeading.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await expect(coachPage.getByRole("button", { name: seed.team.name, exact: true })).toBeVisible({ timeout: 15_000 });
+    await coachPage.getByRole("button", { name: seed.team.name, exact: true }).click();
+    await coachPage.getByPlaceholder("e.g. Opponent").fill("Chaos Rivals");
+
+    for (const p of seed.team.players.slice(0, 5)) {
+      await coachPage.getByRole("button", { name: new RegExp(p.name) }).click();
+    }
+
+    await coachPage.getByRole("button", { name: "Launch Game" }).click();
+    await expect(liveHeading).toBeVisible({ timeout: 15_000 });
+  } else {
+    await expect(liveHeading).toBeVisible({ timeout: 15_000 });
   }
-
-  await coachPage.getByRole("button", { name: "Launch Game" }).click();
-  await expect(coachPage.getByRole("heading", { name: "Live Game Controls" })).toBeVisible({ timeout: 15_000 });
 
   const connectionCode = (await coachPage.locator(".settings-pairing-code").first().innerText()).trim();
   expect(connectionCode).toMatch(/^\d{6}$/);
@@ -608,109 +660,117 @@ test("logical full-game flow — all quarters and core features", async ({ brows
     },
   });
   const opPage = await opCtx.newPage();
-  await opPage.goto(`${OPERATOR_BASE}/?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
-  await opPage.getByLabel("Connection code").fill(connectionCode);
-  await opPage.getByRole("button", { name: "Sync Now" }).click();
-  await expect(opPage.getByRole("button", { name: "Start Game" })).toBeEnabled({ timeout: 10_000 });
-  await opPage.getByRole("button", { name: "Start Game" }).click();
+  await opPage.goto(`${OPERATOR_BASE}/?schoolId=${seed.schoolId}&connectionId=${connectionCode}`, { waitUntil: "domcontentloaded" });
+  const lineupDebug = await opPage.evaluate(() => {
+    const raw = localStorage.getItem("shared-app-data-v3");
+    if (!raw) return { ok: false };
+    const parsed = JSON.parse(raw) as {
+      teams?: Array<{ id: string; players?: Array<{ id: string }> }>;
+      gameSetup?: { myTeamId?: string; startingLineup?: string[] };
+    };
+    return {
+      ok: true,
+      teamIds: (parsed.teams ?? []).map((t) => t.id),
+      teamSizes: (parsed.teams ?? []).map((t) => t.players?.length ?? 0),
+      myTeamId: parsed.gameSetup?.myTeamId ?? null,
+      startingLineup: parsed.gameSetup?.startingLineup ?? [],
+    };
+  });
+  console.log(`[logical] local setup debug: ${JSON.stringify(lineupDebug)}`);
+
+  const startGameBtn = opPage.getByRole("button", { name: "Start Game" });
+  if (!await startGameBtn.isEnabled().catch(() => false)) {
+    const codeInput = opPage.getByLabel("Connection code");
+    if (await codeInput.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await codeInput.fill(connectionCode);
+    }
+    const syncBtn = opPage.getByRole("button", { name: "Sync Now" });
+    if (await syncBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await syncBtn.click();
+    }
+  }
+  await expect(startGameBtn).toBeEnabled({ timeout: 10_000 });
+  await startGameBtn.click();
   await expect(opPage.locator(".classic-score-grid")).toBeVisible({ timeout: 10_000 });
 
-  // ── 4. Q1 — opening possessions, scoring, fouls, quick actions, short TO ──
+  const simStartedAt = Date.now();
+  const POSSESSION_MS = 10_000;
+
+  await ensureOnCourtPlayers(opPage);
+
+  // ── 4. Q1 — realistic opening tempo with scoring/fouls/turnovers/subs ─────
   console.log("[logical] Q1 begins");
   await clickPossession(opPage, rng);
   await setClockViaNumpad(opPage, "800");
-  await clickClockButton(opPage, "Start");
-  await clickClockButton(opPage, "Stop");
+  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 2, rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doShot(opPage, 3, false, rng); await doStat(opPage, "DEF"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "to", "Bad Pass"); await doStat(opPage, "stl"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doAssistFlow(opPage); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Personal"); await scoreAndVerify(opPage, 1, rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doSub(opPage); await doTimeout(opPage, true, "short"); });
 
-  await doShot(opPage, 2, true, rng);
-  await doShot(opPage, 2, false, rng);
-  await doShot(opPage, 3, true, rng);
-  await doShot(opPage, 3, false, rng);
-  await doFreeThrow(opPage, true, rng);
-  await doFreeThrow(opPage, false, rng);
-  await doStat(opPage, "DEF");
-  await doStat(opPage, "OFF");
-  await doStat(opPage, "foul", "Personal");
-  await doStat(opPage, "to", "Bad Pass");
-  await doAssistFlow(opPage);
-  await doSub(opPage);
-  await doTimeout(opPage, true, "short");
-  await doTimeout(opPage, false, "short");
-
-  await doQuickRosterAction(opPage, "2PT ✓", rng);
-  await doQuickRosterAction(opPage, "2PT ✗", rng);
-  await doQuickRosterAction(opPage, "3PT ✓", rng);
-  await doQuickRosterAction(opPage, "3PT ✗", rng);
-  await doQuickRosterAction(opPage, "FT", rng);
-
-  // ── 5. Q2 — full TO, clock tools, feed edit/delete, summary, undo ─────────
+  // ── 5. Q2 — clock tools, full timeouts, quick-actions, edit/delete/summary ─
   await advancePeriod(opPage, "Q2");
   console.log("[logical] Q2 begins");
   await clickPossession(opPage, rng);
-  await setClockViaNumpad(opPage, "600");
-  await clickClockButton(opPage, "Start");
-  await clickClockButton(opPage, "Stop");
+  await setClockViaNumpad(opPage, "800");
   await clickClockButton(opPage, "+1s");
   await clickClockButton(opPage, "-1s");
   await clickClockButton(opPage, "Reset");
   await openClockAdmin(opPage);
   await clickClockButton(opPage, "Hide Clock");
   const showClock = opPage.locator(".clock-show-btn").first();
-  if (await showClock.isVisible({ timeout: 1000 }).catch(() => false)) {
+  if (await showClock.isVisible({ timeout: 1500 }).catch(() => false)) {
     await showClock.click({ timeout: 2000 }).catch(() => undefined);
   }
   await openClockAdmin(opPage);
   await clickClockButton(opPage, "Disable Clock");
   await clickClockButton(opPage, "Enable Clock");
 
-  await doTimeout(opPage, true, "full");
+  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 3, rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doTimeout(opPage, true, "full"); await doStat(opPage, "foul", "Shooting"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "2PT ✓", rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "3PT ✗", rng); await doQuickRosterAction(opPage, "REB", rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "FOUL", rng); await doQuickRosterAction(opPage, "TO", rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "ASST", rng); await doQuickRosterAction(opPage, "BLK", rng); });
   await doTimeout(opPage, false, "full");
-  await doStat(opPage, "foul", "Shooting");
-  await doStat(opPage, "to", "Travel");
-  await doStat(opPage, "stl");
-  await doStat(opPage, "blk");
-  await doQuickRosterAction(opPage, "REB", rng);
-  await doQuickRosterAction(opPage, "FOUL", rng);
-  await doQuickRosterAction(opPage, "TO", rng);
-  await doQuickRosterAction(opPage, "STL", rng);
-  await doQuickRosterAction(opPage, "ASST", rng);
-  await doQuickRosterAction(opPage, "BLK", rng);
-  await doQuickRosterAction(opPage, "SUB", rng);
-
   await editFirstFeedEvent(opPage);
   await deleteOneFeedEvent(opPage);
   await openCloseSummary(opPage);
   await doUndo(opPage);
 
-  // ── 6. Q3 — remaining foul/turnover types + subs/assists and possession ───
+  // ── 6. Q3 — remaining foul and turnover variants with continued tempo ─────
   await advancePeriod(opPage, "Q3");
   console.log("[logical] Q3 begins");
   await clickPossession(opPage, rng);
-  await doStat(opPage, "foul", "Offensive");
-  await doStat(opPage, "foul", "Technical");
-  await doStat(opPage, "to", "Double Dribble");
-  await doStat(opPage, "to", "Out of Bounds");
-  await doShot(opPage, 2, true, rng);
-  await doShot(opPage, 3, true, rng);
-  await doFreeThrow(opPage, true, rng);
-  await doAssistFlow(opPage);
-  await doSub(opPage);
+  await setClockViaNumpad(opPage, "800");
+  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Offensive"); await doStat(opPage, "to", "Double Dribble"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 2, rng); await doStat(opPage, "to", "Out of Bounds"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Technical"); await doFreeThrow(opPage, false, rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "SUB", rng); await doSub(opPage); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "STL", rng); await doQuickRosterAction(opPage, "FT", rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doShot(opPage, 3, false, rng); await doStat(opPage, "OFF"); });
 
-  // ── 7. Q4 — final feature sweep and game closeout actions ─────────────────
+  // ── 7. Q4 — closeout with final subtype coverage and scoring checks ───────
   await advancePeriod(opPage, "Q4");
   console.log("[logical] Q4 begins");
   await clickPossession(opPage, rng);
-  await doStat(opPage, "foul", "Flagrant");
-  await doStat(opPage, "to", "Offensive Foul");
-  await doStat(opPage, "to", "Steal");
-  await doStat(opPage, "to", "Other");
-  await doShot(opPage, 2, true, rng);
-  await doShot(opPage, 2, false, rng);
-  await doShot(opPage, 3, true, rng);
-  await doFreeThrow(opPage, false, rng);
-  await doStat(opPage, "DEF");
-  await doStat(opPage, "OFF");
-  await doUndo(opPage);
+  await setClockViaNumpad(opPage, "800");
+  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "foul", "Flagrant"); await doStat(opPage, "to", "Offensive Foul"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doStat(opPage, "to", "Steal"); await doStat(opPage, "to", "Other"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 2, rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await scoreAndVerify(opPage, 3, rng); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doFreeThrow(opPage, false, rng); await doStat(opPage, "DEF"); });
+  await runPossession(opPage, POSSESSION_MS, async () => { await doQuickRosterAction(opPage, "2PT ✗", rng); await doQuickRosterAction(opPage, "3PT ✓", rng); });
+
+  // Keep runtime near 8 minutes to mimic full game tempo.
+  const MIN_RUNTIME_MS = Math.max(0, LOGICAL_SIM_MINUTES) * 60 * 1000;
+  const elapsed = Date.now() - simStartedAt;
+  if (elapsed < MIN_RUNTIME_MS) {
+    const remaining = MIN_RUNTIME_MS - elapsed;
+    console.log(`[logical] pacing wait to reach 8-minute simulation: ${remaining}ms`);
+    await opPage.waitForTimeout(remaining);
+  }
 
   // ── 8. Resolve game ID candidates and assert events before ending game ─────
   const gameIdCandidates = new Set<string>();

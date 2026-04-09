@@ -81,8 +81,8 @@ Demo Page (`/demo`) - ✅ Done
 
 - ✅ Sign up / registration (`/setup`)
 - ✅ Log in (`/login`)
-- ❌ Forgot password page (API exists: `POST /api/auth/coach-account/reset-password`)
-- ❌ Reset password page
+- ✅ Forgot password page (`/forgot-password`)
+- ✅ Reset password page (`/reset-password`)
 - ❌ Email verification
 - ❌ Invite acceptance
 - 🚧 Magic link / SSO (later)

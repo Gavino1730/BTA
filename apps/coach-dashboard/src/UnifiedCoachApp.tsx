@@ -9,7 +9,8 @@ import { LoginPage } from "./LoginPage.js";
 import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { BillingPage, ContactPage, PrivacyPage, ResetPasswordPage, SupportPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { BillingPage, ContactPage, PrivacyPage, SupportPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
@@ -46,6 +47,27 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
 
 function isPublicRoute(route: AppRoute): boolean {
   return PUBLIC_ROUTES.has(route);
+}
+
+interface AppFooterProps {
+  onNavigate: (path: string) => void;
+}
+
+function AppFooter({ onNavigate }: AppFooterProps) {
+  return (
+    <footer className="coach-app-footer">
+      <div className="coach-app-footer-inner">
+        <span className="coach-app-footer-brand">BTA Courtside Platform</span>
+        <nav className="coach-app-footer-links" aria-label="App footer links">
+          <button type="button" onClick={() => onNavigate("/support")}>Support</button>
+          <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
+          <button type="button" onClick={() => onNavigate("/billing")}>Billing</button>
+          <button type="button" onClick={() => onNavigate("/terms")}>Terms</button>
+          <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
+        </nav>
+      </div>
+    </footer>
+  );
 }
 
 interface SessionCheckPayload {
@@ -426,7 +448,12 @@ export function UnifiedCoachApp() {
   }
 
   if (route === "reset-password") {
-    return <ResetPasswordPage onNavigate={navigate} />;
+    return (
+      <ResetPasswordPage
+        onBackForgot={() => navigate("/forgot-password")}
+        onBackLogin={() => navigate("/login")}
+      />
+    );
   }
 
   if (route === "terms") {
@@ -564,6 +591,7 @@ export function UnifiedCoachApp() {
       {route === "account" && <AccountPage onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))} />}
       {route === "billing" && <BillingPage onNavigate={navigate} />}
       {route === "settings" && <UserSettingsPage onNavigate={navigate} />}
+      <AppFooter onNavigate={navigate} />
     </GameSessionProvider>
   );
 }

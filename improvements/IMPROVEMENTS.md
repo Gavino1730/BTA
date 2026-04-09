@@ -61,9 +61,9 @@ Priority keys:
 ## P1 — High-Value Improvements (Pre-Season)
 
 ### UX / Usability (pre-deploy blockers identified Apr 8 2026)
-- [ ] P0 Add forgot-password / self-service reset flow to coach dashboard login.
-  - Current gap: no recovery path if a coach forgets their password. The API endpoint `POST /api/auth/coach-account/reset-password` exists but is never surfaced in the UI.
-  - Action: add a "Forgot password?" link on LoginPage that collects email and calls the reset endpoint; display a confirmation message.
+- [x] P0 Add forgot-password / self-service reset flow to coach dashboard login.
+  - Result: added `/forgot-password` and `/reset-password` coach routes with form UX and server-backed token reset flow.
+  - API: `POST /api/auth/password-reset/request`, `POST /api/auth/password-reset/confirm`.
 - [x] P0 Add confirm dialog before destructive Remove actions (player, member).
   - Current gap: Remove buttons on Roster and Members pages fire immediately with no confirmation. A fat-finger on a touchscreen deletes a player permanently mid-season.
   - Action: wrap `removePlayer` and `removeMember` calls with a `window.confirm` or the existing `useConfirmDialog` hook already in the iPad operator.
