@@ -101,6 +101,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/settings") {
     return "settings";
   }
+  if (canonical === "/live") {
+    return "live";
+  }
   if (canonical === "/setup") {
     return "setup";
   }
