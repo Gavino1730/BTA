@@ -4,6 +4,7 @@ import IpadTipsPage from "./IpadTipsPage.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { PreGameScreen } from "./PreGameScreen.js";
 import { PostGameScreen } from "./PostGameScreen.js";
+import { GameFinishedScreen } from "./GameFinishedScreen.js";
 import { GameSummaryModal } from "./GameSummaryModal.js";
 import { ModalRouter, ChainPromptBar } from "./ModalRouter.js";
 import { ScoringPanel } from "./ScoringPanel.js";
@@ -201,14 +202,16 @@ export function App() {
   const [postGameAwayScoreInput, setPostGameAwayScoreInput] = useState("0");
 
   // ---- Game flow phase ----
-  const [gamePhase, setGamePhase] = useState<"pre-game" | "live" | "post-game">(() => {
+  const [gamePhase, setGamePhase] = useState<"pre-game" | "live" | "post-game" | "finished">(() => {
     const saved = localStorage.getItem("operator-console:phase");
-    if (saved === "live" || saved === "post-game" || saved === "pre-game") return saved as "pre-game" | "live" | "post-game";
+    if (saved === "live" || saved === "post-game" || saved === "pre-game" || saved === "finished") {
+      return saved as "pre-game" | "live" | "post-game" | "finished";
+    }
     // Legacy: if there are already events for this game, land in live view
     return loadPending(loadAppData().gameSetup.gameId).length > 0 ? "live" : "pre-game";
   });
 
-  function persistPhase(phase: "pre-game" | "live" | "post-game") {
+  function persistPhase(phase: "pre-game" | "live" | "post-game" | "finished") {
     setGamePhase(phase);
     localStorage.setItem("operator-console:phase", phase);
   }
@@ -243,6 +246,10 @@ export function App() {
     setConnectionSyncStatus,
     setConnectedOperatorCount,
     persistPhase,
+    onGameSubmitted() {
+      setSubmitStatus("success");
+      setSubmitMessage("Game has been submitted. This iPad is now in finished summary mode.");
+    },
     showInlineNotice,
   });
 
@@ -388,7 +395,7 @@ export function App() {
   });
 
   useEffect(() => {
-    if (gamePhase !== "post-game") return;
+    if (gamePhase !== "post-game" && gamePhase !== "finished") return;
     setPostGameNameInput(appData.gameSetup.gameId || "");
     setPostGameOpponentInput(appData.gameSetup.opponent || "");
     setPostGameDateInput(gameDate);
@@ -582,6 +589,29 @@ export function App() {
         onResetFromPostGame={resetFromPostGame}
         onDiscardFromPostGame={discardFromPostGame}
         onHandleNewGame={handleNewGame}
+        onMarkGameFinished={() => {
+          persistPhase("finished");
+          setSubmitStatus("success");
+          setSubmitMessage("Game submitted. This session is now locked to finished summary.");
+        }}
+        inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
+        confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
+      />
+    );
+  }
+
+  if (gamePhase === "finished") {
+    return (
+      <GameFinishedScreen
+        gameId={postGameNameInput || gameId}
+        gameDate={postGameDateInput || gameDate}
+        opponentName={postGameOpponentInput}
+        homeTeamName={homeTeamName}
+        awayTeamName={awayTeamName}
+        homeScore={scores.home}
+        awayScore={scores.away}
+        submitMessage={submitMessage || "Game has been submitted."}
+        onStartNewGame={handleNewGame}
         inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
         confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />

@@ -9,6 +9,7 @@ import {
   useGameMemos, useEndGame,
   type AggregatedTeam, type CanonicalSideIds, type RotationContext, type RosterLabels,
 } from "./hooks/index.js";
+import type { FinishedGameSummary } from "./hooks/useCoachSocket.js";
 import {
   type GameState, type BoxScoreFilter, type Insight,
   ACTIVE_GAME_KEY,
@@ -57,6 +58,7 @@ export interface GameSession {
   // Game identity
   gameId: string;
   setupNames: SetupNames;
+  lastFinishedGameSummary: FinishedGameSummary | null;
 
   // Game data
   state: GameState | null;
@@ -75,6 +77,7 @@ export interface GameSession {
   setBoxScoreFilter: Dispatch<SetStateAction<BoxScoreFilter>>;
 
   // Actions
+  dismissFinishedGameSummary: () => void;
   clearActiveGame: (statusMessage: string) => void;
   deleteGameEvent: (eventId: string) => Promise<void>;
   deletingGameEventId: string | null;
@@ -290,6 +293,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     (() => { try { return JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[]; } catch { return []; } })()
   ));
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
+  const [lastFinishedGameSummary, setLastFinishedGameSummary] = useState<FinishedGameSummary | null>(null);
   const [activePage, setActivePageState] = useState<"live" | "ai">(
     () => (sessionStorage.getItem("coach:live-tab") as "live" | "ai" | null) ?? "live"
   );
@@ -388,6 +392,12 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     isLaunchingGame, launchGame, resetForm: resetNewGameForm,
   } = useNewGameForm({ rosterTeams, endedGameIdsRef, connectionId, setGameId, setSetupNames, setDashboardStatus });
 
+  useEffect(() => {
+    if (gameId) {
+      setLastFinishedGameSummary(null);
+    }
+  }, [gameId]);
+
   // URL sync
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -425,6 +435,10 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     sessionStorage.setItem("coach:live-tab", "live");
     setDashboardStatus(statusMessage);
   }, [gameId, resetAiState, resetNewGameForm]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dismissFinishedGameSummary = useCallback(() => {
+    setLastFinishedGameSummary(null);
+  }, []);
 
   const deleteGameEvent = useCallback(async (eventId: string): Promise<void> => {
     if (!gameId || !eventId) {
@@ -480,10 +494,10 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
 
   // Socket hook
   useCoachSocket({
-    connectionId, gameIdRef, endedGameIdsRef, clearActiveGame,
+    connectionId, setupNames, gameIdRef, endedGameIdsRef, clearActiveGame,
     setGameId, setState, setServerConnected, setDeviceConnected,
     setConnectedOperatorCount, setConnectedOperators,
-    setDashboardStatus, setInsights, setRosterTeamsFromRemote,
+    setDashboardStatus, setInsights, setRosterTeamsFromRemote, setLastFinishedGameSummary,
   });
 
   // Hydration hook
@@ -561,13 +575,14 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     // Connection
     connectionId, setConnectionId, deviceId, operatorConsoleUrl,
     // Game identity
-    gameId, setupNames,
+    gameId, setupNames, lastFinishedGameSummary,
     // Game data
     state, insights, isLoading, serverConnected, deviceConnected,
     connectedOperatorCount, connectedOperators, dashboardStatus,
     // UI
     activePage, setActivePage, boxScoreFilter, setBoxScoreFilter,
     // Actions
+    dismissFinishedGameSummary,
     clearActiveGame,
     deleteGameEvent,
     deletingGameEventId,

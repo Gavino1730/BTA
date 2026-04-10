@@ -4171,6 +4171,22 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   flex-wrap: wrap;
 }
 
+.finalize-game-finished-card {
+  margin-bottom: 0.9rem;
+}
+
+.finalize-game-finished-score {
+  display: inline-flex;
+  gap: 0.55rem;
+  align-items: center;
+  border: 1px solid var(--border-hi);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  margin-top: 0.45rem;
+  font-size: 0.95rem;
+}
+
 @media (max-width: 700px) {
   .finalize-game-grid {
     grid-template-columns: 1fr;
@@ -6400,5 +6416,190 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
   .mkt-detail-hero h1 {
     font-size: clamp(1.7rem, 8vw, 2.2rem);
+  }
+}
+
+/* ===================================================================
+   Marketing differentiation pass
+   =================================================================== */
+
+.mkt-page {
+  background:
+    linear-gradient(180deg, #060a14 0%, #090f1d 52%, #0b1322 100%);
+}
+
+.mkt-nav {
+  background: rgba(6, 10, 20, 0.92);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+.mkt-btn-primary {
+  background: #12b375;
+  border: 1px solid rgba(18,179,117,0.78);
+  box-shadow: none;
+}
+
+.mkt-btn-primary:hover {
+  box-shadow: none;
+  background: #16c986;
+}
+
+.mkt-btn,
+.mkt-feature-card,
+.mkt-demo-widget,
+.mkt-detail-card,
+.mkt-demo-page-cta {
+  border-radius: 8px;
+}
+
+.mkt-hero-moment {
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.03);
+  color: rgba(244,246,251,0.9);
+  line-height: 1.6;
+  max-width: 62ch;
+}
+
+.mkt-hero-moment strong {
+  color: #f7cb6a;
+}
+
+.mkt-proof-strip {
+  padding: 1.1rem 1.5rem;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.02);
+}
+
+.mkt-proof-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.mkt-proof-item {
+  padding: 0.8rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(9,15,30,0.65);
+}
+
+.mkt-proof-item strong {
+  display: block;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  color: #f4f6fb;
+}
+
+.mkt-proof-item span {
+  font-size: 0.82rem;
+  color: rgba(244,246,251,0.75);
+}
+
+.mkt-spotlight {
+  padding: 3.5rem 1.5rem 2.6rem;
+}
+
+.mkt-spotlight-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 1.2rem;
+  align-items: start;
+}
+
+.mkt-spotlight-head {
+  text-align: left;
+  margin: 0;
+}
+
+.mkt-spotlight-panel {
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 0.8rem;
+  background: rgba(7,12,22,0.75);
+}
+
+.mkt-spotlight-panel .mkt-demo-widget {
+  max-width: 100%;
+}
+
+.mkt-moment-grid,
+.mkt-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.mkt-moment-card,
+.mkt-compare-card {
+  background: rgba(9,15,30,0.82);
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 1rem;
+}
+
+.mkt-moment-time {
+  margin: 0 0 0.5rem;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9fb8ff;
+}
+
+.mkt-moment-card h3,
+.mkt-compare-card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 1rem;
+}
+
+.mkt-moment-card p,
+.mkt-compare-card li {
+  margin: 0;
+  color: rgba(244,246,251,0.82);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.mkt-moment-call {
+  margin-top: 0.65rem;
+  color: #9fe8c6;
+  font-weight: 600;
+}
+
+.mkt-compare-card ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+@media (max-width: 1024px) {
+  .mkt-proof-inner,
+  .mkt-moment-grid,
+  .mkt-compare-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mkt-spotlight-inner {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .mkt-proof-strip,
+  .mkt-spotlight {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .mkt-proof-inner,
+  .mkt-moment-grid,
+  .mkt-compare-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mkt-hero-moment {
+    font-size: 0.92rem;
   }
 }

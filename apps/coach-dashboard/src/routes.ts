@@ -30,8 +30,7 @@ export type AppRoute =
   | "stats-insights"
   | "stats-notifications"
   | "stats-settings"
-  | "org-settings"
-  | "demo";
+  | "org-settings";
 
 const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/dashboard": "/live",
@@ -49,6 +48,7 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/onboarding": "/setup",
   "/signin": "/login",
   "/sign-in": "/login",
+  "/demo": "/",
   "/home": "/",
 };
 
@@ -154,9 +154,6 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/stats") {
     return "stats-overview";
-  }
-  if (canonical === "/demo") {
-    return "demo";
   }
   return "not-found";
 }

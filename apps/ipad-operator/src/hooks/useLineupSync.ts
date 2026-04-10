@@ -5,13 +5,13 @@ import { saveAppData } from "../helpers/storage.js";
 import { sanitizeLineup, lineupsEqual } from "../helpers/lineup.js";
 
 export interface UseLineupSyncInput {
-  gamePhase: "pre-game" | "live" | "post-game";
+  gamePhase: "pre-game" | "live" | "post-game" | "finished";
   appData: AppData;
   setAppData: React.Dispatch<React.SetStateAction<AppData>>;
   setLineupLockedByLiveGame: (locked: boolean) => void;
   setConnectionSyncStatus: (status: string) => void;
   setLineupSyncStatus: (status: string) => void;
-  persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
+  persistPhase: (phase: "pre-game" | "live" | "post-game" | "finished") => void;
 }
 
 export function useLineupSync({

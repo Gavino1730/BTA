@@ -18,12 +18,11 @@ export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps
             <button type="button" onClick={() => onNavigate("/")}>Home</button>
             <button type="button" onClick={() => onNavigate("/features")}>Features</button>
             <button type="button" onClick={() => onNavigate("/about")}>About</button>
-            <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           </nav>
           <div className="mkt-nav-actions">
             <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/login")}>Coach Login</button>
-            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/demo")}>Open Demo</button>
+            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>Get Started</button>
           </div>
         </div>
       </header>

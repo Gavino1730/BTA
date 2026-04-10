@@ -1788,7 +1788,13 @@ function shouldSuppressMissingTenantTelemetry(req: Request): boolean {
 
   return req.path === "/roster-teams"
     || req.path === "/games/active/state"
-    || req.path === "/games/active/setup";
+    || req.path === "/games/active/setup"
+    || req.path === "/season-stats"
+    || req.path === "/leaderboards"
+    || req.path === "/games"
+    || req.path === "/advanced/team"
+    || req.path === "/advanced/patterns"
+    || req.path === "/advanced/volatility";
 }
 
 function buildBootstrapSchoolSeed(...candidates: unknown[]): string {

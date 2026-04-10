@@ -75,13 +75,14 @@ const baseAppData: AppData = {
   gameSetup: baseSetup,
 };
 
-function renderSocketHook(options?: { gameId?: string; gamePhase?: string; persistPhase?: (phase: "pre-game" | "live" | "post-game") => void; showInlineNotice?: (message: string) => void }) {
+function renderSocketHook(options?: { gameId?: string; gamePhase?: string; persistPhase?: (phase: "pre-game" | "live" | "post-game" | "finished") => void; showInlineNotice?: (message: string) => void }) {
   const setAppData = vi.fn();
   const setLiveAlerts = vi.fn();
   const setDismissedAlertIds = vi.fn();
   const setConnectionSyncStatus = vi.fn();
   const setConnectedOperatorCount = vi.fn();
   const persistPhase = options?.persistPhase ?? vi.fn();
+  const onGameSubmitted = vi.fn();
   const showInlineNotice = options?.showInlineNotice ?? vi.fn();
 
   function Harness() {
@@ -97,6 +98,7 @@ function renderSocketHook(options?: { gameId?: string; gamePhase?: string; persi
       setConnectionSyncStatus,
       setConnectedOperatorCount,
       persistPhase,
+      onGameSubmitted,
       showInlineNotice: showInlineNotice as (message: string, tone?: "info" | "success" | "warning" | "error", timeoutMs?: number) => void,
     });
     return null;
@@ -106,6 +108,7 @@ function renderSocketHook(options?: { gameId?: string; gamePhase?: string; persi
 
   return {
     persistPhase,
+    onGameSubmitted,
     showInlineNotice,
     setAppData,
   };
@@ -117,11 +120,11 @@ afterEach(() => {
 });
 
 describe("useSocket", () => {
-  it("moves operator to post-game when matching game is submitted", () => {
+  it("moves operator to finished when matching game is submitted", () => {
     const persistPhase = vi.fn();
     const showInlineNotice = vi.fn();
 
-    renderSocketHook({
+    const rendered = renderSocketHook({
       gameId: "game-1",
       gamePhase: "live",
       persistPhase,
@@ -130,9 +133,10 @@ describe("useSocket", () => {
 
     socketMocks.trigger("game:submitted", { gameId: "game-1" });
 
-    expect(persistPhase).toHaveBeenCalledWith("post-game");
+    expect(persistPhase).toHaveBeenCalledWith("finished");
+    expect(rendered.onGameSubmitted).toHaveBeenCalledTimes(1);
     expect(showInlineNotice).toHaveBeenCalledWith(
-      "Game ended on another device. Switched to post-game view.",
+      "Game ended on another device. Switched to finished view.",
       "info",
       4500,
     );
@@ -142,7 +146,7 @@ describe("useSocket", () => {
     const persistPhase = vi.fn();
     const showInlineNotice = vi.fn();
 
-    renderSocketHook({
+    const rendered = renderSocketHook({
       gameId: "game-1",
       gamePhase: "live",
       persistPhase,
@@ -152,8 +156,9 @@ describe("useSocket", () => {
     socketMocks.trigger("game:submitted", { gameId: "game-2" });
 
     expect(persistPhase).not.toHaveBeenCalled();
+    expect(rendered.onGameSubmitted).not.toHaveBeenCalled();
     expect(showInlineNotice).not.toHaveBeenCalledWith(
-      "Game ended on another device. Switched to post-game view.",
+      "Game ended on another device. Switched to finished view.",
       "info",
       4500,
     );

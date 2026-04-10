@@ -11,7 +11,9 @@ import { SetupGameCard } from "./SetupGameCard.js";
 export function LivePage() {
   const {
     gameId, state, insights, isLoading, dashboardStatus,
+    lastFinishedGameSummary,
     activePage, setActivePage, boxScoreFilter, setBoxScoreFilter,
+    dismissFinishedGameSummary,
     clearActiveGame,
     rosterTeams,
     newGameMyTeamId, setNewGameMyTeamId,
@@ -99,24 +101,44 @@ export function LivePage() {
         </div>
       )}
       {!gameId && activePage === "live" && liveSubPage === "scoreboard" && (
-        <SetupGameCard
-          rosterTeams={rosterTeams}
-          newGameMyTeamId={newGameMyTeamId}
-          setNewGameMyTeamId={setNewGameMyTeamId}
-          newGameOpponent={newGameOpponent}
-          setNewGameOpponent={setNewGameOpponent}
-          newGameVcSide={newGameVcSide}
-          setNewGameVcSide={setNewGameVcSide}
-          newGameOppColor={newGameOppColor}
-          setNewGameOppColor={setNewGameOppColor}
-          newGameStartingLineup={newGameStartingLineup}
-          setNewGameStartingLineup={setNewGameStartingLineup}
-          isLaunchingGame={isLaunchingGame}
-          launchGame={launchGame}
-          dashboardStatus={dashboardStatus}
-          connectionId={connectionId}
-          setConnectionId={setConnectionId}
-        />
+        <>
+          {lastFinishedGameSummary ? (
+            <section className="card settings-section-card finalize-game-finished-card" aria-label="Finished Game Summary">
+              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>Game Finished</p>
+              <h3 style={{ marginBottom: "0.5rem" }}>{lastFinishedGameSummary.myTeamName} vs {lastFinishedGameSummary.opponentName}</h3>
+              <p className="settings-section-desc">Game ID: {lastFinishedGameSummary.gameId}</p>
+              <p className="settings-section-desc">Finished at: {new Date(lastFinishedGameSummary.finishedAtIso).toLocaleString()}</p>
+              <div className="finalize-game-finished-score">
+                <span>{lastFinishedGameSummary.myTeamName}</span>
+                <strong>{lastFinishedGameSummary.myScore}</strong>
+                <span>-</span>
+                <strong>{lastFinishedGameSummary.oppScore}</strong>
+                <span>{lastFinishedGameSummary.opponentName}</span>
+              </div>
+              <div className="finalize-game-actions">
+                <button type="button" className="shell-nav-link" onClick={dismissFinishedGameSummary}>Dismiss</button>
+              </div>
+            </section>
+          ) : null}
+          <SetupGameCard
+            rosterTeams={rosterTeams}
+            newGameMyTeamId={newGameMyTeamId}
+            setNewGameMyTeamId={setNewGameMyTeamId}
+            newGameOpponent={newGameOpponent}
+            setNewGameOpponent={setNewGameOpponent}
+            newGameVcSide={newGameVcSide}
+            setNewGameVcSide={setNewGameVcSide}
+            newGameOppColor={newGameOppColor}
+            setNewGameOppColor={setNewGameOppColor}
+            newGameStartingLineup={newGameStartingLineup}
+            setNewGameStartingLineup={setNewGameStartingLineup}
+            isLaunchingGame={isLaunchingGame}
+            launchGame={launchGame}
+            dashboardStatus={dashboardStatus}
+            connectionId={connectionId}
+            setConnectionId={setConnectionId}
+          />
+        </>
       )}
       {!gameId && activePage === "live" && liveSubPage === "operators" && (
         <div className="idle-screen">

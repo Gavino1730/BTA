@@ -246,8 +246,8 @@ export function FeaturesPage({ onNavigate }: RoutedPageProps) {
       title="Features built for real game pressure"
       subtitle="BTA combines live game context, analytics, and team operations in one professional workflow coaches can trust."
       onNavigate={onNavigate}
-      primaryLabel="Open Demo"
-      primaryPath="/demo"
+      primaryLabel="Get Started"
+      primaryPath="/login"
       secondaryLabel="About BTA"
       secondaryPath="/about"
       sections={[
@@ -527,7 +527,7 @@ export function ContactPage({ onNavigate }: RoutedPageProps) {
       subtitle="Direct support and pilot inquiries are handled manually in preproduction."
       bullets={[
         "Support email: support@bta.local (replace before production)",
-        "Pilot/demo request workflow is coming soon",
+        "Pilot request workflow is coming soon",
         "Status page link will be added before launch",
       ]}
       onPrimary={() => onNavigate("/support")}

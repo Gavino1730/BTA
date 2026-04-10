@@ -7,7 +7,7 @@ import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
 import { ForbiddenPage, NotFoundPage, OfflinePage, ServerErrorPage, SessionExpiredPage } from "./ErrorStatePages.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
-import { DemoPage, MarketingPage } from "./MarketingPage.js";
+import { MarketingPage } from "./MarketingPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
@@ -40,7 +40,6 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "marketing",
   "features",
   "about",
-  "demo",
   "login",
   "forgot-password",
   "reset-password",
@@ -410,7 +409,6 @@ export function UnifiedCoachApp() {
       "/",
       "/features",
       "/about",
-      "/demo",
       "/login",
       "/forgot-password",
       "/reset-password",
@@ -450,10 +448,6 @@ export function UnifiedCoachApp() {
 
   if (route === "marketing") {
     return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
-  }
-
-  if (route === "demo") {
-    return <DemoPage onNavigate={navigate} />;
   }
 
   if (route === "features") {

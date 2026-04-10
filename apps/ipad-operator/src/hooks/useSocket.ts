@@ -21,7 +21,8 @@ export interface SocketDeps {
   setDismissedAlertIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   setConnectionSyncStatus: (status: string) => void;
   setConnectedOperatorCount: (count: number) => void;
-  persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
+  persistPhase: (phase: "pre-game" | "live" | "post-game" | "finished") => void;
+  onGameSubmitted: () => void;
   showInlineNotice: (
     message: string,
     tone?: "info" | "success" | "warning" | "error",
@@ -44,6 +45,7 @@ export function useSocket({
   setConnectionSyncStatus,
   setConnectedOperatorCount,
   persistPhase,
+  onGameSubmitted,
   showInlineNotice,
 }: SocketDeps): void {
   useEffect(() => {
@@ -182,10 +184,9 @@ export function useSocket({
         return;
       }
 
-      if (gamePhase === "live") {
-        persistPhase("post-game");
-      }
-      showInlineNotice("Game ended on another device. Switched to post-game view.", "info", 4500);
+      persistPhase("finished");
+      onGameSubmitted();
+      showInlineNotice("Game ended on another device. Switched to finished view.", "info", 4500);
     });
 
     socket.on("operator:link:updated", (linkPayload: unknown) => {
@@ -273,5 +274,5 @@ export function useSocket({
         socketRef.current = null;
       }
     };
-  }, [gameSetup.apiKey, gameSetup.apiUrl, gameSetup.connectionId, gameId, gamePhase]);
+  }, [gameSetup.apiKey, gameSetup.apiUrl, gameSetup.connectionId, gameId, gamePhase, onGameSubmitted]);
 }

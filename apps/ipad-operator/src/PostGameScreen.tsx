@@ -26,6 +26,7 @@ export interface PostGameScreenProps {
   onResetFromPostGame: () => void;
   onDiscardFromPostGame: () => void;
   onHandleNewGame: () => void;
+  onMarkGameFinished: () => void;
   inlineNoticeNode: ReactNode;
   confirmDialogNode: ReactNode;
 }
@@ -62,6 +63,7 @@ export function PostGameScreen({
   onResetFromPostGame,
   onDiscardFromPostGame,
   onHandleNewGame,
+  onMarkGameFinished,
   inlineNoticeNode,
   confirmDialogNode,
 }: PostGameScreenProps) {
@@ -159,10 +161,7 @@ export function PostGameScreen({
             if (apiOk && legacyOk) {
               onSetSubmitStatus("success");
               onSetSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
-              setTimeout(() => {
-                onSetSubmitStatus("idle");
-                onSetSubmitMessage("Game has been submitted to the dashboard.");
-              }, 4000);
+              onMarkGameFinished();
             } else {
               onSetSubmitStatus("error");
               onSetSubmitMessage("Submit failed. Check your connection and try again.");

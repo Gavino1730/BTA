@@ -81,7 +81,7 @@ describe("runtime config validation", () => {
     expect(result.errors.some((error) => error.includes("DATABASE_URL"))).toBe(true);
   });
 
-  it("warns when local auth signing is not configured", () => {
+  it("rejects production when local auth signing is not configured", () => {
     const config: RuntimeConfig = {
       ...baseConfig(),
       nodeEnv: "production",
@@ -91,6 +91,6 @@ describe("runtime config validation", () => {
     };
 
     const result = validateRuntimeConfig(config);
-    expect(result.warnings.some((warning) => warning.includes("BTA_LOCAL_AUTH_SECRET"))).toBe(true);
+    expect(result.errors.some((error) => error.includes("BTA_LOCAL_AUTH_SECRET") || error.includes("BTA_AUTH_SECRET"))).toBe(true);
   });
 });

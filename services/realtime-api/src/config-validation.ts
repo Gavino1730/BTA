@@ -63,9 +63,9 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
   }
 
   if (!config.localAuthSecretConfigured) {
-    warnings.push(
-      "BTA_LOCAL_AUTH_SECRET is not set; built-in email/password auth cannot issue signed local tokens. " +
-      "Set a dedicated BTA_LOCAL_AUTH_SECRET to enable local auth safely in production."
+    errors.push(
+      "Production requires a dedicated local auth signing secret. " +
+      "Set BTA_LOCAL_AUTH_SECRET (or legacy BTA_AUTH_SECRET) and do not reuse BTA_API_KEY for token signing."
     );
   }
 

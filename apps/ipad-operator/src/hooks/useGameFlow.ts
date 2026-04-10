@@ -32,7 +32,7 @@ export interface UseGameFlowInput {
   postGameHomeScoreInput: string;
   postGameAwayScoreInput: string;
   persistData: (next: AppData) => void;
-  persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
+  persistPhase: (phase: "pre-game" | "live" | "post-game" | "finished") => void;
   resetTimeline: (gameIdToReset: string) => void;
   setSubmitStatus: React.Dispatch<React.SetStateAction<"idle" | "pending" | "success" | "error">>;
   setSubmitMessage: React.Dispatch<React.SetStateAction<string>>;

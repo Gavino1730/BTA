@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface MarketingPageProps {
   onNavigate: (path: string) => void;
@@ -35,10 +35,57 @@ const USE_CASES = [
   },
 ];
 
+const GAME_MOMENTS = [
+  {
+    moment: "Q4, 1:32",
+    problem: "Opponent starts a 6-0 run and your offense stalls.",
+    signal: "Momentum flips and shot quality drops on two possessions.",
+    call: "Run through #1 again before the defense resets.",
+  },
+  {
+    moment: "Q3, 4:18",
+    problem: "Two empty trips after a timeout.",
+    signal: "Current lineup is -7 in the last 3:00.",
+    call: "Swap to your high-assist unit for the next two possessions.",
+  },
+  {
+    moment: "Q2, 0:49",
+    problem: "Need a smart end-of-half possession.",
+    signal: "Best efficiency is from left-wing action this quarter.",
+    call: "Go back to the same set before halftime.",
+  },
+];
+
+const TRUST_PROOF = [
+  { value: "25+", label: "Games tracked this season" },
+  { value: "<1s", label: "Coach dashboard update target" },
+  { value: "1", label: "Operator can run game entry" },
+  { value: "100%", label: "Events replay when reconnecting" },
+];
+
+const POSITIONING = [
+  {
+    title: "Post-game tools",
+    points: [
+      "Great for film and breakdown after the final buzzer",
+      "Explains what happened",
+      "Not built for live sideline decisions",
+    ],
+  },
+  {
+    title: "BTA during the game",
+    points: [
+      "Built for active possessions, runs, and substitutions",
+      "Shows what to do next",
+      "Designed for live coaching decisions in real time",
+    ],
+  },
+];
+
 const FAQS = [
   { q: "How does live sync work during games?", a: "The operator logs events on an iPad and updates are broadcast to the coach dashboard in real time. If connectivity drops, queued events replay when service returns." },
   { q: "What devices are supported?", a: "The coach view runs in a modern browser. Stat entry is optimized for iPad, but any modern tablet browser works." },
-  { q: "Can I try it before onboarding my team?", a: "Yes. The demo is public and preloaded with realistic season data so your staff can evaluate workflow quickly." },
+  { q: "How do we get started?", a: "Start by signing in, creating your roster, and pairing your operator device before game time." },
   { q: "Is this only for varsity?", a: "No. Programs use it across varsity, JV, and development squads with the same operating model." },
 ];
 
@@ -167,175 +214,6 @@ function LiveDemoWidget() {
   );
 }
 
-// ---- Public demo dashboard (no auth required) ----
-
-const DEMO_GAMES = [
-  { opponent: "Opponent A",    loc: "home", result: "W", vc: 62, opp: 48, date: "Feb 14" },
-  { opponent: "Opponent B",    loc: "away", result: "W", vc: 55, opp: 51, date: "Feb 11" },
-  { opponent: "Opponent C",    loc: "home", result: "L", vc: 44, opp: 58, date: "Feb 7"  },
-  { opponent: "Opponent D",    loc: "away", result: "W", vc: 67, opp: 43, date: "Feb 4"  },
-  { opponent: "Opponent E",    loc: "home", result: "L", vc: 51, opp: 64, date: "Jan 31" },
-];
-
-const DEMO_PLAYERS = [
-  { name: "Player #1",    num: "1",  ppg: 18.4, rpg: 4.2, apg: 5.8, fg: 44.1 },
-  { name: "Player #3",    num: "3",  ppg: 12.3, rpg: 6.8, apg: 1.9, fg: 41.3 },
-  { name: "Player #4",    num: "4",  ppg: 9.8,  rpg: 5.2, apg: 2.1, fg: 38.7 },
-  { name: "Player #2",    num: "2",  ppg: 7.2,  rpg: 3.1, apg: 3.4, fg: 36.2 },
-  { name: "Player #5",    num: "5",  ppg: 6.4,  rpg: 2.8, apg: 2.1, fg: 35.1 },
-  { name: "Player #15",   num: "15", ppg: 2.8,  rpg: 4.1, apg: 0.8, fg: 51.2 },
-];
-
-const TH_ST: CSSProperties = {
-  padding: "0.5rem 0.65rem", fontSize: "0.67rem", fontWeight: 700,
-  textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(232,234,240,0.4)",
-};
-
-export function DemoPage({ onNavigate }: { onNavigate: (path: string) => void }) {
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
-      <div className="mkt-demo-banner">
-        <span>Demo mode - sample team season data - read-only</span>
-        <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>
-          Sign In for Real Data -&gt;
-        </button>
-      </div>
-
-      <header className="mkt-demo-page-nav">
-        <button type="button" className="mkt-brand" onClick={() => onNavigate("/")} aria-label="Go to home page">
-          <span style={{ fontSize: "0.9rem", color: "rgba(232,234,240,0.55)" }}>Home</span>
-          <span className="mkt-brand-name">BTA Courtside</span>
-        </button>
-        <span className="mkt-demo-page-title">Demo Dashboard</span>
-        <div className="mkt-demo-page-actions">
-          <button type="button" className="mkt-btn mkt-btn-ghost" onClick={() => onNavigate("/")}>Home</button>
-          <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>Sign In</button>
-        </div>
-      </header>
-
-      <div className="stats-page">
-        <section className="stats-page-hero">
-          <div>
-            <h1>Sample Team</h1>
-            <p className="stats-page-subtitle">2025-26 Season - Sample Data</p>
-          </div>
-          <span className="stats-page-status">Demo - read-only</span>
-        </section>
-
-        <section className="stats-metric-grid">
-          {[
-            { label: "Record",     val: "12-6",  detail: "Win % 67%",             accent: true },
-            { label: "PPG",        val: "58.3",  detail: "Opponent PPG 46.2" },
-            { label: "FG%",        val: "43.2%", detail: "3PT 32.1% - FT 72.1%" },
-            { label: "Rebounding", val: "28.4",  detail: "Boards per game" },
-            { label: "Assists",    val: "14.2",  detail: "TO avg 10.8" },
-            { label: "Def Events", val: "9.9",   detail: "STL 7.1 - BLK 2.8" },
-          ].map((c) => (
-            <div key={c.label} className={`stats-metric-card${c.accent ? " accent-blue" : ""}`}>
-              <span className="stats-metric-label">{c.label}</span>
-              <strong className="stats-metric-value">{c.val}</strong>
-              <span className="stats-metric-detail">{c.detail}</span>
-            </div>
-          ))}
-        </section>
-
-        <section className="stats-page-grid two-column">
-          <section className="stats-page-card">
-            <div className="stats-page-card-head">
-              <h3>Recent Games</h3>
-              <span className="stats-page-status">Last 5</span>
-            </div>
-            <div className="stats-game-list">
-              {DEMO_GAMES.map((g) => {
-                const margin = g.vc - g.opp;
-                return (
-                  <div key={g.opponent + g.date} className="stats-game-row">
-                    <div>
-                      <strong>{g.loc === "away" ? "@" : "vs"} {g.opponent}</strong>
-                      <span>{g.date}</span>
-                    </div>
-                    <div className="stats-game-score-block">
-                      <strong>{g.vc}-{g.opp}</strong>
-                      <span style={{ fontSize: "0.78rem", color: margin > 0 ? "#86efac" : "#fca5a5" }}>
-                        {g.result} - {margin > 0 ? `+${margin}` : margin}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="stats-page-card">
-            <div className="stats-page-card-head">
-              <h3>Top Scorers</h3>
-              <span className="stats-page-status">Season PPG</span>
-            </div>
-            <div className="stats-leader-list">
-              {[...DEMO_PLAYERS].sort((a, b) => b.ppg - a.ppg).map((p) => (
-                <div key={p.name} className="stats-leader-row">
-                  <span>#{p.num} {p.name}</span>
-                  <strong>{p.ppg}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-        </section>
-
-        <section className="stats-page-card" style={{ marginBottom: "2rem" }}>
-          <div className="stats-page-card-head">
-            <h3>Player Season Averages</h3>
-            <span className="stats-page-status">Per game</span>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  <th style={{ ...TH_ST, textAlign: "left" }}>#</th>
-                  <th style={{ ...TH_ST, textAlign: "left" }}>Player</th>
-                  <th style={{ ...TH_ST, textAlign: "center" }}>PPG</th>
-                  <th style={{ ...TH_ST, textAlign: "center" }}>RPG</th>
-                  <th style={{ ...TH_ST, textAlign: "center" }}>APG</th>
-                  <th style={{ ...TH_ST, textAlign: "center" }}>FG%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {DEMO_PLAYERS.map((p, i) => (
-                  <tr
-                    key={p.name}
-                    style={{ borderBottom: i < DEMO_PLAYERS.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
-                  >
-                    <td style={{ padding: "0.55rem 0.65rem", color: "rgba(232,234,240,0.4)", fontSize: "0.82rem" }}>{p.num}</td>
-                    <td style={{ padding: "0.55rem 0.65rem", fontWeight: 600, color: "#e8eaf0" }}>{p.name}</td>
-                    <td style={{ padding: "0.55rem 0.65rem", textAlign: "center", fontWeight: 700, color: i === 0 ? "#a8c5ff" : "#e8eaf0" }}>{p.ppg}</td>
-                    <td style={{ padding: "0.55rem 0.65rem", textAlign: "center", color: "#e8eaf0" }}>{p.rpg}</td>
-                    <td style={{ padding: "0.55rem 0.65rem", textAlign: "center", color: "#e8eaf0" }}>{p.apg}</td>
-                    <td style={{ padding: "0.55rem 0.65rem", textAlign: "center", color: "#e8eaf0" }}>{p.fg}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <div className="mkt-demo-page-cta">
-          <div>
-            <h2>Want this for your team?</h2>
-            <p>Sign in to set up your roster, connect the iPad operator, and track games live.</p>
-          </div>
-          <button
-            type="button"
-            className="mkt-btn mkt-btn-primary mkt-btn-lg"
-            onClick={() => onNavigate("/login")}
-          >
-            Sign In to Get Started
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ---- Main marketing page ----
 
 export function MarketingPage({ onNavigate, isAuthenticated = false }: MarketingPageProps) {
@@ -352,12 +230,11 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           <nav className="mkt-nav-links" aria-label="Site navigation">
             <button type="button" onClick={() => onNavigate("/features")}>Features</button>
             <button type="button" onClick={() => onNavigate("/about")}>About</button>
-            <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           </nav>
           <div className="mkt-nav-actions">
             <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/login")}>Coach Login</button>
-            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/demo")}>Start Live Demo</button>
+            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate(isAuthenticated ? "/live" : "/login")}>Get Started</button>
           </div>
         </div>
       </header>
@@ -369,15 +246,18 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
             <div className="mkt-hero-copy">
               <span className="mkt-badge">Built for high school basketball programs</span>
               <h1 className="mkt-h1">
-                Live game intelligence for coaches.
-                <span className="mkt-gradient-text">Clear decisions at bench speed.</span>
+                Make the right call before the next possession starts.
+                <span className="mkt-gradient-text">See momentum shifts before they cost you the game.</span>
               </h1>
               <p className="mkt-hero-sub">
-                BTA gives your staff one clean operating view for live events, player impact, and post-game analytics.
+                BTA does not replace film review. It gives your bench staff live signals while the game is still being decided.
+              </p>
+              <p className="mkt-hero-moment">
+                <strong>Q4, 1:32:</strong> your best player is 4/5 in the last 3:00, momentum is turning, and the next recommendation is to run that action again now.
               </p>
               <div className="mkt-hero-actions">
-                <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-                  View Live Demo
+                <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate(isAuthenticated ? "/live" : "/login")}>
+                  Get Started
                 </button>
                 <button
                   type="button"
@@ -388,7 +268,7 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
                 </button>
               </div>
               <div className="mkt-trust-row">
-                {["Sub-second updates", "Offline-safe queue", "Team-scoped access", "No install for coaches"].map((p) => (
+                {["During-game recommendations", "Possession-by-possession context", "Offline-safe sync", "Built for bench decisions"].map((p) => (
                   <span key={p} className="mkt-trust-pill">{p}</span>
                 ))}
               </div>
@@ -399,14 +279,38 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           </div>
         </section>
 
+        <section className="mkt-proof-strip" aria-label="Trust and proof">
+          <div className="mkt-proof-inner">
+            {TRUST_PROOF.map((item) => (
+              <article key={item.label} className="mkt-proof-item">
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mkt-spotlight" aria-label="Live product spotlight">
+          <div className="mkt-spotlight-inner">
+            <div className="mkt-section-head mkt-spotlight-head">
+              <span className="mkt-eyebrow">The Product Moment</span>
+              <h2>This is what your staff sees during a run</h2>
+              <p className="mkt-section-sub">Live possession changes, momentum movement, and a recommendation while there is still time to act.</p>
+            </div>
+            <div className="mkt-spotlight-panel">
+              <LiveDemoWidget />
+            </div>
+          </div>
+        </section>
+
         {/* Numbers bar */}
         <section className="mkt-numbers">
           <div className="mkt-numbers-inner">
             {[
-              { val: "<1s", label: "Live update target" },
-              { val: "3 steps", label: "Game-day setup" },
-              { val: "1 view", label: "Shared coach context" },
-              { val: "Offline", label: "Replay-safe event queue" },
+              { val: "Before", label: "Guessing who is hot" },
+              { val: "After", label: "System shows who to run through" },
+              { val: "Before", label: "Static stats after the game" },
+              { val: "After", label: "Live context during possessions" },
             ].map((n) => (
               <div key={n.label} className="mkt-number-item">
                 <strong>{n.val}</strong>
@@ -431,6 +335,48 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
                   <span className="mkt-eyebrow">{f.eyebrow}</span>
                   <h3>{f.title}</h3>
                   <p>{f.desc}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mkt-section mkt-section-alt">
+          <div className="mkt-section-inner">
+            <div className="mkt-section-head">
+              <span className="mkt-eyebrow">During A Real Game</span>
+              <h2>From signal to call in seconds</h2>
+              <p className="mkt-section-sub">Not generic dashboards. Concrete moments with immediate coaching actions.</p>
+            </div>
+            <div className="mkt-moment-grid">
+              {GAME_MOMENTS.map((item) => (
+                <article key={item.moment} className="mkt-moment-card">
+                  <p className="mkt-moment-time">{item.moment}</p>
+                  <h3>{item.problem}</h3>
+                  <p>{item.signal}</p>
+                  <p className="mkt-moment-call">Call: {item.call}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mkt-section">
+          <div className="mkt-section-inner">
+            <div className="mkt-section-head">
+              <span className="mkt-eyebrow">Positioning</span>
+              <h2>This is not film review</h2>
+              <p className="mkt-section-sub">Film tools matter after games. BTA is built for decisions before the next possession.</p>
+            </div>
+            <div className="mkt-compare-grid">
+              {POSITIONING.map((column) => (
+                <article key={column.title} className="mkt-compare-card">
+                  <h3>{column.title}</h3>
+                  <ul>
+                    {column.points.map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
                 </article>
               ))}
             </div>
@@ -479,11 +425,11 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <div className="mkt-demo-cta">
           <div className="mkt-demo-cta-inner">
             <div>
-              <h2>See the full dashboard for yourself</h2>
-              <p>Use the public demo to evaluate fit, flow, and decision support before onboarding your staff.</p>
+              <h2>Evaluate one game-day decision in under 3 minutes</h2>
+              <p>Sign in, pair your operator, and watch recommendations surface during live play.</p>
             </div>
-            <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-              Open Demo Dashboard
+            <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate(isAuthenticated ? "/live" : "/login")}>
+              Start Now
             </button>
           </div>
         </div>
@@ -521,11 +467,8 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section className="mkt-final-cta">
           <div className="mkt-final-cta-inner">
             <h2>Ready to coach smarter?</h2>
-            <p>Start with the demo, then onboard your team when you are ready.</p>
+            <p>Sign in and onboard your team when you are ready.</p>
             <div className="mkt-hero-actions">
-              <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-                Try Demo
-              </button>
               <button type="button" className="mkt-btn mkt-btn-ghost mkt-btn-lg" onClick={() => onNavigate("/login")}>
                 Sign In
               </button>
@@ -541,7 +484,6 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
             <span className="mkt-footer-tagline">Built for coaches. Runs at game speed.</span>
           </div>
           <nav className="mkt-footer-links">
-            <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
             <button type="button" onClick={() => onNavigate("/login")}>Sign In</button>
             <button type="button" onClick={() => onNavigate("/help")}>Help</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
