@@ -28,6 +28,10 @@ Settings Page (`/settings`) - 🔄 Partial
 Billing Page (`/billing`) - 🔄 Partial
 - Implemented: billing placeholder with pilot pricing CTA.
 - Future fields: plan, price, renewal date, payment method, invoices, usage, cancel/upgrade, trial status.
+- 🚧 Stripe integration for subscriptions and payments (checkout, customer portal, webhook lifecycle events)
+- 🚧 Monthly plan/tier model (multi-tier pricing, feature entitlements, upgrade/downgrade paths)
+- 🚧 Paywall readiness for premium features/routes with clear upgrade prompts
+- 🚧 Free trial/demo conversion flow (trial start/end, grace messaging, in-app upsell, conversion CTA)
 
 Team / Organization Management - 🔄 Partial
 - ✅ Members list
@@ -77,6 +81,7 @@ Landing Page (`/`) - 🔄 Partial
 
 Features Page (`/features`) - ❌ Not Started
 Pricing Page (`/pricing`) - ❌ Not Started
+- 🚧 Scope: public pricing table with monthly tiers, trial/demo offer, and CTA path into Stripe checkout
 About Page (`/about`) - ❌ Not Started
 Demo Page (`/demo`) - ✅ Done
 
@@ -199,9 +204,10 @@ Missing / Needed:
 2. Org settings deepening (audit logs, policy controls, org-level preferences)
 3. Admin panel starter UI
 4. CSV/PDF export expansion
-5. Premium pages (features/pricing/about/changelog/roadmap)
-6. Dedicated docs center (`/docs`) and richer help content
-7. Shared skeleton system + loading-state design unification
+5. Monetization foundation (Stripe subscriptions, monthly tiers, paywall hooks, free trial/demo conversion)
+6. Premium pages (features/pricing/about/changelog/roadmap)
+7. Dedicated docs center (`/docs`) and richer help content
+8. Shared skeleton system + loading-state design unification
 
 Org Settings Standalone Page - 🔄 Partial
 - ✅ Dedicated `/org/settings` route and navigation entry

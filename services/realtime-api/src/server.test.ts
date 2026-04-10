@@ -235,6 +235,41 @@ describe("operator pairing endpoints", () => {
     expect(body.operatorToken?.length ?? 0).toBeGreaterThan(0);
   });
 
+  it("treats operator connection tokens as authenticated sessions", async () => {
+    await resetSchool("pairing-operator-session");
+
+    const putRes = await fetch(`${API_BASE}/api/operator-links/conn-operator-session`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-operator-session" },
+      body: JSON.stringify({
+        gameId: "operator-session-game",
+        myTeamId: "vc-varsity",
+        myTeamName: "Home Team Varsity",
+        opponentName: "Central Christian",
+        vcSide: "home",
+      })
+    });
+    expect(putRes.status).toBe(200);
+
+    const linkRes = await fetch(`${API_BASE}/api/operator-links/conn-operator-session`);
+    expect(linkRes.status).toBe(200);
+    const linkBody = await linkRes.json() as { operatorToken?: string };
+    expect(typeof linkBody.operatorToken).toBe("string");
+    const operatorToken = linkBody.operatorToken ?? "";
+    expect(operatorToken.length).toBeGreaterThan(0);
+
+    const sessionRes = await fetch(`${API_BASE}/api/auth/session`, {
+      headers: {
+        Authorization: `Bearer ${operatorToken}`,
+        "x-school-id": "pairing-operator-session",
+      },
+    });
+    expect(sessionRes.status).toBe(200);
+    const sessionBody = await sessionRes.json() as { authenticated?: boolean; user?: { role?: string } | null };
+    expect(sessionBody.authenticated).toBe(true);
+    expect(sessionBody.user?.role).toBe("operator");
+  });
+
   it("rejects operator link lookup without school scope when connection code is ambiguous", async () => {
     await resetSchool("pairing-ambig-a");
     await resetSchool("pairing-ambig-b");

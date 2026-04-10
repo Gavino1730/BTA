@@ -625,6 +625,19 @@ function resolveLocalAuthAccountFromContext(authContext: AuthContext, schoolId: 
   return null;
 }
 
+function isSystemOperatorAuthContext(authContext: AuthContext): boolean {
+  const subject = resolveAuthSubject(authContext);
+  const role = sanitizeTextField(authContext.role, 40).toLowerCase();
+  const email = sanitizeTextField(readAuthClaim(authContext, "email"), 160).toLowerCase();
+
+  return (
+    role === "operator"
+    && subject.startsWith("operator:")
+    && email.startsWith("operator-")
+    && email.endsWith("@system.bta")
+  );
+}
+
 function isLocalAuthContextRevoked(authContext: AuthContext): boolean {
   if (readAuthClaim(authContext, "authType") !== "local") {
     return false;
@@ -637,7 +650,7 @@ function isLocalAuthContextRevoked(authContext: AuthContext): boolean {
 
   const account = resolveLocalAuthAccountFromContext(authContext, schoolId);
   if (!account) {
-    return true;
+    return !isSystemOperatorAuthContext(authContext);
   }
 
   const issuedAt = Number(readAuthClaim(authContext, "iat"));
