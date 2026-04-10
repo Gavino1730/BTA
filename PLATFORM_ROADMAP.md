@@ -57,6 +57,7 @@ Help Center / Docs (`/help` or `/docs`) - 🔄 Partial
 - ✅ iPad tips page in operator app
 - ✅ Tutorial overlays in both apps
 - ✅ Standalone coach help center page
+- ✅ Dedicated `/docs` center route/page shipped in coach dashboard shell
 - 🔄 Quick setup, game creation, operator sync, connection troubleshooting guides
 
 Contact Page (`/contact`) - 🔄 Partial
@@ -139,7 +140,8 @@ Loading States / Skeletons - 🔄 Partial
 Admin Panel (UI) - 🚧 Planned
 - ✅ Security metrics API exists
 - ✅ Factory reset API exists
-- ❌ Admin UI for users/orgs/subscriptions/support/logs/flags
+- ✅ Starter `/admin` route and read-only shell page shipped
+- 🚧 Remaining: users/orgs/subscriptions/support/logs/flags management modules
 
 Role / Permissions UI - 🔄 Partial
 - ✅ Server-side role enforcement exists
@@ -196,6 +198,8 @@ Existing:
 - ✅ `/billing`
 - ✅ `/settings`
 - ✅ `/help`
+- ✅ `/docs`
+- ✅ `/admin`
 - ✅ `/data-deletion`
 - ✅ `/404`
 - ✅ `/403`
@@ -211,7 +215,7 @@ Existing:
 - ✅ `/stats/settings`
 
 Missing / Needed:
-- P2: `/pricing`, `/notifications`, `/org/settings`, `/admin`, `/docs`, `/checkout/success`, `/checkout/cancel`
+- P2: `/pricing`, `/notifications`, `/org/settings`, `/checkout/success`, `/checkout/cancel`
 - P3: `/changelog`, `/roadmap`
 
 ## Section 12: Build Order

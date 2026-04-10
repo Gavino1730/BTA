@@ -14,10 +14,12 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/")).toBe("marketing");
     expect(resolveCoachRoute("/features")).toBe("features");
     expect(resolveCoachRoute("/about")).toBe("about");
+    expect(resolveCoachRoute("/docs")).toBe("docs");
     expect(resolveCoachRoute("/signin")).toBe("login");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
     expect(resolveCoachRoute("/players")).toBe("stats-players");
     expect(resolveCoachRoute("/settings")).toBe("settings");
+    expect(resolveCoachRoute("/admin")).toBe("admin");
     expect(resolveCoachRoute("/live")).toBe("live");
   });
 

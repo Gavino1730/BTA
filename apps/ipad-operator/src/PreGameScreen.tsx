@@ -159,10 +159,6 @@ export function PreGameScreen({
           </div>
         </div>
 
-        {!hasConnectionId && (
-          <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
-        )}
-
         {myTeam && !showLineupSetup && (
           <button
             className={`pregame-lineup-btn${lineupIsSet ? " lineup-is-set" : ""}${!lineupIsSet ? " lineup-required" : ""}`}

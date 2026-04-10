@@ -3826,7 +3826,7 @@ app.get("/api/notifications", (req, res) => {
 
   const notifications: Array<{
     id: string;
-    category: "system" | "membership" | "results";
+    category: "system" | "membership" | "results" | "billing" | "export";
     level: "info" | "warning" | "success";
     title: string;
     detail: string;
@@ -3904,6 +3904,44 @@ app.get("/api/notifications", (req, res) => {
       });
     }
   }
+
+  // --- Placeholder: Billing notification example ---
+  notifications.push({
+    id: "billing-invoice-upcoming",
+    category: "billing",
+    level: "info",
+    title: "Upcoming invoice due",
+    detail: "Your next subscription invoice is due in 5 days. Update payment method if needed.",
+    createdAtIso: generatedAtIso,
+  });
+
+  notifications.push({
+    id: "billing-payment-failed",
+    category: "billing",
+    level: "warning",
+    title: "Payment failed",
+    detail: "A recent payment attempt was unsuccessful. Please update your billing information.",
+    createdAtIso: generatedAtIso,
+  });
+
+  // --- Placeholder: Export pipeline notification example ---
+  notifications.push({
+    id: "export-csv-ready",
+    category: "export",
+    level: "success",
+    title: "CSV export ready",
+    detail: "Your player stats CSV export is ready for download.",
+    createdAtIso: generatedAtIso,
+  });
+
+  notifications.push({
+    id: "export-pdf-failed",
+    category: "export",
+    level: "warning",
+    title: "PDF export failed",
+    detail: "There was an error generating your PDF game report. Please try again later.",
+    createdAtIso: generatedAtIso,
+  });
 
   res.json({ notifications, generatedAtIso });
 });

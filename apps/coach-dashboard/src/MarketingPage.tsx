@@ -8,26 +8,38 @@ interface MarketingPageProps {
 // ---- Static content ----
 
 const FEATURES = [
-  { icon: "⚡", eyebrow: "Real-Time",        title: "Stats as they happen",       desc: "See score, possessions, and momentum update in real time. No more clipboard delay." },
-  { icon: "📱", eyebrow: "iPad Operator",    title: "One-tap sideline entry",      desc: "Your scorekeeper enters stats on an iPad. The coach dashboard updates in under a second." },
-  { icon: "📊", eyebrow: "Season Analytics", title: "Trends across every game",    desc: "Win/loss record, FG% over time, point margin charts, and shooting splits — all in one view." },
-  { icon: "👤", eyebrow: "Player Insights",  title: "Per-player breakdowns",       desc: "Game logs, PPG trends, and side-by-side comparisons to sharpen your rotation decisions." },
-  { icon: "🤖", eyebrow: "AI Insights",      title: "Automated observations",      desc: "Spot momentum shifts, pace changes, and efficiency drops without crunching numbers manually." },
-  { icon: "🔐", eyebrow: "Secure Access",    title: "One account, one team",       desc: "Your roster, games, and insights belong to your login. Team data never crosses accounts." },
+  { icon: "🏀", eyebrow: "Live Bench", title: "See the game as it unfolds", desc: "Score, momentum, and key stat shifts update in real time while you coach." },
+  { icon: "📱", eyebrow: "Operator Flow", title: "Simple iPad stat entry", desc: "One scorekeeper can capture events quickly without complex setup." },
+  { icon: "📈", eyebrow: "Team Analytics", title: "Game and season trends", desc: "Review player impact, lineup outcomes, and team performance after every game." },
+  { icon: "🔒", eyebrow: "School Scoped", title: "Reliable and secure", desc: "Data stays tied to your organization with role-based access controls." },
 ];
 
 const STEPS = [
-  { n: "01", title: "Set up your roster",   desc: "Add players, numbers, and positions. Takes about 5 minutes and you can edit any time." },
-  { n: "02", title: "Pair on game day",     desc: "Share a 6-digit code with the scorekeeper. They open the iPad app and you're connected — no cables, no accounts for them." },
-  { n: "03", title: "Coach with live data", desc: "Stats flow to your dashboard as the game unfolds. Review trends between quarters, at halftime, and after the final buzzer." },
+  { n: "01", title: "Set up once", desc: "Add your roster and confirm game context before tip-off." },
+  { n: "02", title: "Pair the iPad", desc: "Operator joins with a short connection code on game day." },
+  { n: "03", title: "Coach with clarity", desc: "Use live context in-game and review trends immediately after." },
+];
+
+const USE_CASES = [
+  {
+    title: "Varsity Staff",
+    desc: "Make faster in-game decisions with live scoreflow and player impact signals.",
+  },
+  {
+    title: "JV And Development",
+    desc: "Track progress consistently across games and support player development plans.",
+  },
+  {
+    title: "Program Leadership",
+    desc: "Get one clear source of truth across games, staff, and seasons.",
+  },
 ];
 
 const FAQS = [
-  { q: "How does the live tracking actually work?",   a: "The scorekeeper uses a separate iPad app to enter stats. Each tap syncs to the server and fans out to your coach dashboard in under a second via WebSocket. Events are queued offline and replayed if the connection drops." },
-  { q: "Do I need a special device?",                 a: "Any modern iPad or tablet works for stat entry. The coach dashboard runs in any browser — laptop, tablet, or phone. No App Store installs required for the coach." },
-  { q: "Is there a free demo?",                       a: 'Yes — the demo is free, public, and loaded with realistic sample data from a full season. No account needed. Click "Try the Demo" on this page.' },
-  { q: "How do I get my roster into the system?",     a: "The Setup page walks you through adding players, numbers, and positions. You can also bulk-import from a JSON file." },
-  { q: "Does it work for JV or freshman teams?",      a: "Absolutely. The system is team-agnostic — set up any roster and track any level of play with the same dashboard." },
+  { q: "How does live sync work during games?", a: "The operator logs events on an iPad and updates are broadcast to the coach dashboard in real time. If connectivity drops, queued events replay when service returns." },
+  { q: "What devices are supported?", a: "The coach view runs in a modern browser. Stat entry is optimized for iPad, but any modern tablet browser works." },
+  { q: "Can I try it before onboarding my team?", a: "Yes. The demo is public and preloaded with realistic season data so your staff can evaluate workflow quickly." },
+  { q: "Is this only for varsity?", a: "No. Programs use it across varsity, JV, and development squads with the same operating model." },
 ];
 
 // ---- Live demo widget ----
@@ -355,33 +367,28 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section className="mkt-hero" aria-label="Hero">
           <div className="mkt-hero-inner">
             <div className="mkt-hero-copy">
-              <span className="mkt-badge">Courtside Control System</span>
+              <span className="mkt-badge">Built for high school basketball programs</span>
               <h1 className="mkt-h1">
-                Win the next possession.
-                <span className="mkt-gradient-text">Make game-speed decisions.</span>
+                Live game intelligence for coaches.
+                <span className="mkt-gradient-text">Clear decisions at bench speed.</span>
               </h1>
               <p className="mkt-hero-sub">
-                Live scoreflow, momentum, and rotation cues in one screen.
+                BTA gives your staff one clean operating view for live events, player impact, and post-game analytics.
               </p>
-              <div className="mkt-hero-rails" aria-hidden="true">
-                <span className="mkt-hero-rail">Possession pressure</span>
-                <span className="mkt-hero-rail">Shot-quality trend</span>
-                <span className="mkt-hero-rail">Bench readiness</span>
-              </div>
               <div className="mkt-hero-actions">
                 <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-                  Open Live Command View
+                  View Live Demo
                 </button>
                 <button
                   type="button"
                   className="mkt-btn mkt-btn-subtle mkt-btn-lg"
                   onClick={() => onNavigate(isAuthenticated ? "/live" : "/login")}
                 >
-                  {isAuthenticated ? "Enter Dashboard" : "Coach Login"}
+                  {isAuthenticated ? "Open Dashboard" : "Coach Login"}
                 </button>
               </div>
               <div className="mkt-trust-row">
-                {["Realtime possession map", "Live player impact", "Sideline resilient sync", "Sub-second updates"].map((p) => (
+                {["Sub-second updates", "Offline-safe queue", "Team-scoped access", "No install for coaches"].map((p) => (
                   <span key={p} className="mkt-trust-pill">{p}</span>
                 ))}
               </div>
@@ -396,10 +403,10 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section className="mkt-numbers">
           <div className="mkt-numbers-inner">
             {[
-              { val: "< 1s",   label: "Updates in under 1 second" },
-              { val: "Auto",   label: "Tracks every key stat live" },
-              { val: "2 sec",  label: "Connects sideline devices fast" },
-              { val: "Offline",label: "Built for dead-gym WiFi" },
+              { val: "<1s", label: "Live update target" },
+              { val: "3 steps", label: "Game-day setup" },
+              { val: "1 view", label: "Shared coach context" },
+              { val: "Offline", label: "Replay-safe event queue" },
             ].map((n) => (
               <div key={n.label} className="mkt-number-item">
                 <strong>{n.val}</strong>
@@ -414,8 +421,8 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           <div className="mkt-section-inner">
             <div className="mkt-section-head">
               <span className="mkt-eyebrow">Everything in one place</span>
-              <h2>A better way to run the bench</h2>
-              <p className="mkt-section-sub">One connected system for live stats, season trends, and smart coaching decisions.</p>
+              <h2>A cleaner workflow from tip-off to final review</h2>
+              <p className="mkt-section-sub">Fewer screens, clearer signals, and consistent data your whole staff can trust.</p>
             </div>
             <div className="mkt-feature-grid">
               {FEATURES.map((f) => (
@@ -434,9 +441,9 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section id="how-it-works" className="mkt-section mkt-section-alt">
           <div className="mkt-section-inner">
             <div className="mkt-section-head">
-              <span className="mkt-eyebrow">Simple setup</span>
-              <h2>Up and running in minutes</h2>
-              <p className="mkt-section-sub">No hardware to install. No complex onboarding. Just a browser and an iPad.</p>
+              <span className="mkt-eyebrow">How it works</span>
+              <h2>Simple on purpose</h2>
+              <p className="mkt-section-sub">No extra hardware. No long training cycle. One reliable game-day routine.</p>
             </div>
             <div className="mkt-steps">
               {STEPS.map((s) => (
@@ -450,15 +457,33 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           </div>
         </section>
 
+        <section className="mkt-section">
+          <div className="mkt-section-inner">
+            <div className="mkt-section-head">
+              <span className="mkt-eyebrow">Who uses BTA</span>
+              <h2>Built for programs, not just one team</h2>
+              <p className="mkt-section-sub">From varsity game management to long-term development tracking.</p>
+            </div>
+            <div className="mkt-feature-grid">
+              {USE_CASES.map((useCase) => (
+                <article key={useCase.title} className="mkt-feature-card">
+                  <h3>{useCase.title}</h3>
+                  <p>{useCase.desc}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* Demo CTA band */}
         <div className="mkt-demo-cta">
           <div className="mkt-demo-cta-inner">
             <div>
               <h2>See the full dashboard for yourself</h2>
-              <p>The demo is free, public, and loaded with realistic season data. No account needed.</p>
+              <p>Use the public demo to evaluate fit, flow, and decision support before onboarding your staff.</p>
             </div>
             <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-              Open Demo Dashboard →
+              Open Demo Dashboard
             </button>
           </div>
         </div>
@@ -468,8 +493,8 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
           <div className="mkt-section-inner mkt-faq-shell">
             <div className="mkt-section-head">
               <span className="mkt-eyebrow">Questions & answers</span>
-              <h2>Common questions</h2>
-              <p className="mkt-section-sub">Everything coaches ask before their first game.</p>
+              <h2>What coaches ask first</h2>
+              <p className="mkt-section-sub">Quick answers for setup, reliability, and fit.</p>
             </div>
             <div className="mkt-faq-list">
               {FAQS.map((faq, i) => (
@@ -496,10 +521,10 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
         <section className="mkt-final-cta">
           <div className="mkt-final-cta-inner">
             <h2>Ready to coach smarter?</h2>
-            <p>Start with the free demo, or sign in if you already have an account.</p>
+            <p>Start with the demo, then onboard your team when you are ready.</p>
             <div className="mkt-hero-actions">
               <button type="button" className="mkt-btn mkt-btn-primary mkt-btn-lg" onClick={() => onNavigate("/demo")}>
-                Try Demo — free
+                Try Demo
               </button>
               <button type="button" className="mkt-btn mkt-btn-ghost mkt-btn-lg" onClick={() => onNavigate("/login")}>
                 Sign In

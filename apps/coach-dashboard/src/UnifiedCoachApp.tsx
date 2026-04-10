@@ -11,7 +11,7 @@ import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { AboutPage, BillingPage, DataDeletionPage, FeaturesPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { AboutPage, AdminPage, BillingPage, DataDeletionPage, DocsCenterPage, FeaturesPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -50,6 +50,7 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "offline",
   "session-expired",
   "help",
+  "docs",
   "terms",
   "privacy",
   "data-deletion",
@@ -74,9 +75,11 @@ function AppFooter({ onNavigate }: AppFooterProps) {
           <button type="button" onClick={() => onNavigate("/features")}>Features</button>
           <button type="button" onClick={() => onNavigate("/about")}>About</button>
           <button type="button" onClick={() => onNavigate("/help")}>Help</button>
+          <button type="button" onClick={() => onNavigate("/docs")}>Docs</button>
           <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
           <button type="button" onClick={() => onNavigate("/billing")}>Billing</button>
+          <button type="button" onClick={() => onNavigate("/admin")}>Admin</button>
           <button type="button" onClick={() => onNavigate("/terms")}>Terms</button>
           <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
           <button type="button" onClick={() => onNavigate("/data-deletion")}>Data Deletion</button>
@@ -417,6 +420,7 @@ export function UnifiedCoachApp() {
       "/offline",
       "/session-expired",
       "/help",
+      "/docs",
       "/terms",
       "/privacy",
       "/data-deletion",
@@ -517,6 +521,10 @@ export function UnifiedCoachApp() {
     return <HelpCenterPage onNavigate={navigate} />;
   }
 
+  if (route === "docs") {
+    return <DocsCenterPage onNavigate={navigate} />;
+  }
+
   if (route === "privacy") {
     return <PrivacyPage onNavigate={navigate} />;
   }
@@ -577,26 +585,89 @@ export function UnifiedCoachApp() {
 
   return (
     <GameSessionProvider>
-      {showTutorial && (
-        <TutorialOverlay onDismiss={() => setShowTutorial(false)} />
-      )}
-      <nav className="coach-navbar">
-        <div className="coach-nav-container">
-          <ul className="coach-nav-links">
-            {!playerView && navBtn("Live", "live", "/live")}
-            {navBtn("Overview", "stats-overview", "/stats")}
-            {navBtn("Games", "stats-games", "/stats/games")}
-            {navBtn("Players", "stats-players", "/stats/players")}
-            {navBtn("Trends", "stats-trends", "/stats/trends")}
-            {navBtn("AI Insights", "stats-insights", "/stats/insights")}
-            {navBtn("Notifications", "stats-notifications", "/stats/notifications")}
-            {!playerView && navBtn("Settings", "stats-settings", "/stats/settings")}
-          </ul>
-          <div className="coach-nav-actions">
-            <ConnectedNavActions
-              hideLiveTools={playerView}
-              onOpenAccount={() => navigate("/account")}
-              onSignOut={() => {
+      <div className="coach-app-shell">
+        {showTutorial && (
+          <TutorialOverlay onDismiss={() => setShowTutorial(false)} />
+        )}
+        <nav className="coach-navbar">
+          <div className="coach-nav-container">
+            <ul className="coach-nav-links">
+              {!playerView && navBtn("Live", "live", "/live")}
+              {navBtn("Overview", "stats-overview", "/stats")}
+              {navBtn("Games", "stats-games", "/stats/games")}
+              {navBtn("Players", "stats-players", "/stats/players")}
+              {navBtn("Trends", "stats-trends", "/stats/trends")}
+              {navBtn("AI Insights", "stats-insights", "/stats/insights")}
+              {navBtn("Notifications", "stats-notifications", "/stats/notifications")}
+              {!playerView && navBtn("Settings", "stats-settings", "/stats/settings")}
+            </ul>
+            <div className="coach-nav-actions">
+              <ConnectedNavActions
+                hideLiveTools={playerView}
+                onOpenAccount={() => navigate("/account")}
+                onSignOut={() => {
+                  clearAuthSession();
+                  setIsAuthenticated(false);
+                  setCurrentRole(null);
+                  setRequiresSetup(true);
+                  window.history.replaceState({}, "", "/login");
+                  setRoute("login");
+                }}
+                onShowTutorial={() => setShowTutorial(true)}
+              />
+            </div>
+          </div>
+        </nav>
+        <main className="coach-app-main">
+          {showSessionExpiryWarning && (
+            <section className="session-expiry-banner" role="status" aria-live="polite">
+              <div className="session-expiry-banner-content">
+                <p>
+                  {msUntilExpiry !== null && msUntilExpiry > 0
+                    ? `Session expires in ${Math.max(1, Math.ceil(msUntilExpiry / 60000))} minute${Math.ceil(msUntilExpiry / 60000) === 1 ? "" : "s"}.`
+                    : "Session expired. Sign in again to continue."}
+                </p>
+                <div className="session-expiry-actions">
+                  <button
+                    type="button"
+                    className="shell-nav-link"
+                    onClick={() => void handleStaySignedIn()}
+                    disabled={refreshingSession}
+                  >
+                    {refreshingSession ? "Refreshing..." : "Stay Signed In"}
+                  </button>
+                  <button
+                    type="button"
+                    className="coach-nav-ext-link"
+                    onClick={() => navigate("/login")}
+                  >
+                    Sign In Again
+                  </button>
+                  <button
+                    type="button"
+                    className="coach-nav-ext-link"
+                    onClick={() => setDismissedExpiryAtMs(sessionExpiryAtMs)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+              {sessionRefreshStatus && <p className="session-expiry-status">{sessionRefreshStatus}</p>}
+            </section>
+          )}
+          {isLive && <LivePage />}
+          {route === "stats-overview" && <StatsOverviewPage />}
+          {route === "stats-games" && <GamesPage />}
+          {route === "stats-players" && <PlayersPage />}
+          {route === "stats-trends" && <TrendsPage />}
+          {route === "stats-insights" && <AiInsightsPage />}
+          {route === "stats-notifications" && <NotificationsPage onNavigate={navigate} />}
+          {route === "stats-settings" && <TeamSettingsPage onNavigate={navigate} />}
+          {route === "org-settings" && <TeamSettingsPage initialSection="profile" onNavigate={navigate} />}
+          {route === "account" && (
+            <AccountPage
+              onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))}
+              onSignOutRequested={() => {
                 clearAuthSession();
                 setIsAuthenticated(false);
                 setCurrentRole(null);
@@ -604,72 +675,14 @@ export function UnifiedCoachApp() {
                 window.history.replaceState({}, "", "/login");
                 setRoute("login");
               }}
-              onShowTutorial={() => setShowTutorial(true)}
             />
-          </div>
-        </div>
-      </nav>
-      {showSessionExpiryWarning && (
-        <section className="session-expiry-banner" role="status" aria-live="polite">
-          <div className="session-expiry-banner-content">
-            <p>
-              {msUntilExpiry !== null && msUntilExpiry > 0
-                ? `Session expires in ${Math.max(1, Math.ceil(msUntilExpiry / 60000))} minute${Math.ceil(msUntilExpiry / 60000) === 1 ? "" : "s"}.`
-                : "Session expired. Sign in again to continue."}
-            </p>
-            <div className="session-expiry-actions">
-              <button
-                type="button"
-                className="shell-nav-link"
-                onClick={() => void handleStaySignedIn()}
-                disabled={refreshingSession}
-              >
-                {refreshingSession ? "Refreshing..." : "Stay Signed In"}
-              </button>
-              <button
-                type="button"
-                className="coach-nav-ext-link"
-                onClick={() => navigate("/login")}
-              >
-                Sign In Again
-              </button>
-              <button
-                type="button"
-                className="coach-nav-ext-link"
-                onClick={() => setDismissedExpiryAtMs(sessionExpiryAtMs)}
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-          {sessionRefreshStatus && <p className="session-expiry-status">{sessionRefreshStatus}</p>}
-        </section>
-      )}
-      {isLive && <LivePage />}
-      {route === "stats-overview" && <StatsOverviewPage />}
-      {route === "stats-games" && <GamesPage />}
-      {route === "stats-players" && <PlayersPage />}
-      {route === "stats-trends" && <TrendsPage />}
-      {route === "stats-insights" && <AiInsightsPage />}
-      {route === "stats-notifications" && <NotificationsPage onNavigate={navigate} />}
-      {route === "stats-settings" && <TeamSettingsPage onNavigate={navigate} />}
-      {route === "org-settings" && <TeamSettingsPage initialSection="profile" onNavigate={navigate} />}
-      {route === "account" && (
-        <AccountPage
-          onSessionUpdated={(role) => setCurrentRole(normalizeUserRole(role))}
-          onSignOutRequested={() => {
-            clearAuthSession();
-            setIsAuthenticated(false);
-            setCurrentRole(null);
-            setRequiresSetup(true);
-            window.history.replaceState({}, "", "/login");
-            setRoute("login");
-          }}
-        />
-      )}
-      {route === "billing" && <BillingPage onNavigate={navigate} />}
-      {route === "settings" && <UserSettingsPage onNavigate={navigate} />}
-      <AppFooter onNavigate={navigate} />
+          )}
+          {route === "billing" && <BillingPage onNavigate={navigate} />}
+          {route === "admin" && <AdminPage onNavigate={navigate} />}
+          {route === "settings" && <UserSettingsPage onNavigate={navigate} />}
+        </main>
+        <AppFooter onNavigate={navigate} />
+      </div>
     </GameSessionProvider>
   );
 }

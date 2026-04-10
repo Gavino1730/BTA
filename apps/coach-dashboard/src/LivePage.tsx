@@ -23,9 +23,11 @@ export function LivePage() {
     connectionId, setConnectionId,
     operatorConsoleUrl,
     connectedOperatorCount, connectedOperators,
-    isEndingGame, isEndGamePromptOpen, endGameStatus,
+    isEndingGame, isSavingFinalizeDetails, isEndGamePromptOpen, endGameStatus,
+    finalizeGameName, finalizeGameDate, finalizeOpponent, finalizeVcScore, finalizeOppScore,
+    setFinalizeGameDate, setFinalizeOpponent, setFinalizeVcScore, setFinalizeOppScore,
     requestEndGameFromDashboard, cancelEndGamePrompt, discardGameFromDashboard,
-    endGameFromDashboard,
+    saveFinalizeDetailsFromDashboard, endGameFromDashboard,
     teams, aggregatedTeams, canonicalTeamId, teamColorById,
     getScoreboardLineup, displayTeamName, displayPlayerName,
     leadersByTeam, canonicalSideIds,
@@ -53,6 +55,9 @@ export function LivePage() {
       return bMs - aMs;
     });
   }, [connectedOperators]);
+
+  const vcTeamName = teams[0] ? displayTeamName(teams[0]) : "Your Team";
+  const opponentTeamName = teams[1] ? displayTeamName(teams[1]) : "Opponent";
 
   async function copyOperatorConsoleLink(): Promise<void> {
     try {
@@ -154,17 +159,78 @@ export function LivePage() {
             {endGameStatus ? <p className="settings-section-desc">{endGameStatus}</p> : null}
           </section>
           {isEndGamePromptOpen ? (
-            <section className="card settings-section-card" aria-label="End Game Confirmation">
-              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>End Game</p>
-              <h3 style={{ marginBottom: "0.5rem" }}>Save this game before closing?</h3>
-              <p className="settings-section-desc" style={{ marginBottom: "0.9rem" }}>
-                Save finalizes and submits this game to the API. Discard closes this live session without submitting.
-              </p>
-              <div style={{ display: "flex", gap: "0.6rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
-                <button type="button" className="shell-nav-link" onClick={cancelEndGamePrompt} disabled={isEndingGame}>Cancel</button>
-                <button type="button" className="shell-nav-link" onClick={discardGameFromDashboard} disabled={isEndingGame}>Discard</button>
-                <button type="button" className="shell-nav-link danger-btn" onClick={() => void endGameFromDashboard()} disabled={isEndingGame}>
-                  {isEndingGame ? "Saving..." : "Save & End"}
+            <section className="card settings-section-card finalize-game-card" aria-label="Finalize Game Details">
+              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>Game Over</p>
+              <h3 style={{ marginBottom: "0.5rem" }}>Finalize game details</h3>
+
+              <div className="finalize-game-grid">
+                <label className="finalize-game-field">
+                  <span className="finalize-game-label">Game Name</span>
+                  <input
+                    className="finalize-game-input"
+                    value={finalizeGameName}
+                    readOnly
+                    aria-readonly="true"
+                  />
+                </label>
+                <label className="finalize-game-field">
+                  <span className="finalize-game-label">Date</span>
+                  <input
+                    type="date"
+                    className="finalize-game-input"
+                    value={finalizeGameDate}
+                    onChange={event => setFinalizeGameDate(event.target.value)}
+                  />
+                </label>
+                <label className="finalize-game-field finalize-game-field-wide">
+                  <span className="finalize-game-label">Opponent</span>
+                  <input
+                    className="finalize-game-input"
+                    value={finalizeOpponent}
+                    onChange={event => setFinalizeOpponent(event.target.value)}
+                    placeholder="Opponent name"
+                  />
+                </label>
+              </div>
+
+              <div className="finalize-game-score-wrap">
+                <div className="finalize-game-score-team">
+                  <span className="finalize-game-score-name">{vcTeamName}</span>
+                  <input
+                    className="finalize-game-score-input"
+                    inputMode="numeric"
+                    value={finalizeVcScore}
+                    onChange={event => setFinalizeVcScore(event.target.value.replace(/[^0-9]/g, ""))}
+                  />
+                </div>
+                <div className="finalize-game-score-separator">-</div>
+                <div className="finalize-game-score-team">
+                  <span className="finalize-game-score-name">{opponentTeamName}</span>
+                  <input
+                    className="finalize-game-score-input"
+                    inputMode="numeric"
+                    value={finalizeOppScore}
+                    onChange={event => setFinalizeOppScore(event.target.value.replace(/[^0-9]/g, ""))}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="shell-nav-link shell-nav-link-active finalize-game-save-btn"
+                onClick={() => void saveFinalizeDetailsFromDashboard()}
+                disabled={isSavingFinalizeDetails || isEndingGame}
+              >
+                {isSavingFinalizeDetails ? "Saving..." : "Save Name/Date/Score Changes"}
+              </button>
+
+              {endGameStatus ? <p className="settings-section-desc finalize-game-status">{endGameStatus}</p> : null}
+
+              <div className="finalize-game-actions">
+                <button type="button" className="shell-nav-link" onClick={cancelEndGamePrompt} disabled={isSavingFinalizeDetails || isEndingGame}>Cancel</button>
+                <button type="button" className="shell-nav-link" onClick={() => void discardGameFromDashboard()} disabled={isSavingFinalizeDetails || isEndingGame}>Discard This Game</button>
+                <button type="button" className="shell-nav-link danger-btn" onClick={() => void endGameFromDashboard()} disabled={isSavingFinalizeDetails || isEndingGame}>
+                  {isEndingGame ? "Submitting..." : "Submit Game"}
                 </button>
               </div>
             </section>

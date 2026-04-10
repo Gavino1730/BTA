@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { PublicSiteChrome } from "./PublicSiteChrome.js";
 
 interface RoutedPageProps {
   onNavigate: (path: string) => void;
@@ -26,14 +27,16 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
   }
 
   return (
-    <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>Support</h1>
-          <p className="stats-page-subtitle">FAQ, bug reports, and feature requests in one place.</p>
-        </div>
-        <p className="stats-page-status">Preproduction</p>
-      </section>
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main">
+      <div className="stats-page">
+        <section className="stats-page-hero compact">
+          <div>
+            <h1>Support</h1>
+            <p className="stats-page-subtitle">FAQ, bug reports, and feature requests in one place.</p>
+          </div>
+          <p className="stats-page-status">Preproduction</p>
+        </section>
 
       <section className="stats-page-card settings-section-card">
         <div className="stats-page-card-head">
@@ -148,7 +151,7 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
         </div>
       </form>
 
-      <section className="stats-page-card settings-section-card" style={{ marginBottom: "1rem" }}>
+        <section className="stats-page-card settings-section-card" style={{ marginBottom: "1rem" }}>
         <div className="stats-page-card-head">
           <div>
             <h3>What To Include For Faster Resolution</h3>
@@ -162,8 +165,10 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
           <li>Workarounds already attempted.</li>
           <li>Screenshot or short recording reference if available.</li>
         </ul>
-      </section>
-    </div>
+        </section>
+      </div>
+      </main>
+    </PublicSiteChrome>
   );
 }
 
@@ -194,14 +199,16 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
   }
 
   return (
-    <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>Contact</h1>
-          <p className="stats-page-subtitle">Support and pilot requests.</p>
-        </div>
-        <p className="stats-page-status">Preproduction</p>
-      </section>
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main">
+      <div className="stats-page">
+        <section className="stats-page-hero compact">
+          <div>
+            <h1>Contact</h1>
+            <p className="stats-page-subtitle">Support and pilot requests.</p>
+          </div>
+          <p className="stats-page-status">Preproduction</p>
+        </section>
 
       <form className="stats-page-card settings-section-card" onSubmit={handleSubmit}>
         <div className="stats-page-card-head">
@@ -267,7 +274,7 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
         </div>
       </form>
 
-      <section className="stats-page-card settings-section-card" style={{ marginBottom: "1rem" }}>
+        <section className="stats-page-card settings-section-card" style={{ marginBottom: "1rem" }}>
         <div className="stats-page-card-head">
           <div>
             <h3>Contact Channels and Expected Follow-Up</h3>
@@ -303,7 +310,9 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
             </div>
           </div>
         </div>
-      </section>
-    </div>
+        </section>
+      </div>
+      </main>
+    </PublicSiteChrome>
   );
 }

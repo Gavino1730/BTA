@@ -11,6 +11,7 @@ export type AppRoute =
   | "offline"
   | "session-expired"
   | "help"
+  | "docs"
   | "terms"
   | "privacy"
   | "data-deletion"
@@ -18,6 +19,7 @@ export type AppRoute =
   | "contact"
   | "billing"
   | "settings"
+  | "admin"
   | "live"
   | "setup"
   | "account"
@@ -48,7 +50,6 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/signin": "/login",
   "/sign-in": "/login",
   "/home": "/",
-  "/docs": "/help",
 };
 
 export function canonicalizeCoachPath(pathname: string): string {
@@ -94,6 +95,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/help") {
     return "help";
   }
+  if (canonical === "/docs") {
+    return "docs";
+  }
   if (canonical === "/terms") {
     return "terms";
   }
@@ -114,6 +118,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/settings") {
     return "settings";
+  }
+  if (canonical === "/admin") {
+    return "admin";
   }
   if (canonical === "/live") {
     return "live";

@@ -138,10 +138,21 @@ export interface GameSession {
 
   // End game
   isEndingGame: boolean;
+  isSavingFinalizeDetails: boolean;
   isEndGamePromptOpen: boolean;
   endGameStatus: string;
+  finalizeGameName: string;
+  finalizeGameDate: string;
+  finalizeOpponent: string;
+  finalizeVcScore: string;
+  finalizeOppScore: string;
+  setFinalizeGameDate: (value: string) => void;
+  setFinalizeOpponent: (value: string) => void;
+  setFinalizeVcScore: (value: string) => void;
+  setFinalizeOppScore: (value: string) => void;
   requestEndGameFromDashboard: () => void;
   cancelEndGamePrompt: () => void;
+  saveFinalizeDetailsFromDashboard: () => Promise<boolean>;
   discardGameFromDashboard: () => Promise<void>;
   endGameFromDashboard: () => Promise<void>;
 
@@ -485,14 +496,25 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
   // End game hook
   const {
     isEndingGame,
+    isSavingFinalizeDetails,
     isEndGamePromptOpen,
     endGameStatus,
+    finalizeGameName,
+    finalizeGameDate,
+    finalizeOpponent,
+    finalizeVcScore,
+    finalizeOppScore,
+    setFinalizeGameDate,
+    setFinalizeOpponent,
+    setFinalizeVcScore,
+    setFinalizeOppScore,
     requestEndGameFromDashboard,
     cancelEndGamePrompt,
+    saveFinalizeDetailsFromDashboard,
     discardGameFromDashboard,
     endGameFromDashboard,
   } = useEndGame({
-    gameId, endedGameIdsRef, clearActiveGame, setDashboardStatus,
+    gameId, state, setupNames, endedGameIdsRef, clearActiveGame, setDashboardStatus,
   });
 
   // Derived game data
@@ -567,10 +589,21 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameStartingLineup, setNewGameStartingLineup, isLaunchingGame, launchGame,
     // End game
     isEndingGame,
+    isSavingFinalizeDetails,
     isEndGamePromptOpen,
     endGameStatus,
+    finalizeGameName,
+    finalizeGameDate,
+    finalizeOpponent,
+    finalizeVcScore,
+    finalizeOppScore,
+    setFinalizeGameDate,
+    setFinalizeOpponent,
+    setFinalizeVcScore,
+    setFinalizeOppScore,
     requestEndGameFromDashboard,
     cancelEndGamePrompt,
+    saveFinalizeDetailsFromDashboard,
     discardGameFromDashboard,
     endGameFromDashboard,
     // AI

@@ -4060,6 +4060,139 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   opacity: 1 !important;
 }
 
+.finalize-game-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.finalize-game-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.finalize-game-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.finalize-game-field-wide {
+  grid-column: 1 / -1;
+}
+
+.finalize-game-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.finalize-game-input {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hi);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.finalize-game-input:focus,
+.finalize-game-score-input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+.finalize-game-score-wrap {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.7rem;
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  background: var(--surface-2);
+  padding: 0.7rem;
+}
+
+.finalize-game-score-team {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.finalize-game-score-name {
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.finalize-game-score-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border-hi);
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 0.52rem 0.5rem;
+}
+
+.finalize-game-score-separator {
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.finalize-game-save-btn {
+  width: 100%;
+}
+
+.finalize-game-status {
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 0.65rem 0.75rem;
+  margin-top: 0;
+}
+
+.finalize-game-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 700px) {
+  .finalize-game-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .finalize-game-score-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .finalize-game-score-separator {
+    display: none;
+  }
+
+  .finalize-game-actions {
+    justify-content: stretch;
+  }
+
+  .finalize-game-actions .shell-nav-link {
+    width: 100%;
+  }
+}
+
 .roster-players-area {
   padding: 0 1rem 1rem;
   border-top: 1px solid var(--border);
@@ -4421,19 +4554,30 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   color: #fecaca;
 }
 
+.coach-app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.coach-app-main {
+  flex: 1 0 auto;
+}
+
 .coach-app-footer {
-  margin: 1.25rem 1.4rem 1.5rem;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  background: rgba(10,15,30,0.45);
+  margin: 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(8,13,26,0.88);
 }
 
 .coach-app-footer-inner {
+  max-width: 1180px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0.9rem max(1.25rem, env(safe-area-inset-left)) calc(0.9rem + env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-right));
   flex-wrap: wrap;
 }
 
@@ -6067,5 +6211,194 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
   .mkt-hero-rails {
     display: none;
+  }
+}
+
+/* ===================================================================
+   Marketing readability refinements
+   =================================================================== */
+
+.mkt-page {
+  background:
+    radial-gradient(120% 70% at 75% 0%, rgba(19,182,122,0.14) 0%, transparent 74%),
+    radial-gradient(85% 55% at 10% 0%, rgba(255,209,102,0.08) 0%, transparent 64%),
+    linear-gradient(180deg, #0a101e 0%, #0d1424 55%, #0f1729 100%);
+}
+
+.mkt-btn {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 0.84rem;
+}
+
+.mkt-badge {
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-size: 0.74rem;
+}
+
+.mkt-h1 {
+  text-transform: none;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  max-width: 14ch;
+}
+
+.mkt-hero-sub {
+  font-size: 1.03rem;
+  line-height: 1.7;
+  max-width: 58ch;
+}
+
+.mkt-section-head {
+  max-width: 720px;
+}
+
+.mkt-section-head h2 {
+  letter-spacing: -0.02em;
+}
+
+.mkt-section-sub {
+  font-size: 1.02rem;
+  color: rgba(244,246,251,0.76);
+}
+
+.mkt-feature-card {
+  background: rgba(12,22,40,0.92);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.mkt-feature-card h3 {
+  font-size: 1.12rem;
+}
+
+.mkt-feature-card p {
+  font-size: 0.94rem;
+  color: rgba(244,246,251,0.78);
+}
+
+.mkt-step p,
+.mkt-faq-answer p,
+.mkt-demo-cta-inner p,
+.mkt-final-cta-inner p {
+  color: rgba(244,246,251,0.74);
+}
+
+.mkt-trust-pill {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.16);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 0.74rem;
+}
+
+/* ---- Features/About page shell ---- */
+.mkt-detail-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mkt-detail-main {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 3.25rem 1.5rem 4rem;
+  flex: 1;
+}
+
+.mkt-detail-hero {
+  max-width: 780px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2.2rem;
+}
+
+.mkt-detail-hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 3.25rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.mkt-detail-hero p {
+  margin: 0;
+  max-width: 62ch;
+  color: rgba(244,246,251,0.8);
+  line-height: 1.7;
+}
+
+.mkt-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.mkt-detail-card {
+  background: rgba(12,22,40,0.92);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 1.2rem;
+}
+
+.mkt-detail-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.mkt-detail-card p {
+  margin: 0 0 0.75rem;
+  color: rgba(244,246,251,0.8);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.mkt-detail-card ul {
+  margin: 0;
+  padding-left: 1rem;
+  color: rgba(244,246,251,0.88);
+  line-height: 1.55;
+  font-size: 0.88rem;
+}
+
+.mkt-detail-main .stats-page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.mkt-detail-main .stats-page-hero {
+  margin-bottom: 1.25rem;
+}
+
+.mkt-detail-main .stats-page-card {
+  border-radius: 12px;
+  margin-bottom: 0.95rem;
+}
+
+.mkt-detail-main .policy-page .stats-page-card {
+  margin-bottom: 1rem;
+}
+
+.mkt-detail-main .policy-page .policy-section-list,
+.mkt-detail-main .policy-page .policy-section-body {
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+@media (max-width: 1024px) {
+  .mkt-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .mkt-detail-main {
+    padding: 2.2rem 1rem 2.8rem;
+  }
+
+  .mkt-detail-hero h1 {
+    font-size: clamp(1.7rem, 8vw, 2.2rem);
   }
 }

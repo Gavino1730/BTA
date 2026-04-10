@@ -1,4 +1,7 @@
+import { PublicSiteChrome } from "./PublicSiteChrome.js";
+
 interface RouteShellPageProps {
+  onNavigate: (path: string) => void;
   title: string;
   subtitle: string;
   onPrimary?: () => void;
@@ -15,6 +18,7 @@ interface PolicySection {
 }
 
 function RouteShellPage({
+  onNavigate,
   title,
   subtitle,
   onPrimary,
@@ -24,32 +28,34 @@ function RouteShellPage({
   bullets = [],
 }: RouteShellPageProps) {
   return (
-    <div className="stats-page">
-      <section className="stats-page-card" style={{ maxWidth: "760px", margin: "2.5rem auto" }}>
-        <p className="stats-page-eyebrow">Preproduction</p>
-        <h1>{title}</h1>
-        <p className="stats-page-subtitle">{subtitle}</p>
-        {bullets.length > 0 && (
-          <ul style={{ marginTop: "0.75rem", lineHeight: 1.6, color: "rgba(232,234,240,0.85)" }}>
-            {bullets.map((bullet) => (
-              <li key={bullet}>{bullet}</li>
-            ))}
-          </ul>
-        )}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginTop: "1rem" }}>
-          {onPrimary && primaryLabel && (
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
-              {primaryLabel}
-            </button>
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main">
+        <section className="stats-page-card" style={{ maxWidth: "760px", margin: "0 auto" }}>
+          <p className="stats-page-eyebrow">Preproduction</p>
+          <h1>{title}</h1>
+          <p className="stats-page-subtitle">{subtitle}</p>
+          {bullets.length > 0 && (
+            <ul style={{ marginTop: "0.75rem", lineHeight: 1.6, color: "rgba(232,234,240,0.85)" }}>
+              {bullets.map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
+            </ul>
           )}
-          {onSecondary && secondaryLabel && (
-            <button type="button" className="shell-nav-link" onClick={onSecondary}>
-              {secondaryLabel}
-            </button>
-          )}
-        </div>
-      </section>
-    </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginTop: "1rem" }}>
+            {onPrimary && primaryLabel && (
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
+                {primaryLabel}
+              </button>
+            )}
+            {onSecondary && secondaryLabel && (
+              <button type="button" className="shell-nav-link" onClick={onSecondary}>
+                {secondaryLabel}
+              </button>
+            )}
+          </div>
+        </section>
+      </main>
+    </PublicSiteChrome>
   );
 }
 
@@ -57,7 +63,68 @@ interface RoutedPageProps {
   onNavigate: (path: string) => void;
 }
 
+interface MarketingSection {
+  title: string;
+  body: string;
+  bullets: string[];
+}
+
+interface PublicMarketingPageProps {
+  title: string;
+  subtitle: string;
+  kicker: string;
+  sections: MarketingSection[];
+  onNavigate: (path: string) => void;
+  primaryLabel: string;
+  primaryPath: string;
+  secondaryLabel: string;
+  secondaryPath: string;
+}
+
+function PublicMarketingPage({
+  title,
+  subtitle,
+  kicker,
+  sections,
+  onNavigate,
+  primaryLabel,
+  primaryPath,
+  secondaryLabel,
+  secondaryPath,
+}: PublicMarketingPageProps) {
+  return (
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main">
+        <section className="mkt-detail-hero">
+          <span className="mkt-badge">{kicker}</span>
+          <h1>{title}</h1>
+          <p>{subtitle}</p>
+          <div className="mkt-hero-actions">
+            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate(primaryPath)}>{primaryLabel}</button>
+            <button type="button" className="mkt-btn mkt-btn-ghost" onClick={() => onNavigate(secondaryPath)}>{secondaryLabel}</button>
+          </div>
+        </section>
+
+        <section className="mkt-detail-grid">
+          {sections.map((section) => (
+            <article key={section.title} className="mkt-detail-card">
+              <h2>{section.title}</h2>
+              <p>{section.body}</p>
+              <ul>
+                {section.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </section>
+      </main>
+    </PublicSiteChrome>
+  );
+}
+
 interface PolicyContentPageProps {
+  onNavigate: (path: string) => void;
   title: string;
   subtitle: string;
   sections: PolicySection[];
@@ -68,6 +135,7 @@ interface PolicyContentPageProps {
 }
 
 function PolicyContentPage({
+  onNavigate,
   title,
   subtitle,
   sections,
@@ -77,48 +145,53 @@ function PolicyContentPage({
   secondaryLabel,
 }: PolicyContentPageProps) {
   return (
-    <div className="stats-page policy-page">
-      <section className="stats-page-card policy-page-hero">
-        <p className="stats-page-eyebrow">Preproduction Policy Draft</p>
-        <h1>{title}</h1>
-        <p className="stats-page-subtitle">{subtitle}</p>
-      </section>
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main">
+        <section className="stats-page policy-page">
+          <section className="stats-page-card policy-page-hero">
+            <p className="stats-page-eyebrow">Preproduction Policy Draft</p>
+            <h1>{title}</h1>
+            <p className="stats-page-subtitle">{subtitle}</p>
+          </section>
 
-      {sections.map((section) => (
-        <section key={section.heading} className="stats-page-card policy-page-section">
-          <h3 className="policy-section-heading">{section.heading}</h3>
-          <p className="stats-page-subcopy policy-section-body">{section.body}</p>
-          {(section.bullets ?? []).length > 0 && (
-            <ul className="policy-section-list">
-              {section.bullets?.map((bullet) => (
-                <li key={bullet}>{bullet}</li>
-              ))}
-            </ul>
-          )}
+          {sections.map((section) => (
+            <section key={section.heading} className="stats-page-card policy-page-section">
+              <h3 className="policy-section-heading">{section.heading}</h3>
+              <p className="stats-page-subcopy policy-section-body">{section.body}</p>
+              {(section.bullets ?? []).length > 0 && (
+                <ul className="policy-section-list">
+                  {section.bullets?.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ))}
+
+          <section className="stats-page-card policy-page-actions-wrap">
+            <div className="policy-page-actions">
+              {onPrimary && primaryLabel && (
+                <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
+                  {primaryLabel}
+                </button>
+              )}
+              {onSecondary && secondaryLabel && (
+                <button type="button" className="shell-nav-link" onClick={onSecondary}>
+                  {secondaryLabel}
+                </button>
+              )}
+            </div>
+          </section>
         </section>
-      ))}
-
-      <section className="stats-page-card policy-page-actions-wrap">
-        <div className="policy-page-actions">
-          {onPrimary && primaryLabel && (
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
-              {primaryLabel}
-            </button>
-          )}
-          {onSecondary && secondaryLabel && (
-            <button type="button" className="shell-nav-link" onClick={onSecondary}>
-              {secondaryLabel}
-            </button>
-          )}
-        </div>
-      </section>
-    </div>
+      </main>
+    </PublicSiteChrome>
   );
 }
 
 export function TermsPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage
+      onNavigate={onNavigate}
       title="Terms of Service"
       subtitle="These pilot terms describe acceptable use, data responsibilities, and service expectations during preproduction. They apply to all coaches, operators, and staff accounts using this environment."
       sections={[
@@ -168,84 +241,88 @@ export function TermsPage({ onNavigate }: RoutedPageProps) {
 
 export function FeaturesPage({ onNavigate }: RoutedPageProps) {
   return (
-    <PolicyContentPage
-      title="Platform Features"
-      subtitle="BTA Courtside combines live game control, season analytics, and team operations into one preproduction platform for high school programs."
+    <PublicMarketingPage
+      kicker="Product Overview"
+      title="Features built for real game pressure"
+      subtitle="BTA combines live game context, analytics, and team operations in one professional workflow coaches can trust."
+      onNavigate={onNavigate}
+      primaryLabel="Open Demo"
+      primaryPath="/demo"
+      secondaryLabel="About BTA"
+      secondaryPath="/about"
       sections={[
         {
-          heading: "Live Game Command",
-          body: "Run game decisions with realtime context from the operator device and coach dashboard.",
+          title: "Live Game Command",
+          body: "See scoreflow, possession context, and key events with minimal delay from the operator device.",
           bullets: [
-            "Sub-second event fanout from operator input to coach view",
-            "Live scoreboard, possession context, and correction controls",
-            "Session-aware status signals for sync and connection health",
+            "Real-time event fanout from iPad entry to coach dashboard",
+            "Correction workflows that preserve replay-safe state",
+            "Connection and sync signals visible during active games",
           ],
         },
         {
-          heading: "Season Analytics Workspace",
-          body: "Turn every game into trend visibility for players, units, and outcomes.",
+          title: "Season Analytics Workspace",
+          body: "Turn every game into actionable trend visibility for players, lineups, and team outcomes.",
           bullets: [
-            "Game logs, player splits, and trend views by period and result",
-            "AI insight panel with deterministic fallback pathways",
-            "Replay-safe game-state engine for consistent derived stats",
+            "Player and game-level trend views across the season",
+            "Insight support for momentum and rotation decisions",
+            "Consistent derived metrics from deterministic game state",
           ],
         },
         {
-          heading: "Team Operations",
-          body: "Keep roster, roles, and support workflows in one secure school-scoped workspace.",
+          title: "Team Operations",
+          body: "Manage roster, roles, and support actions in one school-scoped environment.",
           bullets: [
-            "Role-based access for admin, coach, operator, and player users",
-            "Organization member management and invite workflows",
-            "Support, policy, and help surfaces built into the app shell",
+            "Role-based access for admin, coach, operator, and player",
+            "Roster and member administration in the same shell",
+            "Built-in help, policy, and support access",
           ],
         },
       ]}
-      onPrimary={() => onNavigate("/demo")}
-      primaryLabel="Open Demo"
-      onSecondary={() => onNavigate("/about")}
-      secondaryLabel="About BTA"
     />
   );
 }
 
 export function AboutPage({ onNavigate }: RoutedPageProps) {
   return (
-    <PolicyContentPage
-      title="About BTA Courtside"
-      subtitle="BTA is built for high school basketball staff that need dependable live data during games and practical analytics between games."
+    <PublicMarketingPage
+      kicker="About"
+      title="A platform focused on reliability and coaching clarity"
+      subtitle="BTA is purpose-built for high school basketball programs that need dependable live operations and practical analytics."
+      onNavigate={onNavigate}
+      primaryLabel="View Features"
+      primaryPath="/features"
+      secondaryLabel="Back To Home"
+      secondaryPath="/"
       sections={[
         {
-          heading: "What We Build",
-          body: "A unified coach platform where operators capture events once and the full staff sees the same trusted state.",
+          title: "What We Build",
+          body: "One connected platform where events are captured once and shared across staff in a trusted state.",
           bullets: [
             "Realtime stat capture and coach dashboard fanout",
-            "Deterministic state and replay for correction safety",
-            "Actionable insights for game-day and season review",
+            "Deterministic replay model for correction safety",
+            "Game-day and season insight support",
           ],
         },
         {
-          heading: "Who It Serves",
-          body: "Designed for varsity, JV, and development programs that want game-speed decisions backed by cleaner data.",
+          title: "Who It Serves",
+          body: "Designed for varsity, JV, and development programs that need cleaner data and faster decisions.",
           bullets: [
-            "Head coaches and assistants managing live decisions",
-            "Operators entering events from the bench or scorer table",
-            "Program staff reviewing trends and player development",
+            "Coaches managing live decisions from the bench",
+            "Operators capturing events on the iPad workflow",
+            "Program staff reviewing development and performance",
           ],
         },
         {
-          heading: "Current Preproduction Focus",
-          body: "Reliability, usability, and trust are prioritized before broad production rollout.",
+          title: "Current Focus",
+          body: "Preproduction work is centered on reliability, usability, and operator confidence.",
           bullets: [
-            "Expanded docs, support, and onboarding guidance",
-            "Deeper org controls and admin surfaces",
-            "Export quality and workflow hardening",
+            "Game-day reliability hardening",
+            "Clearer onboarding and support workflows",
+            "Higher-quality exports and team operations tooling",
           ],
         },
       ]}
-      onPrimary={() => onNavigate("/features")}
-      primaryLabel="View Features"
-      onSecondary={() => onNavigate("/")}
-      secondaryLabel="Back to Home"
     />
   );
 }
@@ -253,6 +330,7 @@ export function AboutPage({ onNavigate }: RoutedPageProps) {
 export function HelpCenterPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage
+      onNavigate={onNavigate}
       title="Help Center"
       subtitle="Use this page as the first stop for game-day setup, troubleshooting, and escalation during preproduction."
       sections={[
@@ -292,9 +370,53 @@ export function HelpCenterPage({ onNavigate }: RoutedPageProps) {
   );
 }
 
+export function DocsCenterPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      onNavigate={onNavigate}
+      title="Docs Center"
+      subtitle="Structured guides for setup, game operations, and troubleshooting. This is the dedicated documentation hub for preproduction."
+      sections={[
+        {
+          heading: "Quickstart Guides",
+          body: "Use these first when onboarding a new team or staff member.",
+          bullets: [
+            "Create account and complete team setup",
+            "Build roster and verify jersey numbers",
+            "Pair operator device and start live session",
+          ],
+        },
+        {
+          heading: "Game-Day Operations",
+          body: "Operational checklists designed for reliability under live pressure.",
+          bullets: [
+            "Pre-tip connection and sync checks",
+            "In-game correction workflow and event audit habits",
+            "Post-game verification before sharing reports",
+          ],
+        },
+        {
+          heading: "Troubleshooting Library",
+          body: "Common failure modes and expected recovery paths.",
+          bullets: [
+            "Device offline and queue replay handling",
+            "Role and access mismatch recovery",
+            "Escalation path with required support details",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/help")}
+      primaryLabel="Open Help Center"
+      onSecondary={() => onNavigate("/support")}
+      secondaryLabel="Open Support"
+    />
+  );
+}
+
 export function PrivacyPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage
+      onNavigate={onNavigate}
       title="Privacy Policy"
       subtitle="This preproduction privacy summary explains what operational data is collected, how it is used, and how deletion/export requests are handled."
       sections={[
@@ -338,6 +460,7 @@ export function PrivacyPage({ onNavigate }: RoutedPageProps) {
 export function DataDeletionPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage
+      onNavigate={onNavigate}
       title="Data Deletion Request"
       subtitle="Request deletion of account, roster, or game data for your school tenant. Deletions are reviewed manually during preproduction to prevent accidental loss."
       sections={[
@@ -380,6 +503,7 @@ export function DataDeletionPage({ onNavigate }: RoutedPageProps) {
 export function SupportPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
+      onNavigate={onNavigate}
       title="Support"
       subtitle="Support center is in preproduction. Use this page as the central place for help, bug reports, and feature requests."
       bullets={[
@@ -398,6 +522,7 @@ export function SupportPage({ onNavigate }: RoutedPageProps) {
 export function ContactPage({ onNavigate }: RoutedPageProps) {
   return (
     <RouteShellPage
+      onNavigate={onNavigate}
       title="Contact"
       subtitle="Direct support and pilot inquiries are handled manually in preproduction."
       bullets={[
@@ -416,6 +541,7 @@ export function ContactPage({ onNavigate }: RoutedPageProps) {
 export function BillingPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage
+      onNavigate={onNavigate}
       title="Billing"
       subtitle="Billing is still pilot-managed. This page outlines current pricing workflow and what billing controls will be available at launch."
       sections={[
@@ -441,6 +567,49 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       primaryLabel="Contact for Pilot"
       onSecondary={() => onNavigate("/live")}
       secondaryLabel="Back to Dashboard"
+    />
+  );
+}
+
+export function AdminPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      onNavigate={onNavigate}
+      title="Admin Panel"
+      subtitle="Starter admin surface for preproduction operations. This page is intentionally read-only while management tools are phased in."
+      sections={[
+        {
+          heading: "Tenant and User Operations",
+          body: "Visibility-first rollout for high-impact operations before write actions are enabled.",
+          bullets: [
+            "User and organization inventory view (planned)",
+            "Role and access anomaly review (planned)",
+            "Manual escalation workflow links (planned)",
+          ],
+        },
+        {
+          heading: "Support and Safety Controls",
+          body: "Admin support workflows prioritize reliability and auditability.",
+          bullets: [
+            "Support queue and unresolved incident summary (planned)",
+            "Security metric snapshot from existing API endpoints",
+            "Factory reset guardrails and confirmation policy (planned)",
+          ],
+        },
+        {
+          heading: "Audit and Compliance",
+          body: "Operational changes should remain traceable as admin capabilities expand.",
+          bullets: [
+            "Audit log timeline integration (planned)",
+            "Environment change annotations (planned)",
+            "Runbook links for incident response and recovery",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/stats/settings")}
+      primaryLabel="Open Team Settings"
+      onSecondary={() => onNavigate("/support")}
+      secondaryLabel="Open Support"
     />
   );
 }
