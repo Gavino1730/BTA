@@ -226,21 +226,24 @@ export function AiInsightsPage() {
         const [insightsRes, seasonRes, teamSummaryRes, playersRes, liveRes] = await Promise.all([
           fetch(`${apiBase}/api/comprehensive-insights`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/season-analysis`, { headers: apiKeyHeader() }),
-          fetch(`${apiBase}/api/ai/team-summary`, { headers: apiKeyHeader() }),
+          fetch(`${apiBase}/api/ai/team-summary`, { headers: apiKeyHeader() }).catch(() => null),
           fetch(`${apiBase}/api/players`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/live-context`, { headers: apiKeyHeader() }).catch(() => null),
         ]);
 
-        if (!insightsRes.ok || !seasonRes.ok || !teamSummaryRes.ok || !playersRes.ok) {
+        if (!insightsRes.ok || !seasonRes.ok || !playersRes.ok) {
           throw new Error("Insights request failed");
         }
 
-        const [insightsPayload, seasonPayload, teamSummaryPayload, playersPayload] = await Promise.all([
+        const [insightsPayload, seasonPayload, playersPayload] = await Promise.all([
           insightsRes.json() as Promise<ComprehensiveInsightsPayload>,
           seasonRes.json() as Promise<SeasonAnalysis>,
-          teamSummaryRes.json() as Promise<{ summary?: string }>,
           playersRes.json() as Promise<PlayerSummary[]>,
         ]);
+        const teamSummaryPayload = (teamSummaryRes?.ok
+          ? (teamSummaryRes.json() as Promise<{ summary?: string }>)
+          : Promise.resolve(null));
+        const teamSummaryResult: { summary?: string } | null = await teamSummaryPayload;
 
         const livePayload = (liveRes?.ok
           ? (liveRes.json() as Promise<LiveContextPayload>)
@@ -251,7 +254,7 @@ export function AiInsightsPage() {
         if (!cancelled) {
           setInsights(sanitizeInsightsPayload(insightsPayload));
           setAnalysis(sanitizeSeasonAnalysis(seasonPayload));
-          setTeamSummary(sanitizeText(teamSummaryPayload.summary));
+          setTeamSummary(sanitizeText(teamSummaryResult?.summary));
           const nextPlayers = Array.isArray(playersPayload) ? playersPayload : [];
           setPlayers(nextPlayers);
           if (!selectedPlayer && nextPlayers.length > 0) {

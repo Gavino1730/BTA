@@ -48,8 +48,24 @@ async function readErrorMessage(response: Response): Promise<string | null> {
   }
 }
 
+interface GameAiStatus {
+  healthy: boolean;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+}
+
+const AI_ERROR_MESSAGES: Record<string, string> = {
+  missing_api_key: "AI not configured — set OPENAI_API_KEY on the server to enable bench call generation.",
+  rate_limited: "AI generation is rate-limited. Rules-based insights are still active.",
+  timeout: "AI request timed out. Rules-based insights are still active.",
+  service_unavailable: "AI service is unavailable. Rules-based insights are still active.",
+  upstream_error: "AI upstream error. Rules-based insights are still active.",
+  network_error: "AI network error. Rules-based insights are still active.",
+  invalid_payload: "AI response could not be parsed. Rules-based insights are still active.",
+};
+
 export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoachAiOptions) {
-  const aiRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAiRefreshAtRef = useRef<number>(0);
   const hasTenantScope = Boolean(resolveActiveSchoolId());
 
   const [isRefreshingAiInsights, setIsRefreshingAiInsights] = useState(false);
@@ -66,6 +82,7 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
   );
   const [isSendingAiChat, setIsSendingAiChat] = useState(false);
   const [aiChatSuggestions, setAiChatSuggestions] = useState<string[]>([]);
+  const [aiHealthMessage, setAiHealthMessage] = useState("");
 
   const historicalPromptContext = useMemo(
     () => extractHistoricalContextFromPrompt(promptPreview?.userPrompt ?? ""),
@@ -302,12 +319,28 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
   }
 
   // Resets AI-specific state when clearing an active game
+  async function fetchAiHealthMessage(): Promise<void> {
+    try {
+      const resp = await fetch(`${apiBase}/api/games/${gameId}/ai-status`, { headers: apiKeyHeader() });
+      if (!resp.ok) return;
+      const status = (await resp.json()) as GameAiStatus;
+      if (status.healthy) { setAiHealthMessage(""); return; }
+      const msg = (status.lastErrorCode ? AI_ERROR_MESSAGES[status.lastErrorCode] : null)
+        ?? (status.lastErrorMessage ? `AI unavailable: ${status.lastErrorMessage}` : null)
+        ?? "AI generation unavailable. Rules-based insights are still active.";
+      setAiHealthMessage(msg);
+    } catch {
+      // Health check is informational; ignore failures
+    }
+  }
+
   function resetAiState(): void {
     setAiChatMessages([]);
     setAiChatInput("");
     setAiChatSuggestions([]);
     setPromptPreview(null);
     setAiRefreshError("");
+    setAiHealthMessage("");
   }
 
   async function refreshAiBenchCalls(): Promise<void> {
@@ -317,11 +350,10 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
 
     // Debounce: ignore refresh requests within 2 seconds of the last request
     const now = Date.now();
-    const lastRefresh = (aiRefreshDebounceRef.current as unknown as number) || 0;
-    if (now - lastRefresh < 2000) {
+    if (now - lastAiRefreshAtRef.current < 2000) {
       return;
     }
-    aiRefreshDebounceRef.current = (now as unknown as ReturnType<typeof setTimeout>);
+    lastAiRefreshAtRef.current = now;
 
     setIsRefreshingAiInsights(true);
     setAiRefreshError("");
@@ -344,6 +376,12 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       const payload = (await response.json()) as Insight[];
       setInsights(payload);
       setDashboardStatus("AI bench calls refreshed");
+      const hasAiInsights = payload.some((i) => i.type === "ai_coaching");
+      if (!hasAiInsights) {
+        void fetchAiHealthMessage();
+      } else {
+        setAiHealthMessage("");
+      }
     } catch {
       setAiRefreshError("Could not refresh AI bench calls right now. Check network and try again.");
     } finally {
@@ -352,8 +390,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
   }
 
   return {
-    aiRefreshDebounceRef,
     isRefreshingAiInsights, setIsRefreshingAiInsights,
+    aiHealthMessage,
     aiRefreshError, setAiRefreshError,
     aiSettings,
     aiSettingsDraft, setAiSettingsDraft,

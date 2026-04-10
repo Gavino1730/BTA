@@ -35,7 +35,7 @@ export function LivePage() {
     leadersByTeam, canonicalSideIds,
     lineupUnitStats, coachedTeamId, rotationContext,
     aiInsights, rulesInsights, hasGameStarted,
-    aiRefreshError, isRefreshingAiInsights, refreshAiBenchCalls, prettifyInsightText,
+    aiRefreshError, aiHealthMessage, isRefreshingAiInsights, refreshAiBenchCalls, prettifyInsightText,
     boxScorePeriods, filteredBoxScoreEvents, boxScoreByTeam, setupNames,
     deleteGameEvent, deletingGameEventId,
     aiQuickQuestions, sendAiChat, isSendingAiChat,
@@ -302,6 +302,7 @@ export function LivePage() {
             aiInsights={aiInsights}
             rulesInsights={rulesInsights}
             aiRefreshError={aiRefreshError}
+            aiHealthMessage={aiHealthMessage}
             isRefreshingAiInsights={isRefreshingAiInsights}
             refreshAiBenchCalls={refreshAiBenchCalls}
             prettifyInsightText={prettifyInsightText}

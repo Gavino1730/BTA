@@ -150,3 +150,19 @@ If deployment is blocked by validation in production:
 - The script `scripts/deploy-robots.mjs` copies the correct file based on `VERCEL_ENV` or `BTA_ROBOTS_PREVIEW`.
 - To override in local/dev, set `BTA_ROBOTS_PREVIEW=1` before build.
 - See also: `apps/coach-dashboard/package.json` (postbuild), `public/robots.txt`, `public/robots-preview.txt`.
+
+### Robots.txt Test
+
+To verify which robots.txt is active and its contents, run:
+
+    node scripts/test-robots.mjs
+
+You can override the mode locally:
+
+    # Preview mode (should Disallow all)
+    set BTA_ROBOTS_PREVIEW=1 ; npm run build -w @bta/coach-dashboard ; node scripts/test-robots.mjs
+
+    # Production mode (should Allow all)
+    set BTA_ROBOTS_PREVIEW=0 ; npm run build -w @bta/coach-dashboard ; node scripts/test-robots.mjs
+
+The script prints the detected environment and the contents of public/robots.txt.

@@ -29,6 +29,7 @@ import {
   getGameAiContext,
   getGameAiPromptPreview,
   getGameAiSettings,
+  getGameAiStatus,
   getGameEvents,
   getGameInsights,
   getActiveGameState,
@@ -4704,6 +4705,17 @@ app.get("/api/games/:gameId/insights", requireApiKey, async (req, res) => {
   const forceRefresh = req.query.force === "1" || req.query.force === "true";
   const insights = await refreshGameAiInsights(req.params.gameId, { force: forceRefresh }, { schoolId });
   res.json(insights ?? getGameInsights(req.params.gameId, { schoolId }));
+});
+
+app.get("/api/games/:gameId/ai-status", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const state = getGameState(req.params.gameId, { schoolId });
+  if (!state) {
+    res.status(404).json({ error: "game not found" });
+    return;
+  }
+  const status = getGameAiStatus(req.params.gameId, { schoolId });
+  res.json(status ?? { healthy: false, errorCode: "no_session", errorMessage: "No active session found", model: null, lastSuccessAt: null, lastErrorAt: null });
 });
 
 app.get("/api/games/:gameId/ai-settings", requireApiKey, (req, res) => {
