@@ -1,5 +1,7 @@
 export type AppRoute =
   | "marketing"
+  | "features"
+  | "about"
   | "login"
   | "forgot-password"
   | "reset-password"
@@ -58,6 +60,12 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   const canonical = canonicalizeCoachPath(pathname);
   if (canonical === "/") {
     return "marketing";
+  }
+  if (canonical === "/features") {
+    return "features";
+  }
+  if (canonical === "/about") {
+    return "about";
   }
   if (canonical === "/login") {
     return "login";

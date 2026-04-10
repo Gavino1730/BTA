@@ -4,9 +4,10 @@ import type { GameSetup } from "../types.js";
 import {
   apiHeaders,
   apiKeyHeader,
+  fetchOperatorLinkSnapshot,
 } from "../helpers/network.js";
 import { buildRealtimeGameRegistrationPayload } from "./useGameFlow.js";
-import { loadAppData } from "../helpers/storage.js";
+import { loadAppData, saveAppData } from "../helpers/storage.js";
 import {
   loadPending,
   loadSeq,
@@ -58,16 +59,58 @@ export function useEventQueue(deps: EventQueueDeps) {
     return Boolean(normalizedGameId) && hasApiUrl && hasTenantScope && !isPlaceholderPreGame;
   }
 
+  async function recoverSetupFromConnection(options?: { clearStaleToken?: boolean }): Promise<GameSetup | null> {
+    const latest = loadAppData();
+    const baseSetup = options?.clearStaleToken
+      ? { ...latest.gameSetup, apiKey: undefined }
+      : latest.gameSetup;
+
+    if (options?.clearStaleToken && baseSetup.apiKey !== latest.gameSetup.apiKey) {
+      saveAppData({ ...latest, gameSetup: baseSetup });
+    }
+
+    const snapshot = await fetchOperatorLinkSnapshot(baseSetup).catch(() => null);
+    if (!snapshot) {
+      return options?.clearStaleToken ? baseSetup : null;
+    }
+
+    const payload = snapshot.payload;
+    const nextSetup: GameSetup = {
+      ...baseSetup,
+      connectionId: snapshot.connectionId,
+      syncedConnectionId: snapshot.connectionId,
+      schoolId: payload.schoolId?.trim() || baseSetup.schoolId,
+      apiKey: payload.operatorToken ?? baseSetup.apiKey,
+    };
+
+    if (nextSetup.apiKey !== latest.gameSetup.apiKey || nextSetup.schoolId !== latest.gameSetup.schoolId) {
+      saveAppData({ ...latest, gameSetup: nextSetup });
+    }
+    return nextSetup;
+  }
+
   async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
     const latest = loadAppData();
     const apiUrl = latest.gameSetup.apiUrl?.trim();
     if (!apiUrl || !gid || !canCallTenantScopedEventApi(latest.gameSetup, gid)) return false;
     try {
-      const res = await fetch(`${apiUrl}/api/games`, {
+      let activeSetup = latest.gameSetup;
+      let res = await fetch(`${apiUrl}/api/games`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) },
-        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(activeSetup) },
+        body: JSON.stringify(buildRealtimeGameRegistrationPayload(activeSetup, gid, preGameNotes)),
       });
+      if (res.status === 401) {
+        const recoveredSetup = await recoverSetupFromConnection({ clearStaleToken: true });
+        if (recoveredSetup) {
+          activeSetup = recoveredSetup;
+          res = await fetch(`${apiUrl}/api/games`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...apiKeyHeader(activeSetup) },
+            body: JSON.stringify(buildRealtimeGameRegistrationPayload(activeSetup, gid, preGameNotes)),
+          });
+        }
+      }
       return res.ok;
     } catch {
       return false;
@@ -95,13 +138,22 @@ export function useEventQueue(deps: EventQueueDeps) {
       return false;
     }
     try {
-      const submitWithCurrentPayload = () => fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events`, {
+      let activeSetup = loadAppData().gameSetup;
+      const submitWithCurrentPayload = () => fetch(`${activeSetup.apiUrl}/api/games/${gameId}/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(gameSetup) },
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(activeSetup) },
         body: JSON.stringify(normalizedEvent),
       });
 
       let res = await submitWithCurrentPayload();
+      if (res.status === 401) {
+        const recoveredSetup = await recoverSetupFromConnection({ clearStaleToken: true });
+        if (recoveredSetup) {
+          activeSetup = recoveredSetup;
+          res = await submitWithCurrentPayload();
+        }
+      }
+
       if (!res.ok) {
         const firstErrorBody = (await res.text().catch(() => "")).trim();
         const missingGame = res.status === 404 || /game not found/i.test(firstErrorBody);
@@ -112,6 +164,14 @@ export function useEventQueue(deps: EventQueueDeps) {
 
       if (!res.ok) {
         const responseBody = (await res.text().catch(() => "")).trim();
+        if (res.status === 401) {
+          showInlineNotice(
+            "Live auth expired. Connection token was refreshed automatically; tap Reconnect & Resubmit to retry.",
+            "warning",
+            8000,
+          );
+          return false;
+        }
         const details = responseBody ? ` ${responseBody}` : "";
         const errorMsg = `Submit failed (${res.status}).${details}`;
         showInlineNotice(errorMsg, "error", 10000);
@@ -224,7 +284,12 @@ export function useEventQueue(deps: EventQueueDeps) {
       if (res.ok) {
         setSubmittedEvents(cur => cur.filter(e => e.id !== last.id));
       } else {
-        showInlineNotice("Could not remove event from server. It may sync on reconnect.", "warning", 4000);
+        if (res.status === 401) {
+          await recoverSetupFromConnection({ clearStaleToken: true });
+          showInlineNotice("Live auth expired while undoing. Reconnect & Resubmit to sync removals.", "warning", 5000);
+        } else {
+          showInlineNotice("Could not remove event from server. It may sync on reconnect.", "warning", 4000);
+        }
       }
     }
     triggerFeedback("undo", 20);

@@ -1,6 +1,6 @@
 # Platform Roadmap - Preproduction
 
-Last updated: April 8, 2026.
+Last updated: April 9, 2026.
 
 This document tracks what is shipped, partially shipped, and still coming soon so we can move from "working product" to "finished platform" without losing scope.
 
@@ -32,6 +32,11 @@ Billing Page (`/billing`) - 🔄 Partial
 - 🚧 Monthly plan/tier model (multi-tier pricing, feature entitlements, upgrade/downgrade paths)
 - 🚧 Paywall readiness for premium features/routes with clear upgrade prompts
 - 🚧 Free trial/demo conversion flow (trial start/end, grace messaging, in-app upsell, conversion CTA)
+- 🚧 Billing UX parity tasks:
+	- Show current tier + next invoice amount/date
+	- Surface trial countdown + conversion prompt
+	- Expose invoice history + receipt links
+	- Expose manage-payment CTA to Stripe customer portal
 
 Team / Organization Management - 🔄 Partial
 - ✅ Members list
@@ -79,10 +84,19 @@ Landing Page (`/`) - 🔄 Partial
 - 🚧 Pricing / demo CTA depth
 - 🚧 Trust / social proof section
 
-Features Page (`/features`) - ❌ Not Started
+Features Page (`/features`) - 🔄 Partial
+- ✅ Initial standalone features page shipped with live command, analytics, and team operations sections
+- 🚧 Remaining: production visuals/screenshots and customer proof depth
 Pricing Page (`/pricing`) - ❌ Not Started
 - 🚧 Scope: public pricing table with monthly tiers, trial/demo offer, and CTA path into Stripe checkout
-About Page (`/about`) - ❌ Not Started
+ - 🚧 Scope details:
+	 - Tier comparison matrix (Starter / Team / Program)
+	 - Monthly billing copy + per-tier feature limits
+	 - Trial terms and auto-convert policy language
+	 - CTA states for logged-out, logged-in, and already-subscribed users
+About Page (`/about`) - 🔄 Partial
+- ✅ Initial standalone about page shipped with mission, audience, and preproduction focus sections
+- 🚧 Remaining: team story depth, trust/social proof, and production polish
 Demo Page (`/demo`) - ✅ Done
 
 ## Section 5: Auth Flow
@@ -168,6 +182,8 @@ Authenticated app footer - 🔄 Partial
 Existing:
 - ✅ `/`
 - ✅ `/demo`
+- ✅ `/features`
+- ✅ `/about`
 - ✅ `/login`
 - ✅ `/forgot-password`
 - ✅ `/reset-password`
@@ -195,7 +211,7 @@ Existing:
 - ✅ `/stats/settings`
 
 Missing / Needed:
-- P2: `/features`, `/pricing`, `/about`, `/notifications`, `/org/settings`, `/admin`, `/docs`
+- P2: `/pricing`, `/notifications`, `/org/settings`, `/admin`, `/docs`, `/checkout/success`, `/checkout/cancel`
 - P3: `/changelog`, `/roadmap`
 
 ## Section 12: Build Order
@@ -208,6 +224,31 @@ Missing / Needed:
 6. Premium pages (features/pricing/about/changelog/roadmap)
 7. Dedicated docs center (`/docs`) and richer help content
 8. Shared skeleton system + loading-state design unification
+
+Monetization Foundation - 🚧 Planned
+- Data model + entitlements
+	- 🚧 Define plan catalog (plan id, monthly price, included limits, feature flags)
+	- 🚧 Persist org subscription state (trialing/active/past_due/canceled)
+	- 🚧 Compute entitlements server-side for deterministic paywall checks
+- Stripe integration
+	- 🚧 Create Stripe checkout session endpoint for monthly plan signup
+	- 🚧 Add Stripe customer portal endpoint for self-serve billing management
+	- 🚧 Add webhook processing for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
+	- 🚧 Add idempotency + signature verification + retry-safe processing
+- Paywall + trial flow
+	- 🚧 Implement route/feature guards for premium analytics and export actions
+	- 🚧 Add trial start, trial expiration, and grace-period behavior
+	- 🚧 Add in-app upgrade prompts tied to entitlement failures
+	- 🚧 Add downgrade handling for over-limit orgs (read-only fallback + warnings)
+- Product surfaces
+	- 🚧 Build `/pricing` with monthly tiers and trial messaging
+	- 🚧 Upgrade `/billing` from placeholder to live subscription state
+	- 🚧 Add checkout return pages: `/checkout/success` and `/checkout/cancel`
+	- 🚧 Add notification events for trial ending, payment failed, subscription changed
+- QA + ops
+	- 🚧 Add e2e happy path for subscribe -> active -> paywalled feature unlock
+	- 🚧 Add webhook replay tests and duplicate event safety checks
+	- 🚧 Add runbook entries for failed payments, cancel/reactivate, and manual recovery
 
 Org Settings Standalone Page - 🔄 Partial
 - ✅ Dedicated `/org/settings` route and navigation entry

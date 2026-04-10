@@ -12,10 +12,12 @@ describe("coach route helpers", () => {
 
   it("resolves public, canonical, and aliased routes to the same coach views", () => {
     expect(resolveCoachRoute("/")).toBe("marketing");
+    expect(resolveCoachRoute("/features")).toBe("features");
+    expect(resolveCoachRoute("/about")).toBe("about");
     expect(resolveCoachRoute("/signin")).toBe("login");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
     expect(resolveCoachRoute("/players")).toBe("stats-players");
-    expect(resolveCoachRoute("/settings")).toBe("stats-settings");
+    expect(resolveCoachRoute("/settings")).toBe("settings");
     expect(resolveCoachRoute("/live")).toBe("live");
   });
 

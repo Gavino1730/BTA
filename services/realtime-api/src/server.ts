@@ -632,6 +632,7 @@ function isSystemOperatorAuthContext(authContext: AuthContext): boolean {
 
   return (
     role === "operator"
+    && !!subject
     && subject.startsWith("operator:")
     && email.startsWith("operator-")
     && email.endsWith("@system.bta")

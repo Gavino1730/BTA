@@ -166,6 +166,90 @@ export function TermsPage({ onNavigate }: RoutedPageProps) {
   );
 }
 
+export function FeaturesPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      title="Platform Features"
+      subtitle="BTA Courtside combines live game control, season analytics, and team operations into one preproduction platform for high school programs."
+      sections={[
+        {
+          heading: "Live Game Command",
+          body: "Run game decisions with realtime context from the operator device and coach dashboard.",
+          bullets: [
+            "Sub-second event fanout from operator input to coach view",
+            "Live scoreboard, possession context, and correction controls",
+            "Session-aware status signals for sync and connection health",
+          ],
+        },
+        {
+          heading: "Season Analytics Workspace",
+          body: "Turn every game into trend visibility for players, units, and outcomes.",
+          bullets: [
+            "Game logs, player splits, and trend views by period and result",
+            "AI insight panel with deterministic fallback pathways",
+            "Replay-safe game-state engine for consistent derived stats",
+          ],
+        },
+        {
+          heading: "Team Operations",
+          body: "Keep roster, roles, and support workflows in one secure school-scoped workspace.",
+          bullets: [
+            "Role-based access for admin, coach, operator, and player users",
+            "Organization member management and invite workflows",
+            "Support, policy, and help surfaces built into the app shell",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/demo")}
+      primaryLabel="Open Demo"
+      onSecondary={() => onNavigate("/about")}
+      secondaryLabel="About BTA"
+    />
+  );
+}
+
+export function AboutPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      title="About BTA Courtside"
+      subtitle="BTA is built for high school basketball staff that need dependable live data during games and practical analytics between games."
+      sections={[
+        {
+          heading: "What We Build",
+          body: "A unified coach platform where operators capture events once and the full staff sees the same trusted state.",
+          bullets: [
+            "Realtime stat capture and coach dashboard fanout",
+            "Deterministic state and replay for correction safety",
+            "Actionable insights for game-day and season review",
+          ],
+        },
+        {
+          heading: "Who It Serves",
+          body: "Designed for varsity, JV, and development programs that want game-speed decisions backed by cleaner data.",
+          bullets: [
+            "Head coaches and assistants managing live decisions",
+            "Operators entering events from the bench or scorer table",
+            "Program staff reviewing trends and player development",
+          ],
+        },
+        {
+          heading: "Current Preproduction Focus",
+          body: "Reliability, usability, and trust are prioritized before broad production rollout.",
+          bullets: [
+            "Expanded docs, support, and onboarding guidance",
+            "Deeper org controls and admin surfaces",
+            "Export quality and workflow hardening",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/features")}
+      primaryLabel="View Features"
+      onSecondary={() => onNavigate("/")}
+      secondaryLabel="Back to Home"
+    />
+  );
+}
+
 export function HelpCenterPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage

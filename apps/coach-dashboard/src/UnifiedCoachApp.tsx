@@ -11,7 +11,7 @@ import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { BillingPage, DataDeletionPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { AboutPage, BillingPage, DataDeletionPage, FeaturesPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -38,6 +38,8 @@ const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
 
 const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "marketing",
+  "features",
+  "about",
   "demo",
   "login",
   "forgot-password",
@@ -69,6 +71,8 @@ function AppFooter({ onNavigate }: AppFooterProps) {
       <div className="coach-app-footer-inner">
         <span className="coach-app-footer-brand">BTA Courtside Platform</span>
         <nav className="coach-app-footer-links" aria-label="App footer links">
+          <button type="button" onClick={() => onNavigate("/features")}>Features</button>
+          <button type="button" onClick={() => onNavigate("/about")}>About</button>
           <button type="button" onClick={() => onNavigate("/help")}>Help</button>
           <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
@@ -401,6 +405,8 @@ export function UnifiedCoachApp() {
   function navigate(nextPath: string) {
     const publicPaths = new Set([
       "/",
+      "/features",
+      "/about",
       "/demo",
       "/login",
       "/forgot-password",
@@ -444,6 +450,14 @@ export function UnifiedCoachApp() {
 
   if (route === "demo") {
     return <DemoPage onNavigate={navigate} />;
+  }
+
+  if (route === "features") {
+    return <FeaturesPage onNavigate={navigate} />;
+  }
+
+  if (route === "about") {
+    return <AboutPage onNavigate={navigate} />;
   }
 
   if (route === "login") {

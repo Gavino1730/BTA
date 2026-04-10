@@ -2,12 +2,12 @@ import type { GameEvent } from "@bta/shared-schema";
 import {
   apiKeyHeader,
   buildAiContextFromSetup,
+  fetchOperatorLinkSnapshot,
   generateGameId,
   isConnectionReadyForStart,
   isLegacyStatsExportConfigured,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
-  operatorLinkHeaders,
 } from "../helpers/network.js";
 import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
@@ -91,33 +91,45 @@ export function useGameFlow({
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
 
-  async function refreshOperatorAuthFromConnection(current: AppData): Promise<AppData> {
-    const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
+  async function refreshOperatorAuthFromConnection(
+    current: AppData,
+    options?: { clearStaleToken?: boolean }
+  ): Promise<AppData> {
+    const clearedSetup = options?.clearStaleToken
+      ? { ...current.gameSetup, apiKey: undefined }
+      : current.gameSetup;
+    const connectionId = normalizeConnectionId(clearedSetup.syncedConnectionId || clearedSetup.connectionId);
     if (!connectionId) {
       return current;
     }
 
+    const baseData = options?.clearStaleToken
+      ? { ...current, gameSetup: clearedSetup }
+      : current;
+
+    if (options?.clearStaleToken && baseData.gameSetup.apiKey !== current.gameSetup.apiKey) {
+      saveAppData(baseData);
+      setAppData(baseData);
+    }
+
     try {
-      const response = await fetch(
-        `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
-        { headers: operatorLinkHeaders(current.gameSetup) },
-      );
-      if (!response.ok) {
-        return current;
+      const snapshot = await fetchOperatorLinkSnapshot(clearedSetup);
+      if (!snapshot) {
+        return baseData;
       }
 
-      const payload = (await response.json()) as OperatorLinkResponse;
-      const next = mergeCoachLinkSnapshot(current, payload);
+      const payload = snapshot.payload as OperatorLinkResponse;
+      const next = mergeCoachLinkSnapshot(baseData, payload);
       if (
-        next.gameSetup.apiKey !== current.gameSetup.apiKey
-        || next.gameSetup.schoolId !== current.gameSetup.schoolId
+        next.gameSetup.apiKey !== baseData.gameSetup.apiKey
+        || next.gameSetup.schoolId !== baseData.gameSetup.schoolId
       ) {
         saveAppData(next);
         setAppData(next);
       }
       return next;
     } catch {
-      return current;
+      return baseData;
     }
   }
 
@@ -164,7 +176,7 @@ export function useGameFlow({
       });
 
       if (res.status === 401) {
-        latest = await refreshOperatorAuthFromConnection(latest);
+        latest = await refreshOperatorAuthFromConnection(latest, { clearStaleToken: true });
         const retryHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
         if (hasWriteCredential(retryHeaders)) {
           res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
@@ -172,6 +184,13 @@ export function useGameFlow({
             headers: retryHeaders,
             body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
           });
+        } else {
+          showInlineNotice(
+            "Live session expired and could not auto-refresh. Tap Sync Now on Ready to Track, then retry Start Game.",
+            "warning",
+            7000,
+          );
+          return;
         }
       }
 
@@ -215,6 +234,14 @@ export function useGameFlow({
             6000,
           );
         } else {
+          if (res.status === 401) {
+            showInlineNotice(
+              "Live auth failed after auto-recovery. Re-sync the connection code on Ready to Track, then retry Start Game.",
+              "error",
+              8000,
+            );
+            return;
+          }
           showInlineNotice(
             `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
             "error"

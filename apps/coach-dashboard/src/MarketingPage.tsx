@@ -338,7 +338,8 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
             <span className="mkt-brand-name">BTA Courtside</span>
           </button>
           <nav className="mkt-nav-links" aria-label="Site navigation">
-            <a href="#features">Features</a>
+            <button type="button" onClick={() => onNavigate("/features")}>Features</button>
+            <button type="button" onClick={() => onNavigate("/about")}>About</button>
             <button type="button" onClick={() => onNavigate("/demo")}>Demo</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           </nav>

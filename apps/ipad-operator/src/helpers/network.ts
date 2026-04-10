@@ -39,6 +39,45 @@ export function operatorLinkHeaders(setup: { schoolId?: string }): Record<string
   return headers;
 }
 
+export async function fetchOperatorLinkSnapshot(setup: {
+  apiUrl?: string;
+  connectionId?: string;
+  syncedConnectionId?: string;
+  schoolId?: string;
+}): Promise<{ connectionId: string; payload: OperatorLinkResponse } | null> {
+  const apiUrl = normalizeUrlBase(setup.apiUrl);
+  const connectionId = normalizeConnectionId(setup.syncedConnectionId || setup.connectionId);
+  if (!apiUrl || !connectionId) {
+    return null;
+  }
+
+  const endpoint = `${apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`;
+  const scopedResponse = await fetch(endpoint, {
+    headers: operatorLinkHeaders({ schoolId: setup.schoolId }),
+  }).catch(() => null);
+
+  if (scopedResponse?.ok) {
+    const payload = (await scopedResponse.json()) as OperatorLinkResponse;
+    return { connectionId, payload };
+  }
+
+  const shouldTryUnscoped = Boolean(setup.schoolId?.trim())
+    && (scopedResponse?.status === 400 || scopedResponse?.status === 401 || scopedResponse?.status === 404 || scopedResponse?.status === 409);
+  if (!shouldTryUnscoped) {
+    return null;
+  }
+
+  const unscopedResponse = await fetch(endpoint, {
+    headers: operatorLinkHeaders({}),
+  }).catch(() => null);
+  if (!unscopedResponse?.ok) {
+    return null;
+  }
+
+  const payload = (await unscopedResponse.json()) as OperatorLinkResponse;
+  return { connectionId, payload };
+}
+
 export function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
   return { headers: apiKeyHeader(setup) };
 }
