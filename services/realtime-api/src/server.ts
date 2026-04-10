@@ -644,6 +644,14 @@ function isLocalAuthContextRevoked(authContext: AuthContext): boolean {
     return false;
   }
 
+  // Operator pairing tokens are service credentials minted from a connection
+  // code, not local account sessions. They should not be invalidated by
+  // account-level "logout all sessions" checks.
+  const subject = resolveAuthSubject(authContext);
+  if (subject?.startsWith("operator:")) {
+    return false;
+  }
+
   const schoolId = normalizeSchoolId(authContext.schoolId);
   if (!schoolId) {
     return false;
