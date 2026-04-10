@@ -28,7 +28,7 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
 
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
+      <main className="mkt-detail-main mkt-no-cards">
       <div className="stats-page">
         <section className="stats-page-hero compact">
           <div>
@@ -200,7 +200,7 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
 
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
+      <main className="mkt-detail-main mkt-no-cards">
       <div className="stats-page">
         <section className="stats-page-hero compact">
           <div>

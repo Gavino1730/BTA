@@ -141,3 +141,12 @@ If deployment is blocked by validation in production:
 - Ensure `BTA_REQUIRE_TENANT=1` remains enabled.
 - Ensure `ALLOWED_ORIGINS` includes all intended frontend origins.
 - If retention errors occur, temporarily set `BTA_DATA_RETENTION_DAYS=0` and investigate DB permissions.
+
+## Robots.txt Policy for SEO
+
+- The correct robots.txt is now selected at build time for Vercel deploys:
+  - Production: `robots.txt` (allows indexing)
+  - Preview: `robots-preview.txt` (disallows all, noindex)
+- The script `scripts/deploy-robots.mjs` copies the correct file based on `VERCEL_ENV` or `BTA_ROBOTS_PREVIEW`.
+- To override in local/dev, set `BTA_ROBOTS_PREVIEW=1` before build.
+- See also: `apps/coach-dashboard/package.json` (postbuild), `public/robots.txt`, `public/robots-preview.txt`.

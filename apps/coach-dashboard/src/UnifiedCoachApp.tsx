@@ -10,11 +10,16 @@ import { LoginPage } from "./LoginPage.js";
 import { MarketingPage } from "./MarketingPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
+import { ComparePage } from "./ComparePage.js";
+import { HowItWorksPage } from "./HowItWorksPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
+import { PricingPage } from "./PricingPage.js";
+import { ProductPage } from "./ProductPage.js";
 import { AboutPage, AdminPage, BillingPage, DataDeletionPage, DocsCenterPage, FeaturesPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
+import { seoForRoute } from "./seo.js";
 import { SetupPage } from "./SetupPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
 import { TeamSettingsPage } from "./TeamSettingsPage.js";
@@ -38,6 +43,10 @@ const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
 
 const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "marketing",
+  "product",
+  "how-it-works",
+  "pricing",
+  "compare",
   "features",
   "about",
   "login",
@@ -59,6 +68,16 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
 
 function isPublicRoute(route: AppRoute): boolean {
   return PUBLIC_ROUTES.has(route);
+}
+
+function upsertMeta(selector: string, attrs: Record<string, string>, content: string) {
+  let element = document.head.querySelector(selector) as HTMLMetaElement | null;
+  if (!element) {
+    element = document.createElement("meta");
+    Object.entries(attrs).forEach(([key, value]) => element?.setAttribute(key, value));
+    document.head.appendChild(element);
+  }
+  element.setAttribute("content", content);
 }
 
 interface AppFooterProps {
@@ -238,6 +257,44 @@ export function UnifiedCoachApp() {
   }, []);
 
   useEffect(() => {
+    const seo = seoForRoute(route);
+    const canonicalUrl = `${window.location.origin}${seo.path}`;
+    const imageUrl = `${window.location.origin}${seo.imagePath}`;
+    document.title = seo.title;
+
+    upsertMeta("meta[name='description']", { name: "description" }, seo.description);
+    upsertMeta("meta[name='robots']", { name: "robots" }, seo.robots);
+    upsertMeta("meta[property='og:title']", { property: "og:title" }, seo.title);
+    upsertMeta("meta[property='og:description']", { property: "og:description" }, seo.description);
+    upsertMeta("meta[property='og:url']", { property: "og:url" }, canonicalUrl);
+    upsertMeta("meta[property='og:image']", { property: "og:image" }, imageUrl);
+    upsertMeta("meta[name='twitter:title']", { name: "twitter:title" }, seo.title);
+    upsertMeta("meta[name='twitter:description']", { name: "twitter:description" }, seo.description);
+    upsertMeta("meta[name='twitter:image']", { name: "twitter:image" }, imageUrl);
+
+    let canonical = document.head.querySelector("link[rel='canonical']") as HTMLLinkElement | null;
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.setAttribute("rel", "canonical");
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute("href", canonicalUrl);
+
+    let structuredData = document.head.querySelector("script[data-bta-seo='jsonld']") as HTMLScriptElement | null;
+    if (seo.structuredData) {
+      if (!structuredData) {
+        structuredData = document.createElement("script");
+        structuredData.setAttribute("type", "application/ld+json");
+        structuredData.setAttribute("data-bta-seo", "jsonld");
+        document.head.appendChild(structuredData);
+      }
+      structuredData.text = JSON.stringify(seo.structuredData);
+    } else if (structuredData) {
+      structuredData.remove();
+    }
+  }, [route]);
+
+  useEffect(() => {
     if (isPublicRoute(route)) {
       return;
     }
@@ -407,6 +464,10 @@ export function UnifiedCoachApp() {
   function navigate(nextPath: string) {
     const publicPaths = new Set([
       "/",
+      "/product",
+      "/how-it-works",
+      "/pricing",
+      "/compare",
       "/features",
       "/about",
       "/login",
@@ -446,8 +507,26 @@ export function UnifiedCoachApp() {
     setRoute(resolveCoachRoute(nextPath));
   }
 
+
+
   if (route === "marketing") {
     return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
+  }
+
+  if (route === "product") {
+    return <ProductPage onNavigate={navigate} />;
+  }
+
+  if (route === "how-it-works") {
+    return <HowItWorksPage onNavigate={navigate} />;
+  }
+
+  if (route === "pricing") {
+    return <PricingPage onNavigate={navigate} />;
+  }
+
+  if (route === "compare") {
+    return <ComparePage onNavigate={navigate} />;
   }
 
   if (route === "features") {

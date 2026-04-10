@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && vite build",
+    "postbuild": "node ../../scripts/deploy-robots.mjs",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

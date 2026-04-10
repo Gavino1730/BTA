@@ -25,6 +25,7 @@
     "stress-test": "node scripts/stress-test.mjs",
     "test:full-sim": "node scripts/full-sim.mjs",
     "audit:ui": "node scripts/ui-audit.mjs",
+    "seo:sitemap": "node scripts/generate-sitemap.mjs",
     "capture:site": "node scripts/site-capture.mjs",
     "validate:env": "npm run validate:env -w @bta/realtime-api"
   },

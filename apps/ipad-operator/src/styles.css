@@ -827,7 +827,7 @@ html, body {
 .event-feed {
   width: 100%;
   flex: 0 0 auto;
-  max-height: 340px;
+  max-height: 200px;
   min-height: 80px;
   overflow-y: auto;
   overscroll-behavior: contain;

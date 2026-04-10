@@ -29,7 +29,7 @@ function RouteShellPage({
 }: RouteShellPageProps) {
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
+      <main className="mkt-detail-main mkt-no-cards">
         <section className="stats-page-card" style={{ maxWidth: "760px", margin: "0 auto" }}>
           <p className="stats-page-eyebrow">Preproduction</p>
           <h1>{title}</h1>
@@ -146,7 +146,7 @@ function PolicyContentPage({
 }: PolicyContentPageProps) {
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
+      <main className="mkt-detail-main mkt-no-cards">
         <section className="stats-page policy-page">
           <section className="stats-page-card policy-page-hero">
             <p className="stats-page-eyebrow">Preproduction Policy Draft</p>

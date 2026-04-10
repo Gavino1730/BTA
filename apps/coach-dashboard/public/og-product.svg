@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="BTA product">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#102130" />
+      <stop offset="100%" stop-color="#1f4f70" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect x="66" y="66" width="1068" height="498" rx="18" fill="none" stroke="#4f7ca4" stroke-width="2" />
+  <text x="96" y="170" fill="#cfe6fb" font-size="32" font-family="Segoe UI, Arial, sans-serif">BTA Product</text>
+  <text x="96" y="262" fill="#ffffff" font-size="58" font-weight="700" font-family="Segoe UI, Arial, sans-serif">In-Game Decision Workflow</text>
+  <text x="96" y="326" fill="#e0f0fc" font-size="32" font-family="Segoe UI, Arial, sans-serif">Live bench context + operator capture + post-game review</text>
+  <text x="96" y="438" fill="#a7c6e3" font-size="27" font-family="Segoe UI, Arial, sans-serif">Built for game-day staff under pressure</text>
+</svg>

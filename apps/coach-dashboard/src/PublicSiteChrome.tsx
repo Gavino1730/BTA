@@ -16,8 +16,10 @@ export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps
           </button>
           <nav className="mkt-nav-links" aria-label="Site navigation">
             <button type="button" onClick={() => onNavigate("/")}>Home</button>
-            <button type="button" onClick={() => onNavigate("/features")}>Features</button>
-            <button type="button" onClick={() => onNavigate("/about")}>About</button>
+            <button type="button" onClick={() => onNavigate("/product")}>Product</button>
+            <button type="button" onClick={() => onNavigate("/how-it-works")}>How It Works</button>
+            <button type="button" onClick={() => onNavigate("/pricing")}>Pricing</button>
+            <button type="button" onClick={() => onNavigate("/compare")}>Compare</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           </nav>
           <div className="mkt-nav-actions">
