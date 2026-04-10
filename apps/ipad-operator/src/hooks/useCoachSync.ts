@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { AppData } from "../types.js";
 import type { OperatorLinkResponse } from "../types.js";
 import {
+  fetchOperatorLinkSnapshot,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
 } from "../helpers/network.js";
@@ -118,12 +119,13 @@ export function useCoachSync({
     setConnectionSyncStatus(`Syncing ${normalizedId} from the coach dashboard...`);
 
     try {
-      const response = await fetch(
-        `${appData.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(normalizedId)}`,
-        { headers: { Accept: "application/json" } },
-      );
+      const snapshot = await fetchOperatorLinkSnapshot({
+        apiUrl: appData.gameSetup.apiUrl,
+        connectionId: normalizedId,
+        schoolId: appData.gameSetup.schoolId,
+      });
 
-      if (response.status === 404) {
+      if (!snapshot) {
         const alreadySynced = isCurrentSyncedCode;
         if (alreadySynced) {
           // Link is temporarily gone but the operator already has a synced game session.
@@ -147,8 +149,6 @@ export function useCoachSync({
                 ...current.gameSetup,
                 connectionId: normalizedId,
                 syncedConnectionId: undefined,
-                schoolId: undefined,
-                apiKey: undefined,
                 myTeamId: "",
                 opponent: "",
                 startingLineup: [],
@@ -171,11 +171,7 @@ export function useCoachSync({
         return false;
       }
 
-      if (!response.ok) {
-        throw new Error(`Sync failed (${response.status})`);
-      }
-
-      const payload = (await response.json()) as OperatorLinkResponse;
+      const payload = snapshot.payload as OperatorLinkResponse;
       let syncedTeamName = "team";
 
       setAppData((current) => {

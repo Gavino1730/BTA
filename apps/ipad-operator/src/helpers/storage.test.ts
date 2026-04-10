@@ -86,4 +86,55 @@ describe("device name persistence", () => {
 
     expect(localStorage.getItem(DEVICE_NAME_KEY)).toBeNull();
   });
+
+  it("keeps saved app data on restart when no connectionId query is present", () => {
+    saveAppData({
+      teams: [{ id: "team-home", name: "VC", abbreviation: "VC", players: [] }],
+      gameSetup: {
+        gameId: "game-2026-04-09",
+        connectionId: "abc123",
+        syncedConnectionId: "abc123",
+        myTeamId: "team-home",
+        apiUrl: "http://localhost:4000",
+        schoolId: "school-1",
+        opponent: "Rivals",
+        vcSide: "home",
+        dashboardUrl: "http://localhost:5173",
+      },
+    });
+
+    window.history.replaceState({}, "", window.location.pathname);
+    const loaded = loadAppData();
+
+    expect(loaded.gameSetup.connectionId).toBe("abc123");
+    expect(loaded.gameSetup.syncedConnectionId).toBe("abc123");
+    expect(loaded.gameSetup.myTeamId).toBe("team-home");
+    expect(loaded.teams).toHaveLength(1);
+  });
+
+  it("clears operator cache only when reset query is requested", () => {
+    saveAppData({
+      teams: [{ id: "team-home", name: "VC", abbreviation: "VC", players: [] }],
+      gameSetup: {
+        gameId: "game-2026-04-09",
+        connectionId: "abc123",
+        syncedConnectionId: "abc123",
+        myTeamId: "team-home",
+        apiUrl: "http://localhost:4000",
+        schoolId: "school-1",
+        opponent: "Rivals",
+        vcSide: "home",
+        dashboardUrl: "http://localhost:5173",
+        deviceName: "Scorer iPad",
+      },
+    });
+    localStorage.setItem("operator-console:game-2026-04-09:pending", "[]");
+
+    window.history.replaceState({}, "", `${window.location.pathname}?reset=1`);
+    const loaded = loadAppData();
+
+    expect(localStorage.getItem(APP_DATA_KEY)).toBeNull();
+    expect(localStorage.getItem(DEVICE_NAME_KEY)).toBe("Scorer iPad");
+    expect(loaded.gameSetup.connectionId).toBeUndefined();
+  });
 });

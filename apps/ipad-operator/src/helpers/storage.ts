@@ -67,11 +67,6 @@ function normalizeDeviceName(value: string | null | undefined): string | undefin
   return normalized.length > 0 ? normalized : undefined;
 }
 
-// Only clear cached data once per page load (initial bootstrap).
-// Subsequent loadAppData() calls during the session must not wipe
-// data that was saved after sync (e.g. the operator auth token).
-let _initialCacheClearDone = false;
-
 export function loadAppData(): AppData {
   const persistedDeviceName = normalizeDeviceName(localStorage.getItem(DEVICE_NAME_KEY));
   const qp = new URLSearchParams(window.location.search);
@@ -98,8 +93,10 @@ export function loadAppData(): AppData {
   if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
   if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
 
-  if (!urlSetup.connectionId && !_initialCacheClearDone) {
-    _initialCacheClearDone = true;
+  // Keep local operator data across app restarts by default.
+  // A deliberate reset can be requested with ?reset=1 (or true/yes).
+  const shouldResetCache = /^(1|true|yes)$/i.test((qp.get("reset") ?? "").trim());
+  if (shouldResetCache) {
     clearOperatorLocalCache();
   }
 
