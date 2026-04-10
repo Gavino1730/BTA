@@ -775,6 +775,54 @@ describe("server auth integration", () => {
     expect(eventRes.status).toBe(403);
   });
 
+  it("allows operator-link tokens to create games when write auth is required", async () => {
+    const schoolId = "operator-write-school";
+    const connectionId = "operator-write-123";
+
+    const publishRes = await fetch(`${API_BASE}/api/operator-links/${connectionId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        gameId: "operator-write-game",
+        myTeamId: "vc-varsity",
+        myTeamName: "VC Varsity",
+        opponentName: "Opponent",
+        vcSide: "home",
+      }),
+    });
+    expect(publishRes.status).toBe(200);
+
+    const linkRes = await fetch(`${API_BASE}/api/operator-links/${connectionId}`, {
+      headers: {
+        "x-school-id": schoolId,
+      },
+    });
+    expect(linkRes.status).toBe(200);
+
+    const linkPayload = await linkRes.json() as { operatorToken?: string };
+    expect(linkPayload.operatorToken).toBeTruthy();
+
+    const createRes = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${linkPayload.operatorToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        gameId: "operator-write-game",
+        homeTeamId: "vc-varsity",
+        awayTeamId: "opp-team",
+      }),
+    });
+
+    expect(createRes.status).toBe(201);
+  });
+
   it("allows self-service profile update and enforces current-password check on credential change", async () => {
     const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
