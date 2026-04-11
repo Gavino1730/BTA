@@ -49,14 +49,14 @@ describe("coach route helpers", () => {
   });
 
   it("keeps deployed dashboard links on the current secure origin when env vars are unset", () => {
-    expect(resolveDefaultApiBase("www.btaintel.com", "https://www.btaintel.com")).toBe("https://www.btaintel.com");
-    expect(resolveDefaultAppBase("www.btaintel.com", "https://www.btaintel.com", 5174)).toBe("https://www.btaintel.com");
+    expect(resolveDefaultApiBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app")).toBe("https://bta-demo.up.railway.app");
+    expect(resolveDefaultAppBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app", 5174)).toBe("https://bta-demo.up.railway.app");
   });
 
   it("avoids pinning public deployments to the shared default school", () => {
     expect(resolveDefaultSchoolId("localhost")).toBe("");
     expect(resolveDefaultSchoolId("192.168.1.25")).toBe("");
-    expect(resolveDefaultSchoolId("www.btaintel.com")).toBe("");
+    expect(resolveDefaultSchoolId("bta-demo.up.railway.app")).toBe("");
   });
 
   it("generates a simple six-digit connection code", () => {

@@ -9,9 +9,11 @@ import {
 import { buildRealtimeGameRegistrationPayload } from "./useGameFlow.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
 import {
+  appendPendingConflicts,
   consumePendingIntegrityIssue,
   loadPending,
   loadSeq,
+  type PendingConflictRecord,
   savePending,
   saveSeq,
 } from "../helpers/storage.js";
@@ -241,6 +243,7 @@ export function useEventQueue(deps: EventQueueDeps) {
 
       const duplicateIds = new Set<string>();
       const conflictIds = new Set<string>();
+      const conflictRecords: PendingConflictRecord[] = [];
       const eventsToSubmit: GameEvent[] = [];
 
       for (const localEvent of queue) {
@@ -255,6 +258,12 @@ export function useEventQueue(deps: EventQueueDeps) {
           continue;
         }
         conflictIds.add(normalizedLocalEvent.id);
+        conflictRecords.push({
+          localEvent: normalizedLocalEvent,
+          remoteEvent,
+          detectedAtIso: new Date().toISOString(),
+          reason: "payload_mismatch",
+        });
       }
 
       if (duplicateIds.size > 0) {
@@ -267,10 +276,13 @@ export function useEventQueue(deps: EventQueueDeps) {
       }
 
       if (conflictIds.size > 0) {
+        appendPendingConflicts(gameId, conflictRecords);
+        setPendingEvents((current) => current.filter((event) => !conflictIds.has(event.id)));
+
         const now = Date.now();
         if (now - lastConflictNoticeAtMsRef.current > 8000) {
           showInlineNotice(
-            `${conflictIds.size} queued event${conflictIds.size === 1 ? "" : "s"} conflict with server state. Review/edit recent events before retrying full sync.`,
+            `${conflictIds.size} queued event${conflictIds.size === 1 ? "" : "s"} conflict with server state. Quarantined from auto-sync to prevent overwrite.`,
             "warning",
             9000,
           );

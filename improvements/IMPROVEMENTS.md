@@ -58,6 +58,7 @@ Priority keys:
   - Why: preserve stat capture and trust during full network/API outage.
   - Change: define explicit degrade/recover runbook and API-supported reconciliation sequence (queue replay + state diff + operator/coach confirmation).
   - April 10, 2026 progress: operator reconnect path now performs server-vs-local queue reconciliation before flush, auto-removes already-synced duplicates, and surfaces conflict warnings while continuing safe non-conflicting event resubmits.
+  - April 11, 2026 progress: reconciliation conflicts are now quarantined out of pending queue into local conflict records to prevent repeated auto-sync retries from stalling uploads.
   - Validation: scripted outage drill from Q1 through post-game with successful reconciliation and no duplicate/missing events.
 
 ### Operational Readiness
@@ -75,21 +76,25 @@ Priority keys:
   - April 10, 2026 progress: runtime config warnings now emit structured `runtime.config_warning` logs (no direct console warning formatting path in server startup).
   - April 10, 2026 progress: added logger unit coverage for production default level filtering (debug suppressed, info emitted) alongside redaction and error serialization assertions.
   - Validation (Apr 10, 2026): `npm run test -w @bta/realtime-api -- src/logger.test.ts`.
-- [~] P0 Add request correlation IDs and propagate across HTTP + Socket.IO.
+- [x] P0 Add request correlation IDs and propagate across HTTP + Socket.IO.
   - Why: without request IDs, cross-surface failures cannot be traced end-to-end during live games.
   - Change: assign or accept `x-request-id`, attach to request context, and include correlation fields on auth, ingest, correction, and fanout logs.
   - April 10, 2026 progress: HTTP middleware now accepts/generates `x-request-id`, echoes it in responses, logs request lifecycle with requestId, and includes requestId in core security telemetry events.
   - April 10, 2026 progress: socket handshake now captures/generates requestId and emits structured connect/disconnect logs with request correlation context.
   - April 10, 2026 progress: added auth integration regression asserting `socket.connected` logs carry caller-provided requestId correlation context.
-  - Validation: integration test confirms a single ID appears across request lifecycle logs for representative flows.
-- [~] P0 Define and enforce log redaction policy for auth and PII-adjacent fields.
+  - April 11, 2026 progress: added auth integration regression asserting `socket.disconnected` logs retain caller-correlated requestId context.
+  - Validation (Apr 10, 2026): `npm run test -w @bta/realtime-api -- src/server.test.ts -t "request tracing"`.
+  - Validation (Apr 10, 2026): `npm run test -w @bta/realtime-api -- src/server.auth.integration.test.ts -t "requestId on HTTP tenant mismatch|requestId on unauthorized socket auth"`.
+  - Validation (Apr 11, 2026): `npm run test -w @bta/realtime-api -- src/server.auth.integration.test.ts -t "socket.connected log with correlated requestId|socket.disconnected log with correlated requestId|unauthorized socket auth"`.
+- [x] P0 Define and enforce log redaction policy for auth and PII-adjacent fields.
   - Why: production logs must not leak bearer tokens, reset tokens, passwords, or secrets.
   - Change: central redaction map + logger serializer rules for headers/body snapshots.
   - April 10, 2026 progress: logger now applies key-based redaction (`authorization`, `x-api-key`, `password`, `token`, `secret`, `cookie`) before emitting JSON payloads.
   - April 10, 2026 progress: added `services/realtime-api/src/logger.test.ts` coverage verifying nested redaction and Error serialization output.
   - April 10, 2026 progress: added auth integration regression asserting unauthorized socket security logs do not leak raw token/api-key values.
   - April 10, 2026 progress: added auth integration regression asserting HTTP unauthorized security logs do not leak raw Authorization or x-api-key values.
-  - Validation: automated test fixtures prove sensitive fields are redacted in emitted logs.
+  - Validation (Apr 10, 2026): `npm run test -w @bta/realtime-api -- src/logger.test.ts`.
+  - Validation (Apr 10, 2026): `npm run test -w @bta/realtime-api -- src/server.auth.integration.test.ts -t "does not leak HTTP auth credentials|does not leak socket auth credentials"`.
 - [x] P0 Document AI rate-limit behavior and degraded mode for coaches.
   - Source: existing backlog
   - Current gap: unclear user-facing behavior when AI is throttled/unavailable.
@@ -352,6 +357,9 @@ Priority keys:
 - [x] P0 Started outage-recovery queue reconciliation on reconnect.
   - Files: apps/ipad-operator/src/hooks/useEventQueue.ts
   - Detail: before flushing pending events, operator now fetches server events and reconciles by event ID to drop already-synced duplicates, flag conflicting payloads, and continue syncing only safe pending events.
+- [x] P0 Added conflict quarantine for reconnect reconciliation.
+  - Files: apps/ipad-operator/src/helpers/storage.ts, apps/ipad-operator/src/hooks/useEventQueue.ts, apps/ipad-operator/src/helpers/storage.test.ts
+  - Detail: conflicting queued events are now removed from auto-sync queue and persisted as local conflict records (`operator-console:<gameId>:pending:conflicts`) so healthy queued events can continue syncing.
 
 ---
 

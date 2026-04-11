@@ -41,6 +41,22 @@ function collectLogPayloads(spy: ReturnType<typeof vi.spyOn>): Array<Record<stri
     .filter((entry): entry is Record<string, unknown> => entry !== null);
 }
 
+async function waitForLog(
+  spy: ReturnType<typeof vi.spyOn>,
+  predicate: (payload: Record<string, unknown>) => boolean,
+  timeoutMs = 500,
+): Promise<Record<string, unknown> | null> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const match = collectLogPayloads(spy).find(predicate);
+    if (match) {
+      return match;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  }
+  return null;
+}
+
 describe("server auth integration", () => {
   let startServer: (overridePort?: number) => Promise<number>;
   let stopServer: () => Promise<void>;
@@ -1153,7 +1169,7 @@ describe("server auth integration", () => {
 
       expect(disconnected).toBe(true);
 
-      const disconnectedLog = collectLogPayloads(logSpy).find((payload) => {
+      const disconnectedLog = await waitForLog(logSpy, (payload) => {
         if (payload.message !== "socket.disconnected") {
           return false;
         }

@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { logger } from "./logger.js";
 import {
+  sendAccountNoticeEmail,
+  sendOrganizationInviteEmail,
+  sendPasswordResetEmail,
+} from "./email.js";
+import {
   normalizeTeamColor,
   sanitizePromptText,
 } from "@bta/shared-schema";
@@ -280,6 +285,7 @@ const eventRateLimiter = createRateLimitMiddleware("events", 100, 60000); // 100
 const authRateLimiter = createRateLimitMiddleware("auth", 20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
 const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
+const DEFAULT_COACH_APP_URL = "http://localhost:5173";
 
 interface PasswordResetTokenRecord {
   token: string;
@@ -418,6 +424,54 @@ function sanitizeProfilePhotoDataUrl(value: unknown): string | null {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function sanitizeUrlBase(value: unknown): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.origin;
+  } catch {
+    return "";
+  }
+}
+
+function resolveCoachAppBaseUrl(req: Request): string {
+  const configured = sanitizeUrlBase(process.env.BTA_COACH_APP_URL ?? "");
+  if (configured) {
+    return configured;
+  }
+
+  const origin = sanitizeUrlBase(readHeaderValue(req.headers.origin));
+  if (origin && isCorsOriginAllowed(origin)) {
+    return origin;
+  }
+
+  return DEFAULT_COACH_APP_URL;
+}
+
+function resolveOrganizationName(schoolId: string): string {
+  return sanitizeTextField(getOnboardingAccountStateByScope({ schoolId })?.organization.organizationName, 160) || "BTA organization";
+}
+
+function buildMemberRoleLabel(role: OrganizationMember["role"]): string {
+  if (role === "owner") {
+    return "Owner";
+  }
+  if (role === "coach") {
+    return "Coach";
+  }
+  if (role === "analyst") {
+    return "Analyst";
+  }
+  return "Player";
 }
 
 function hashPassword(password: string, salt?: string): { passwordHash: string; passwordSalt: string } {
@@ -3072,7 +3126,7 @@ app.post("/api/auth/logout-all", requireApiKey, (req, res) => {
   res.status(204).send();
 });
 
-app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, (req, res) => {
+app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const email = sanitizeTextField(payload.email, 160).toLowerCase();
@@ -3100,6 +3154,7 @@ app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, (re
 
   const token = randomBytes(24).toString("hex");
   const now = Date.now();
+  const resetPath = `/reset-password?token=${token}`;
   passwordResetTokens.set(token, {
     token,
     schoolId,
@@ -3109,10 +3164,19 @@ app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, (re
     expiresAt: now + PASSWORD_RESET_TOKEN_TTL_MS,
   });
 
+  const resetUrl = `${resolveCoachAppBaseUrl(req)}${resetPath}`;
+  await sendPasswordResetEmail({
+    to: account.email,
+    fullName: account.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    resetUrl,
+    expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
+  });
+
   res.json({
     message: "If this email exists for your organization, reset instructions have been prepared.",
     expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
-    resetPath: `/reset-password?token=${token}`,
+    resetPath,
     ...(EXPOSE_PASSWORD_RESET_TOKEN ? { resetToken: token } : {}),
   });
 });
@@ -3329,7 +3393,7 @@ function normalizeStaffRole(value: unknown, fallback: LocalAuthAccount["role"] =
   return fallback;
 }
 
-app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const actingMember = requireOrganizationManager(req, res);
   if (!actingMember) {
@@ -3405,6 +3469,14 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) 
     joinedAtIso: existingMember?.joinedAtIso ?? nowIso,
   }, { schoolId });
 
+  await sendAccountNoticeEmail({
+    to: account.email,
+    fullName: account.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    actionLabel: "Your BTA staff account has been created",
+    loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(account.email)}`,
+  });
+
   res.status(201).json({
     message: "Coach account created",
     account: {
@@ -3419,7 +3491,7 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) 
   });
 });
 
-app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const actingMember = requireOrganizationManager(req, res);
   if (!actingMember) {
@@ -3464,6 +3536,14 @@ app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRo
     lastLoginAtIso: account.lastLoginAtIso,
   }, { schoolId });
 
+  await sendAccountNoticeEmail({
+    to: savedAccount.email,
+    fullName: savedAccount.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    actionLabel: "Your BTA password was reset by an organization manager",
+    loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(savedAccount.email)}`,
+  });
+
   res.json({
     message: "Coach password reset",
     account: {
@@ -3476,7 +3556,7 @@ app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRo
   });
 });
 
-app.post("/api/auth/player-account", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/auth/player-account", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const actingMember = requireOrganizationManager(req, res);
   if (!actingMember) {
@@ -3548,6 +3628,14 @@ app.post("/api/auth/player-account", requireApiKey, requireWriteRole, (req, res)
     persistSchoolTeams(schoolId, nextTeams);
   }
 
+  await sendAccountNoticeEmail({
+    to: account.email,
+    fullName: account.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    actionLabel: "Your BTA player account has been created",
+    loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(account.email)}`,
+  });
+
   res.status(201).json({
     message: "Player account created",
     account: {
@@ -3561,7 +3649,7 @@ app.post("/api/auth/player-account", requireApiKey, requireWriteRole, (req, res)
   });
 });
 
-app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const actingMember = requireOrganizationManager(req, res);
   if (!actingMember) {
@@ -3600,6 +3688,14 @@ app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteR
     status: account.status,
     lastLoginAtIso: account.lastLoginAtIso,
   }, { schoolId });
+
+  await sendAccountNoticeEmail({
+    to: savedAccount.email,
+    fullName: savedAccount.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    actionLabel: "Your BTA player password was reset by an organization manager",
+    loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(savedAccount.email)}`,
+  });
 
   res.json({
     message: "Player password reset",
@@ -3756,7 +3852,7 @@ app.get("/api/org/members", (req, res) => {
   });
 });
 
-app.post("/api/org/members", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const actingMember = requireOrganizationManager(req, res);
   if (!actingMember) {
@@ -3785,6 +3881,16 @@ app.post("/api/org/members", requireApiKey, requireWriteRole, (req, res) => {
     status: "invited",
     invitedAtIso: new Date().toISOString(),
   }, { schoolId });
+
+  const inviteUrl = `${resolveCoachAppBaseUrl(req)}/invite/accept?email=${encodeURIComponent(member.email)}`;
+  await sendOrganizationInviteEmail({
+    to: member.email,
+    fullName: member.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    inviterName: actingMember.fullName,
+    roleLabel: buildMemberRoleLabel(member.role),
+    inviteUrl,
+  });
 
   res.status(201).json({ member, members: getOrganizationMembersByScope({ schoolId }) });
 });

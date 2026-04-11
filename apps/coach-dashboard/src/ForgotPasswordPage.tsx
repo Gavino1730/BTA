@@ -70,7 +70,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
           <p className="stats-page-eyebrow">Account Recovery</p>
           <h1>Forgot Password</h1>
           <p className="stats-page-subtitle">
-            Self-service reset links are coming soon. For now, submit your email and contact your organization manager.
+            Submit your coach email and we will send a password reset link if the account exists.
           </p>
 
           <form className="marketing-login-form" onSubmit={handleSubmit}>

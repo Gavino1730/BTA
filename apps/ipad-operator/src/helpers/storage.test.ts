@@ -2,11 +2,14 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { APP_DATA_KEY, DEVICE_NAME_KEY } from "../constants.js";
 import type { GameEvent } from "@bta/shared-schema";
 import {
+  appendPendingConflicts,
   clearOperatorLocalCache,
   consumePendingIntegrityIssue,
   loadAppData,
   loadPending,
+  loadPendingConflicts,
   pendingBackupKey,
+  pendingConflictKey,
   pendingKey,
   saveAppData,
   savePending,
@@ -243,5 +246,78 @@ describe("device name persistence", () => {
 
     const warning = consumePendingIntegrityIssue("game-bad-shape");
     expect(warning).toMatch(/format was invalid/i);
+  });
+
+  it("persists pending conflict quarantine records", () => {
+    const localEvent: GameEvent = {
+      id: "evt-conflict-1",
+      gameId: "game-conflicts",
+      sequence: 2,
+      timestampIso: "2026-04-10T00:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 460,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: false,
+      points: 2,
+      zone: "paint",
+    };
+    const remoteEvent: GameEvent = {
+      ...localEvent,
+      made: true,
+    };
+
+    appendPendingConflicts("game-conflicts", [{
+      localEvent,
+      remoteEvent,
+      detectedAtIso: "2026-04-10T01:00:00.000Z",
+      reason: "payload_mismatch",
+    }]);
+
+    const raw = localStorage.getItem(pendingConflictKey("game-conflicts"));
+    expect(raw).toContain("evt-conflict-1");
+
+    const loaded = loadPendingConflicts("game-conflicts");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].localEvent.id).toBe("evt-conflict-1");
+    expect(loaded[0].remoteEvent.made).toBe(true);
+  });
+
+  it("deduplicates pending conflict records by local event id", () => {
+    const baseEvent: GameEvent = {
+      id: "evt-conflict-2",
+      gameId: "game-conflicts-dupe",
+      sequence: 3,
+      timestampIso: "2026-04-10T00:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 450,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: false,
+      points: 2,
+      zone: "paint",
+    };
+
+    appendPendingConflicts("game-conflicts-dupe", [{
+      localEvent: baseEvent,
+      remoteEvent: { ...baseEvent, made: true },
+      detectedAtIso: "2026-04-10T01:00:00.000Z",
+      reason: "payload_mismatch",
+    }]);
+
+    appendPendingConflicts("game-conflicts-dupe", [{
+      localEvent: baseEvent,
+      remoteEvent: { ...baseEvent, points: 3, zone: "above_break_three" },
+      detectedAtIso: "2026-04-10T02:00:00.000Z",
+      reason: "payload_mismatch",
+    }]);
+
+    const loaded = loadPendingConflicts("game-conflicts-dupe");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].remoteEvent.points).toBe(3);
   });
 });
