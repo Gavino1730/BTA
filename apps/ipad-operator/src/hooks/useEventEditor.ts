@@ -162,7 +162,11 @@ export function useEventEditor({
       let activeSetup = loadAppData().gameSetup;
       const response = await fetch(`${apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...authHeadersFor(activeSetup) },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeadersFor(activeSetup),
+          "x-event-sequence": String(editContext.originalEvent.sequence),
+        },
         body: JSON.stringify(normalizedEvent),
       });
 
@@ -173,7 +177,11 @@ export function useEventEditor({
           activeSetup = recoveredSetup;
           finalResponse = await fetch(`${apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json", ...authHeadersFor(activeSetup) },
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeadersFor(activeSetup),
+              "x-event-sequence": String(editContext.originalEvent.sequence),
+            },
             body: JSON.stringify(normalizedEvent),
           });
         }
@@ -219,7 +227,10 @@ export function useEventEditor({
       let activeSetup = loadAppData().gameSetup;
       let response = await fetch(`${apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
         method: "DELETE",
-        headers: authHeadersFor(activeSetup),
+        headers: {
+          ...authHeadersFor(activeSetup),
+          "x-event-sequence": String(target.event.sequence),
+        },
       });
 
       if (response.status === 401) {
@@ -228,7 +239,10 @@ export function useEventEditor({
           activeSetup = recoveredSetup;
           response = await fetch(`${apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
             method: "DELETE",
-            headers: authHeadersFor(activeSetup),
+            headers: {
+              ...authHeadersFor(activeSetup),
+              "x-event-sequence": String(target.event.sequence),
+            },
           });
         }
       }

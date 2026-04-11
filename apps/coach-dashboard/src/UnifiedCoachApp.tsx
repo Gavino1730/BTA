@@ -4,7 +4,7 @@ import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
 import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
-import { ForbiddenPage, NotFoundPage, OfflinePage, ServerErrorPage, SessionExpiredPage } from "./ErrorStatePages.js";
+import { ForbiddenPage, NotFoundPage, OfflinePage, ServerErrorPage, SessionExpiredPage, UnauthorizedPage } from "./ErrorStatePages.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { MarketingPage } from "./MarketingPage.js";
@@ -15,7 +15,7 @@ import { HowItWorksPage } from "./HowItWorksPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
 import { PricingPage } from "./PricingPage.js";
 import { ProductPage } from "./ProductPage.js";
-import { AboutPage, AdminPage, BillingPage, DataDeletionPage, DocsCenterPage, FeaturesPage, HelpCenterPage, PrivacyPage, TermsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { AboutPage, AdminPage, BillingPage, ChangelogPage, CheckoutCancelPage, CheckoutSuccessPage, DataDeletionPage, DemoBookingPage, DocsCenterPage, EmailVerificationPage, FeaturesPage, HelpCenterPage, InviteAcceptancePage, OnboardingWizardPage, PrivacyPage, RoadmapPage, StatusPage, TermsPage, TestimonialsPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -49,11 +49,20 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "compare",
   "features",
   "about",
+  "status",
+  "testimonials",
+  "demo-booking",
+  "onboarding-wizard",
+  "invite-accept",
+  "email-verify",
+  "changelog",
+  "roadmap",
   "login",
   "forgot-password",
   "reset-password",
   "not-found",
   "forbidden",
+  "unauthorized",
   "server-error",
   "offline",
   "session-expired",
@@ -64,6 +73,8 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "data-deletion",
   "support",
   "contact",
+  "checkout-success",
+  "checkout-cancel",
 ]);
 
 function isPublicRoute(route: AppRoute): boolean {
@@ -85,13 +96,20 @@ interface AppFooterProps {
 }
 
 function AppFooter({ onNavigate }: AppFooterProps) {
+  const currentYear = new Date().getFullYear();
+
   return (
     <footer className="coach-app-footer">
       <div className="coach-app-footer-inner">
         <span className="coach-app-footer-brand">BTA Courtside Platform</span>
         <nav className="coach-app-footer-links" aria-label="App footer links">
+          <button type="button" onClick={() => onNavigate("/product")}>Product</button>
+          <button type="button" onClick={() => onNavigate("/pricing")}>Pricing</button>
           <button type="button" onClick={() => onNavigate("/features")}>Features</button>
           <button type="button" onClick={() => onNavigate("/about")}>About</button>
+          <button type="button" onClick={() => onNavigate("/status")}>Status</button>
+          <button type="button" onClick={() => onNavigate("/changelog")}>Changelog</button>
+          <button type="button" onClick={() => onNavigate("/roadmap")}>Roadmap</button>
           <button type="button" onClick={() => onNavigate("/help")}>Help</button>
           <button type="button" onClick={() => onNavigate("/docs")}>Docs</button>
           <button type="button" onClick={() => onNavigate("/support")}>Support</button>
@@ -102,6 +120,7 @@ function AppFooter({ onNavigate }: AppFooterProps) {
           <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
           <button type="button" onClick={() => onNavigate("/data-deletion")}>Data Deletion</button>
         </nav>
+        <span className="coach-app-footer-meta">© {currentYear} BTA Courtside · Preproduction</span>
       </div>
     </footer>
   );
@@ -470,11 +489,21 @@ export function UnifiedCoachApp() {
       "/compare",
       "/features",
       "/about",
+      "/status",
+      "/testimonials",
+      "/book-demo",
+      "/demo-booking",
+      "/onboarding-wizard",
+      "/invite/accept",
+      "/verify-email",
+      "/changelog",
+      "/roadmap",
       "/login",
       "/forgot-password",
       "/reset-password",
       "/404",
       "/403",
+      "/unauthorized",
       "/500",
       "/offline",
       "/session-expired",
@@ -485,6 +514,8 @@ export function UnifiedCoachApp() {
       "/data-deletion",
       "/support",
       "/contact",
+      "/checkout/success",
+      "/checkout/cancel",
     ]);
     const isPublicPath = publicPaths.has(nextPath);
 
@@ -537,15 +568,49 @@ export function UnifiedCoachApp() {
     return <AboutPage onNavigate={navigate} />;
   }
 
+  if (route === "status") {
+    return <StatusPage onNavigate={navigate} />;
+  }
+
+  if (route === "testimonials") {
+    return <TestimonialsPage onNavigate={navigate} />;
+  }
+
+  if (route === "demo-booking") {
+    return <DemoBookingPage onNavigate={navigate} />;
+  }
+
+  if (route === "onboarding-wizard") {
+    return <OnboardingWizardPage onNavigate={navigate} />;
+  }
+
+  if (route === "changelog") {
+    return <ChangelogPage onNavigate={navigate} />;
+  }
+
+  if (route === "roadmap") {
+    return <RoadmapPage onNavigate={navigate} />;
+  }
+
   if (route === "login") {
     return (
       <LoginPage
         onBackHome={() => navigate("/")}
         onCreateAccount={() => navigate("/setup")}
         onForgotPassword={() => navigate("/forgot-password")}
+        onAcceptInvite={() => navigate("/invite/accept")}
+        onVerifyEmail={() => navigate("/verify-email")}
         onSuccess={handleAuthSuccess}
       />
     );
+  }
+
+  if (route === "invite-accept") {
+    return <InviteAcceptancePage onNavigate={navigate} />;
+  }
+
+  if (route === "email-verify") {
+    return <EmailVerificationPage onNavigate={navigate} />;
   }
 
   if (route === "forgot-password") {
@@ -553,6 +618,8 @@ export function UnifiedCoachApp() {
       <ForgotPasswordPage
         onBackHome={() => navigate("/")}
         onBackLogin={() => navigate("/login")}
+        onAcceptInvite={() => navigate("/invite/accept")}
+        onVerifyEmail={() => navigate("/verify-email")}
       />
     );
   }
@@ -572,6 +639,10 @@ export function UnifiedCoachApp() {
 
   if (route === "forbidden") {
     return <ForbiddenPage onNavigate={navigate} />;
+  }
+
+  if (route === "unauthorized") {
+    return <UnauthorizedPage onNavigate={navigate} />;
   }
 
   if (route === "server-error") {
@@ -612,6 +683,14 @@ export function UnifiedCoachApp() {
 
   if (route === "contact") {
     return <ContactHubPage onNavigate={navigate} />;
+  }
+
+  if (route === "checkout-success") {
+    return <CheckoutSuccessPage onNavigate={navigate} />;
+  }
+
+  if (route === "checkout-cancel") {
+    return <CheckoutCancelPage onNavigate={navigate} />;
   }
 
   if (requiresSetup === null) {
@@ -671,7 +750,7 @@ export function UnifiedCoachApp() {
               {navBtn("Players", "stats-players", "/stats/players")}
               {navBtn("Trends", "stats-trends", "/stats/trends")}
               {navBtn("AI Insights", "stats-insights", "/stats/insights")}
-              {navBtn("Notifications", "stats-notifications", "/stats/notifications")}
+              {navBtn("Notifications", "stats-notifications", "/notifications")}
               {!playerView && navBtn("Settings", "stats-settings", "/stats/settings")}
             </ul>
             <div className="coach-nav-actions">

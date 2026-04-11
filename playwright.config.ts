@@ -22,6 +22,25 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        browserName: "chromium",
+      },
+      testIgnore: "**/ios-webkit.spec.ts",
+    },
+    {
+      name: "ios-webkit",
+      use: {
+        browserName: "webkit",
+        viewport: { width: 834, height: 1194 },
+        hasTouch: true,
+        isMobile: true,
+      },
+      testMatch: "**/ios-webkit.spec.ts",
+    },
+  ],
   webServer: {
     command: "npm run dev:all",
     url: "http://localhost:4000/health",

@@ -6,6 +6,8 @@ interface LoginPageProps {
   onBackHome: () => void;
   onCreateAccount: () => void;
   onForgotPassword: () => void;
+  onAcceptInvite: () => void;
+  onVerifyEmail: () => void;
 }
 
 interface AuthUser {
@@ -27,8 +29,11 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword }: LoginPageProps) {
-  const [coachEmail, setCoachEmail] = useState("");
+export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword, onAcceptInvite, onVerifyEmail }: LoginPageProps) {
+  const initialEmail = typeof window === "undefined"
+    ? ""
+    : (new URLSearchParams(window.location.search).get("email") ?? "").trim().toLowerCase();
+  const [coachEmail, setCoachEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
   const [busy, setBusy] = useState(false);
@@ -158,8 +163,10 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
             </button>
           </form>
 
-          <div style={{ marginTop: "0.65rem" }}>
+          <div style={{ marginTop: "0.65rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button type="button" className="shell-nav-link" onClick={onForgotPassword}>Forgot password?</button>
+            <button type="button" className="shell-nav-link" onClick={onAcceptInvite}>Accept team invite</button>
+            <button type="button" className="shell-nav-link" onClick={onVerifyEmail}>Verify email</button>
           </div>
 
           <p className="stats-page-status">{status}</p>

@@ -9,6 +9,38 @@ function makeTestToken(payload: Record<string, unknown>): string {
   return `test.${encoded}`;
 }
 
+function collectWarnLogPayloads(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+  return spy.mock.calls
+    .map((call) => {
+      const raw = call[0];
+      if (typeof raw !== "string") {
+        return null;
+      }
+      try {
+        return JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is Record<string, unknown> => entry !== null);
+}
+
+function collectLogPayloads(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+  return spy.mock.calls
+    .map((call) => {
+      const raw = call[0];
+      if (typeof raw !== "string") {
+        return null;
+      }
+      try {
+        return JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is Record<string, unknown> => entry !== null);
+}
+
 describe("server auth integration", () => {
   let startServer: (overridePort?: number) => Promise<number>;
   let stopServer: () => Promise<void>;
@@ -47,6 +79,130 @@ describe("server auth integration", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("returns a structured JSON error for malformed JSON payloads", async () => {
+    const response = await fetch(`${API_BASE}/api/team`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "error-shape-school"
+      },
+      body: "{\"name\":"
+    });
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as {
+      error?: string;
+      code?: string;
+      requestId?: string;
+    };
+
+    expect(body.error).toBe("Invalid JSON payload");
+    expect(body.code).toBe("invalid_json");
+    expect(typeof body.requestId).toBe("string");
+    expect((body.requestId ?? "").length).toBeGreaterThan(0);
+  });
+
+  it("emits structured http.request logs for 4xx error paths", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const requestId = "http-4xx-log-req-1";
+      const response = await fetch(`${API_BASE}/api/team`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-school-id": "log-school",
+          "x-request-id": requestId,
+        },
+        body: JSON.stringify({ name: "Denied Team" }),
+      });
+
+      expect(response.status).toBe(401);
+
+      const requestLog = collectLogPayloads(logSpy).find((payload) => {
+        if (payload.message !== "http.request") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.path === "/api/team" && context?.requestId === requestId;
+      });
+
+      expect(requestLog).toBeTruthy();
+      const context = (requestLog?.context ?? {}) as Record<string, unknown>;
+      expect(context.statusCode).toBe(401);
+      expect(context.method).toBe("POST");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("emits structured diagnostics for 5xx unhandled request paths", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const requestId = "http-5xx-log-req-1";
+      const response = await fetch(`${API_BASE}/__test/error500`, {
+        headers: {
+          "x-request-id": requestId,
+          "x-school-id": "diag-school",
+        },
+      });
+
+      expect(response.status).toBe(500);
+      const body = await response.json() as {
+        error?: string;
+        code?: string;
+        requestId?: string;
+      };
+      expect(body.error).toBe("Internal server error");
+      expect(body.code).toBe("internal_error");
+      expect(typeof body.requestId).toBe("string");
+      expect((body.requestId ?? "").length).toBeGreaterThan(0);
+
+      const requestLog = collectLogPayloads(logSpy).find((payload) => {
+        if (payload.message !== "http.request") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.path === "/__test/error500" && context?.requestId === requestId;
+      });
+
+      expect(requestLog).toBeTruthy();
+      const requestContext = (requestLog?.context ?? {}) as Record<string, unknown>;
+      expect(requestContext.statusCode).toBe(500);
+      expect(requestContext.method).toBe("GET");
+
+      const errorLog = errorSpy.mock.calls
+        .map((call) => {
+          const raw = call[0];
+          if (typeof raw !== "string") {
+            return null;
+          }
+          try {
+            return JSON.parse(raw) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })
+        .find((payload) => {
+          if (!payload || payload.message !== "request.unhandled_error") {
+            return false;
+          }
+          const context = payload.context as Record<string, unknown> | undefined;
+          return context?.path === "/__test/error500";
+        });
+
+      expect(errorLog).toBeTruthy();
+      const errorContext = (errorLog?.context ?? {}) as Record<string, unknown>;
+      expect(errorContext.status).toBe(500);
+      expect(errorContext.code).toBe("internal_error");
+      expect(String(errorContext.error ?? "")).toContain("simulated_test_unhandled_error");
+    } finally {
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 
   it("allows API-key fallback for roster reads when JWT auth is enabled", async () => {
@@ -122,6 +278,83 @@ describe("server auth integration", () => {
     });
 
     expect(response.status).toBe(403);
+  });
+
+  it("emits security telemetry with requestId on HTTP tenant mismatch", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const token = makeTestToken({
+        sub: "telemetry-user",
+        schoolId: "alpha",
+        role: "coach"
+      });
+      const requestId = "http-telemetry-req-123";
+
+      const response = await fetch(`${API_BASE}/api/teams`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "x-school-id": "beta",
+          "x-request-id": requestId,
+        }
+      });
+
+      expect(response.status).toBe(403);
+
+      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
+        if (payload.message !== "security.event") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.event === "requestTenantMismatch";
+      });
+
+      expect(securityEvent).toBeTruthy();
+      const context = (securityEvent?.context ?? {}) as Record<string, unknown>;
+      expect(context.requestId).toBe(requestId);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not leak HTTP auth credentials in denial security logs", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const leakedAuthHeader = "Bearer super-secret-http-token";
+      const leakedApiKey = "super-secret-http-api-key";
+
+      const response = await fetch(`${API_BASE}/api/team`, {
+        method: "POST",
+        headers: {
+          Authorization: leakedAuthHeader,
+          "x-api-key": leakedApiKey,
+          "Content-Type": "application/json",
+          "x-school-id": "redaction-school",
+          "x-request-id": "http-redaction-req-123",
+        },
+        body: JSON.stringify({ name: "Denied Team" }),
+      });
+
+      expect(response.status).toBe(401);
+
+      const rawWarnOutput = warnSpy.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
+      expect(rawWarnOutput).not.toContain(leakedAuthHeader);
+      expect(rawWarnOutput).not.toContain(leakedApiKey);
+
+      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
+        if (payload.message !== "security.event") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.event === "unauthorizedHttp";
+      });
+
+      expect(securityEvent).toBeTruthy();
+      const context = (securityEvent?.context ?? {}) as Record<string, unknown>;
+      expect(["missing-valid-credentials", "jwt-write-required"]).toContain(String(context.reason));
+      expect(context.requestId).toBe("http-redaction-req-123");
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("creates an isolated school workspace when a public user registers without a preset school id", async () => {
@@ -683,6 +916,100 @@ describe("server auth integration", () => {
     const text = await response.text();
     expect(text).toContain("bta_security_unauthorized_http_total");
     expect(text).toContain("bta_security_forbidden_write_role_total");
+    expect(text).toContain("bta_ai_budget_exceeded_total");
+    expect(text).toContain("bta_ai_total_estimated_cost_usd");
+  });
+
+  it("exposes combined admin metrics including AI alert counters", async () => {
+    const token = makeTestToken({
+      sub: "metrics-coach-json",
+      schoolId: "rbac-school",
+      role: "coach"
+    });
+
+    const response = await fetch(`${API_BASE}/admin/security-metrics`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": "rbac-school"
+      }
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      unauthorizedHttp?: number;
+      aiBudgetExceeded?: number;
+      aiCostThresholdExceeded?: number;
+      aiTokenThresholdExceeded?: number;
+      aiTotalTokensUsed?: number;
+      aiTotalEstimatedCostUsd?: number;
+      aiActiveGames?: number;
+    };
+
+    expect(typeof body.unauthorizedHttp).toBe("number");
+    expect(typeof body.aiBudgetExceeded).toBe("number");
+    expect(typeof body.aiCostThresholdExceeded).toBe("number");
+    expect(typeof body.aiTokenThresholdExceeded).toBe("number");
+    expect(typeof body.aiTotalTokensUsed).toBe("number");
+    expect(typeof body.aiTotalEstimatedCostUsd).toBe("number");
+    expect(typeof body.aiActiveGames).toBe("number");
+  });
+
+  it("increments security counters for unauthorized and tenant-mismatch denials", async () => {
+    const adminToken = makeTestToken({
+      sub: "metrics-delta-coach",
+      schoolId: "rbac-school",
+      role: "coach",
+    });
+
+    const readMetrics = async (): Promise<{
+      unauthorizedHttp: number;
+      requestTenantMismatch: number;
+    }> => {
+      const response = await fetch(`${API_BASE}/admin/security-metrics`, {
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          "x-school-id": "rbac-school",
+        },
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        unauthorizedHttp?: number;
+        requestTenantMismatch?: number;
+      };
+      return {
+        unauthorizedHttp: Number(body.unauthorizedHttp ?? 0),
+        requestTenantMismatch: Number(body.requestTenantMismatch ?? 0),
+      };
+    };
+
+    const before = await readMetrics();
+
+    const unauthorizedRes = await fetch(`${API_BASE}/api/team`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "rbac-school",
+      },
+      body: JSON.stringify({ name: "Denied Team" }),
+    });
+    expect(unauthorizedRes.status).toBe(401);
+
+    const mismatchToken = makeTestToken({
+      sub: "metrics-mismatch-user",
+      schoolId: "alpha-metrics",
+      role: "coach",
+    });
+    const mismatchRes = await fetch(`${API_BASE}/api/teams`, {
+      headers: {
+        Authorization: `Bearer ${mismatchToken}`,
+        "x-school-id": "beta-metrics",
+      },
+    });
+    expect(mismatchRes.status).toBe(403);
+
+    const after = await readMetrics();
+    expect(after.unauthorizedHttp).toBeGreaterThanOrEqual(before.unauthorizedHttp + 1);
+    expect(after.requestTenantMismatch).toBeGreaterThanOrEqual(before.requestTenantMismatch + 1);
   });
 
   it("rejects socket connection on tenant mismatch and allows matching scope", async () => {
@@ -741,6 +1068,200 @@ describe("server auth integration", () => {
     });
 
     expect(connected).toBe(true);
+  });
+
+  it("emits socket.connected log with correlated requestId", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const token = makeTestToken({
+        sub: "socket-log-user",
+        schoolId: "socket-log-school",
+        role: "coach"
+      });
+      const requestId = "socket-connect-req-123";
+
+      const connected = await new Promise<boolean>((resolve) => {
+        const client: Socket = io(API_BASE, {
+          transports: ["websocket"],
+          auth: {
+            token,
+            schoolId: "socket-log-school",
+            requestId,
+          }
+        });
+
+        client.on("connect", () => {
+          client.disconnect();
+          resolve(true);
+        });
+
+        client.on("connect_error", () => {
+          client.disconnect();
+          resolve(false);
+        });
+      });
+
+      expect(connected).toBe(true);
+
+      const socketConnectedLog = collectLogPayloads(logSpy).find((payload) => {
+        if (payload.message !== "socket.connected") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.requestId === requestId && context?.schoolId === "socket-log-school";
+      });
+
+      expect(socketConnectedLog).toBeTruthy();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("emits socket.disconnected log with correlated requestId", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const token = makeTestToken({
+        sub: "socket-disconnect-user",
+        schoolId: "socket-disconnect-school",
+        role: "coach"
+      });
+      const requestId = "socket-disconnect-req-123";
+
+      const disconnected = await new Promise<boolean>((resolve) => {
+        const client: Socket = io(API_BASE, {
+          transports: ["websocket"],
+          auth: {
+            token,
+            schoolId: "socket-disconnect-school",
+            requestId,
+          }
+        });
+
+        client.on("connect", () => {
+          client.disconnect();
+        });
+
+        client.on("disconnect", () => {
+          resolve(true);
+        });
+
+        client.on("connect_error", () => {
+          client.disconnect();
+          resolve(false);
+        });
+      });
+
+      expect(disconnected).toBe(true);
+
+      const disconnectedLog = collectLogPayloads(logSpy).find((payload) => {
+        if (payload.message !== "socket.disconnected") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.requestId === requestId && context?.schoolId === "socket-disconnect-school";
+      });
+
+      expect(disconnectedLog).toBeTruthy();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("emits security telemetry with requestId on unauthorized socket auth", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const requestId = "socket-telemetry-req-123";
+
+      const connectError = await new Promise<string>((resolve) => {
+        const client: Socket = io(API_BASE, {
+          transports: ["websocket"],
+          auth: {
+            schoolId: "socket-school",
+          },
+          extraHeaders: {
+            "x-request-id": requestId,
+          },
+        });
+
+        client.on("connect", () => {
+          client.disconnect();
+          resolve("unexpected-connect");
+        });
+
+        client.on("connect_error", (error) => {
+          client.disconnect();
+          resolve(String(error.message ?? ""));
+        });
+      });
+
+      expect(connectError.toLowerCase()).toContain("unauthorized");
+
+      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
+        if (payload.message !== "security.event") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.event === "unauthorizedSocket";
+      });
+
+      expect(securityEvent).toBeTruthy();
+      const context = (securityEvent?.context ?? {}) as Record<string, unknown>;
+      expect(context.requestId).toBe(requestId);
+      expect(context.reason).toBe("missing-valid-credentials");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not leak socket auth credentials in security logs", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const leakedToken = "Bearer very-secret-token";
+      const leakedApiKey = "super-secret-api-key";
+
+      const connectError = await new Promise<string>((resolve) => {
+        const client: Socket = io(API_BASE, {
+          transports: ["websocket"],
+          auth: {
+            schoolId: "socket-school",
+            token: leakedToken,
+            apiKey: leakedApiKey,
+          },
+          extraHeaders: {
+            Authorization: leakedToken,
+            "x-api-key": leakedApiKey,
+          },
+        });
+
+        client.on("connect", () => {
+          client.disconnect();
+          resolve("unexpected-connect");
+        });
+
+        client.on("connect_error", (error) => {
+          client.disconnect();
+          resolve(String(error.message ?? ""));
+        });
+      });
+
+      expect(connectError.toLowerCase()).toContain("unauthorized");
+
+      const rawWarnOutput = warnSpy.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
+      expect(rawWarnOutput).not.toContain(leakedToken);
+      expect(rawWarnOutput).not.toContain(leakedApiKey);
+
+      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
+        if (payload.message !== "security.event") {
+          return false;
+        }
+        const context = payload.context as Record<string, unknown> | undefined;
+        return context?.event === "unauthorizedSocket";
+      });
+
+      expect(securityEvent).toBeTruthy();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("blocks player role from mutation endpoints (write-role enforcement)", async () => {

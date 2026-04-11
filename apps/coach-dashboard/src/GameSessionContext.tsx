@@ -79,7 +79,7 @@ export interface GameSession {
   // Actions
   dismissFinishedGameSummary: () => void;
   clearActiveGame: (statusMessage: string) => void;
-  deleteGameEvent: (eventId: string) => Promise<void>;
+  deleteGameEvent: (eventId: string, expectedSequence: number) => Promise<void>;
   deletingGameEventId: string | null;
 
   // Roster
@@ -440,8 +440,8 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     setLastFinishedGameSummary(null);
   }, []);
 
-  const deleteGameEvent = useCallback(async (eventId: string): Promise<void> => {
-    if (!gameId || !eventId) {
+  const deleteGameEvent = useCallback(async (eventId: string, expectedSequence: number): Promise<void> => {
+    if (!gameId || !eventId || !Number.isInteger(expectedSequence) || expectedSequence < 1) {
       setDashboardStatus("Connect to a live game before correcting events.");
       return;
     }
@@ -452,7 +452,10 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     try {
       const response = await fetch(`${apiBase}/api/games/${gameId}/events/${encodeURIComponent(eventId)}`, {
         method: "DELETE",
-        headers: apiKeyHeader(),
+        headers: {
+          ...apiKeyHeader(),
+          "x-event-sequence": String(expectedSequence),
+        },
       });
 
       if (!response.ok) {

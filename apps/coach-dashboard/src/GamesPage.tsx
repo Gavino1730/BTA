@@ -22,6 +22,13 @@ interface GameTeamStats {
 interface PlayerStat {
   name?: string;
   number?: string | number;
+  pts?: number;
+  fg?: number;
+  fga?: number;
+  fg3?: number;
+  fg3a?: number;
+  ft?: number;
+  fta?: number;
   fg_made?: number;
   fg_att?: number;
   fg3_made?: number;
@@ -81,6 +88,7 @@ type StatKey = (typeof STAT_COLS)[number]["key"];
 interface EditPlayerRow {
   name: string;
   number: string;
+  pts?: number;
   fg_made: number; fg_att: number;
   fg3_made: number; fg3_att: number;
   ft_made: number; ft_att: number;
@@ -90,10 +98,13 @@ interface EditPlayerRow {
 }
 
 function emptyRow(): EditPlayerRow {
-  return { name: "", number: "", fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0, ft_made: 0, ft_att: 0, oreb: 0, dreb: 0, asst: 0, stl: 0, blk: 0, to: 0, fouls: 0, plus_minus: 0 };
+  return { name: "", number: "", pts: undefined, fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0, ft_made: 0, ft_att: 0, oreb: 0, dreb: 0, asst: 0, stl: 0, blk: 0, to: 0, fouls: 0, plus_minus: 0 };
 }
 
 function rowPts(r: EditPlayerRow): number {
+  if (Number.isFinite(r.pts)) {
+    return Math.max(0, Number(r.pts));
+  }
   return ((r.fg_made - r.fg3_made) * 2) + (r.fg3_made * 3) + r.ft_made;
 }
 function rowReb(r: EditPlayerRow): number {
@@ -103,9 +114,10 @@ function rowReb(r: EditPlayerRow): number {
 function toEditRow(p: PlayerStat): EditPlayerRow {
   return {
     name: String(p.name ?? ""), number: String(p.number ?? ""),
-    fg_made: Number(p.fg_made ?? 0), fg_att: Number(p.fg_att ?? 0),
-    fg3_made: Number(p.fg3_made ?? 0), fg3_att: Number(p.fg3_att ?? 0),
-    ft_made: Number(p.ft_made ?? 0), ft_att: Number(p.ft_att ?? 0),
+    pts: Number.isFinite(Number(p.pts)) ? Number(p.pts) : undefined,
+    fg_made: Number(p.fg_made ?? p.fg ?? 0), fg_att: Number(p.fg_att ?? p.fga ?? 0),
+    fg3_made: Number(p.fg3_made ?? p.fg3 ?? 0), fg3_att: Number(p.fg3_att ?? p.fg3a ?? 0),
+    ft_made: Number(p.ft_made ?? p.ft ?? 0), ft_att: Number(p.ft_att ?? p.fta ?? 0),
     oreb: Number(p.oreb ?? 0), dreb: Number(p.dreb ?? 0),
     asst: Number(p.asst ?? 0), stl: Number(p.stl ?? 0), blk: Number(p.blk ?? 0),
     to: Number(p.to ?? 0), fouls: Number(p.fouls ?? 0), plus_minus: Number(p.plus_minus ?? 0),
@@ -368,10 +380,15 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
   }, [game.gameId]);
 
   function setField(i: number, key: keyof EditPlayerRow, val: string) {
+    const scoringKeys: Array<keyof EditPlayerRow> = ["fg_made", "fg3_made", "ft_made"];
     setRows(prev => prev.map((r, idx) => {
       if (idx !== i) return r;
       if (key === "name" || key === "number") return { ...r, [key]: val };
-      return { ...r, [key]: Math.max(key === "plus_minus" ? -99 : 0, parseInt(val, 10) || 0) };
+      const next = { ...r, [key]: Math.max(key === "plus_minus" ? -99 : 0, parseInt(val, 10) || 0) };
+      if (scoringKeys.includes(key)) {
+        next.pts = undefined;
+      }
+      return next;
     }));
   }
 

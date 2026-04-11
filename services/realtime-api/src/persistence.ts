@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import type { GameEvent } from "@bta/shared-schema";
 import type { CoachAiSettings, GameAiContext, LocalAuthAccount, OrganizationMember, OrganizationProfile, RosterTeam } from "./store.js";
 import { normalizeSchoolId } from "./school-id.js";
+import { logger } from "./logger.js";
 
 export interface PersistedGameSessionRecord {
   schoolId: string;
@@ -79,7 +80,7 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
   pool.on("error", (error) => {
     // Handle background/idle client disconnects so Node does not terminate
     // from an unhandled EventEmitter "error" while preserving diagnostics.
-    console.error("[realtime-api] PostgreSQL pool error", error);
+    logger.error("persistence.postgres_pool_error", { error });
   });
   let schemaReady = false;
 

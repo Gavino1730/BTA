@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { startServer, stopServer } from "./server.js";
+import { isCorsOriginAllowed, startServer, stopServer } from "./server.js";
 
 /**
  * Realtime API server endpoint tests
@@ -36,6 +36,40 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await stopServer();
+});
+
+describe("request tracing", () => {
+  it("normalizes exact origins when matching CORS allowlist", () => {
+    expect(isCorsOriginAllowed("https://www.btaintel.com", ["https://www.btaintel.com/"])).toBe(true);
+    expect(isCorsOriginAllowed("https://www.btaintel.com:443", ["https://www.btaintel.com"])).toBe(true);
+    expect(isCorsOriginAllowed("https://www.btaintel.com", ["https://btaintel.com"])).toBe(false);
+  });
+
+  it("supports wildcard origin entries after normalization", () => {
+    expect(isCorsOriginAllowed("https://bta-coach-dashboard-123.vercel.app", ["https://bta-coach-dashboard-*.vercel.app/"])).toBe(true);
+    expect(isCorsOriginAllowed("https://evil.com", ["https://bta-coach-dashboard-*.vercel.app/"])).toBe(false);
+  });
+
+  it("returns a generated x-request-id when one is not provided", async () => {
+    const response = await fetch(`${API_BASE}/health`);
+    expect(response.status).toBe(200);
+
+    const generated = response.headers.get("x-request-id");
+    expect(typeof generated).toBe("string");
+    expect(generated?.trim().length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("echoes inbound x-request-id in response headers", async () => {
+    const requestId = "trace-test-123";
+    const response = await fetch(`${API_BASE}/health`, {
+      headers: {
+        "x-request-id": requestId,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-request-id")).toBe(requestId);
+  });
 });
 
 describe("school tenancy", () => {
@@ -747,6 +781,153 @@ describe("unified stats endpoints", () => {
     expect(conflictBody.code).toBe("event_conflict");
     expect(conflictBody.error).toMatch(/sequence\s+1\s+already belongs/i);
     expect(conflictBody.state?.gameId).toBe("2026-04-06-sequence-conflict");
+  });
+
+  it("returns event_conflict when correction precondition sequence is stale", async () => {
+    await resetSchool("event-precondition-school");
+
+    const createResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "event-precondition-school" },
+      body: JSON.stringify({
+        gameId: "2026-04-10-precondition",
+        homeTeamId: "vc",
+        awayTeamId: "opp-a",
+        opponentName: "Opponent A",
+      })
+    });
+    expect(createResponse.status).toBe(201);
+
+    const eventPayload = {
+      id: "precondition-evt-1",
+      sequence: 1,
+      timestampIso: new Date().toISOString(),
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "vc",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "p1",
+      made: true,
+      points: 2,
+      zone: "paint",
+    };
+
+    const firstResponse = await fetch(`${API_BASE}/api/games/2026-04-10-precondition/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "event-precondition-school" },
+      body: JSON.stringify(eventPayload)
+    });
+    expect(firstResponse.status).toBe(201);
+
+    const staleDelete = await fetch(`${API_BASE}/api/games/2026-04-10-precondition/events/precondition-evt-1`, {
+      method: "DELETE",
+      headers: {
+        "x-school-id": "event-precondition-school",
+        "x-event-sequence": "2",
+      },
+    });
+    expect(staleDelete.status).toBe(409);
+    const staleDeleteBody = await staleDelete.json() as {
+      code?: string;
+      error?: string;
+      event?: { id?: string; sequence?: number } | null;
+      state?: { gameId?: string } | null;
+    };
+    expect(staleDeleteBody.code).toBe("event_conflict");
+    expect(staleDeleteBody.error).toMatch(/version mismatch/i);
+    expect(staleDeleteBody.event?.id).toBe("precondition-evt-1");
+    expect(staleDeleteBody.event?.sequence).toBe(1);
+    expect(staleDeleteBody.state?.gameId).toBe("2026-04-10-precondition");
+
+    const validDelete = await fetch(`${API_BASE}/api/games/2026-04-10-precondition/events/precondition-evt-1`, {
+      method: "DELETE",
+      headers: {
+        "x-school-id": "event-precondition-school",
+        "x-event-sequence": "1",
+      },
+    });
+    expect(validDelete.status).toBe(200);
+  });
+
+  it("returns event_conflict for stale update precondition and succeeds on retry", async () => {
+    await resetSchool("event-update-precondition-school");
+
+    const createResponse = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "event-update-precondition-school" },
+      body: JSON.stringify({
+        gameId: "2026-04-10-update-precondition",
+        homeTeamId: "vc",
+        awayTeamId: "opp-a",
+        opponentName: "Opponent A",
+      })
+    });
+    expect(createResponse.status).toBe(201);
+
+    const eventPayload = {
+      id: "precondition-evt-update-1",
+      sequence: 1,
+      timestampIso: new Date().toISOString(),
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "vc",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "p1",
+      made: true,
+      points: 2,
+      zone: "paint",
+    };
+
+    const createEventResponse = await fetch(`${API_BASE}/api/games/2026-04-10-update-precondition/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "event-update-precondition-school" },
+      body: JSON.stringify(eventPayload)
+    });
+    expect(createEventResponse.status).toBe(201);
+
+    const staleUpdate = await fetch(`${API_BASE}/api/games/2026-04-10-update-precondition/events/precondition-evt-update-1`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "event-update-precondition-school",
+        "x-event-sequence": "2",
+      },
+      body: JSON.stringify({
+        ...eventPayload,
+        made: false,
+      }),
+    });
+    expect(staleUpdate.status).toBe(409);
+    const staleUpdateBody = await staleUpdate.json() as {
+      code?: string;
+      error?: string;
+      event?: { id?: string; sequence?: number; made?: boolean } | null;
+      state?: { gameId?: string } | null;
+    };
+    expect(staleUpdateBody.code).toBe("event_conflict");
+    expect(staleUpdateBody.error).toMatch(/version mismatch/i);
+    expect(staleUpdateBody.event?.id).toBe("precondition-evt-update-1");
+    expect(staleUpdateBody.event?.sequence).toBe(1);
+    expect(staleUpdateBody.event?.made).toBe(true);
+    expect(staleUpdateBody.state?.gameId).toBe("2026-04-10-update-precondition");
+
+    const retryUpdate = await fetch(`${API_BASE}/api/games/2026-04-10-update-precondition/events/precondition-evt-update-1`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "event-update-precondition-school",
+        "x-event-sequence": "1",
+      },
+      body: JSON.stringify({
+        ...eventPayload,
+        made: false,
+      }),
+    });
+    expect(retryUpdate.status).toBe(200);
+    const retryUpdateBody = await retryUpdate.json() as { event?: { made?: boolean } | null };
+    expect(retryUpdateBody.event?.made).toBe(false);
   });
 
   it("supports legacy team settings and roster management routes", async () => {

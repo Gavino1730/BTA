@@ -54,6 +54,17 @@ export function PreGameScreen({
   const hasSyncedConnection = isConnectionReadyForStart(appData.gameSetup);
   const hasTenantScope = Boolean(appData.gameSetup.schoolId?.trim());
   const canStart = hasSyncedConnection && hasTenantScope && !!appData.gameSetup.myTeamId;
+  const startDisabledHint = !canStart
+    ? !hasConnectionId
+      ? "Enter the 6-digit connection code to begin setup."
+      : !hasSyncedConnection
+        ? "Tap Sync Now to pull team, roster, and game setup from coach."
+        : !hasTenantScope
+          ? "Waiting for school scope from coach sync."
+          : !appData.gameSetup.myTeamId
+            ? "Select your team in Advanced Settings."
+            : "Finish setup to enable Start Game."
+    : null;
   const lineupLockedMessage = lineupLockedByLiveGame
     ? "Lineup is locked because this game is already live on another device."
     : "";
@@ -124,6 +135,9 @@ export function PreGameScreen({
                 });
               }}
               placeholder="Enter 6-digit coach code"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={6}
               aria-label="Connection code"
             />
           </div>
@@ -230,6 +244,9 @@ export function PreGameScreen({
           }}>
           Start Game
         </button>
+        {startDisabledHint && (
+          <p className="pregame-start-hint">{startDisabledHint}</p>
+        )}
 
         <div className="pregame-settings-callout">
           <button

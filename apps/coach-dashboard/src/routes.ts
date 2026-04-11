@@ -6,11 +6,20 @@ export type AppRoute =
   | "compare"
   | "features"
   | "about"
+  | "status"
+  | "testimonials"
+  | "demo-booking"
+  | "onboarding-wizard"
+  | "changelog"
+  | "roadmap"
   | "login"
+  | "invite-accept"
+  | "email-verify"
   | "forgot-password"
   | "reset-password"
   | "not-found"
   | "forbidden"
+  | "unauthorized"
   | "server-error"
   | "offline"
   | "session-expired"
@@ -21,6 +30,8 @@ export type AppRoute =
   | "data-deletion"
   | "support"
   | "contact"
+  | "checkout-success"
+  | "checkout-cancel"
   | "billing"
   | "settings"
   | "admin"
@@ -43,8 +54,7 @@ const LEGACY_ROUTE_ALIASES: Record<string, string> = {
   "/trends": "/stats/trends",
   "/ai-insights": "/stats/insights",
   "/analysis": "/stats/insights",
-  "/notifications": "/stats/notifications",
-  "/activity": "/stats/notifications",
+  "/activity": "/notifications",
   "/organization": "/org/settings",
   "/org": "/org/settings",
   "/team-settings": "/stats/settings",
@@ -84,8 +94,32 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/about") {
     return "about";
   }
+  if (canonical === "/status") {
+    return "status";
+  }
+  if (canonical === "/testimonials") {
+    return "testimonials";
+  }
+  if (canonical === "/book-demo" || canonical === "/demo-booking") {
+    return "demo-booking";
+  }
+  if (canonical === "/onboarding-wizard") {
+    return "onboarding-wizard";
+  }
+  if (canonical === "/changelog") {
+    return "changelog";
+  }
+  if (canonical === "/roadmap") {
+    return "roadmap";
+  }
   if (canonical === "/login") {
     return "login";
+  }
+  if (canonical === "/invite/accept") {
+    return "invite-accept";
+  }
+  if (canonical === "/verify-email") {
+    return "email-verify";
   }
   if (canonical === "/forgot-password") {
     return "forgot-password";
@@ -98,6 +132,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/403") {
     return "forbidden";
+  }
+  if (canonical === "/unauthorized") {
+    return "unauthorized";
   }
   if (canonical === "/500") {
     return "server-error";
@@ -129,6 +166,12 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   if (canonical === "/contact") {
     return "contact";
   }
+  if (canonical === "/checkout/success") {
+    return "checkout-success";
+  }
+  if (canonical === "/checkout/cancel") {
+    return "checkout-cancel";
+  }
   if (canonical === "/billing") {
     return "billing";
   }
@@ -158,6 +201,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/stats/insights") {
     return "stats-insights";
+  }
+  if (canonical === "/notifications") {
+    return "stats-notifications";
   }
   if (canonical === "/stats/notifications") {
     return "stats-notifications";

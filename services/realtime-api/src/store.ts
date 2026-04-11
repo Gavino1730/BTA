@@ -24,6 +24,7 @@ import {
   type PersistenceProvider
 } from "./persistence.js";
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "./school-id.js";
+import { logger } from "./logger.js";
 
 export interface CreateGameInput {
   schoolId: string;
@@ -179,6 +180,7 @@ export interface CoachAiChatResponse {
 
 export type GameAiErrorCode =
   | "missing_api_key"
+  | "budget_exceeded"
   | "rate_limited"
   | "timeout"
   | "service_unavailable"
@@ -189,11 +191,21 @@ export type GameAiErrorCode =
 export interface GameAiStatus {
   model: string;
   healthy: boolean;
+  totalTokensUsed: number;
+  totalEstimatedCostUsd: number;
+  maxTokensPerGame?: number;
+  maxCostPerGameUsd?: number;
   lastSuccessAtIso?: string;
   lastErrorAtIso?: string;
   lastErrorCode?: GameAiErrorCode;
   lastErrorMessage?: string;
   lastErrorStatus?: number;
+}
+
+export interface AiUsageTotals {
+  activeGames: number;
+  totalTokensUsed: number;
+  totalEstimatedCostUsd: number;
 }
 
 export interface GameAiContext {
@@ -370,11 +382,16 @@ interface PersistedGameSession {
   opponentTeamId?: string;
   startingLineupByTeam?: Record<string, string[]>;
   aiSettings?: CoachAiSettings;
+  aiStatus?: Partial<GameAiStatus>;
   aiContext?: GameAiContext;
   historicalContextSummary?: string;
   historicalContextFetchedAtMs?: number;
   events: GameEvent[];
   submitted?: boolean;
+}
+
+interface EventMutationPrecondition {
+  expectedSequence?: number;
 }
 
 export interface GameEditOverride {
@@ -570,14 +587,71 @@ function readEnvNumber(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function readEnvOptionalPositiveInteger(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  const integerValue = Math.floor(parsed);
+  return integerValue > 0 ? integerValue : undefined;
+}
+
+function readEnvOptionalPositiveUsd(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function getAiBudgetCaps(): { maxTokensPerGame?: number; maxCostPerGameUsd?: number } {
+  return {
+    maxTokensPerGame: readEnvOptionalPositiveInteger("BTA_OPENAI_MAX_TOKENS_PER_GAME"),
+    maxCostPerGameUsd: readEnvOptionalPositiveUsd("BTA_OPENAI_MAX_COST_PER_GAME_USD"),
+  };
+}
+
 function getOpenAiApiKey(): string {
   return process.env.OPENAI_API_KEY ?? "";
 }
 
 function defaultGameAiStatus(): GameAiStatus {
+  const caps = getAiBudgetCaps();
   return {
     model: LIVE_AI_MODEL,
     healthy: true,
+    totalTokensUsed: 0,
+    totalEstimatedCostUsd: 0,
+    maxTokensPerGame: caps.maxTokensPerGame,
+    maxCostPerGameUsd: caps.maxCostPerGameUsd,
+  };
+}
+
+function sanitizePersistedGameAiStatus(input: Partial<GameAiStatus> | null | undefined): GameAiStatus {
+  const defaults = defaultGameAiStatus();
+  const totalTokensUsed = Number(input?.totalTokensUsed ?? defaults.totalTokensUsed);
+  const totalEstimatedCostUsd = Number(input?.totalEstimatedCostUsd ?? defaults.totalEstimatedCostUsd);
+
+  return {
+    ...defaults,
+    healthy: typeof input?.healthy === "boolean" ? input.healthy : defaults.healthy,
+    totalTokensUsed: Number.isFinite(totalTokensUsed) && totalTokensUsed > 0 ? Math.floor(totalTokensUsed) : 0,
+    totalEstimatedCostUsd: Number.isFinite(totalEstimatedCostUsd) && totalEstimatedCostUsd > 0
+      ? Number(totalEstimatedCostUsd.toFixed(6))
+      : 0,
+    lastSuccessAtIso: typeof input?.lastSuccessAtIso === "string" ? input.lastSuccessAtIso : undefined,
+    lastErrorAtIso: typeof input?.lastErrorAtIso === "string" ? input.lastErrorAtIso : undefined,
+    lastErrorCode: input?.lastErrorCode,
+    lastErrorMessage: typeof input?.lastErrorMessage === "string" ? input.lastErrorMessage : undefined,
+    lastErrorStatus: typeof input?.lastErrorStatus === "number" ? input.lastErrorStatus : undefined,
   };
 }
 
@@ -607,7 +681,8 @@ function markAiFailure(
     lastErrorStatus: status,
   };
 
-  console.warn(`[realtime-api] AI status degraded (${code})`, {
+  logger.warn("ai.status_degraded", {
+    code,
     gameId: session.state.gameId,
     schoolId: session.schoolId,
     status,
@@ -619,6 +694,106 @@ interface AiRequestIssue {
   code: GameAiErrorCode;
   message: string;
   status?: number;
+}
+
+interface OpenAiUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+function normalizeOpenAiUsage(raw: unknown): OpenAiUsage | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const usage = raw as Record<string, unknown>;
+  const promptTokens = Number(usage.prompt_tokens ?? 0);
+  const completionTokens = Number(usage.completion_tokens ?? 0);
+  const totalTokensRaw = Number(usage.total_tokens ?? Number.NaN);
+  const fallbackTotal = Math.max(0, promptTokens) + Math.max(0, completionTokens);
+  const totalTokens = Number.isFinite(totalTokensRaw) && totalTokensRaw > 0
+    ? totalTokensRaw
+    : fallbackTotal;
+
+  const normalizedPrompt = Number.isFinite(promptTokens) && promptTokens > 0 ? Math.floor(promptTokens) : 0;
+  const normalizedCompletion = Number.isFinite(completionTokens) && completionTokens > 0 ? Math.floor(completionTokens) : 0;
+  const normalizedTotal = Number.isFinite(totalTokens) && totalTokens > 0 ? Math.floor(totalTokens) : 0;
+  if (normalizedTotal === 0) {
+    return null;
+  }
+
+  return {
+    promptTokens: normalizedPrompt,
+    completionTokens: normalizedCompletion,
+    totalTokens: normalizedTotal,
+  };
+}
+
+function resolveModelCostPer1k(model: string): { inputUsd: number; outputUsd: number } {
+  const normalized = model.trim().toLowerCase();
+  if (normalized.startsWith("gpt-4o-mini")) {
+    return { inputUsd: 0.00015, outputUsd: 0.0006 };
+  }
+  if (normalized.startsWith("gpt-4o")) {
+    return { inputUsd: 0.005, outputUsd: 0.015 };
+  }
+  // Conservative fallback for unknown models when usage data is available.
+  return { inputUsd: 0.001, outputUsd: 0.001 };
+}
+
+function estimateUsageCostUsd(usage: OpenAiUsage): number {
+  const rates = resolveModelCostPer1k(LIVE_AI_MODEL);
+  const inputCost = (usage.promptTokens / 1000) * rates.inputUsd;
+  const outputCost = (usage.completionTokens / 1000) * rates.outputUsd;
+  const blendedCost = usage.promptTokens === 0 && usage.completionTokens === 0
+    ? (usage.totalTokens / 1000) * rates.outputUsd
+    : inputCost + outputCost;
+  return Number(blendedCost.toFixed(6));
+}
+
+function syncAiBudgetCaps(session: GameSession): void {
+  const caps = getAiBudgetCaps();
+  session.aiStatus.maxTokensPerGame = caps.maxTokensPerGame;
+  session.aiStatus.maxCostPerGameUsd = caps.maxCostPerGameUsd;
+}
+
+function getAiBudgetViolation(session: GameSession): AiRequestIssue | null {
+  syncAiBudgetCaps(session);
+
+  const maxTokensPerGame = session.aiStatus.maxTokensPerGame;
+  if (typeof maxTokensPerGame === "number" && session.aiStatus.totalTokensUsed >= maxTokensPerGame) {
+    return {
+      code: "budget_exceeded",
+      message: `AI token budget reached for this game (${session.aiStatus.totalTokensUsed}/${maxTokensPerGame} tokens).`,
+      status: 429,
+    };
+  }
+
+  const maxCostPerGameUsd = session.aiStatus.maxCostPerGameUsd;
+  if (typeof maxCostPerGameUsd === "number" && session.aiStatus.totalEstimatedCostUsd >= maxCostPerGameUsd) {
+    return {
+      code: "budget_exceeded",
+      message: `AI cost budget reached for this game ($${session.aiStatus.totalEstimatedCostUsd.toFixed(4)}/$${maxCostPerGameUsd.toFixed(4)}).`,
+      status: 429,
+    };
+  }
+
+  return null;
+}
+
+function recordAiUsage(session: GameSession, rawUsage: unknown): void {
+  syncAiBudgetCaps(session);
+
+  const usage = normalizeOpenAiUsage(rawUsage);
+  if (!usage) {
+    return;
+  }
+
+  session.aiStatus.totalTokensUsed += usage.totalTokens;
+  session.aiStatus.totalEstimatedCostUsd = Number(
+    (session.aiStatus.totalEstimatedCostUsd + estimateUsageCostUsd(usage)).toFixed(6)
+  );
 }
 
 function mapOpenAiHttpFailure(status: number): AiRequestIssue {
@@ -1767,6 +1942,12 @@ async function requestAiChatResponse(
     return null;
   }
 
+  const budgetViolation = getAiBudgetViolation(session);
+  if (budgetViolation) {
+    markAiFailure(session, budgetViolation.code, budgetViolation.message, budgetViolation.status);
+    return null;
+  }
+
   const orderedEvents = listOrderedEvents(session);
   const latestEventForChat = orderedEvents[orderedEvents.length - 1];
   const isChatPeriodTransition = latestEventForChat?.type === "period_transition";
@@ -1816,7 +1997,7 @@ async function requestAiChatResponse(
 
     if (!response.ok) {
       const failure = mapOpenAiHttpFailure(response.status);
-      console.warn("[realtime-api] AI chat upstream failure", {
+      logger.warn("ai.chat_upstream_failure", {
         gameId: session.state.gameId,
         schoolId: session.schoolId,
         status: failure.status,
@@ -1826,12 +2007,14 @@ async function requestAiChatResponse(
     }
 
     const payload = await response.json() as {
+      usage?: unknown;
       choices?: Array<{
         message?: {
           content?: string;
         };
       }>;
     };
+    recordAiUsage(session, payload.usage);
     const content = payload.choices?.[0]?.message?.content;
     if (!content) {
       return null;
@@ -1846,7 +2029,7 @@ async function requestAiChatResponse(
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      console.warn("[realtime-api] AI chat timed out", {
+      logger.warn("ai.chat_timeout", {
         gameId: session.state.gameId,
         schoolId: session.schoolId,
       });
@@ -1918,6 +2101,12 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
     return [];
   }
 
+  const budgetViolation = getAiBudgetViolation(session);
+  if (budgetViolation) {
+    markAiFailure(session, budgetViolation.code, budgetViolation.message, budgetViolation.status);
+    return [];
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LIVE_AI_TIMEOUT_MS);
 
@@ -1969,12 +2158,14 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
     }
 
     const payload = await response.json() as {
+      usage?: unknown;
       choices?: Array<{
         message?: {
           content?: string;
         };
       }>;
     };
+    recordAiUsage(session, payload.usage);
     const content = payload.choices?.[0]?.message?.content;
     if (!content) {
       markAiFailure(session, "invalid_payload", "OpenAI returned empty chat completion content", 502);
@@ -2030,6 +2221,7 @@ function buildPersistedSnapshot(): PersistedSnapshot {
       historicalContextFetchedAtMs: session.historicalContextFetchedAtMs,
       events: listOrderedEvents(session),
       aiSettings: sanitizeCoachAiSettings(session.aiSettings),
+      aiStatus: session.aiStatus,
       submitted: session.submitted
     })),
     rosterTeamsBySchool: Object.fromEntries(rosterTeamsBySchool.entries()),
@@ -2180,6 +2372,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
       opponentTeamId: session.opponentTeamId,
       startingLineupByTeam: session.startingLineupByTeam,
       aiSettings: sanitizeCoachAiSettings(session.aiSettings),
+      aiStatus: sanitizePersistedGameAiStatus(session.aiStatus),
       aiContext: sanitizeGameAiContext(session.aiContext),
       historicalContextSummary: typeof session.historicalContextSummary === "string" ? session.historicalContextSummary : "",
       historicalContextFetchedAtMs: Number(session.historicalContextFetchedAtMs ?? 0),
@@ -2189,7 +2382,6 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
       ruleInsights: [],
       aiInsights: [],
       aiRefreshInFlight: null,
-      aiStatus: defaultGameAiStatus(),
       lastAiRefreshAtMs: 0,
       lastAiEventCount: 0,
       lastAiFingerprint: "",
@@ -2249,7 +2441,7 @@ function persistRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): voi
   }
 
   void persistenceProvider.replaceRosterTeamsForSchool(schoolId, teams).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist roster teams for school ${schoolId}`, error);
+    logger.warn("persistence.roster_teams_save_failed", { schoolId, error });
   });
 }
 
@@ -2274,7 +2466,7 @@ function persistNormalizedSessions(): void {
   void persistenceProvider
     .replacePersistedSessions(buildPersistedSessions())
     .catch((error) => {
-      console.warn("[realtime-api] Failed to persist normalized game sessions", error);
+      logger.warn("persistence.normalized_sessions_save_failed", { error });
     })
     .finally(() => {
       normalizedSessionsPersistInFlight = false;
@@ -2291,7 +2483,7 @@ function clearPersistedRosterTeams(): void {
   }
 
   void persistenceProvider.clearAllRosterTeams().catch((error) => {
-    console.warn("[realtime-api] Failed to clear persisted roster teams", error);
+    logger.warn("persistence.roster_teams_clear_failed", { error });
   });
 }
 
@@ -2301,7 +2493,7 @@ function persistOrgProfileForSchool(schoolId: string, profile: OrganizationProfi
   }
 
   void persistenceProvider.replaceOrgProfileForSchool(schoolId, profile).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist org profile for school ${schoolId}`, error);
+    logger.warn("persistence.org_profile_save_failed", { schoolId, error });
   });
 }
 
@@ -2311,7 +2503,7 @@ function persistOrgMembersForSchool(schoolId: string, members: OrganizationMembe
   }
 
   void persistenceProvider.replaceOrgMembersForSchool(schoolId, members).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist org members for school ${schoolId}`, error);
+    logger.warn("persistence.org_members_save_failed", { schoolId, error });
   });
 }
 
@@ -2321,7 +2513,7 @@ function persistLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuth
   }
 
   void persistenceProvider.replaceLocalAuthAccountsForSchool(schoolId, accounts).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist local auth accounts for school ${schoolId}`, error);
+    logger.warn("persistence.local_auth_save_failed", { schoolId, error });
   });
 }
 
@@ -2366,7 +2558,7 @@ function persistSessions() {
 
   if (persistenceProvider) {
     void persistenceProvider.save(payload).catch((error) => {
-      console.warn("[realtime-api] Failed to persist snapshot to PostgreSQL", error);
+      logger.warn("persistence.snapshot_save_failed", { error });
     });
   }
 
@@ -2398,11 +2590,11 @@ function setupRetentionMaintenance(): void {
     void persistenceProvider.pruneStaleGames(retentionDays)
       .then((deletedGames) => {
         if (deletedGames > 0) {
-          console.log(`[realtime-api] Retention maintenance removed ${deletedGames} stale games older than ${retentionDays} days.`);
+          logger.info("persistence.retention_pruned", { deletedGames, retentionDays });
         }
       })
       .catch((error) => {
-        console.warn("[realtime-api] Retention maintenance failed", error);
+        logger.warn("persistence.retention_prune_failed", { error, retentionDays });
       });
   };
 
@@ -2419,10 +2611,12 @@ function setupRetentionMaintenance(): void {
   retentionTimer = setInterval(runPrune, intervalMinutes * 60 * 1000);
 }
 
-export async function initializeStore(): Promise<void> {
+export async function initializeStore(options: { failOnPersistenceError?: boolean } = {}): Promise<void> {
   if (storeInitialized) {
     return;
   }
+
+  const failOnPersistenceError = Boolean(options.failOnPersistenceError);
 
   let restoredSnapshot = false;
   if (persistenceProvider) {
@@ -2433,7 +2627,10 @@ export async function initializeStore(): Promise<void> {
         restoredSnapshot = true;
       }
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore snapshot from PostgreSQL", error);
+      logger.warn("persistence.snapshot_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL snapshot restore failed during startup");
+      }
     }
   }
 
@@ -2441,7 +2638,10 @@ export async function initializeStore(): Promise<void> {
     try {
       restoredSnapshot = await restoreSessionsFromProvider();
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore normalized game sessions from PostgreSQL", error);
+      logger.warn("persistence.normalized_sessions_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL game session restore failed during startup");
+      }
     }
   }
 
@@ -2456,7 +2656,10 @@ export async function initializeStore(): Promise<void> {
     try {
       await restoreRosterTeamsFromProvider();
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore normalized roster data from PostgreSQL", error);
+      logger.warn("persistence.roster_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL roster restore failed during startup");
+      }
     }
   }
 
@@ -2464,7 +2667,10 @@ export async function initializeStore(): Promise<void> {
     try {
       await restoreOrgDataFromProvider();
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore org data from PostgreSQL", error);
+      logger.warn("persistence.org_data_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL org data restore failed during startup");
+      }
     }
   }
 
@@ -2814,6 +3020,26 @@ export function getGameAiStatus(gameId: string, scope?: TenantScope): GameAiStat
     return null;
   }
   return { ...session.aiStatus, model: LIVE_AI_MODEL };
+}
+
+export function getAiUsageTotals(scope?: TenantScope): AiUsageTotals {
+  const schoolId = scope ? resolveSchoolId(scope) : null;
+  const sessionsToCount = schoolId
+    ? [...sessions.values()].filter((session) => session.schoolId === schoolId)
+    : [...sessions.values()];
+
+  return sessionsToCount.reduce<AiUsageTotals>((acc, session) => {
+    acc.activeGames += 1;
+    acc.totalTokensUsed += Math.max(0, Math.floor(Number(session.aiStatus.totalTokensUsed ?? 0)));
+    acc.totalEstimatedCostUsd = Number(
+      (acc.totalEstimatedCostUsd + Math.max(0, Number(session.aiStatus.totalEstimatedCostUsd ?? 0))).toFixed(6)
+    );
+    return acc;
+  }, {
+    activeGames: 0,
+    totalTokensUsed: 0,
+    totalEstimatedCostUsd: 0,
+  });
 }
 
 export function updateGameAiSettings(
@@ -3511,7 +3737,7 @@ export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
   };
 }
 
-export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope): {
+export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope, precondition?: EventMutationPrecondition): {
   state: GameState;
   insights: LiveInsight[];
 } {
@@ -3530,6 +3756,10 @@ export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope
     throw new Error(`Event not found: ${eventId}`);
   }
 
+  if (precondition?.expectedSequence !== undefined && event.sequence !== precondition.expectedSequence) {
+    throw new Error(`Event ${eventId} version mismatch: expected sequence ${precondition.expectedSequence}, actual ${event.sequence}`);
+  }
+
   session.eventsById.delete(eventId);
   session.eventIdsBySequence.delete(event.sequence);
   recomputeSession(session);
@@ -3541,7 +3771,7 @@ export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope
   };
 }
 
-export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, scope?: TenantScope): {
+export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, scope?: TenantScope, precondition?: EventMutationPrecondition): {
   event: GameEvent;
   state: GameState;
   insights: LiveInsight[];
@@ -3559,6 +3789,10 @@ export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, 
   const existing = session.eventsById.get(eventId);
   if (!existing) {
     throw new Error(`Event not found: ${eventId}`);
+  }
+
+  if (precondition?.expectedSequence !== undefined && existing.sequence !== precondition.expectedSequence) {
+    throw new Error(`Event ${eventId} version mismatch: expected sequence ${precondition.expectedSequence}, actual ${existing.sequence}`);
   }
 
   const parsed = parseGameEvent({

@@ -9,11 +9,19 @@ import {
 import { buildRealtimeGameRegistrationPayload } from "./useGameFlow.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
 import {
+  consumePendingIntegrityIssue,
   loadPending,
   loadSeq,
   savePending,
   saveSeq,
 } from "../helpers/storage.js";
+
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error ?? "unknown error");
+}
 
 export interface EventQueueDeps {
   gameId: string;
@@ -112,7 +120,8 @@ export function useEventQueue(deps: EventQueueDeps) {
         }
       }
       return res.ok;
-    } catch {
+    } catch (error) {
+      console.warn("[ipad-operator] ensureRealtimeGameExists failed", summarizeError(error));
       return false;
     }
   }
@@ -126,6 +135,20 @@ export function useEventQueue(deps: EventQueueDeps) {
   const onHydrateStateRef = useRef(onHydrateState);
   const isFlushingRef = useRef(false);
   const flushBackoffUntilRef = useRef(0);
+  const lastConflictNoticeAtMsRef = useRef(0);
+
+  function stableSerialize(value: unknown): string {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+      const entries = Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`);
+      return `{${entries.join(",")}}`;
+    }
+    return JSON.stringify(value);
+  }
 
   useEffect(() => { sequenceRef.current = sequence; }, [sequence]);
   useEffect(() => { normalizeEventTeamIdRef.current = normalizeEventTeamId; }, [normalizeEventTeamId]);
@@ -180,7 +203,8 @@ export function useEventQueue(deps: EventQueueDeps) {
       setSubmittedEvents(cur => [...cur, normalizedEvent].sort((a, b) => a.sequence - b.sequence));
       setPendingEvents(cur => cur.filter(p => p.id !== normalizedEvent.id));
       return true;
-    } catch {
+    } catch (error) {
+      console.warn("[ipad-operator] submitEvent failed", summarizeError(error));
       const errorMsg = "Network error. Event queued offline - will sync when reconnected.";
       showInlineNotice(errorMsg, "warning", 10000);
       setPendingEvents(cur => {
@@ -192,16 +216,91 @@ export function useEventQueue(deps: EventQueueDeps) {
   }
 
   // --- Flush entire pending queue ---
+  async function reconcilePendingWithServer(queue: GameEvent[]): Promise<GameEvent[]> {
+    if (queue.length === 0 || !canCallTenantScopedEventApi()) {
+      return queue;
+    }
+
+    try {
+      let activeSetup = loadAppData().gameSetup;
+      let res = await fetch(`${activeSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(activeSetup));
+      if (res.status === 401) {
+        const recoveredSetup = await recoverSetupFromConnection({ clearStaleToken: true });
+        if (recoveredSetup) {
+          activeSetup = recoveredSetup;
+          res = await fetch(`${activeSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(activeSetup));
+        }
+      }
+
+      if (!res.ok) {
+        return queue;
+      }
+
+      const remoteEvents = ((await res.json()) as GameEvent[]).map((event) => normalizeEventTeamIdRef.current(event));
+      const remoteById = new Map(remoteEvents.map((event) => [event.id, event]));
+
+      const duplicateIds = new Set<string>();
+      const conflictIds = new Set<string>();
+      const eventsToSubmit: GameEvent[] = [];
+
+      for (const localEvent of queue) {
+        const normalizedLocalEvent = normalizeEventTeamIdRef.current(localEvent);
+        const remoteEvent = remoteById.get(normalizedLocalEvent.id);
+        if (!remoteEvent) {
+          eventsToSubmit.push(normalizedLocalEvent);
+          continue;
+        }
+        if (stableSerialize(remoteEvent) === stableSerialize(normalizedLocalEvent)) {
+          duplicateIds.add(normalizedLocalEvent.id);
+          continue;
+        }
+        conflictIds.add(normalizedLocalEvent.id);
+      }
+
+      if (duplicateIds.size > 0) {
+        setPendingEvents((current) => current.filter((event) => !duplicateIds.has(event.id)));
+        showInlineNotice(
+          `${duplicateIds.size} queued event${duplicateIds.size === 1 ? " was" : "s were"} already synced. Removed local duplicate${duplicateIds.size === 1 ? "" : "s"}.`,
+          "info",
+          4500,
+        );
+      }
+
+      if (conflictIds.size > 0) {
+        const now = Date.now();
+        if (now - lastConflictNoticeAtMsRef.current > 8000) {
+          showInlineNotice(
+            `${conflictIds.size} queued event${conflictIds.size === 1 ? "" : "s"} conflict with server state. Review/edit recent events before retrying full sync.`,
+            "warning",
+            9000,
+          );
+          lastConflictNoticeAtMsRef.current = now;
+        }
+      }
+
+      return eventsToSubmit;
+    } catch (error) {
+      console.warn("[ipad-operator] reconcilePendingWithServer failed", summarizeError(error));
+      return queue;
+    }
+  }
+
   async function flushQueue() {
     if (isFlushingRef.current) return;
     if (Date.now() < flushBackoffUntilRef.current) return;
     if (!navigator.onLine || pendingEvents.length === 0) return;
     if (!canCallTenantScopedEventApi()) return;
+
+    const eventsToFlush = await reconcilePendingWithServer(pendingEvents);
+    if (eventsToFlush.length === 0) {
+      return;
+    }
+
     isFlushingRef.current = true;
     let successCount = 0;
     let serverErrorCount = 0;
     try {
-      for (const evt of pendingEvents) {
+      for (const evt of eventsToFlush) {
         const ok = await submitEvent(evt);
         if (ok) {
           successCount++;
@@ -220,7 +319,9 @@ export function useEventQueue(deps: EventQueueDeps) {
       try {
         const res = await fetch(`${gameSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(gameSetup));
         if (res.ok) setSubmittedEvents(((await res.json()) as GameEvent[]).map((event) => normalizeEventTeamIdRef.current(event)));
-      } catch { /* empty */ }
+      } catch (error) {
+        console.warn("[ipad-operator] flushQueue events refresh failed", summarizeError(error));
+      }
       showInlineNotice(`${successCount} queued event${successCount !== 1 ? "s" : ""} synced`, "success", 2500);
     }
   }
@@ -310,8 +411,12 @@ export function useEventQueue(deps: EventQueueDeps) {
   useEffect(() => {
     const localPending = loadPending(gameId).map((event) => normalizeEventTeamIdRef.current(event));
     const localSeq = loadSeq(gameId);
+    const integrityNotice = consumePendingIntegrityIssue(gameId);
     setPendingEvents(localPending);
     setSequence(localSeq);
+    if (integrityNotice) {
+      showInlineNotice(`${integrityNotice} Reconnect and resubmit after confirming setup.`, "warning", 8000);
+    }
 
     if (!canCallTenantScopedEventApi()) {
       setSubmittedEvents([]);
@@ -337,7 +442,8 @@ export function useEventQueue(deps: EventQueueDeps) {
           };
           onHydrateStateRef.current?.(statePayload);
         }
-      } catch {
+      } catch (error) {
+        console.warn("[ipad-operator] events hydration failed", summarizeError(error));
         // Hydration failed (offline) - keep local pending queue intact
       }
     }

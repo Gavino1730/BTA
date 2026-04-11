@@ -1,3 +1,5 @@
+import { logger } from "./logger.js";
+
 export interface RuntimeConfig {
   nodeEnv: string;
   requireTenant: boolean;
@@ -87,7 +89,9 @@ export function assertRuntimeConfig(config: RuntimeConfig): void {
   const result = validateRuntimeConfig(config);
   if (result.warnings.length > 0) {
     for (const warning of result.warnings) {
-      console.warn(`[realtime-api] ${warning}`);
+      logger.warn("runtime.config_warning", {
+        warning,
+      });
     }
   }
   if (result.errors.length > 0) {

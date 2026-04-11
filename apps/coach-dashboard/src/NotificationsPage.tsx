@@ -40,13 +40,6 @@ interface ApiNotificationItem {
 
 type ReadStatusFilter = "all" | "unread";
 
-interface ActivityItem {
-  id: string;
-  title: string;
-  detail: string;
-  timestampLabel: string;
-}
-
 interface Props {
   onNavigate: (path: string) => void;
 }
@@ -218,23 +211,6 @@ function buildNotificationItems(
   return Array.from(itemsById.values());
 }
 
-function buildActivityItems(games: GameSummary[]): ActivityItem[] {
-  return [...games]
-    .sort(sortGamesMostRecent)
-    .slice(0, 8)
-    .map((game) => {
-      const margin = Number(game.vc_score ?? 0) - Number(game.opp_score ?? 0);
-      const marginLabel = margin > 0 ? `+${margin}` : String(margin);
-
-      return {
-        id: `activity-${String(game.gameId)}`,
-        title: `${formatGameDate(game.date)} - ${game.opponent ?? "Opponent"}`,
-        detail: `Result ${String(game.result ?? "-").toUpperCase()} | ${Number(game.vc_score ?? 0)} - ${Number(game.opp_score ?? 0)} | Margin ${marginLabel}`,
-        timestampLabel: formatRelativeTimeFromGameDate(game.date),
-      };
-    });
-}
-
 export function NotificationsPage({ onNavigate }: Props) {
   const storageKey = useMemo(() => readStorageKeyForSchool(), []);
   const [games, setGames] = useState<GameSummary[]>([]);
@@ -293,7 +269,7 @@ export function NotificationsPage({ onNavigate }: Props) {
         setApiNotificationItems([]);
       }
 
-      setStatus("Notifications and recent activity are synced.");
+      setStatus("Notifications are synced.");
       setIsLoading(false);
     }
 
@@ -312,8 +288,6 @@ export function NotificationsPage({ onNavigate }: Props) {
     }
     return notificationItems;
   }, [notificationItems, readSet, readStatusFilter]);
-  const activityItems = useMemo(() => buildActivityItems(games), [games]);
-
   function toggleRead(itemId: string) {
     setReadNotificationIds((current) => {
       const next = new Set(current);
@@ -357,7 +331,7 @@ export function NotificationsPage({ onNavigate }: Props) {
         <section className="stats-page-card">
           <div className="loading-indicator">
             <div className="loading-spinner" />
-            <p className="loading-text">Loading notifications and recent activity...</p>
+            <p className="loading-text">Loading notifications...</p>
           </div>
         </section>
       )}
@@ -378,7 +352,7 @@ export function NotificationsPage({ onNavigate }: Props) {
 
       {!isLoading && !loadError && (
         <>
-          <section className="stats-page-grid two-column notifications-grid" style={{ marginBottom: "1rem" }}>
+          <section className="stats-page-grid notifications-grid" style={{ marginBottom: "1rem" }}>
             <section className="stats-page-card notifications-alert-card">
               <div className="stats-page-card-head">
                 <h3>Alert Center</h3>
@@ -451,39 +425,6 @@ export function NotificationsPage({ onNavigate }: Props) {
               )}
             </section>
 
-            <section className="stats-page-card notifications-activity-card">
-              <div className="stats-page-card-head">
-                <h3>Recent Activity</h3>
-                <span className="stats-page-status">Last {activityItems.length}</span>
-              </div>
-              {activityItems.length === 0 ? (
-                <>
-                  <p className="stats-empty-copy">No recent activity yet.</p>
-                  <button
-                    type="button"
-                    className="shell-nav-link"
-                    style={{ marginTop: "0.65rem" }}
-                    onClick={() => onNavigate("/live")}
-                  >
-                    Open Live Dashboard
-                  </button>
-                </>
-              ) : (
-                <div className="stats-game-list activity-list">
-                  {activityItems.map((item) => (
-                    <article key={item.id} className="stats-game-row activity-row">
-                      <div className="activity-main">
-                        <strong className="activity-title">{item.title}</strong>
-                        <span className="activity-detail">{item.detail}</span>
-                      </div>
-                      <div className="stats-game-score-block activity-side">
-                        <span className="activity-time">{item.timestampLabel}</span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
           </section>
         </>
       )}

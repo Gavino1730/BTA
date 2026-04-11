@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { PublicSiteChrome } from "./PublicSiteChrome.js";
 
 interface RouteShellPageProps {
@@ -15,6 +16,23 @@ interface PolicySection {
   heading: string;
   body: string;
   bullets?: string[];
+}
+
+function readAuthQueryValue(key: string): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return (new URLSearchParams(window.location.search).get(key) ?? "").trim();
+}
+
+function buildSupportPayload(flow: "invite" | "verify", email: string, token: string): string {
+  return [
+    `Flow: ${flow}`,
+    `Email: ${email || "[missing]"}`,
+    `Token present: ${token ? "yes" : "no"}`,
+    `Timestamp: ${new Date().toISOString()}`,
+  ].join("\n");
 }
 
 function RouteShellPage({
@@ -327,6 +345,409 @@ export function AboutPage({ onNavigate }: RoutedPageProps) {
   );
 }
 
+export function ChangelogPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PublicMarketingPage
+      kicker="Product Updates"
+      title="Changelog"
+      subtitle="Track meaningful platform improvements as preproduction hardening and feature depth continue."
+      onNavigate={onNavigate}
+      primaryLabel="View Roadmap"
+      primaryPath="/roadmap"
+      secondaryLabel="Back To Home"
+      secondaryPath="/"
+      sections={[
+        {
+          title: "Latest Platform Milestones",
+          body: "Recent updates focused on core product readiness and dependable game-day workflows.",
+          bullets: [
+            "Dedicated docs center and help surfaces now available in public routes",
+            "Standalone org settings route shipped with profile/member management",
+            "Expanded notifications feed with invite, system, and game result sources",
+          ],
+        },
+        {
+          title: "Operations and Reliability",
+          body: "Current work continues to prioritize deterministic state handling and practical recovery tools.",
+          bullets: [
+            "Route-level error pages and session recovery flows expanded",
+            "Stats page empty-state and loading coverage broadened",
+            "Admin starter shell and org-management foundations established",
+          ],
+        },
+        {
+          title: "What Ships Next",
+          body: "The next sequence is aligned to roadmap priorities and production readiness gates.",
+          bullets: [
+            "Billing and export notification categories",
+            "Org policy controls and audit log visibility",
+            "Monetization foundation with Stripe-backed lifecycle",
+          ],
+        },
+      ]}
+    />
+  );
+}
+
+export function RoadmapPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PublicMarketingPage
+      kicker="Preproduction Roadmap"
+      title="Roadmap"
+      subtitle="A focused plan from solid pilot reliability to full production platform maturity."
+      onNavigate={onNavigate}
+      primaryLabel="View Changelog"
+      primaryPath="/changelog"
+      secondaryLabel="Open Docs"
+      secondaryPath="/docs"
+      sections={[
+        {
+          title: "Now",
+          body: "In-flight work concentrates on high-signal workflows with direct game-day impact.",
+          bullets: [
+            "Notification source expansion for billing and exports",
+            "Org settings deepening with policy controls and audit panel",
+            "Admin panel rollout beyond read-only starter state",
+          ],
+        },
+        {
+          title: "Next",
+          body: "The next tranche builds monetization and premium-surface consistency.",
+          bullets: [
+            "CSV and PDF export expansion",
+            "Stripe subscriptions, monthly tiers, and paywall readiness",
+            "Checkout return pages and trial conversion UX",
+          ],
+        },
+        {
+          title: "Later",
+          body: "Polish and trust surfaces round out launch quality.",
+          bullets: [
+            "Status page and richer support trust content",
+            "Testimonials and case-study depth",
+            "Shared skeleton and loading-state design unification",
+          ],
+        },
+      ]}
+    />
+  );
+}
+
+export function StatusPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      onNavigate={onNavigate}
+      title="Platform Status"
+      subtitle="Current service health and known incidents for preproduction environments."
+      sections={[
+        {
+          heading: "Realtime API",
+          body: "Operational for pilot use with standard maintenance windows.",
+          bullets: [
+            "Event ingest and websocket fanout: Operational",
+            "File-backed persistence: Operational",
+            "Elevated latency alerts: none active",
+          ],
+        },
+        {
+          heading: "Coach Dashboard",
+          body: "Operational with ongoing UX and monetization surface improvements.",
+          bullets: [
+            "Core stats and live routes: Operational",
+            "Public route surfaces: Operational",
+            "Active incident: none",
+          ],
+        },
+        {
+          heading: "Operator App",
+          body: "Operational with continued pregame and sync UX hardening.",
+          bullets: [
+            "Connection pairing and sync: Operational",
+            "Offline queue replay: Operational",
+            "Known degraded service: none",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/support")}
+      primaryLabel="Contact Support"
+      onSecondary={() => onNavigate("/changelog")}
+      secondaryLabel="View Changelog"
+    />
+  );
+}
+
+export function TestimonialsPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PublicMarketingPage
+      kicker="Program Stories"
+      title="Testimonials and Case Studies"
+      subtitle="How high school programs use BTA to improve game-day decisions, staff coordination, and season review workflows."
+      onNavigate={onNavigate}
+      primaryLabel="View Features"
+      primaryPath="/features"
+      secondaryLabel="Start a Demo"
+      secondaryPath="/demo"
+      sections={[
+        {
+          title: "Valley Catholic - Faster In-Game Adjustments",
+          body: "Bench staff used live context and notifications to reduce communication lag between operator and sideline coaches.",
+          bullets: [
+            "Improved timeout decision timing during momentum swings",
+            "Reduced manual stat reconciliation after games",
+            "Clearer possession-level context in close fourth quarters",
+          ],
+        },
+        {
+          title: "Vancouver Bears - Cleaner Team Operations",
+          body: "Program leaders standardized roster, member roles, and post-game review habits across multiple staff users.",
+          bullets: [
+            "More consistent role usage between coaches and operators",
+            "Faster post-game review workflows for player development",
+            "Less ad hoc spreadsheet work after each event",
+          ],
+        },
+        {
+          title: "Cross-Program Outcomes",
+          body: "Early pilot programs report better visibility, stronger trust in data quality, and smoother game-day execution.",
+          bullets: [
+            "Higher confidence in live score and event sync",
+            "Fewer workflow interruptions from tooling ambiguity",
+            "Better continuity from live operations to season analytics",
+          ],
+        },
+      ]}
+    />
+  );
+}
+
+export function DemoBookingPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      onNavigate={onNavigate}
+      title="Book a Demo"
+      subtitle="Schedule a live walkthrough for your basketball program to see game-day operations, analytics workflows, and setup requirements."
+      sections={[
+        {
+          heading: "What the Demo Covers",
+          body: "A focused walkthrough of coach dashboard workflows, operator sync, and post-game review.",
+          bullets: [
+            "Live game command and event visibility",
+            "Operator pairing and correction workflow",
+            "Season trend and player review examples",
+          ],
+        },
+        {
+          heading: "Who Should Join",
+          body: "Bring the people who run game-day operations and own implementation decisions.",
+          bullets: [
+            "Head or assistant coach",
+            "Primary score operator",
+            "Program admin or athletic leadership",
+          ],
+        },
+        {
+          heading: "How to Request",
+          body: "Use support/contact intake and include enough context for rapid scheduling.",
+          bullets: [
+            "School/program name and preferred date windows",
+            "Expected attendees and current workflow pain points",
+            "Whether you want a pilot setup immediately after demo",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/contact")}
+      primaryLabel="Request Demo"
+      onSecondary={() => onNavigate("/pricing")}
+      secondaryLabel="View Pricing"
+    />
+  );
+}
+
+export function OnboardingWizardPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <PolicyContentPage
+      onNavigate={onNavigate}
+      title="Onboarding Wizard"
+      subtitle="A guided startup sequence for new programs moving from account creation to first live game."
+      sections={[
+        {
+          heading: "Step 1: Account and Team Setup",
+          body: "Create your account, confirm school context, and establish team profile basics.",
+          bullets: [
+            "Sign up and complete required account fields",
+            "Verify school and program identifiers",
+            "Set initial roster ownership and staff contacts",
+          ],
+        },
+        {
+          heading: "Step 2: Invite Staff and Assign Roles",
+          body: "Invite coaches and operators early so everyone can rehearse before game day.",
+          bullets: [
+            "Send coach/operator invites from organization settings",
+            "Assign role permissions for admin, coach, operator, and player",
+            "Confirm each user can access expected routes",
+          ],
+        },
+        {
+          heading: "Step 3: Pair Devices and Rehearse",
+          body: "Run a short dry-run with operator sync and live dashboard checks.",
+          bullets: [
+            "Pair iPad operator using connection code",
+            "Simulate event entry and correction workflow",
+            "Validate post-game stats and trend visibility",
+          ],
+        },
+      ]}
+      onPrimary={() => onNavigate("/setup")}
+      primaryLabel="Start Setup"
+      onSecondary={() => onNavigate("/help")}
+      secondaryLabel="Open Help Center"
+    />
+  );
+}
+
+export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
+  const [email, setEmail] = useState(() => readAuthQueryValue("email").toLowerCase());
+  const [token, setToken] = useState(() => readAuthQueryValue("token"));
+  const hasToken = Boolean(token.trim());
+  const nextLoginPath = useMemo(() => {
+    const normalizedEmail = email.trim().toLowerCase();
+    return normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login";
+  }, [email]);
+
+  return (
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main mkt-no-cards">
+        <section className="stats-page">
+          <section className="stats-page-card policy-page-hero">
+            <p className="stats-page-eyebrow">Invite Access</p>
+            <h1>Accept Team Invite</h1>
+            <p className="stats-page-subtitle">Use the invited email and invite token to continue into login.</p>
+          </section>
+
+          <section className="stats-page-card policy-page-section">
+            <h3 className="policy-section-heading">Invite Details</h3>
+            <div className="setup-grid">
+              <label className="stats-filter-field">
+                <span>Invited Email</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="coach@program.org"
+                />
+              </label>
+              <label className="stats-filter-field">
+                <span>Invite Token</span>
+                <input
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  placeholder="Paste invite token"
+                />
+              </label>
+            </div>
+            <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
+              {hasToken
+                ? "Token detected. Continue to login with your invited email."
+                : "No token detected. Ask your admin to resend the invite link."}
+            </p>
+          </section>
+
+          <section className="stats-page-card policy-page-actions-wrap">
+            <div className="policy-page-actions">
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onNavigate(nextLoginPath)}>
+                Continue to Login
+              </button>
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => {
+                  const payload = buildSupportPayload("invite", email, token);
+                  void navigator.clipboard?.writeText(payload);
+                }}
+              >
+                Copy Support Payload
+              </button>
+              <button type="button" className="shell-nav-link" onClick={() => onNavigate("/support")}>Get Support</button>
+            </div>
+          </section>
+        </section>
+      </main>
+    </PublicSiteChrome>
+  );
+}
+
+export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
+  const [email, setEmail] = useState(() => readAuthQueryValue("email").toLowerCase());
+  const [token, setToken] = useState(() => readAuthQueryValue("token"));
+  const hasToken = Boolean(token.trim());
+  const nextLoginPath = useMemo(() => {
+    const normalizedEmail = email.trim().toLowerCase();
+    return normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login";
+  }, [email]);
+
+  return (
+    <PublicSiteChrome onNavigate={onNavigate}>
+      <main className="mkt-detail-main mkt-no-cards">
+        <section className="stats-page">
+          <section className="stats-page-card policy-page-hero">
+            <p className="stats-page-eyebrow">Email Verification</p>
+            <h1>Verify Email</h1>
+            <p className="stats-page-subtitle">Confirm your verification details, then continue to login.</p>
+          </section>
+
+          <section className="stats-page-card policy-page-section">
+            <h3 className="policy-section-heading">Verification Details</h3>
+            <div className="setup-grid">
+              <label className="stats-filter-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="coach@program.org"
+                />
+              </label>
+              <label className="stats-filter-field">
+                <span>Verification Token</span>
+                <input
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  placeholder="Paste verification token"
+                />
+              </label>
+            </div>
+            <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
+              {hasToken
+                ? "Token detected. Continue to login after verification."
+                : "Token missing. Request a fresh verification link or contact support."}
+            </p>
+          </section>
+
+          <section className="stats-page-card policy-page-actions-wrap">
+            <div className="policy-page-actions">
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onNavigate(nextLoginPath)}>
+                Continue to Login
+              </button>
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => {
+                  const payload = buildSupportPayload("verify", email, token);
+                  void navigator.clipboard?.writeText(payload);
+                }}
+              >
+                Copy Support Payload
+              </button>
+              <button type="button" className="shell-nav-link" onClick={() => onNavigate("/support")}>Get Support</button>
+            </div>
+          </section>
+        </section>
+      </main>
+    </PublicSiteChrome>
+  );
+}
+
 export function HelpCenterPage({ onNavigate }: RoutedPageProps) {
   return (
     <PolicyContentPage
@@ -534,6 +955,44 @@ export function ContactPage({ onNavigate }: RoutedPageProps) {
       primaryLabel="Open Support"
       onSecondary={() => onNavigate("/")}
       secondaryLabel="Back to Home"
+    />
+  );
+}
+
+export function CheckoutSuccessPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <RouteShellPage
+      onNavigate={onNavigate}
+      title="Checkout Complete"
+      subtitle="Your billing workflow is marked complete. Subscription activation and entitlement sync can take a moment during preproduction."
+      bullets={[
+        "If this was a trial start, your trial window should now be active.",
+        "If you do not see updated billing status, refresh Billing in a few seconds.",
+        "Contact support with org and checkout timestamp if activation is delayed.",
+      ]}
+      onPrimary={() => onNavigate("/billing")}
+      primaryLabel="Open Billing"
+      onSecondary={() => onNavigate("/stats")}
+      secondaryLabel="Open Dashboard"
+    />
+  );
+}
+
+export function CheckoutCancelPage({ onNavigate }: RoutedPageProps) {
+  return (
+    <RouteShellPage
+      onNavigate={onNavigate}
+      title="Checkout Canceled"
+      subtitle="No billing changes were applied. You can return to pricing or billing whenever you are ready."
+      bullets={[
+        "Your current access level remains unchanged.",
+        "No payment method was updated during this canceled flow.",
+        "You can restart checkout from Pricing or Billing at any time.",
+      ]}
+      onPrimary={() => onNavigate("/pricing")}
+      primaryLabel="View Pricing"
+      onSecondary={() => onNavigate("/billing")}
+      secondaryLabel="Back to Billing"
     />
   );
 }

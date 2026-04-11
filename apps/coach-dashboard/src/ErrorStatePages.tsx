@@ -64,6 +64,19 @@ export function ForbiddenPage({ onNavigate }: { onNavigate: (path: string) => vo
   );
 }
 
+export function UnauthorizedPage({ onNavigate }: { onNavigate: (path: string) => void }) {
+  return (
+    <ErrorStatePage
+      title="Unauthorized"
+      subtitle="You are signed in, but this route requires additional permissions or organization scope." 
+      onPrimary={() => onNavigate("/account")}
+      primaryLabel="Review Account"
+      onSecondary={() => onNavigate("/support")}
+      secondaryLabel="Request Access"
+    />
+  );
+}
+
 export function ServerErrorPage({ onNavigate }: { onNavigate: (path: string) => void }) {
   return (
     <ErrorStatePage

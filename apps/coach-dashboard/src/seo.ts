@@ -72,6 +72,42 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
     path: "/about",
     imagePath: "/og-home.svg",
   },
+  status: {
+    title: `${BASE_TITLE} Status | Service Health`,
+    description: "Current service health and known incidents for BTA preproduction environments.",
+    path: "/status",
+    imagePath: "/og-home.svg",
+  },
+  testimonials: {
+    title: `${BASE_TITLE} Testimonials | Program Outcomes`,
+    description: "Case studies and testimonials from basketball programs using BTA in live operations and season review.",
+    path: "/testimonials",
+    imagePath: "/og-home.svg",
+  },
+  "demo-booking": {
+    title: `${BASE_TITLE} Demo | Book a Program Walkthrough`,
+    description: "Schedule a BTA demo to review live game workflows, operator sync, and analytics setup for your program.",
+    path: "/book-demo",
+    imagePath: "/og-pricing.svg",
+  },
+  "onboarding-wizard": {
+    title: `${BASE_TITLE} Onboarding Wizard | Setup Guide`,
+    description: "Step-by-step onboarding flow for teams adopting BTA from account setup to live game rehearsal.",
+    path: "/onboarding-wizard",
+    imagePath: "/og-home.svg",
+  },
+  changelog: {
+    title: `${BASE_TITLE} Changelog | Product Updates`,
+    description: "Read the latest platform updates, reliability improvements, and product milestones.",
+    path: "/changelog",
+    imagePath: "/og-home.svg",
+  },
+  roadmap: {
+    title: `${BASE_TITLE} Roadmap | Preproduction Plan`,
+    description: "See what is shipping now, what is next, and how BTA is progressing toward production readiness.",
+    path: "/roadmap",
+    imagePath: "/og-home.svg",
+  },
   support: {
     title: `${BASE_TITLE} Support`,
     description: "Support resources, setup help, and operational guidance for BTA Courtside users.",
@@ -83,6 +119,18 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
     description: "Contact BTA for program onboarding, implementation questions, and billing support.",
     path: "/contact",
     imagePath: "/og-home.svg",
+  },
+  "checkout-success": {
+    title: `${BASE_TITLE} Billing | Checkout Success`,
+    description: "Checkout completed. Confirm billing activation and return to your dashboard workflows.",
+    path: "/checkout/success",
+    imagePath: "/og-pricing.svg",
+  },
+  "checkout-cancel": {
+    title: `${BASE_TITLE} Billing | Checkout Canceled`,
+    description: "Checkout canceled with no billing changes applied. Return to pricing or billing anytime.",
+    path: "/checkout/cancel",
+    imagePath: "/og-pricing.svg",
   },
   terms: {
     title: `${BASE_TITLE} Terms`,
@@ -118,6 +166,18 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
     title: `${BASE_TITLE} Coach Login`,
     description: "Sign in to BTA Courtside to access your live dashboard.",
     path: "/login",
+    imagePath: "/og-home.svg",
+  },
+  "invite-accept": {
+    title: `${BASE_TITLE} Invite | Accept Team Access`,
+    description: "Accept your BTA team invite, sign in, and verify role-based access for your organization.",
+    path: "/invite/accept",
+    imagePath: "/og-home.svg",
+  },
+  "email-verify": {
+    title: `${BASE_TITLE} Verify Email | Account Access`,
+    description: "Verify your email to activate account access and continue onboarding workflows.",
+    path: "/verify-email",
     imagePath: "/og-home.svg",
   },
 };

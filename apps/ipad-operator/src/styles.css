@@ -4374,7 +4374,20 @@ html, body {
   box-shadow: 0 0 18px rgba(79,140,255,0.18);
 }
 
-.pregame-start-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+.pregame-start-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: rgba(79,140,255,0.35);
+  color: rgba(159,193,255,0.65);
+  background: rgba(79,140,255,0.1);
+}
+
+.pregame-start-hint {
+  margin-top: -0.25rem;
+  color: rgba(232,234,240,0.56);
+  font-size: 0.74rem;
+  text-align: center;
+}
 
 .pregame-connect-btn {
   width: 100%;
@@ -4469,6 +4482,8 @@ html, body {
   color: #e8eaf0;
   font-size: 0.84rem;
   font-weight: 700;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
   padding: 0.35rem 0.65rem;
   outline: none;
 }
@@ -4504,6 +4519,13 @@ html, body {
   background: rgba(79,140,255,0.22);
   border-color: rgba(79,140,255,0.5);
   transform: translateY(-1px);
+}
+
+.pregame-device-copy-btn:focus-visible,
+.pregame-start-btn:focus-visible,
+.pregame-settings-link:focus-visible {
+  outline: 2px solid rgba(125,189,255,0.95);
+  outline-offset: 2px;
 }
 
 /* Pre-game lineup setup */

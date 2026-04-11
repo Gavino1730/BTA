@@ -4,9 +4,11 @@ import { apiBase, apiKeyHeader } from "./platform.js";
 interface ForgotPasswordPageProps {
   onBackLogin: () => void;
   onBackHome: () => void;
+  onAcceptInvite: () => void;
+  onVerifyEmail: () => void;
 }
 
-export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPageProps) {
+export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, onVerifyEmail }: ForgotPasswordPageProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("Enter your coach email to request a password reset link.");
   const [busy, setBusy] = useState(false);
@@ -112,6 +114,11 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
               </button>
             </div>
           )}
+
+          <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button type="button" className="shell-nav-link" onClick={onAcceptInvite}>Need to accept an invite?</button>
+            <button type="button" className="shell-nav-link" onClick={onVerifyEmail}>Need to verify email?</button>
+          </div>
         </section>
       </main>
     </div>

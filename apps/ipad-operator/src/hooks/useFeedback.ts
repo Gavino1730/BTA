@@ -2,6 +2,13 @@ import { useEffect, useRef } from "react";
 import type { FeedbackTone } from "../types.js";
 import { getAudioContextCtor } from "../helpers/labels.js";
 
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error ?? "unknown error");
+}
+
 /**
  * Manages Web Audio feedback tones and haptic vibration for the operator console.
  * Automatically unlocks the AudioContext on the first user gesture (required by
@@ -126,7 +133,9 @@ export function useFeedback() {
     return () => {
       const ctx = audioRef.current;
       if (!ctx) return;
-      void ctx.close().catch(() => {});
+      void ctx.close().catch((error) => {
+        console.warn("[ipad-operator] closing AudioContext failed", summarizeError(error));
+      });
       audioRef.current = null;
     };
   }, []);

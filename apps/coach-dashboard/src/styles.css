@@ -829,17 +829,19 @@ body {
 
 .notifications-grid {
   align-items: start;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.notifications-alert-card,
-.notifications-activity-card {
+.notifications-alert-card {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.75rem;
+  width: 100%;
 }
 
 .notifications-toolbar {
   align-items: end;
   gap: 0.65rem;
+  justify-content: space-between;
 }
 
 .notifications-filter > span {
@@ -854,7 +856,7 @@ body {
 .activity-list {
   display: grid;
   gap: 0.55rem;
-  max-height: 700px;
+  max-height: 620px;
   overflow-y: auto;
   padding-right: 0.15rem;
 }
@@ -897,6 +899,7 @@ body {
 .activity-side {
   align-items: flex-end;
   gap: 0.24rem;
+  min-width: 100px;
 }
 
 .notification-level-badge {
@@ -949,6 +952,27 @@ body {
   min-height: 34px;
   padding: 0.36rem 0.72rem;
   font-size: 0.78rem;
+}
+
+@media (max-width: 760px) {
+  .notifications-toolbar {
+    align-items: stretch;
+  }
+
+  .notifications-actions {
+    justify-content: stretch !important;
+  }
+
+  .notification-row {
+    align-items: stretch;
+  }
+
+  .notification-side {
+    min-width: 0;
+    width: 100%;
+    align-items: flex-start;
+    margin-top: 0.4rem;
+  }
 }
 
 /* ---- Misc ---- */

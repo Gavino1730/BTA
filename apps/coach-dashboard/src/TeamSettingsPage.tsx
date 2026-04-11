@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
 
 type SettingsSection = "pairing" | "roster" | "profile" | "ai" | "members";
+type MemberFilter = "all" | "pending" | "active";
 
 function normalizeSettingsSection(value: string | null | undefined, fallback: SettingsSection): SettingsSection {
   if (value === "pairing" || value === "roster" || value === "profile" || value === "ai" || value === "members") {
@@ -73,6 +74,35 @@ function roleToApi(appRole: AppMemberRole): string {
   if (appRole === "operator") return "analyst";
   if (appRole === "player") return "player";
   return "coach";
+}
+
+function roleLabel(role: AppMemberRole): string {
+  if (role === "admin") return "Admin";
+  if (role === "operator") return "Operator";
+  if (role === "player") return "Player";
+  return "Coach";
+}
+
+function buildInviteCopy(name: string, email: string, role: AppMemberRole, tempPassword: string): string {
+  const greetingName = name.trim() || "teammate";
+  const emailText = email.trim() || "[email]";
+  const lines = [
+    `Hi ${greetingName},`,
+    "",
+    "You've been invited to BTA Courtside.",
+    `Role: ${roleLabel(role)}`,
+    `Sign-in email: ${emailText}`,
+  ];
+
+  if (tempPassword.trim()) {
+    lines.push(`Temporary password: ${tempPassword.trim()}`);
+    lines.push("Please sign in and change your password after first login.");
+  } else {
+    lines.push("Use your invite email to complete access setup from the login flow.");
+  }
+
+  lines.push("", "- BTA Team Admin");
+  return lines.join("\n");
 }
 
 interface OrganizationMemberDto {
@@ -200,6 +230,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
   const [inviteTempPassword, setInviteTempPassword] = useState("");
+  const [memberFilter, setMemberFilter] = useState<MemberFilter>("all");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string; tempPassword: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
   const [newPlayerExpanded, setNewPlayerExpanded] = useState(false);
@@ -843,6 +874,14 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
     { key: "members", label: "Members" },
   ] as const;
 
+  const invitedMembersCount = members.filter((member) => member.status === "invited").length;
+  const activeMembersCount = members.filter((member) => member.status === "active").length;
+  const visibleMembers = memberFilter === "pending"
+    ? members.filter((member) => member.status === "invited")
+    : memberFilter === "active"
+      ? members.filter((member) => member.status === "active")
+      : members;
+
   return (
     <div className="stats-page">
       <section className="stats-page-hero compact">
@@ -1262,12 +1301,29 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
               <p className="settings-section-desc">
                 {currentMember ? `Signed in as ${currentMember.fullName} · ${currentMember.role}` : "Manage staff access to the coach dashboard."}
               </p>
+              <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>
+                {activeMembersCount} active · {invitedMembersCount} pending invite{invitedMembersCount === 1 ? "" : "s"}
+              </p>
             </div>
+            <label className="stats-filter-field short" style={{ minWidth: "170px" }}>
+              <span>View</span>
+              <select value={memberFilter} onChange={(event) => setMemberFilter(event.target.value as MemberFilter)}>
+                <option value="all">All Members</option>
+                <option value="pending">Pending Invites</option>
+                <option value="active">Active Members</option>
+              </select>
+            </label>
           </div>
+
+          <section className="stats-filter-bar" style={{ marginBottom: "0.85rem" }}>
+            <p className="stats-page-subcopy" style={{ margin: 0 }}>
+              Invite flow: add member details, choose role, then send invite. Use temporary password when you want immediate account access without waiting for invite acceptance.
+            </p>
+          </section>
 
           {members.length > 0 && (
             <div className="settings-members-list">
-              {members.map((member) => (
+              {visibleMembers.map((member) => (
                 <div key={member.memberId} className="settings-member-row">
                   <div className="settings-member-info">
                     <div className="settings-member-avatar">{member.fullName.charAt(0).toUpperCase()}</div>
@@ -1294,7 +1350,9 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                       <option value="coach">Coach</option>
                       <option value="operator">Operator</option>
                     </select>
-                    <span className={`settings-status-badge settings-status-${member.status}`}>{member.status}</span>
+                    <span className={`settings-status-badge settings-status-${member.status}`}>
+                      {member.status === "invited" ? "invited - pending" : member.status}
+                    </span>
                     {member.role !== "player" && (
                       <input
                         type="password"
@@ -1308,6 +1366,34 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                     )}
                     {currentMember?.role === "admin" && (
                       <>
+                        {member.status === "invited" && (
+                          <button
+                            type="button"
+                            className="shell-nav-link"
+                            onClick={() => {
+                              const message = buildInviteCopy(member.fullName, member.email, member.role, member.tempPassword ?? "");
+                              void navigator.clipboard?.writeText(message).then(() => {
+                                setStatus(`Invite message copied for ${member.fullName}.`);
+                              }).catch(() => {
+                                setStatus("Could not copy invite message right now.");
+                              });
+                            }}
+                          >
+                            Copy Invite Again
+                          </button>
+                        )}
+                        {member.status === "invited" && (
+                          <button
+                            type="button"
+                            className="shell-nav-link"
+                            disabled={saving}
+                            onClick={() => {
+                              void saveMember({ ...member, status: "active" });
+                            }}
+                          >
+                            Mark Active
+                          </button>
+                        )}
                         {member.role !== "player" && (
                           <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void setCoachPassword(member)}>
                             Set Password
@@ -1351,7 +1437,25 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                 <input type="password" value={inviteTempPassword} onChange={(event) => setInviteTempPassword(event.target.value)} placeholder="Create account now" />
               </label>
             </div>
+            <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
+              Tip: copy a ready-to-send invite note for email or text before submitting.
+            </p>
             <div className="settings-form-footer">
+              <button
+                type="button"
+                className="shell-nav-link"
+                disabled={!inviteEmail.trim()}
+                onClick={() => {
+                  const message = buildInviteCopy(inviteName, inviteEmail, inviteRole, inviteTempPassword);
+                  void navigator.clipboard?.writeText(message).then(() => {
+                    setStatus("Invite message copied. Paste it into your email or team chat.");
+                  }).catch(() => {
+                    setStatus("Could not copy invite message. You can still send the invite below.");
+                  });
+                }}
+              >
+                Copy Invite Message
+              </button>
               <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>{inviteTempPassword.trim() ? "Create Account" : "Send Invite"}</button>
             </div>
           </form>

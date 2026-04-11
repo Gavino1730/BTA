@@ -1,6 +1,16 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { APP_DATA_KEY, DEVICE_NAME_KEY } from "../constants.js";
-import { clearOperatorLocalCache, loadAppData, saveAppData } from "./storage.js";
+import type { GameEvent } from "@bta/shared-schema";
+import {
+  clearOperatorLocalCache,
+  consumePendingIntegrityIssue,
+  loadAppData,
+  loadPending,
+  pendingBackupKey,
+  pendingKey,
+  saveAppData,
+  savePending,
+} from "./storage.js";
 
 function createMemoryStorage(): Storage {
   const data = new Map<string, string>();
@@ -136,5 +146,102 @@ describe("device name persistence", () => {
     expect(localStorage.getItem(APP_DATA_KEY)).toBeNull();
     expect(localStorage.getItem(DEVICE_NAME_KEY)).toBe("Scorer iPad");
     expect(loaded.gameSetup.connectionId).toBeUndefined();
+  });
+
+  it("persists pending queue in versioned envelope and loads it", () => {
+    const event: GameEvent = {
+      id: "evt-queue-1",
+      gameId: "game-queue-1",
+      sequence: 1,
+      timestampIso: "2026-04-10T00:00:00.000Z",
+      period: "Q1",
+      clockSecondsRemaining: 470,
+      teamId: "home",
+      operatorId: "op-1",
+      type: "shot_attempt",
+      playerId: "h1",
+      made: true,
+      points: 2,
+      zone: "paint",
+    };
+
+    savePending("game-queue-1", [event]);
+    const persistedRaw = localStorage.getItem(pendingKey("game-queue-1"));
+    expect(persistedRaw).toContain("\"version\"");
+    expect(loadPending("game-queue-1")).toHaveLength(1);
+    expect(consumePendingIntegrityIssue("game-queue-1")).toBeNull();
+  });
+
+  it("backs up and resets pending queue on checksum mismatch", () => {
+    const corruptedEnvelope = {
+      version: 2,
+      checksum: 1,
+      events: [
+        {
+          id: "evt-corrupt-1",
+          gameId: "game-corrupt",
+          sequence: 1,
+          timestampIso: "2026-04-10T00:00:00.000Z",
+          period: "Q1",
+          clockSecondsRemaining: 470,
+          teamId: "home",
+          operatorId: "op-1",
+          type: "shot_attempt",
+          playerId: "h1",
+          made: true,
+          points: 2,
+          zone: "paint",
+        },
+      ],
+    };
+
+    localStorage.setItem(pendingKey("game-corrupt"), JSON.stringify(corruptedEnvelope));
+    expect(loadPending("game-corrupt")).toEqual([]);
+    expect(localStorage.getItem(pendingBackupKey("game-corrupt"))).not.toBeNull();
+
+    const warning = consumePendingIntegrityIssue("game-corrupt");
+    expect(warning).toMatch(/checksum mismatch/i);
+    expect(consumePendingIntegrityIssue("game-corrupt")).toBeNull();
+  });
+
+  it("backs up and resets pending queue when payload is invalid json", () => {
+    localStorage.setItem(pendingKey("game-bad-json"), "{invalid");
+    expect(loadPending("game-bad-json")).toEqual([]);
+    expect(localStorage.getItem(pendingBackupKey("game-bad-json"))).toBe("{invalid");
+
+    const warning = consumePendingIntegrityIssue("game-bad-json");
+    expect(warning).toMatch(/unreadable/i);
+  });
+
+  it("backs up and resets pending queue when envelope version is unsupported", () => {
+    const unsupportedEnvelope = {
+      version: 999,
+      checksum: 0,
+      events: [],
+    };
+    const raw = JSON.stringify(unsupportedEnvelope);
+
+    localStorage.setItem(pendingKey("game-bad-version"), raw);
+    expect(loadPending("game-bad-version")).toEqual([]);
+    expect(localStorage.getItem(pendingBackupKey("game-bad-version"))).toBe(raw);
+
+    const warning = consumePendingIntegrityIssue("game-bad-version");
+    expect(warning).toMatch(/format was invalid/i);
+  });
+
+  it("backs up and resets pending queue when envelope shape is missing events", () => {
+    const malformedEnvelope = {
+      version: 2,
+      checksum: 12345,
+      payload: [],
+    };
+    const raw = JSON.stringify(malformedEnvelope);
+
+    localStorage.setItem(pendingKey("game-bad-shape"), raw);
+    expect(loadPending("game-bad-shape")).toEqual([]);
+    expect(localStorage.getItem(pendingBackupKey("game-bad-shape"))).toBe(raw);
+
+    const warning = consumePendingIntegrityIssue("game-bad-shape");
+    expect(warning).toMatch(/format was invalid/i);
   });
 });

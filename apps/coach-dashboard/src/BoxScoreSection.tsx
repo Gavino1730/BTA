@@ -23,7 +23,7 @@ interface Props {
   stateHomeTeamId: string | undefined;
   stateAwayTeamId: string | undefined;
   deletingGameEventId: string | null;
-  deleteGameEvent: (eventId: string) => Promise<void>;
+  deleteGameEvent: (eventId: string, expectedSequence: number) => Promise<void>;
 }
 
 export function BoxScoreSection({
@@ -280,7 +280,7 @@ export function BoxScoreSection({
                     onClick={() => {
                       const ok = window.confirm("Undo this event? This will recalculate game stats.");
                       if (!ok) return;
-                      void deleteGameEvent(event.id);
+                      void deleteGameEvent(event.id, event.sequence);
                     }}
                   >
                     {isDeleting ? "Undoing..." : "Undo"}

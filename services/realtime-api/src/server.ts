@@ -1,10 +1,11 @@
 import cors from "cors";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, { type ErrorRequestHandler, type NextFunction, type Request, type Response } from "express";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
+import { logger } from "./logger.js";
 import {
   normalizeTeamColor,
   sanitizePromptText,
@@ -30,6 +31,7 @@ import {
   getGameAiPromptPreview,
   getGameAiSettings,
   getGameAiStatus,
+  getAiUsageTotals,
   getGameEvents,
   getGameInsights,
   getActiveGameState,
@@ -88,6 +90,43 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+type RequestWithRequestId = Request & { requestId?: string };
+
+function getRequestId(req: Request): string | undefined {
+  return (req as RequestWithRequestId).requestId;
+}
+
+function resolveIncomingRequestId(req: Request): string {
+  const rawHeader = req.headers["x-request-id"];
+  const provided = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+  const normalized = typeof provided === "string" ? provided.trim() : "";
+  if (normalized) {
+    return normalized.slice(0, 128);
+  }
+  return randomBytes(12).toString("hex");
+}
+
+app.use((req, res, next) => {
+  const requestId = resolveIncomingRequestId(req);
+  (req as RequestWithRequestId).requestId = requestId;
+  res.setHeader("x-request-id", requestId);
+
+  const startedAt = process.hrtime.bigint();
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    logger.info("http.request", {
+      requestId,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: Number(durationMs.toFixed(2)),
+      ip: resolveClientIp(req),
+    });
+  });
+
+  next();
+});
+
 app.disable("x-powered-by");
 app.use((req, res, next) => {
   res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
@@ -109,25 +148,61 @@ app.use((req, res, next) => {
 
 // CORS whitelist: allow only known app origins and explicitly configured deployments.
 // Entries in ALLOWED_ORIGINS may use a single '*' wildcard (e.g. https://bta-coach-*.vercel.app).
+function normalizeOriginInput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.includes("*")) {
+    return trimmed.replace(/\/+$/, "").toLowerCase();
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.origin.toLowerCase();
+  } catch {
+    return trimmed.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",      // iPad operator dev
   "http://localhost:5174",      // Coach dashboard dev
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
-];
-const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map(o => o.trim()).filter(Boolean);
-if (PROD_ORIGINS.length > 0) ALLOWED_ORIGINS.push(...PROD_ORIGINS);
+].map(normalizeOriginInput).filter(Boolean);
+const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(normalizeOriginInput)
+  .filter(Boolean);
+if (PROD_ORIGINS.length > 0) {
+  ALLOWED_ORIGINS.push(...PROD_ORIGINS);
+}
 
-function originAllowed(origin: string): boolean {
-  for (const pattern of ALLOWED_ORIGINS) {
+export function isCorsOriginAllowed(origin: string, allowedOrigins: readonly string[] = ALLOWED_ORIGINS): boolean {
+  const normalizedOrigin = normalizeOriginInput(origin);
+  if (!normalizedOrigin) {
+    return false;
+  }
+
+  for (const rawPattern of allowedOrigins) {
+    const pattern = normalizeOriginInput(rawPattern);
+    if (!pattern) {
+      continue;
+    }
+
     if (!pattern.includes("*")) {
-      if (origin === pattern) return true;
+      if (normalizedOrigin === pattern) return true;
     } else {
       // Convert glob-style pattern (single * = any chars) to regex
       const re = new RegExp(
         "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".+") + "$"
       );
-      if (re.test(origin)) return true;
+      if (re.test(normalizedOrigin)) return true;
     }
   }
   return false;
@@ -138,10 +213,10 @@ app.use(cors({
     // In development, allow localhost variants; in production use whitelist
     if (process.env.NODE_ENV !== "production") {
       callback(null, true);
-    } else if (!origin || originAllowed(origin)) {
+    } else if (!origin || isCorsOriginAllowed(origin)) {
       callback(null, true);
     } else {
-      console.warn(`[realtime-api] CORS blocked origin: ${origin}`);
+      logger.warn("cors.blocked_origin", { origin });
       callback(new Error("CORS not allowed"));
     }
   },
@@ -1616,6 +1691,8 @@ const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
 const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
 const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
+const AI_ALERT_COST_USD_THRESHOLD = readOptionalPositiveNumber(process.env.BTA_AI_ALERT_COST_USD_THRESHOLD);
+const AI_ALERT_TOKENS_THRESHOLD = readOptionalPositiveInteger(process.env.BTA_AI_ALERT_TOKENS_THRESHOLD);
 
 type SecurityMetricKey =
   | "requestTenantMismatch"
@@ -1634,9 +1711,34 @@ const securityTelemetry: Record<SecurityMetricKey, number> = {
   forbiddenWriteRole: 0
 };
 
+type AiAlertMetricKey =
+  | "budgetExceeded"
+  | "costThresholdExceeded"
+  | "tokenThresholdExceeded";
+
+const aiAlertTelemetry: Record<AiAlertMetricKey, number> = {
+  budgetExceeded: 0,
+  costThresholdExceeded: 0,
+  tokenThresholdExceeded: 0,
+};
+
+const aiAlertedBudgetGames = new Set<string>();
+const aiAlertedCostGames = new Set<string>();
+const aiAlertedTokenGames = new Set<string>();
+
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
+const SECURITY_EVENT_LOG_WINDOW_MS = 60_000;
+const SECURITY_EVENT_LOG_BURST_LIMIT = 3;
+
+type SecurityLogWindow = {
+  startedAtMs: number;
+  count: number;
+};
+
+const securityLogWindows = new Map<string, SecurityLogWindow>();
 
 function renderPrometheusSecurityMetrics(): string {
+  const aiUsageTotals = getAiUsageTotals();
   return [
     "# HELP bta_security_request_tenant_mismatch_total Request tenant mismatch denials.",
     "# TYPE bta_security_request_tenant_mismatch_total counter",
@@ -1656,8 +1758,40 @@ function renderPrometheusSecurityMetrics(): string {
     "# HELP bta_security_forbidden_write_role_total Forbidden write role attempts.",
     "# TYPE bta_security_forbidden_write_role_total counter",
     `bta_security_forbidden_write_role_total ${securityTelemetry.forbiddenWriteRole}`,
+    "# HELP bta_ai_budget_exceeded_total AI requests blocked due to per-game budget exhaustion.",
+    "# TYPE bta_ai_budget_exceeded_total counter",
+    `bta_ai_budget_exceeded_total ${aiAlertTelemetry.budgetExceeded}`,
+    "# HELP bta_ai_alert_cost_threshold_exceeded_total Games crossing configured AI cost alert threshold.",
+    "# TYPE bta_ai_alert_cost_threshold_exceeded_total counter",
+    `bta_ai_alert_cost_threshold_exceeded_total ${aiAlertTelemetry.costThresholdExceeded}`,
+    "# HELP bta_ai_alert_tokens_threshold_exceeded_total Games crossing configured AI token alert threshold.",
+    "# TYPE bta_ai_alert_tokens_threshold_exceeded_total counter",
+    `bta_ai_alert_tokens_threshold_exceeded_total ${aiAlertTelemetry.tokenThresholdExceeded}`,
+    "# HELP bta_ai_total_tokens_used Aggregate tokens used by AI across active sessions.",
+    "# TYPE bta_ai_total_tokens_used gauge",
+    `bta_ai_total_tokens_used ${aiUsageTotals.totalTokensUsed}`,
+    "# HELP bta_ai_total_estimated_cost_usd Aggregate estimated AI cost across active sessions.",
+    "# TYPE bta_ai_total_estimated_cost_usd gauge",
+    `bta_ai_total_estimated_cost_usd ${aiUsageTotals.totalEstimatedCostUsd}`,
+    "# HELP bta_ai_active_games_total Active games tracked for AI usage.",
+    "# TYPE bta_ai_active_games_total gauge",
+    `bta_ai_active_games_total ${aiUsageTotals.activeGames}`,
     ""
   ].join("\n");
+}
+
+function readOptionalPositiveNumber(raw: string | undefined): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readOptionalPositiveInteger(raw: string | undefined): number | undefined {
+  const parsed = readOptionalPositiveNumber(raw);
+  return parsed ? Math.floor(parsed) : undefined;
 }
 
 async function pushSecurityMetrics(): Promise<void> {
@@ -1672,7 +1806,7 @@ async function pushSecurityMetrics(): Promise<void> {
       body: renderPrometheusSecurityMetrics()
     });
   } catch (error) {
-    console.warn("[realtime-api] Failed to push security metrics", error);
+    logger.warn("metrics.push_failed", { error });
   }
 }
 
@@ -1691,13 +1825,111 @@ function scheduleMetricsPush(): void {
   }, interval);
 }
 
+function shouldLogSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): boolean {
+  // High-volume path scans can flood logs; keep counters intact and sample repetitive
+  // missing-tenant-scope warnings per source/path window.
+  if (event !== "missingTenantScope") {
+    return true;
+  }
+
+  const path = typeof details.path === "string" ? details.path : "unknown";
+  const method = typeof details.method === "string" ? details.method : "unknown";
+  const ip = typeof details.ip === "string" ? details.ip : "unknown";
+  const transport = typeof details.transport === "string" ? details.transport : "http";
+  const key = `${event}:${transport}:${ip}:${method}:${path}`;
+  const now = Date.now();
+  const window = securityLogWindows.get(key);
+
+  if (!window || now - window.startedAtMs > SECURITY_EVENT_LOG_WINDOW_MS) {
+    securityLogWindows.set(key, { startedAtMs: now, count: 1 });
+    return true;
+  }
+
+  window.count += 1;
+  if (window.count <= SECURITY_EVENT_LOG_BURST_LIMIT) {
+    return true;
+  }
+
+  if (window.count === SECURITY_EVENT_LOG_BURST_LIMIT + 1) {
+    logger.info("security.event_log_suppressed", {
+      event,
+      path,
+      method,
+      ip,
+      transport,
+      windowMs: SECURITY_EVENT_LOG_WINDOW_MS,
+    });
+  }
+
+  return false;
+}
+
 function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): void {
   securityTelemetry[event] += 1;
   scheduleMetricsPush();
-  console.warn("[realtime-api] security", {
+  if (!shouldLogSecurityEvent(event, details)) {
+    return;
+  }
+  logger.warn("security.event", {
     event,
     ...details
   });
+}
+
+function trackAiAlertEvent(event: AiAlertMetricKey, details: Record<string, unknown>): void {
+  aiAlertTelemetry[event] += 1;
+  scheduleMetricsPush();
+  logger.warn("ai.alert", {
+    event,
+    ...details,
+  });
+}
+
+function trackAiSpendAlertsForGame(gameId: string, schoolId: string): void {
+  const status = getGameAiStatus(gameId, { schoolId });
+  if (!status) {
+    return;
+  }
+
+  const key = `${schoolId}:${gameId}`;
+
+  if (status.lastErrorCode === "budget_exceeded" && !aiAlertedBudgetGames.has(key)) {
+    aiAlertedBudgetGames.add(key);
+    trackAiAlertEvent("budgetExceeded", {
+      schoolId,
+      gameId,
+      tokensUsed: status.totalTokensUsed,
+      estimatedCostUsd: status.totalEstimatedCostUsd,
+    });
+  }
+
+  if (
+    typeof AI_ALERT_COST_USD_THRESHOLD === "number"
+    && status.totalEstimatedCostUsd >= AI_ALERT_COST_USD_THRESHOLD
+    && !aiAlertedCostGames.has(key)
+  ) {
+    aiAlertedCostGames.add(key);
+    trackAiAlertEvent("costThresholdExceeded", {
+      schoolId,
+      gameId,
+      thresholdUsd: AI_ALERT_COST_USD_THRESHOLD,
+      estimatedCostUsd: status.totalEstimatedCostUsd,
+    });
+  }
+
+  if (
+    typeof AI_ALERT_TOKENS_THRESHOLD === "number"
+    && status.totalTokensUsed >= AI_ALERT_TOKENS_THRESHOLD
+    && !aiAlertedTokenGames.has(key)
+  ) {
+    aiAlertedTokenGames.add(key);
+    trackAiAlertEvent("tokenThresholdExceeded", {
+      schoolId,
+      gameId,
+      thresholdTokens: AI_ALERT_TOKENS_THRESHOLD,
+      tokensUsed: status.totalTokensUsed,
+    });
+  }
 }
 
 type AuthedRequest = Request & { authContext?: AuthContext };
@@ -1725,14 +1957,18 @@ function resolveRequestSchoolId(
       authSchoolId: normalizeSchoolId(scopedReq.authContext?.schoolId),
       requestedSchoolId: normalizeSchoolId(readHeaderValue(req.headers["x-school-id"]) ?? req.query.schoolId),
       path: req.path,
-      method: req.method
+      method: req.method,
+      ip: resolveClientIp(req),
+      requestId: getRequestId(req)
     });
   }
 
   if (result.error === "schoolId is required" && !options?.suppressMissingScopeTelemetry) {
     trackSecurityEvent("missingTenantScope", {
       path: req.path,
-      method: req.method
+      method: req.method,
+      ip: resolveClientIp(req),
+      requestId: getRequestId(req)
     });
   }
 
@@ -1754,14 +1990,19 @@ function resolveSocketSchoolId(socket: {
   if (result.error?.includes("mismatch")) {
     const authSchoolId = normalizeSchoolId(socket.data?.authContext?.schoolId);
     const requestedSchoolId = normalizeSchoolId(auth.schoolId ?? readHeaderValue(socket.handshake.headers?.["x-school-id"]));
+    const requestId = readHeaderValue(socket.handshake.headers?.["x-request-id"]);
     trackSecurityEvent("socketTenantMismatch", {
       authSchoolId,
-      requestedSchoolId
+      requestedSchoolId,
+      requestId
     });
   }
 
   if (result.error === "schoolId is required") {
-    trackSecurityEvent("missingTenantScope", { transport: "socket" });
+    trackSecurityEvent("missingTenantScope", {
+      transport: "socket",
+      requestId: readHeaderValue(socket.handshake.headers?.["x-request-id"])
+    });
   }
 
   return result;
@@ -1930,6 +2171,113 @@ function hasValidApiKeyRequest(req: Request): boolean {
   return Boolean(API_KEY && candidate === API_KEY);
 }
 
+function extractSchoolIdForLogs(req: Request): string {
+  const headerSchoolId = normalizeSchoolId(readHeaderValue(req.headers["x-school-id"]));
+  if (headerSchoolId) {
+    return headerSchoolId;
+  }
+
+  const querySchoolId = req.query.schoolId;
+  if (typeof querySchoolId === "string") {
+    return normalizeSchoolId(querySchoolId) ?? "unknown";
+  }
+  if (Array.isArray(querySchoolId)) {
+    return normalizeSchoolId(querySchoolId[0]) ?? "unknown";
+  }
+
+  return "unknown";
+}
+
+function resolveHttpError(error: unknown): {
+  status: number;
+  code: string;
+  message: string;
+  expose: boolean;
+} {
+  if (
+    error instanceof SyntaxError
+    && typeof (error as { status?: unknown }).status === "number"
+    && (error as { status?: number }).status === 400
+  ) {
+    return {
+      status: 400,
+      code: "invalid_json",
+      message: "Invalid JSON payload",
+      expose: true,
+    };
+  }
+
+  if (error instanceof Error && error.message === "CORS not allowed") {
+    return {
+      status: 403,
+      code: "cors_not_allowed",
+      message: "CORS not allowed",
+      expose: true,
+    };
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as {
+      status?: unknown;
+      code?: unknown;
+      message?: unknown;
+      expose?: unknown;
+    };
+    const status = typeof candidate.status === "number" && candidate.status >= 400 && candidate.status <= 599
+      ? candidate.status
+      : 500;
+    const code = typeof candidate.code === "string" && candidate.code.trim()
+      ? candidate.code.trim()
+      : status >= 500
+        ? "internal_error"
+        : "request_error";
+    const message = typeof candidate.message === "string" && candidate.message.trim()
+      ? candidate.message.trim()
+      : status >= 500
+        ? "Internal server error"
+        : "Request failed";
+
+    return {
+      status,
+      code,
+      message,
+      expose: Boolean(candidate.expose) || status < 500,
+    };
+  }
+
+  return {
+    status: 500,
+    code: "internal_error",
+    message: "Internal server error",
+    expose: false,
+  };
+}
+
+const requestErrorHandler: ErrorRequestHandler = (error, req, res, _next) => {
+  if (res.headersSent) {
+    return;
+  }
+
+  const requestId = randomBytes(8).toString("hex");
+  const resolved = resolveHttpError(error);
+
+  logger.error("request.unhandled_error", {
+    requestId,
+    method: req.method,
+    path: req.path,
+    schoolId: extractSchoolIdForLogs(req),
+    status: resolved.status,
+    code: resolved.code,
+    error: error instanceof Error ? error.message : String(error),
+  });
+
+  res.status(resolved.status).json({
+    error: resolved.expose ? resolved.message : "Internal server error",
+    code: resolved.code,
+    requestId,
+  });
+};
+
 function isReadOnlyRequest(req: Request): boolean {
   return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
 }
@@ -1959,7 +2307,12 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
   const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !isReadOnlyRequest(req)
     ? "jwt-write-required"
     : "missing-valid-credentials";
-  trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
+  trackSecurityEvent("unauthorizedHttp", {
+    reason,
+    path: req.path,
+    method: req.method,
+    requestId: getRequestId(req)
+  });
   res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
 }
 
@@ -1987,6 +2340,7 @@ async function attachAuthContext(req: Request, _res: Response, next: NextFunctio
           reason: "revoked-local-session",
           path: req.path,
           method: req.method,
+          requestId: getRequestId(req)
         });
       }
       next();
@@ -2034,7 +2388,12 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
   const scopedReq = req as ScopedRequest;
   const role = scopedReq.authContext?.role?.trim().toLowerCase();
   if (!hasWriteRole(role)) {
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: role ?? null });
+    trackSecurityEvent("forbiddenWriteRole", {
+      path: req.path,
+      method: req.method,
+      role: role ?? null,
+      requestId: getRequestId(req)
+    });
     res.status(403).json({ error: "Insufficient role for write access" });
     return;
   }
@@ -2044,9 +2403,18 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: process.env.NODE_ENV !== "production" 
+  cors: process.env.NODE_ENV !== "production"
     ? { origin: true, credentials: true }
-    : { origin: ALLOWED_ORIGINS, credentials: true },
+    : {
+      origin: (origin, callback) => {
+        if (!origin || isCorsOriginAllowed(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error("CORS not allowed"));
+      },
+      credentials: true,
+    },
   // Give sleeping devices (iPad screen-off, background tabs) more time before
   // the server declares them disconnected. Defaults are 25s/20s which is too
   // aggressive for iOS Safari's background network suspension.
@@ -2056,6 +2424,10 @@ const io = new Server(httpServer, {
 
 io.use(async (socket, next) => {
   const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
+  const handshakeRequestId = readHeaderValue(socket.handshake.headers?.["x-request-id"]);
+  const authRequestId = typeof auth.requestId === "string" ? auth.requestId.trim() : "";
+  const socketRequestId = (authRequestId || handshakeRequestId || randomBytes(12).toString("hex")).slice(0, 128);
+  socket.data.requestId = socketRequestId;
 
   const token = extractBearerToken(socket.handshake.headers, auth);
   if (token) {
@@ -2099,7 +2471,10 @@ io.use(async (socket, next) => {
   }
 
   next(new Error("Unauthorized — provide a valid bearer token or apiKey"));
-  trackSecurityEvent("unauthorizedSocket", { reason: "missing-valid-credentials" });
+  trackSecurityEvent("unauthorizedSocket", {
+    reason: "missing-valid-credentials",
+    requestId: socketRequestId
+  });
 });
 
 interface OperatorPresence {
@@ -4704,6 +5079,7 @@ app.get("/api/games/:gameId/insights", requireApiKey, async (req, res) => {
 
   const forceRefresh = req.query.force === "1" || req.query.force === "true";
   const insights = await refreshGameAiInsights(req.params.gameId, { force: forceRefresh }, { schoolId });
+  trackAiSpendAlertsForGame(req.params.gameId, schoolId);
   res.json(insights ?? getGameInsights(req.params.gameId, { schoolId }));
 });
 
@@ -4820,7 +5196,13 @@ app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, async (r
   }
 
   const response = await answerGameAiChat(req.params.gameId, question, req.body?.history, { schoolId });
+  trackAiSpendAlertsForGame(req.params.gameId, schoolId);
   if (!response) {
+    const status = getGameAiStatus(req.params.gameId, { schoolId });
+    if (status?.lastErrorCode === "budget_exceeded") {
+      res.status(429).json({ error: status.lastErrorMessage ?? "ai budget exceeded" });
+      return;
+    }
     res.status(503).json({ error: "ai chat unavailable" });
     return;
   }
@@ -4847,6 +5229,33 @@ app.get("/api/games/:gameId/events", requireApiKey, (req, res) => {
     res.json(allEvents);
   }
 });
+
+function readExpectedEventSequenceHeader(req: Request): number | null | undefined {
+  const rawValue = req.get("x-event-sequence");
+  if (rawValue === undefined) {
+    return undefined;
+  }
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return null;
+  }
+  return parsed;
+}
+
+function buildEventConflictPayload(gameId: string, eventId: string, schoolId: string, message: string) {
+  const state = getGameState(gameId, { schoolId }) ?? null;
+  const event = getGameEvents(gameId, { schoolId }).find((candidate) => candidate.id === eventId) ?? null;
+  return {
+    error: message,
+    code: "event_conflict",
+    state,
+    event,
+  };
+}
 
 app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRateLimiter, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -4888,8 +5297,18 @@ app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRate
 
 app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
+  const expectedSequence = readExpectedEventSequenceHeader(req);
+  if (expectedSequence === null) {
+    res.status(400).json({ error: "x-event-sequence header must be a positive integer" });
+    return;
+  }
   try {
-    const { state, insights } = deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
+    const { state, insights } = deleteEvent(
+      req.params.gameId,
+      req.params.eventId,
+      { schoolId },
+      { expectedSequence }
+    );
 
     emitToGameRooms(schoolId, req.params.gameId, "game:event:deleted", { eventId: req.params.eventId });
     broadcastGameStateWithDebounce(schoolId, req.params.gameId, state, insights);
@@ -4902,18 +5321,28 @@ app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole
       res.status(409).json({ error: message });
       return;
     }
+    if (/^Event\s+.+\s+version mismatch:/i.test(message)) {
+      res.status(409).json(buildEventConflictPayload(req.params.gameId, req.params.eventId, schoolId, message));
+      return;
+    }
     res.status(400).json({ error: message });
   }
 });
 
 app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
+  const expectedSequence = readExpectedEventSequenceHeader(req);
+  if (expectedSequence === null) {
+    res.status(400).json({ error: "x-event-sequence header must be a positive integer" });
+    return;
+  }
   try {
     const { event, state, insights } = updateEvent(
       req.params.gameId,
       req.params.eventId,
       req.body ?? {},
-      { schoolId }
+      { schoolId },
+      { expectedSequence }
     );
 
     emitToGameRooms(schoolId, req.params.gameId, "game:event:updated", event);
@@ -4928,18 +5357,34 @@ app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (
       res.status(409).json({ error: message });
       return;
     }
+    if (/^Event\s+.+\s+version mismatch:/i.test(message) || /^Sequence\s+\d+\s+already belongs to event\s+/i.test(message)) {
+      res.status(409).json(buildEventConflictPayload(req.params.gameId, req.params.eventId, schoolId, message));
+      return;
+    }
     res.status(400).json({ error: message });
   }
 });
 
 io.on("connection", (socket) => {
+  const socketRequestId = typeof socket.data.requestId === "string" ? socket.data.requestId : undefined;
   const schoolId = getSchoolIdFromSocket(socket);
   if (!schoolId) {
+    logger.warn("socket.connection_rejected", {
+      reason: "missing-school-id",
+      socketId: socket.id,
+      requestId: socketRequestId,
+    });
     socket.emit("error", { error: "schoolId is required" });
     socket.disconnect(true);
     return;
   }
   const socketSchoolId = schoolId;
+  logger.info("socket.connected", {
+    socketId: socket.id,
+    schoolId: socketSchoolId,
+    requestId: socketRequestId,
+    hasAuthContext: Boolean(socket.data.authContext),
+  });
   socket.join(schoolRoom(socketSchoolId));
 
   function registerOperator(rawPayload: unknown): void {
@@ -5088,6 +5533,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    logger.info("socket.disconnected", {
+      socketId: socket.id,
+      schoolId: socketSchoolId,
+      requestId: socketRequestId,
+    });
     const operator = operatorPresenceBySocketId.get(socket.id);
     if (!operator) {
       return;
@@ -5116,7 +5566,18 @@ io.on("connection", (socket) => {
 
 // Factory reset — clears all game sessions and roster data for the selected school.
 app.get("/admin/security-metrics", requireApiKey, requireWriteRole, (_req, res) => {
-  res.json({ ...securityTelemetry });
+  const aiUsageTotals = getAiUsageTotals();
+  res.json({
+    ...securityTelemetry,
+    aiBudgetExceeded: aiAlertTelemetry.budgetExceeded,
+    aiCostThresholdExceeded: aiAlertTelemetry.costThresholdExceeded,
+    aiTokenThresholdExceeded: aiAlertTelemetry.tokenThresholdExceeded,
+    aiTotalTokensUsed: aiUsageTotals.totalTokensUsed,
+    aiTotalEstimatedCostUsd: aiUsageTotals.totalEstimatedCostUsd,
+    aiActiveGames: aiUsageTotals.activeGames,
+    aiCostAlertThresholdUsd: AI_ALERT_COST_USD_THRESHOLD ?? null,
+    aiTokenAlertThreshold: AI_ALERT_TOKENS_THRESHOLD ?? null,
+  });
 });
 
 app.get("/admin/security-metrics/prometheus", requireApiKey, requireWriteRole, (_req, res) => {
@@ -5129,6 +5590,14 @@ app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
   clearOperatorLinksForSchool(schoolId);
   res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
 });
+
+if (process.env.BTA_AUTH_TEST_MODE === "1") {
+  app.get("/__test/error500", (_req, _res) => {
+    throw new Error("simulated_test_unhandled_error");
+  });
+}
+
+app.use(requestErrorHandler);
 
 // SPA fallback: serve index.html for any non-API route not matched above.
 app.get("*", (_req, res) => {
@@ -5144,7 +5613,9 @@ let serverStarted = false;
 // Warn if API key not set in production
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 if (NODE_ENV === "production" && !API_KEY) {
-  console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Event ingest endpoints are open to anyone.");
+  logger.warn("startup.api_key_missing", {
+    detail: "BTA_API_KEY not set. Event ingest endpoints are open to anyone."
+  });
 }
 
 /**
@@ -5163,9 +5634,17 @@ export async function startServer(overridePort?: number): Promise<number> {
 
   assertRuntimeConfig(readRuntimeConfig(isJwtAuthEnabled()));
 
-  await initializeStore().catch((error) => {
-    console.error("[realtime-api] Failed to initialize store persistence", error);
-  });
+  const strictPersistenceInit = Boolean(DATABASE_URL) || process.env.BTA_PERSISTENCE_STARTUP_STRICT === "1";
+
+  try {
+    await initializeStore({ failOnPersistenceError: strictPersistenceInit });
+  } catch (error) {
+    logger.error("startup.store_initialize_failed", {
+      error,
+      strictPersistenceInit,
+    });
+    throw error;
+  }
 
   const port = overridePort ?? Number(process.env.PORT ?? 4000);
   const host = process.env.HOST ?? "0.0.0.0";
@@ -5177,23 +5656,23 @@ export async function startServer(overridePort?: number): Promise<number> {
       const boundPort = (typeof addr === "object" && addr !== null)
         ? (addr as { port: number }).port
         : port;
-      console.log(`Realtime API listening on http://${host}:${boundPort}`);
+      logger.info("startup.server_listening", { host, port: boundPort });
       if (API_KEY) {
-        console.log(`[realtime-api] API key authentication: ENABLED`);
+        logger.info("startup.api_key_auth", { enabled: true });
       } else {
-        console.log(`[realtime-api] API key authentication: disabled (set BTA_API_KEY to enable)`);
+        logger.info("startup.api_key_auth", { enabled: false });
       }
       if (DATABASE_URL) {
-        console.log("[realtime-api] Persistence backend: PostgreSQL");
+        logger.info("startup.persistence_backend", { backend: "postgres" });
       } else {
-        console.log("[realtime-api] Persistence backend: file snapshot");
+        logger.info("startup.persistence_backend", { backend: "file" });
       }
       if (isJwtAuthEnabled()) {
-        console.log("[realtime-api] JWT authentication: ENABLED");
+        logger.info("startup.jwt_auth", { enabled: true });
       }
-      console.log(`[realtime-api] Local token signing: ${isLocalTokenAuthEnabled() ? "ENABLED" : "disabled"}`);
-      console.log(`[realtime-api] Tenant strict mode: ${REQUIRE_TENANT ? "ENABLED" : "disabled"}`);
-      console.log(`[realtime-api] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
+      logger.info("startup.local_token_auth", { enabled: isLocalTokenAuthEnabled() });
+      logger.info("startup.tenant_strict_mode", { enabled: REQUIRE_TENANT });
+      logger.info("startup.cors_origins", { origins: ALLOWED_ORIGINS });
       resolve(boundPort);
     });
   });

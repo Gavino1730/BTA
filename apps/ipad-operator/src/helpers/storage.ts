@@ -148,12 +148,168 @@ export function saveAppData(d: AppData) {
 }
 
 // ---- Per-game event/seq persistence ----
-export function pendingKey(gid: string) { return `${STORE}:${gid}:pending`; }
-export function seqKey(gid: string) { return `${STORE}:${gid}:seq`; }
-export function loadPending(gid: string): GameEvent[] {
-  try { const s = localStorage.getItem(pendingKey(gid)); return s ? JSON.parse(s) as GameEvent[] : []; } catch { return []; }
+const PENDING_QUEUE_VERSION = 2;
+
+interface PendingQueueEnvelope {
+  version: number;
+  checksum: number;
+  events: GameEvent[];
 }
-export function savePending(gid: string, evts: GameEvent[]) { localStorage.setItem(pendingKey(gid), JSON.stringify(evts)); }
+
+interface PendingQueueIntegrityIssue {
+  reason: "invalid_json" | "invalid_shape" | "checksum_mismatch";
+  detectedAtIso: string;
+}
+
+export interface PendingConflictRecord {
+  localEvent: GameEvent;
+  remoteEvent: GameEvent;
+  detectedAtIso: string;
+  reason: "payload_mismatch";
+}
+
+export function pendingKey(gid: string) { return `${STORE}:${gid}:pending`; }
+export function pendingBackupKey(gid: string) { return `${STORE}:${gid}:pending:backup`; }
+export function pendingConflictKey(gid: string) { return `${STORE}:${gid}:pending:conflicts`; }
+function pendingIntegrityIssueKey(gid: string) { return `${STORE}:${gid}:pending:integrity-issue`; }
+export function seqKey(gid: string) { return `${STORE}:${gid}:seq`; }
+
+function checksumForQueue(events: GameEvent[]): number {
+  const text = JSON.stringify(events);
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return hash >>> 0;
+}
+
+function markPendingIntegrityIssue(gid: string, reason: PendingQueueIntegrityIssue["reason"], rawValue: string): void {
+  try {
+    localStorage.setItem(pendingBackupKey(gid), rawValue);
+    const issue: PendingQueueIntegrityIssue = {
+      reason,
+      detectedAtIso: new Date().toISOString(),
+    };
+    localStorage.setItem(pendingIntegrityIssueKey(gid), JSON.stringify(issue));
+  } catch {
+    // no-op: localStorage may be unavailable in constrained browser modes
+  }
+}
+
+function parsePendingEnvelope(rawValue: string): GameEvent[] | null {
+  const parsed = JSON.parse(rawValue) as unknown;
+  if (Array.isArray(parsed)) {
+    return parsed as GameEvent[];
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  const envelope = parsed as Partial<PendingQueueEnvelope>;
+  if (!Array.isArray(envelope.events)) {
+    return null;
+  }
+  if (envelope.version !== PENDING_QUEUE_VERSION) {
+    return null;
+  }
+  if (typeof envelope.checksum !== "number") {
+    return null;
+  }
+  if (checksumForQueue(envelope.events) !== envelope.checksum) {
+    throw new Error("pending_queue_checksum_mismatch");
+  }
+  return envelope.events;
+}
+
+export function loadPending(gid: string): GameEvent[] {
+  const rawValue = localStorage.getItem(pendingKey(gid));
+  if (!rawValue) {
+    return [];
+  }
+
+  try {
+    const events = parsePendingEnvelope(rawValue);
+    if (!events) {
+      markPendingIntegrityIssue(gid, "invalid_shape", rawValue);
+      return [];
+    }
+    return events;
+  } catch (error) {
+    const reason = error instanceof Error && error.message === "pending_queue_checksum_mismatch"
+      ? "checksum_mismatch"
+      : "invalid_json";
+    markPendingIntegrityIssue(gid, reason, rawValue);
+    return [];
+  }
+}
+
+export function consumePendingIntegrityIssue(gid: string): string | null {
+  try {
+    const raw = localStorage.getItem(pendingIntegrityIssueKey(gid));
+    if (!raw) {
+      return null;
+    }
+    localStorage.removeItem(pendingIntegrityIssueKey(gid));
+    const issue = JSON.parse(raw) as Partial<PendingQueueIntegrityIssue>;
+    if (issue.reason === "checksum_mismatch") {
+      return "Local queue integrity check failed (checksum mismatch). Backup saved and local queue reset.";
+    }
+    if (issue.reason === "invalid_shape") {
+      return "Local queue format was invalid. Backup saved and local queue reset.";
+    }
+    return "Local queue data was unreadable. Backup saved and local queue reset.";
+  } catch {
+    return "Local queue could not be recovered cleanly. Queue was reset.";
+  }
+}
+export function savePending(gid: string, evts: GameEvent[]) {
+  const envelope: PendingQueueEnvelope = {
+    version: PENDING_QUEUE_VERSION,
+    checksum: checksumForQueue(evts),
+    events: evts,
+  };
+  localStorage.setItem(pendingKey(gid), JSON.stringify(envelope));
+}
+
+export function loadPendingConflicts(gid: string): PendingConflictRecord[] {
+  try {
+    const raw = localStorage.getItem(pendingConflictKey(gid));
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((entry): entry is PendingConflictRecord => {
+      return Boolean(
+        entry
+        && typeof entry === "object"
+        && (entry as { reason?: unknown }).reason === "payload_mismatch"
+        && typeof (entry as { detectedAtIso?: unknown }).detectedAtIso === "string"
+        && (entry as { localEvent?: unknown }).localEvent
+        && typeof (entry as { localEvent?: unknown }).localEvent === "object"
+        && (entry as { remoteEvent?: unknown }).remoteEvent
+        && typeof (entry as { remoteEvent?: unknown }).remoteEvent === "object"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function appendPendingConflicts(gid: string, conflicts: PendingConflictRecord[]): void {
+  if (conflicts.length === 0) {
+    return;
+  }
+
+  const existing = loadPendingConflicts(gid);
+  const mergedById = new Map<string, PendingConflictRecord>();
+  for (const record of [...existing, ...conflicts]) {
+    mergedById.set(record.localEvent.id, record);
+  }
+  localStorage.setItem(pendingConflictKey(gid), JSON.stringify([...mergedById.values()]));
+}
+
 export function loadSeq(gid: string) { const s = localStorage.getItem(seqKey(gid)); return s ? +s : 1; }
 export function saveSeq(gid: string, seq: number) { localStorage.setItem(seqKey(gid), String(seq)); }
 

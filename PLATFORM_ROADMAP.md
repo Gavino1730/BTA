@@ -106,14 +106,15 @@ Demo Page (`/demo`) - ✅ Done
 - ✅ Log in (`/login`)
 - ✅ Forgot password page (`/forgot-password`)
 - ✅ Reset password page (`/reset-password`)
-- ❌ Email verification
-- ❌ Invite acceptance
+- 🔄 Email verification (`/verify-email`) now captures token/email context and supports login handoff; token confirmation and resend workflow pending
+- 🔄 Invite acceptance (`/invite/accept`) now captures token/email context and supports login handoff; token validation + completion flow pending
 - 🚧 Magic link / SSO (later)
 
 ## Section 6: In-App Dashboard Extras
 
 Notification Center - 🔄 Partial
 - ✅ Initial `/stats/notifications` page with live-context alerts and game-based activity feed
+- ✅ Dedicated `/notifications` route now lands on the notifications center
 - ✅ Client-side persistence and read/unread controls for notifications
 - ✅ Dedicated `/api/notifications` feed now provides invite + system + results event sources
 - 🚧 Remaining: billing and export pipeline notification sources
@@ -129,7 +130,8 @@ Empty States - 🔄 Partial
 
 Error States - 🔄 Partial
 - ✅ Dedicated 404 / 403 / 500 / offline / expired-session pages
-- 🚧 Unauthorized page variant and deeper route-specific recovery copy
+- ✅ Dedicated unauthorized (`/unauthorized`) page variant shipped with account/support recovery paths
+- 🚧 Deeper route-specific recovery copy
 
 Loading States / Skeletons - 🔄 Partial
 - Explicit loading indicators and retry flows now ship across core stats pages.
@@ -167,17 +169,24 @@ Audit Log UI - 🚧 Planned
 Public marketing footer - ✅ Done
 Authenticated app footer - 🔄 Partial
 - Implemented: help, support, contact, billing, terms, privacy, data deletion links in authenticated shell.
-- Remaining: product/pricing links, copyright and social/legal polish.
+- Implemented: product/pricing/status/changelog/roadmap links plus copyright/legal polish in authenticated shell.
+- Remaining: optional social profile links.
 
 ## Section 10: Premium Feel Pages
 
-- 🚧 Public changelog page
-- ❌ Roadmap page
-- ❌ Status page
-- ❌ Testimonials / case studies
-- ❌ Demo booking page
-- ❌ Full onboarding wizard
-- 🚧 Invite teammates flow UX
+- ✅ Public changelog page
+- ✅ Roadmap page
+- ✅ Status page
+- ✅ Testimonials / case studies
+- ✅ Demo booking page
+- 🔄 Full onboarding wizard
+- 🔄 Invite teammates flow UX
+
+Invite Teammates Flow UX - 🔄 Partial
+- ✅ Team Settings members tab now surfaces pending-invite counts and clearer invite guidance
+- ✅ Invite composer now supports one-click "Copy Invite Message" for coach/admin outreach
+- ✅ Members view now supports pending/active filtering plus "Copy Invite Again" and "Mark Active" quick actions for pending invites
+- 🚧 Remaining: invite acceptance token validation/completion flow
 
 ## Section 11: Route Map
 
@@ -186,15 +195,24 @@ Existing:
 - ✅ `/demo`
 - ✅ `/features`
 - ✅ `/about`
+- ✅ `/pricing`
 - ✅ `/login`
 - ✅ `/forgot-password`
 - ✅ `/reset-password`
+- ✅ `/verify-email`
+- ✅ `/invite/accept`
 - ✅ `/setup`
 - ✅ `/account` (partial feature set)
 - ✅ `/terms`
 - ✅ `/privacy`
 - ✅ `/support`
 - ✅ `/contact`
+- ✅ `/status`
+- ✅ `/book-demo`
+- ✅ `/testimonials`
+- ✅ `/onboarding-wizard`
+- ✅ `/checkout/success`
+- ✅ `/checkout/cancel`
 - ✅ `/billing`
 - ✅ `/settings`
 - ✅ `/help`
@@ -203,6 +221,7 @@ Existing:
 - ✅ `/data-deletion`
 - ✅ `/404`
 - ✅ `/403`
+- ✅ `/unauthorized`
 - ✅ `/500`
 - ✅ `/offline`
 - ✅ `/session-expired`
@@ -212,11 +231,14 @@ Existing:
 - ✅ `/stats/players`
 - ✅ `/stats/trends`
 - ✅ `/stats/insights`
+- ✅ `/stats/notifications`
+- ✅ `/notifications`
 - ✅ `/stats/settings`
+- ✅ `/org/settings`
 
 Missing / Needed:
-- P2: `/pricing`, `/notifications`, `/org/settings`, `/checkout/success`, `/checkout/cancel`
-- P3: `/changelog`, `/roadmap`
+- P2: none
+- P3: none
 
 ## Section 12: Build Order
 
@@ -225,7 +247,7 @@ Missing / Needed:
 3. Admin panel starter UI
 4. CSV/PDF export expansion
 5. Monetization foundation (Stripe subscriptions, monthly tiers, paywall hooks, free trial/demo conversion)
-6. Premium pages (features/pricing/about/changelog/roadmap)
+6. Premium pages (features/pricing/about) plus ongoing polish
 7. Dedicated docs center (`/docs`) and richer help content
 8. Shared skeleton system + loading-state design unification
 

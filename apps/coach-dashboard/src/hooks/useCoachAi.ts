@@ -56,6 +56,7 @@ interface GameAiStatus {
 
 const AI_ERROR_MESSAGES: Record<string, string> = {
   missing_api_key: "AI not configured — set OPENAI_API_KEY on the server to enable bench call generation.",
+  budget_exceeded: "AI game budget reached. Rules-based insights are still active.",
   rate_limited: "AI generation is rate-limited. Rules-based insights are still active.",
   timeout: "AI request timed out. Rules-based insights are still active.",
   service_unavailable: "AI service is unavailable. Rules-based insights are still active.",
@@ -63,6 +64,13 @@ const AI_ERROR_MESSAGES: Record<string, string> = {
   network_error: "AI network error. Rules-based insights are still active.",
   invalid_payload: "AI response could not be parsed. Rules-based insights are still active.",
 };
+
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error ?? "unknown error");
+}
 
 export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoachAiOptions) {
   const lastAiRefreshAtRef = useRef<number>(0);
@@ -130,7 +138,9 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
               }
               return;
             }
-          } catch { /* ignore */ }
+          } catch (error) {
+            console.warn("[coach-dashboard] load team AI defaults failed", summarizeError(error));
+          }
           if (!cancelled) {
             setAiSettings(defaultCoachAiSettings());
             setAiSettingsDraft(defaultCoachAiSettings());
@@ -146,7 +156,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
           setAiSettingsDraft(next);
           setAiSettingsStatus("Loaded AI settings for this game.");
         }
-      } catch {
+      } catch (error) {
+        console.warn("[coach-dashboard] hydrateAiSettings failed", summarizeError(error));
         if (!cancelled) {
           setAiSettingsStatus("Could not load AI settings from realtime API.");
         }
@@ -188,7 +199,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       setAiSettingsDraft(saved);
       setAiSettingsStatus("AI settings saved and applied to live coaching insights.");
       setPromptPreviewStatus("Settings saved. Refresh prompt preview to inspect current AI input.");
-    } catch {
+    } catch (error) {
+      console.warn("[coach-dashboard] saveAiSettings failed", summarizeError(error));
       setAiSettingsStatus("Save failed: could not reach realtime API.");
     }
   }
@@ -218,7 +230,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       const payload = (await response.json()) as AiPromptPreview;
       setPromptPreview(payload);
       setPromptPreviewStatus("Prompt preview loaded.");
-    } catch {
+    } catch (error) {
+      console.warn("[coach-dashboard] loadPromptPreview failed", summarizeError(error));
       setPromptPreview(null);
       setPromptPreviewStatus("Could not load prompt preview from realtime API.");
     }
@@ -293,7 +306,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
           ? "Answered with live game state plus historical team and player context."
           : "Answered with live game context only - season stats unavailable."
       );
-    } catch {
+    } catch (error) {
+      console.warn("[coach-dashboard] sendAiChat failed", summarizeError(error));
       setAiChatStatus("AI chat request failed. Realtime API may be unavailable.");
     } finally {
       setIsSendingAiChat(false);
@@ -329,7 +343,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
         ?? (status.lastErrorMessage ? `AI unavailable: ${status.lastErrorMessage}` : null)
         ?? "AI generation unavailable. Rules-based insights are still active.";
       setAiHealthMessage(msg);
-    } catch {
+    } catch (error) {
+      console.warn("[coach-dashboard] fetchAiHealthMessage failed", summarizeError(error));
       // Health check is informational; ignore failures
     }
   }
@@ -382,7 +397,8 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       } else {
         setAiHealthMessage("");
       }
-    } catch {
+    } catch (error) {
+      console.warn("[coach-dashboard] refreshAiBenchCalls failed", summarizeError(error));
       setAiRefreshError("Could not refresh AI bench calls right now. Check network and try again.");
     } finally {
       setIsRefreshingAiInsights(false);

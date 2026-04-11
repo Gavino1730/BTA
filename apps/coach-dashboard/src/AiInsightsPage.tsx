@@ -1,6 +1,13 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, apiKeyHeader } from "./platform.js";
 
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error ?? "unknown error");
+}
+
 interface RecommendationEntry {
   category?: string;
   priority?: string;
@@ -267,7 +274,9 @@ export function AiInsightsPage() {
               fetch(`${apiBase}/api/games/${encodeURIComponent(live.sessionId)}/ai-context`, { headers: apiKeyHeader() })
                 .then((r) => r.ok ? r.json() as Promise<{ preGameNotes?: string }> : null)
                 .then((ctx) => { if (ctx?.preGameNotes) setPreGameNotes(sanitizeText(ctx.preGameNotes)); })
-                .catch(() => {});
+                .catch((error) => {
+                  console.warn("[coach-dashboard] load pre-game ai-context failed", summarizeError(error));
+                });
             }
           }
           setStatus("Ready.");
@@ -452,7 +461,9 @@ export function AiInsightsPage() {
                       headers: { "Content-Type": "application/json", ...apiKeyHeader() },
                       body: JSON.stringify({ preGameNotes: preGameNotes.trim() || "" }),
                     })
-                      .catch(() => {})
+                      .catch((error) => {
+                        console.warn("[coach-dashboard] save pre-game ai-context failed", summarizeError(error));
+                      })
                       .finally(() => setPreGameNotesSaving(false));
                   }}
                 >

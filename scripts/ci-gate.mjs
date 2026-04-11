@@ -35,6 +35,13 @@ try {
   process.exit(1);
 }
 
+try {
+  run("npm run check:silent-errors");
+} catch {
+  console.error("[ci-gate] Silent error check failed.");
+  process.exit(1);
+}
+
 if (shouldRunE2EGate()) {
   try {
     run("npm run smoke-test");

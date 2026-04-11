@@ -22,9 +22,11 @@
     "game-day": "node scripts/run-ps.mjs scripts/game-day.ps1",
     "smoke-test": "node scripts/run-ps.mjs scripts/smoke-test.ps1",
     "test:e2e": "playwright test",
+    "test:e2e:ios": "playwright test --project=ios-webkit",
     "stress-test": "node scripts/stress-test.mjs",
     "test:full-sim": "node scripts/full-sim.mjs",
     "audit:ui": "node scripts/ui-audit.mjs",
+    "check:silent-errors": "node scripts/check-silent-errors.mjs",
     "seo:sitemap": "node scripts/generate-sitemap.mjs",
     "capture:site": "node scripts/site-capture.mjs",
     "validate:env": "npm run validate:env -w @bta/realtime-api"

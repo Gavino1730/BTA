@@ -6,6 +6,7 @@ describe("coach route helpers", () => {
   it("canonicalizes legacy stats URLs into unified coach workspace routes", () => {
     expect(canonicalizeCoachPath("/games")).toBe("/stats/games");
     expect(canonicalizeCoachPath("/ai-insights")).toBe("/stats/insights");
+    expect(canonicalizeCoachPath("/activity")).toBe("/notifications");
     expect(canonicalizeCoachPath("/onboarding")).toBe("/setup");
     expect(canonicalizeCoachPath("/dashboard")).toBe("/live");
   });
@@ -18,7 +19,21 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/compare")).toBe("compare");
     expect(resolveCoachRoute("/features")).toBe("features");
     expect(resolveCoachRoute("/about")).toBe("about");
+    expect(resolveCoachRoute("/status")).toBe("status");
+    expect(resolveCoachRoute("/testimonials")).toBe("testimonials");
+    expect(resolveCoachRoute("/book-demo")).toBe("demo-booking");
+    expect(resolveCoachRoute("/demo-booking")).toBe("demo-booking");
+    expect(resolveCoachRoute("/onboarding-wizard")).toBe("onboarding-wizard");
+    expect(resolveCoachRoute("/invite/accept")).toBe("invite-accept");
+    expect(resolveCoachRoute("/verify-email")).toBe("email-verify");
+    expect(resolveCoachRoute("/changelog")).toBe("changelog");
+    expect(resolveCoachRoute("/unauthorized")).toBe("unauthorized");
+    expect(resolveCoachRoute("/roadmap")).toBe("roadmap");
     expect(resolveCoachRoute("/docs")).toBe("docs");
+    expect(resolveCoachRoute("/checkout/success")).toBe("checkout-success");
+    expect(resolveCoachRoute("/checkout/cancel")).toBe("checkout-cancel");
+    expect(resolveCoachRoute("/notifications")).toBe("stats-notifications");
+    expect(resolveCoachRoute("/activity")).toBe("stats-notifications");
     expect(resolveCoachRoute("/signin")).toBe("login");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
     expect(resolveCoachRoute("/players")).toBe("stats-players");
@@ -34,14 +49,14 @@ describe("coach route helpers", () => {
   });
 
   it("keeps deployed dashboard links on the current secure origin when env vars are unset", () => {
-    expect(resolveDefaultApiBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app")).toBe("https://bta-demo.up.railway.app");
-    expect(resolveDefaultAppBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app", 5174)).toBe("https://bta-demo.up.railway.app");
+    expect(resolveDefaultApiBase("www.btaintel.com", "https://www.btaintel.com")).toBe("https://www.btaintel.com");
+    expect(resolveDefaultAppBase("www.btaintel.com", "https://www.btaintel.com", 5174)).toBe("https://www.btaintel.com");
   });
 
   it("avoids pinning public deployments to the shared default school", () => {
     expect(resolveDefaultSchoolId("localhost")).toBe("");
     expect(resolveDefaultSchoolId("192.168.1.25")).toBe("");
-    expect(resolveDefaultSchoolId("bta-demo.up.railway.app")).toBe("");
+    expect(resolveDefaultSchoolId("www.btaintel.com")).toBe("");
   });
 
   it("generates a simple six-digit connection code", () => {

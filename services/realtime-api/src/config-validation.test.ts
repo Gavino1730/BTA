@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { type RuntimeConfig, validateRuntimeConfig } from "./config-validation.js";
+import { describe, expect, it, vi } from "vitest";
+import { assertRuntimeConfig, type RuntimeConfig, validateRuntimeConfig } from "./config-validation.js";
 
 function baseConfig(): RuntimeConfig {
   return {
@@ -15,6 +15,33 @@ function baseConfig(): RuntimeConfig {
 }
 
 describe("runtime config validation", () => {
+  it("emits structured warning logs for non-strict tenant mode", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const config: RuntimeConfig = {
+        ...baseConfig(),
+        nodeEnv: "development",
+        requireTenant: false,
+      };
+
+      expect(() => assertRuntimeConfig(config)).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+
+      const raw = String(warnSpy.mock.calls[0]?.[0] ?? "");
+      const payload = JSON.parse(raw) as {
+        level?: string;
+        message?: string;
+        context?: { warning?: string };
+      };
+
+      expect(payload.level).toBe("warn");
+      expect(payload.message).toBe("runtime.config_warning");
+      expect(payload.context?.warning).toContain("Tenant strict mode is disabled");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("rejects production when tenant strict mode is disabled", () => {
     const config: RuntimeConfig = {
       ...baseConfig(),

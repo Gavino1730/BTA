@@ -20,7 +20,7 @@ const ROUTES = [
 ];
 
 function normalizeBaseUrl(rawValue) {
-  const input = String(rawValue || "https://bta-demo.up.railway.app").trim().replace(/\/+$/, "");
+  const input = String(rawValue || "https://www.btaintel.com").trim().replace(/\/+$/, "");
   try {
     return new URL(input).toString().replace(/\/+$/, "");
   } catch {

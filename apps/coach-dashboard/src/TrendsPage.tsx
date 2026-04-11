@@ -348,12 +348,6 @@ export function TrendsPage() {
         const playersPayload = await playersResult.value.json() as PlayerSummary[];
         const nextPlayers = Array.isArray(playersPayload) ? playersPayload : [];
         setPlayers(nextPlayers);
-        if (!selectedPlayer && nextPlayers[0]) {
-          setSelectedPlayer(nextPlayers[0].full_name ?? nextPlayers[0].name ?? "");
-        }
-        if (!comparePlayer && nextPlayers[1]) {
-          setComparePlayer(nextPlayers[1].full_name ?? nextPlayers[1].name ?? "");
-        }
       }
 
       setStatus("Team and player trend features are synced.");
@@ -535,7 +529,7 @@ export function TrendsPage() {
         <label className="stats-filter-field">
           <span>Focus player</span>
           <select value={selectedPlayer} onChange={(event) => setSelectedPlayer(event.target.value)}>
-            {playerOptions.length === 0 ? <option value="">No players yet</option> : null}
+            <option value="">{playerOptions.length === 0 ? "No players yet" : "Select a player"}</option>
             {playerOptions.map((name) => (
               <option key={name} value={name}>{name}</option>
             ))}

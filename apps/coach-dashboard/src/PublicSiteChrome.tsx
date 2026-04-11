@@ -20,11 +20,12 @@ export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps
             <button type="button" onClick={() => onNavigate("/how-it-works")}>How It Works</button>
             <button type="button" onClick={() => onNavigate("/pricing")}>Pricing</button>
             <button type="button" onClick={() => onNavigate("/compare")}>Compare</button>
+            <button type="button" onClick={() => onNavigate("/roadmap")}>Roadmap</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
           </nav>
           <div className="mkt-nav-actions">
             <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/login")}>Coach Login</button>
-            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/login")}>Get Started</button>
+            <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/book-demo")}>Book Demo</button>
           </div>
         </div>
       </header>
@@ -41,6 +42,12 @@ export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps
           </div>
           <nav className="mkt-footer-links">
             <button type="button" onClick={() => onNavigate("/help")}>Help</button>
+            <button type="button" onClick={() => onNavigate("/status")}>Status</button>
+            <button type="button" onClick={() => onNavigate("/book-demo")}>Book Demo</button>
+            <button type="button" onClick={() => onNavigate("/onboarding-wizard")}>Onboarding</button>
+            <button type="button" onClick={() => onNavigate("/testimonials")}>Testimonials</button>
+            <button type="button" onClick={() => onNavigate("/changelog")}>Changelog</button>
+            <button type="button" onClick={() => onNavigate("/roadmap")}>Roadmap</button>
             <button type="button" onClick={() => onNavigate("/support")}>Support</button>
             <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
             <button type="button" onClick={() => onNavigate("/billing")}>Billing</button>
