@@ -68,13 +68,13 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
 
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-home">
-        <section className="mkt-home-hero">
-          <div className="mkt-home-copy">
+      <main className="mkt-home modern-home">
+        <section className="mkt-home-hero modern-hero">
+          <div className="mkt-home-copy modern-copy">
             <p className="mkt-home-kicker">Built for high school basketball programs</p>
             <h1>Know what call to make before the next possession starts.</h1>
             <p>
-              BTA is for during-game decisions. Not post-game film review.
+              BTA is for during-game decisions. Not post-game film review.<br />
               Your staff sees momentum, lineup impact, and recommendation timing in one view.
             </p>
             <div className="mkt-home-actions">
@@ -93,59 +93,41 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
                 See Product
               </button>
             </div>
-            <div className="mkt-proof-row" aria-label="Proof points">
-              <span>Sub-second update target</span>
-              <span>Single operator workflow</span>
-              <span>Offline-safe event sync</span>
+            <div className="mkt-proof-row modern-proof-row" aria-label="Proof points">
+              {["Sub-second update target", "Single operator workflow", "Offline-safe event sync"].map((point, i) => (
+                <span key={point} className="modern-proof-point" style={{ animationDelay: `${i * 0.2}s` }}>{point}</span>
+              ))}
             </div>
           </div>
-          {active && <LiveMomentPanel scenario={active} />}
-        </section>
-
-        <section className="mkt-moments" aria-label="Site sections">
-          <h2>Build your full game-day workflow</h2>
-          <div className="mkt-moments-grid">
-            <article className="mkt-moment-item">
-              <p className="mkt-moment-time">Product</p>
-              <h3>What your staff sees live and after games</h3>
-              <p>Bench view, operator capture, and review workflow in one system.</p>
-              <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/product")}>Open Product</button>
-            </article>
-            <article className="mkt-moment-item">
-              <p className="mkt-moment-time">How It Works</p>
-              <h3>Simple four-step routine</h3>
-              <p>Set up roster, pair operator, coach live, and review cleanly.</p>
-              <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/how-it-works")}>Open Workflow</button>
-            </article>
-            <article className="mkt-moment-item">
-              <p className="mkt-moment-time">Pricing</p>
-              <h3>Transparent public tiers</h3>
-              <p>Monthly team, program, and district options with clear scope.</p>
-              <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/pricing")}>View Pricing</button>
-            </article>
-            <article className="mkt-moment-item">
-              <p className="mkt-moment-time">Compare</p>
-              <h3>During-game decisions vs after-game review</h3>
-              <p>Use BTA in possession time and keep film tools for later analysis.</p>
-              <button type="button" className="mkt-btn mkt-btn-subtle" onClick={() => onNavigate("/compare")}>See Comparison</button>
-            </article>
-          </div>
-        </section>
-
-        <section className="mkt-moments" aria-label="During-game scenarios">
-          <h2>During a real game</h2>
-          <div className="mkt-moments-grid">
+          <div className="modern-scenario-tabs">
             {SCENARIOS.map((scenario) => (
-              <article
+              <button
                 key={scenario.id}
-                className={`mkt-moment-item${scenario.id === active?.id ? " is-active" : ""}`}
-                onMouseEnter={() => setActiveId(scenario.id)}
+                className={`modern-scenario-tab${activeId === scenario.id ? " active" : ""}`}
+                onClick={() => setActiveId(scenario.id)}
+                aria-selected={activeId === scenario.id}
               >
-                <p className="mkt-moment-time">{scenario.moment}</p>
-                <h3>{scenario.problem}</h3>
-                <p>{scenario.recommendation}</p>
-              </article>
+                {scenario.moment}
+              </button>
             ))}
+          </div>
+          {active && (
+            <div className="modern-scenario-panel">
+              <h3>{active.problem}</h3>
+              <p><strong>Signal:</strong> {active.signal}</p>
+              <p><strong>Call:</strong> {active.recommendation}</p>
+              <p><strong>Why it matters:</strong> {active.impact}</p>
+            </div>
+          )}
+        </section>
+
+        <section className="mkt-moments modern-moments" aria-label="Site sections">
+          <h2>Build your full game-day workflow</h2>
+          <div className="mkt-moments-grid modern-moments-grid">
+            <button className="modern-moment-link" onClick={() => onNavigate("/product")}>Product</button>
+            <button className="modern-moment-link" onClick={() => onNavigate("/how-it-works")}>How It Works</button>
+            <button className="modern-moment-link" onClick={() => onNavigate("/pricing")}>Pricing</button>
+            <button className="modern-moment-link" onClick={() => onNavigate("/compare")}>Compare</button>
           </div>
         </section>
       </main>

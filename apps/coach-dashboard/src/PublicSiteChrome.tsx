@@ -8,7 +8,7 @@ interface PublicSiteChromeProps {
 export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps) {
   return (
     <div className="mkt-page mkt-detail-page">
-      <header className="mkt-nav">
+      <header className="mkt-nav modern-nav">
         <div className="mkt-nav-inner">
           <button type="button" className="mkt-brand" onClick={() => onNavigate("/")}>
             <span className="mkt-brand-icon">🏀</span>
@@ -29,9 +29,11 @@ export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps
         </div>
       </header>
 
-      {children}
+      <div className="mkt-main-content">
+        {children}
+      </div>
 
-      <footer className="mkt-footer">
+      <footer className="mkt-footer modern-footer">
         <div className="mkt-footer-inner">
           <div className="mkt-footer-brand">
             <span>BTA Courtside Platform</span>

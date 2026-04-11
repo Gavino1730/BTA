@@ -56,3 +56,99 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
 }
+
+:root {
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.08);
+  --control-bg-active: rgba(255, 255, 255, 0.11);
+  --control-border: rgba(255, 255, 255, 0.14);
+  --control-border-hover: rgba(255, 255, 255, 0.24);
+  --control-ring: rgba(79, 140, 255, 0.5);
+  --control-text: var(--text);
+  --control-placeholder: rgba(244, 246, 251, 0.42);
+  --control-disabled: 0.55;
+}
+
+/* Shared, low-specificity control baseline used by both coach and operator apps. */
+:where(button, input, textarea, select) {
+  font: inherit;
+  color: var(--control-text);
+  border-radius: var(--radius-md);
+}
+
+:where(input, textarea, select) {
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  min-height: 42px;
+  width: 100%;
+  padding: 0.56rem 0.74rem;
+  outline: none;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+
+:where(input, textarea, select):hover {
+  border-color: var(--control-border-hover);
+}
+
+:where(input, textarea, select):focus-visible {
+  border-color: var(--control-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-ring) 30%, transparent);
+}
+
+:where(input, textarea)::placeholder {
+  color: var(--control-placeholder);
+  opacity: 1;
+}
+
+:where(textarea) {
+  min-height: 96px;
+  resize: vertical;
+}
+
+:where(select) {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+:where(button) {
+  min-height: 40px;
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  padding: 0.5rem 0.84rem;
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+:where(button:hover) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+:where(button:active) {
+  background: var(--control-bg-active);
+  transform: translateY(1px);
+}
+
+:where(button:focus-visible) {
+  border-color: var(--control-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-ring) 30%, transparent);
+}
+
+:where(button:disabled, input:disabled, textarea:disabled, select:disabled) {
+  opacity: var(--control-disabled);
+  cursor: not-allowed;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--control-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--control-bg) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}

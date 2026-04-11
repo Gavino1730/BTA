@@ -51,15 +51,15 @@ const TIERS: Tier[] = [
 export function PricingPage({ onNavigate }: PricingPageProps) {
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
-        <section className="mkt-detail-hero">
+      <main className="mkt-detail-main modern-main">
+        <section className="mkt-detail-hero modern-hero">
           <p className="mkt-badge">Pricing</p>
           <h1>Simple plans for schools and programs.</h1>
           <p>Public pricing with clear scope. No hidden setup fees. Month-to-month to start.</p>
         </section>
-        <section className="mkt-detail-grid">
-          {TIERS.map((tier) => (
-            <article key={tier.name} className="mkt-detail-card">
+        <section className="modern-pricing-list">
+          {TIERS.map((tier, i) => (
+            <div key={tier.name} className="modern-pricing-item" tabIndex={0} aria-label={tier.name} style={{ animationDelay: `${i * 0.1}s` }}>
               <h2>{tier.name}</h2>
               <p><strong>{tier.price}</strong> {tier.cadence}</p>
               <p>{tier.annualEquivalent}</p>
@@ -68,10 +68,10 @@ export function PricingPage({ onNavigate }: PricingPageProps) {
                   <li key={detail}>{detail}</li>
                 ))}
               </ul>
-            </article>
+            </div>
           ))}
         </section>
-        <section className="mkt-detail-hero" style={{ marginTop: "2rem" }}>
+        <section className="mkt-detail-hero modern-hero" style={{ marginTop: "2rem" }}>
           <p>Need procurement-friendly annual billing? We can provide school invoice workflows.</p>
           <div className="mkt-hero-actions">
             <button type="button" className="mkt-btn mkt-btn-primary" onClick={() => onNavigate("/contact")}>Contact Sales</button>

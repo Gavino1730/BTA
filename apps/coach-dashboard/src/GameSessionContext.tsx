@@ -162,7 +162,6 @@ export interface GameSession {
   // AI
   isRefreshingAiInsights: boolean;
   aiRefreshError: string;
-  aiHealthMessage: string;
   aiSettings: CoachAiSettings;
   aiSettingsDraft: CoachAiSettings;
   setAiSettingsDraft: (s: CoachAiSettings) => void;
@@ -308,7 +307,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
 
   // AI hook
   const {
-    isRefreshingAiInsights, aiRefreshError, aiHealthMessage,
+    isRefreshingAiInsights, aiRefreshError,
     aiSettings, aiSettingsDraft, setAiSettingsDraft, aiSettingsStatus,
     promptPreview, promptPreviewStatus,
     aiChatMessages, setAiChatMessages, aiChatInput, setAiChatInput,
@@ -623,7 +622,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     discardGameFromDashboard,
     endGameFromDashboard,
     // AI
-    isRefreshingAiInsights, aiRefreshError, aiHealthMessage, aiSettings,
+    isRefreshingAiInsights, aiRefreshError, aiSettings,
     aiSettingsDraft, setAiSettingsDraft, aiSettingsStatus,
     promptPreview, promptPreviewStatus,
     aiChatMessages, setAiChatMessages, aiChatInput, setAiChatInput,

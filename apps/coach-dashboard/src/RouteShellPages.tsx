@@ -105,9 +105,9 @@ function PublicMarketingPage({
           </div>
         </section>
 
-        <section className="mkt-detail-grid">
+        <section className="mkt-detail-grid" style={{ gap: "2.2rem" }}>
           {sections.map((section) => (
-            <article key={section.title} className="mkt-detail-card">
+            <article key={section.title} style={{ background: "none", border: "none", boxShadow: "none", padding: 0 }}>
               <h2>{section.title}</h2>
               <p>{section.body}</p>
               <ul>

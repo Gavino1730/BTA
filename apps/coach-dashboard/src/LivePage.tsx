@@ -35,7 +35,7 @@ export function LivePage() {
     leadersByTeam, canonicalSideIds,
     lineupUnitStats, coachedTeamId, rotationContext,
     aiInsights, rulesInsights, hasGameStarted,
-    aiRefreshError, aiHealthMessage, isRefreshingAiInsights, refreshAiBenchCalls, prettifyInsightText,
+    aiRefreshError, isRefreshingAiInsights, refreshAiBenchCalls, prettifyInsightText,
     boxScorePeriods, filteredBoxScoreEvents, boxScoreByTeam, setupNames,
     deleteGameEvent, deletingGameEventId,
     aiQuickQuestions, sendAiChat, isSendingAiChat,
@@ -43,7 +43,6 @@ export function LivePage() {
     aiSubSuggestionCards, aiFoulAlertCards, aiEfficiencyCards,
     promptPreviewStatus, historicalPromptContext, loadPromptPreview,
   } = useGameSession();
-
   const [liveSubPage, setLiveSubPage] = useState<"scoreboard" | "operators">("scoreboard");
   const [operatorCopyStatus, setOperatorCopyStatus] = useState("");
 
@@ -149,7 +148,7 @@ export function LivePage() {
       )}
       {gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <>
-          <section className="card settings-section-card">
+          <section className="card settings-section-card live-controls-card">
             <div className="stats-page-card-head">
               <div>
                 <h3>Live Game Controls</h3>
@@ -278,7 +277,6 @@ export function LivePage() {
             setBoxScoreFilter={setBoxScoreFilter}
             filteredBoxScoreEvents={filteredBoxScoreEvents}
             boxScoreByTeam={boxScoreByTeam}
-            currentPeriod={state?.currentPeriod}
             displayTeamName={displayTeamName}
             displayPlayerName={displayPlayerName}
             rosterTeams={rosterTeams}
@@ -290,11 +288,6 @@ export function LivePage() {
             deletingGameEventId={deletingGameEventId}
             deleteGameEvent={deleteGameEvent}
           />
-          <LineupUnitPanel
-            lineupUnitStats={lineupUnitStats}
-            coachedTeamId={coachedTeamId}
-            displayPlayerName={displayPlayerName}
-          />
           <InsightsPanel
             gameId={gameId}
             hasGameStarted={hasGameStarted}
@@ -302,7 +295,7 @@ export function LivePage() {
             aiInsights={aiInsights}
             rulesInsights={rulesInsights}
             aiRefreshError={aiRefreshError}
-            aiHealthMessage={aiHealthMessage}
+            aiHealthMessage=""
             isRefreshingAiInsights={isRefreshingAiInsights}
             refreshAiBenchCalls={refreshAiBenchCalls}
             prettifyInsightText={prettifyInsightText}
@@ -310,6 +303,11 @@ export function LivePage() {
           <RotationPanel
             rotationContext={rotationContext}
             displayTeamName={displayTeamName}
+            displayPlayerName={displayPlayerName}
+          />
+          <LineupUnitPanel
+            lineupUnitStats={lineupUnitStats}
+            coachedTeamId={coachedTeamId}
             displayPlayerName={displayPlayerName}
           />
         </>

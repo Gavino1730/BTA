@@ -30,8 +30,8 @@ const SECTIONS = [
 export function ProductPage({ onNavigate }: ProductPageProps) {
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
-        <section className="mkt-detail-hero">
+      <main className="mkt-detail-main modern-main">
+        <section className="mkt-detail-hero modern-hero">
           <p className="mkt-badge">Product</p>
           <h1>Built for in-game decisions, not after-game guesswork.</h1>
           <p>
@@ -42,12 +42,12 @@ export function ProductPage({ onNavigate }: ProductPageProps) {
             Use this page to evaluate operational fit, then review <button type="button" className="mkt-inline-link" onClick={() => onNavigate("/how-it-works")}>workflow setup</button> and <button type="button" className="mkt-inline-link" onClick={() => onNavigate("/pricing")}>pricing tiers</button>.
           </p>
         </section>
-        <section className="mkt-detail-grid">
-          {SECTIONS.map((section) => (
-            <article key={section.title} className="mkt-detail-card">
+        <section className="modern-feature-list">
+          {SECTIONS.map((section, i) => (
+            <div key={section.title} className="modern-feature-item" tabIndex={0} aria-label={section.title} style={{ animationDelay: `${i * 0.1}s` }}>
               <h2>{section.title}</h2>
               <p>{section.body}</p>
-            </article>
+            </div>
           ))}
         </section>
       </main>

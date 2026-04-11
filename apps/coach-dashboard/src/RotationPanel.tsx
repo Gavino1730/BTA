@@ -32,7 +32,9 @@ export function RotationPanel({ rotationContext, displayTeamName, displayPlayerN
               <>
                 {rotationContext.isEstimatedLineup ? (
                   <p className="rotation-estimate-note">
-                    Live lineup feed currently has {rotationContext.liveCount}. Filled remaining spots from activity/roster context.
+                    {rotationContext.liveCount === 0
+                      ? "Lineup estimated from stat activity — configure starting lineup on operator for live tracking."
+                      : `Live lineup has ${rotationContext.liveCount} confirmed. Remaining spots filled from activity.`}
                   </p>
                 ) : null}
                 <div className="rotation-chip-row">

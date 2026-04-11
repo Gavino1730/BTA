@@ -14,7 +14,6 @@ interface Props {
   setBoxScoreFilter: React.Dispatch<React.SetStateAction<BoxScoreFilter>>;
   filteredBoxScoreEvents: GameEvent[];
   boxScoreByTeam: Record<string, { totals: BoxScoreTeamTotals; players: Record<string, BoxScorePlayerLine> }>;
-  currentPeriod: string | undefined;
   displayTeamName: (teamId: string) => string;
   displayPlayerName: (teamId: string, playerId: string) => string;
   rosterTeams: RosterTeam[];
@@ -34,7 +33,6 @@ export function BoxScoreSection({
   setBoxScoreFilter,
   filteredBoxScoreEvents,
   boxScoreByTeam,
-  currentPeriod,
   displayTeamName,
   displayPlayerName,
   rosterTeams,
@@ -126,43 +124,6 @@ export function BoxScoreSection({
     <section className="card box-score-card">
       <div className="box-score-header">
         <h2>Box Score</h2>
-          {boxScorePeriods.length > 1 ? (
-            <div className="replay-scrubber" aria-label="Game timeline scrubber">
-              {boxScorePeriods.map((period, idx) => {
-                const isLivePeriod = period === currentPeriod;
-                const activeUpToIdx = boxScoreFilter.length > 0
-                  ? Math.max(...boxScoreFilter.map((f) => boxScorePeriods.indexOf(f)))
-                  : boxScorePeriods.length - 1;
-                const inRange = idx <= activeUpToIdx;
-                const isSelected = boxScoreFilter.length > 0 && idx === activeUpToIdx;
-                return (
-                  <>
-                    {idx > 0 && (
-                      <div
-                        key={`seg-${period}`}
-                        className={`replay-scrubber-segment${inRange ? " scrubber-segment-active" : ""}`}
-                      />
-                    )}
-                    <button
-                      key={period}
-                      type="button"
-                      className={`replay-scrubber-stop${isLivePeriod ? " scrubber-stop-live" : ""}${isSelected ? " scrubber-stop-selected" : inRange ? " scrubber-stop-active" : ""}`}
-                      title={`${boxScoreFilter.length > 0 && idx === activeUpToIdx ? "Showing up to " : "View up to "}${period}`}
-                      onClick={() => {
-                        const upTo = boxScorePeriods.slice(0, idx + 1);
-                        setBoxScoreFilter(upTo.length === boxScorePeriods.length ? [] : upTo);
-                      }}
-                    >
-                      <span className="scrubber-stop-dot" />
-                      <span className="scrubber-stop-label">{period}</span>
-                      {isLivePeriod && <span className="scrubber-live-pip" aria-label="Live" />}
-                    </button>
-                  </>
-                );
-              })}
-            </div>
-          ) : null}
-
         <div className="box-score-filter-group" aria-label="Box score filter">
           <button
             type="button"

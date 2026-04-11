@@ -14,8 +14,8 @@ const STEPS = [
 export function HowItWorksPage({ onNavigate }: HowItWorksPageProps) {
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
-        <section className="mkt-detail-hero">
+      <main className="mkt-detail-main modern-main">
+        <section className="mkt-detail-hero modern-hero">
           <p className="mkt-badge">How It Works</p>
           <h1>Four clear steps from setup to final review.</h1>
           <p>
@@ -23,14 +23,11 @@ export function HowItWorksPage({ onNavigate }: HowItWorksPageProps) {
             No long setup. No second system.
           </p>
         </section>
-        <section className="mkt-detail-grid">
+        <ol className="modern-steps-list">
           {STEPS.map((step, index) => (
-            <article key={step} className="mkt-detail-card">
-              <h2>Step {index + 1}</h2>
-              <p>{step}</p>
-            </article>
+            <li key={step} className="modern-step-item" tabIndex={0} aria-label={`Step ${index + 1}`}>{step}</li>
           ))}
-        </section>
+        </ol>
       </main>
     </PublicSiteChrome>
   );

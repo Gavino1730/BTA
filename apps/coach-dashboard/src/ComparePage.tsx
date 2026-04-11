@@ -30,8 +30,8 @@ const ITEMS = [
 export function ComparePage({ onNavigate }: ComparePageProps) {
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
-      <main className="mkt-detail-main">
-        <section className="mkt-detail-hero">
+      <main className="mkt-detail-main modern-main">
+        <section className="mkt-detail-hero modern-hero">
           <p className="mkt-badge">Compare</p>
           <h1>BTA is for during-game calls. Film suites, including Hudl, are strongest after games.</h1>
           <p>
@@ -43,13 +43,13 @@ export function ComparePage({ onNavigate }: ComparePageProps) {
             Hudl for film and post-game breakdown.
           </p>
         </section>
-        <section className="mkt-detail-grid">
-          {ITEMS.map((item) => (
-            <article key={item.label} className="mkt-detail-card">
+        <section className="modern-compare-list">
+          {ITEMS.map((item, i) => (
+            <div key={item.label} className="modern-compare-item" tabIndex={0} aria-label={item.label} style={{ animationDelay: `${i * 0.1}s` }}>
               <h2>{item.label}</h2>
               <p><strong>BTA:</strong> {item.bta}</p>
               <p><strong>Current workflow:</strong> {item.legacy}</p>
-            </article>
+            </div>
           ))}
         </section>
       </main>

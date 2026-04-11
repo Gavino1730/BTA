@@ -378,22 +378,22 @@ export function NotificationsPage({ onNavigate }: Props) {
 
       {!isLoading && !loadError && (
         <>
-          <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
-            <section className="stats-page-card">
+          <section className="stats-page-grid two-column notifications-grid" style={{ marginBottom: "1rem" }}>
+            <section className="stats-page-card notifications-alert-card">
               <div className="stats-page-card-head">
                 <h3>Alert Center</h3>
                 <span className="stats-page-status">{unreadCount} unread of {notificationItems.length}</span>
               </div>
               {notificationItems.length > 0 && (
-                <section className="stats-filter-bar" style={{ marginTop: "0.2rem", marginBottom: "0.75rem" }}>
-                  <label className="stats-filter-field short" style={{ minWidth: "180px" }}>
+                <section className="stats-filter-bar notifications-toolbar" style={{ marginTop: "0.2rem", marginBottom: "0.75rem" }}>
+                  <label className="stats-filter-field short notifications-filter" style={{ minWidth: "180px" }}>
                     <span>View</span>
                     <select value={readStatusFilter} onChange={(event) => setReadStatusFilter(event.target.value as ReadStatusFilter)}>
                       <option value="all">All Notifications</option>
                       <option value="unread">Unread Only</option>
                     </select>
                   </label>
-                  <div className="settings-form-footer" style={{ marginTop: "0.25rem", justifyContent: "flex-end", width: "100%" }}>
+                  <div className="settings-form-footer notifications-actions" style={{ marginTop: "0.25rem", justifyContent: "flex-end", width: "100%" }}>
                     <button
                       type="button"
                       className="shell-nav-link shell-nav-link-active"
@@ -421,35 +421,37 @@ export function NotificationsPage({ onNavigate }: Props) {
                     : "No alerts yet. Start a live game to generate operational notifications."}
                 </p>
               ) : (
-                <div className="stats-game-list">
+                <div className="stats-game-list notifications-list">
                   {visibleNotificationItems.map((item) => {
                     const isRead = readSet.has(item.id);
                     return (
-                    <div key={item.id} className="stats-game-row">
-                      <div>
-                        <strong>{isRead ? `[Read] ${item.title}` : item.title}</strong>
-                        <span>{item.detail}</span>
+                    <article key={item.id} className={`stats-game-row notification-row${isRead ? " notification-row-read" : ""}`}>
+                      <div className="notification-main">
+                        <strong className="notification-title">{item.title}</strong>
+                        <span className="notification-detail">{item.detail}</span>
                       </div>
-                      <div className="stats-game-score-block">
-                        <strong>{isRead ? "READ" : item.level.toUpperCase()}</strong>
-                        <span>{item.timestampLabel}</span>
+                      <div className="stats-game-score-block notification-side">
+                        <span className={`notification-level-badge notification-level-${isRead ? "read" : item.level}`}>
+                          {isRead ? "Read" : item.level.toUpperCase()}
+                        </span>
+                        <span className="notification-time">{item.timestampLabel}</span>
                         <button
                           type="button"
-                          className="shell-nav-link"
+                          className="shell-nav-link notification-toggle-btn"
                           style={{ marginTop: "0.35rem" }}
                           onClick={() => toggleRead(item.id)}
                         >
                           {isRead ? "Mark Unread" : "Mark Read"}
                         </button>
                       </div>
-                    </div>
+                    </article>
                   );
                   })}
                 </div>
               )}
             </section>
 
-            <section className="stats-page-card">
+            <section className="stats-page-card notifications-activity-card">
               <div className="stats-page-card-head">
                 <h3>Recent Activity</h3>
                 <span className="stats-page-status">Last {activityItems.length}</span>
@@ -467,17 +469,17 @@ export function NotificationsPage({ onNavigate }: Props) {
                   </button>
                 </>
               ) : (
-                <div className="stats-game-list">
+                <div className="stats-game-list activity-list">
                   {activityItems.map((item) => (
-                    <div key={item.id} className="stats-game-row">
-                      <div>
-                        <strong>{item.title}</strong>
-                        <span>{item.detail}</span>
+                    <article key={item.id} className="stats-game-row activity-row">
+                      <div className="activity-main">
+                        <strong className="activity-title">{item.title}</strong>
+                        <span className="activity-detail">{item.detail}</span>
                       </div>
-                      <div className="stats-game-score-block">
-                        <span>{item.timestampLabel}</span>
+                      <div className="stats-game-score-block activity-side">
+                        <span className="activity-time">{item.timestampLabel}</span>
                       </div>
-                    </div>
+                    </article>
                   ))}
                 </div>
               )}
