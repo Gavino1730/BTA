@@ -1,8 +1,8 @@
-// BTA Coach Dashboard — App Shell Service Worker
+// BTA Courtside Coach Dashboard — App Shell Service Worker
 // Caches static assets for offline/poor-connectivity resilience.
 // API and Socket.IO calls always go to the network.
 
-const CACHE_NAME = "bta-coach-v2";
+const CACHE_NAME = "bta-courtside-coach-v3";
 
 const SHELL_URLS = ["/", "/index.html"];
 

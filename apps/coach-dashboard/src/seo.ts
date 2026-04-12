@@ -13,8 +13,8 @@ const BASE_TITLE = "BTA Courtside";
 
 const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   marketing: {
-    title: `${BASE_TITLE} | Live Basketball Bench Intelligence`,
-    description: "Live bench intelligence for high school basketball programs. Track momentum, lineup impact, and recommendation timing during active possessions.",
+    title: `${BASE_TITLE} | Live Basketball Coaching Intelligence`,
+    description: "Live basketball coaching intelligence for high school programs. Track momentum, lineup impact, and recommendation timing while the game is still in the balance.",
     path: "/",
     imagePath: "/og-home.svg",
     structuredData: {
@@ -23,7 +23,7 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
       name: "BTA Courtside",
       applicationCategory: "SportsApplication",
       operatingSystem: "Web",
-      description: "Live basketball bench intelligence for high school coaching staffs.",
+      description: "Live basketball coaching intelligence for high school coaching staffs.",
     },
   },
   product: {
@@ -56,7 +56,7 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   },
   compare: {
     title: `${BASE_TITLE} Compare | During-Game vs Film-First`,
-    description: "Compare BTA's during-game workflow with film-first tools and see where each fits in a staff stack.",
+    description: "Compare BTA Courtside's during-game workflow with film-first tools and see where each fits in a staff stack.",
     path: "/compare",
     imagePath: "/og-compare.svg",
   },
@@ -68,31 +68,31 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   },
   about: {
     title: `About ${BASE_TITLE}`,
-    description: "Learn why BTA focuses on game-speed coaching decisions for high school basketball programs.",
+    description: "Learn why BTA Courtside focuses on game-speed coaching decisions for high school basketball programs.",
     path: "/about",
     imagePath: "/og-home.svg",
   },
   status: {
     title: `${BASE_TITLE} Status | Service Health`,
-    description: "Current service health and known incidents for BTA preproduction environments.",
+    description: "Current service health and known incidents for BTA Courtside preproduction environments.",
     path: "/status",
     imagePath: "/og-home.svg",
   },
   testimonials: {
     title: `${BASE_TITLE} Testimonials | Program Outcomes`,
-    description: "Case studies and testimonials from basketball programs using BTA in live operations and season review.",
+    description: "Case studies and testimonials from basketball programs using BTA Courtside in live operations and season review.",
     path: "/testimonials",
     imagePath: "/og-home.svg",
   },
   "demo-booking": {
     title: `${BASE_TITLE} Demo | Book a Program Walkthrough`,
-    description: "Schedule a BTA demo to review live game workflows, operator sync, and analytics setup for your program.",
+    description: "Schedule a BTA Courtside demo to review live game workflows, operator sync, and analytics setup for your program.",
     path: "/book-demo",
     imagePath: "/og-pricing.svg",
   },
   "onboarding-wizard": {
     title: `${BASE_TITLE} Onboarding Wizard | Setup Guide`,
-    description: "Step-by-step onboarding flow for teams adopting BTA from account setup to live game rehearsal.",
+    description: "Step-by-step onboarding flow for teams adopting BTA Courtside from account setup to live game rehearsal.",
     path: "/onboarding-wizard",
     imagePath: "/og-home.svg",
   },
@@ -104,7 +104,7 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   },
   roadmap: {
     title: `${BASE_TITLE} Roadmap | Preproduction Plan`,
-    description: "See what is shipping now, what is next, and how BTA is progressing toward production readiness.",
+    description: "See what is shipping now, what is next, and how BTA Courtside is progressing toward production readiness.",
     path: "/roadmap",
     imagePath: "/og-home.svg",
   },
@@ -116,7 +116,7 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   },
   contact: {
     title: `${BASE_TITLE} Contact`,
-    description: "Contact BTA for program onboarding, implementation questions, and billing support.",
+    description: "Contact BTA Courtside for program onboarding, implementation questions, and billing support.",
     path: "/contact",
     imagePath: "/og-home.svg",
   },

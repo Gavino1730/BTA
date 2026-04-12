@@ -1,8 +1,8 @@
-// BTA iPad Operator — App Shell Service Worker
+// BTA Courtside iPad Operator — App Shell Service Worker
 // Caches static assets so the app loads offline even in gym environments
 // with no connectivity. API and Socket.IO calls always go to the network.
 
-const CACHE_NAME = "bta-operator-v1";
+const CACHE_NAME = "bta-courtside-operator-v2";
 
 // Core app shell — always cache these on install.
 const SHELL_URLS = ["/", "/index.html"];

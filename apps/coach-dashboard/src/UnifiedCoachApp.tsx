@@ -101,7 +101,7 @@ function AppFooter({ onNavigate }: AppFooterProps) {
   return (
     <footer className="coach-app-footer">
       <div className="coach-app-footer-inner">
-        <span className="coach-app-footer-brand">BTA Courtside Platform</span>
+        <span className="coach-app-footer-brand">BTA Courtside</span>
         <nav className="coach-app-footer-links" aria-label="App footer links">
           <button type="button" onClick={() => onNavigate("/product")}>Product</button>
           <button type="button" onClick={() => onNavigate("/pricing")}>Pricing</button>

@@ -481,7 +481,7 @@ export function TestimonialsPage({ onNavigate }: RoutedPageProps) {
     <PublicMarketingPage
       kicker="Program Stories"
       title="Testimonials and Case Studies"
-      subtitle="How high school programs use BTA to improve game-day decisions, staff coordination, and season review workflows."
+      subtitle="How high school programs use BTA Courtside to improve game-day decisions, staff coordination, and season review workflows."
       onNavigate={onNavigate}
       primaryLabel="View Features"
       primaryPath="/features"

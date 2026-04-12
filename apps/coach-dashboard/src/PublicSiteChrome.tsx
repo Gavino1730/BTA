@@ -37,7 +37,7 @@ export function PublicSiteChrome({ onNavigate, children }: PublicSiteChromeProps
       <footer className="mkt-footer modern-footer">
         <div className="mkt-footer-inner">
           <div className="mkt-footer-brand">
-            <span>BTA Courtside Platform</span>
+            <span>BTA Courtside</span>
             <span className="mkt-footer-tagline">Live operations and analytics for high school basketball.</span>
           </div>
           <nav className="mkt-footer-links">

@@ -3154,7 +3154,11 @@ app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, asy
 
   const token = randomBytes(24).toString("hex");
   const now = Date.now();
-  const resetPath = `/reset-password?token=${token}`;
+  const resetParams = new URLSearchParams({ token });
+  if (schoolId) {
+    resetParams.set("schoolId", schoolId);
+  }
+  const resetPath = `/reset-password?${resetParams.toString()}`;
   passwordResetTokens.set(token, {
     token,
     schoolId,

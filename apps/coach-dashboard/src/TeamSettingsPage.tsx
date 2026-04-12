@@ -101,7 +101,7 @@ function buildInviteCopy(name: string, email: string, role: AppMemberRole, tempP
     lines.push("Use your invite email to complete access setup from the login flow.");
   }
 
-  lines.push("", "- BTA Team Admin");
+  lines.push("", "- BTA Courtside Team Admin");
   return lines.join("\n");
 }
 

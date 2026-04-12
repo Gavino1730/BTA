@@ -1,7 +1,7 @@
 {
-  "name": "Coach Dashboard",
-  "short_name": "Coach",
-  "description": "Live basketball game coaching dashboard",
+  "name": "BTA Courtside Coach Dashboard",
+  "short_name": "BTA Coach",
+  "description": "Live basketball coaching intelligence for high school programs.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1a1a2e",
