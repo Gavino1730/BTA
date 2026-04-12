@@ -40,34 +40,34 @@ type ContentPageProps = {
 
 const variantStyles: Record<PageVariant, { hero: string; chip: string; section: string }> = {
   atlas: {
-    hero: "bg-[linear-gradient(160deg,rgba(65,52,147,0.82),rgba(37,31,95,0.86))]",
-    chip: "bg-[rgba(41,95,169,0.28)]",
-    section: "bg-[rgba(31,25,80,0.52)]",
+    hero: "bg-[linear-gradient(135deg,#2B235C_0%,#4636C9_45%,#6E5BFF_100%)]",
+    chip: "bg-[rgba(28,35,64,0.92)]",
+    section: "bg-[rgba(21,26,48,0.92)]",
   },
   pulse: {
-    hero: "bg-[linear-gradient(160deg,rgba(41,95,169,0.8),rgba(37,31,95,0.84))]",
-    chip: "bg-[rgba(42,118,103,0.28)]",
-    section: "bg-[rgba(24,63,94,0.46)]",
+    hero: "bg-[linear-gradient(140deg,rgba(13,16,32,0.95),rgba(43,35,92,0.88),rgba(70,215,255,0.2))]",
+    chip: "bg-[rgba(21,26,48,0.94)]",
+    section: "bg-[rgba(21,26,48,0.9)]",
   },
   horizon: {
-    hero: "bg-[linear-gradient(160deg,rgba(76,57,146,0.82),rgba(49,40,114,0.88))]",
-    chip: "bg-[rgba(90,63,145,0.32)]",
-    section: "bg-[rgba(45,34,109,0.54)]",
+    hero: "bg-[linear-gradient(140deg,rgba(13,16,32,0.96),rgba(43,35,92,0.9),rgba(70,54,201,0.55))]",
+    chip: "bg-[rgba(28,35,64,0.9)]",
+    section: "bg-[rgba(21,26,48,0.92)]",
   },
   ember: {
-    hero: "bg-[linear-gradient(160deg,rgba(102,62,126,0.82),rgba(69,42,93,0.88))]",
-    chip: "bg-[rgba(120,82,45,0.34)]",
-    section: "bg-[rgba(70,38,82,0.56)]",
+    hero: "bg-[linear-gradient(140deg,rgba(13,16,32,0.95),rgba(70,54,201,0.58),rgba(255,184,77,0.22))]",
+    chip: "bg-[rgba(28,35,64,0.9)]",
+    section: "bg-[rgba(21,26,48,0.9)]",
   },
   sprint: {
-    hero: "bg-[linear-gradient(160deg,rgba(42,118,103,0.78),rgba(30,74,99,0.84))]",
-    chip: "bg-[rgba(41,95,169,0.3)]",
-    section: "bg-[rgba(23,71,87,0.54)]",
+    hero: "bg-[linear-gradient(140deg,rgba(13,16,32,0.96),rgba(43,35,92,0.86),rgba(56,227,159,0.26))]",
+    chip: "bg-[rgba(28,35,64,0.9)]",
+    section: "bg-[rgba(21,26,48,0.9)]",
   },
   support: {
-    hero: "bg-[linear-gradient(160deg,rgba(74,57,151,0.82),rgba(29,68,102,0.86))]",
-    chip: "bg-[rgba(42,118,103,0.3)]",
-    section: "bg-[rgba(26,64,97,0.52)]",
+    hero: "bg-[linear-gradient(140deg,rgba(13,16,32,0.96),rgba(43,35,92,0.9),rgba(70,215,255,0.22))]",
+    chip: "bg-[rgba(28,35,64,0.9)]",
+    section: "bg-[rgba(21,26,48,0.9)]",
   },
 };
 
@@ -96,14 +96,14 @@ export function ContentPage({
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
               href={primaryCta.href}
-              className="inline-flex items-center rounded-full border border-[var(--border-strong)] bg-[rgba(255,255,255,0.9)] px-5 py-2.5 text-sm font-semibold text-[#3e2f93] transition hover:brightness-95"
+              className="inline-flex items-center rounded-full border border-[var(--accent-primary-dark)] bg-[var(--accent-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--accent-on)] transition hover:bg-[#7C6BFF]"
             >
               {primaryCta.label}
             </Link>
             {secondaryCta ? (
               <Link
                 href={secondaryCta.href}
-                className="inline-flex items-center rounded-full border border-[var(--border-soft)] bg-[rgba(44,35,108,0.55)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[rgba(44,35,108,0.7)]"
+                className="inline-flex items-center rounded-full border border-[var(--border-soft)] bg-transparent px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[rgba(28,35,64,0.9)]"
               >
                 {secondaryCta.label}
               </Link>
@@ -128,7 +128,7 @@ export function ContentPage({
             {sections.map((section, index) => (
               <GlassPanel key={section.title} className="p-6">
                 <div className="flex items-start gap-4">
-                  <div className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.12)] text-sm font-semibold text-[var(--text-primary)]">
+                  <div className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-[var(--border-soft)] bg-[rgba(21,26,48,0.92)] text-sm font-semibold text-[var(--text-primary)]">
                     {index + 1}
                   </div>
                   <div className="w-full">

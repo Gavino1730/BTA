@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Manrope } from "next/font/google";
+import { Instrument_Serif, Inter } from "next/font/google";
 import { getSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
-const bodyFont = Manrope({
+const bodyFont = Inter({
   variable: "--font-body",
   subsets: ["latin"],
   display: "swap",
 });
 
-const displayFont = Cormorant_Garamond({
+const displayFont = Instrument_Serif({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: "400",
+  style: "normal",
   display: "swap",
 });
 

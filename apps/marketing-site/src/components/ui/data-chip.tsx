@@ -10,7 +10,7 @@ export function DataChip({ label, value, className }: DataChipProps): JSX.Elemen
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.14)] px-3 py-1 text-xs text-[var(--text-secondary)]",
+        "inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] px-3 py-1 text-xs text-[var(--text-secondary)]",
         className
       )}
     >

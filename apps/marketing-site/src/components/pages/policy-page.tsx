@@ -34,16 +34,16 @@ export function PolicyPage({
       <AmbientGrid />
       <Navbar />
       <main id="main-content" className="mx-auto w-[min(1200px,92vw)] py-16 md:py-20">
-        <section className="rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,rgba(57,44,128,0.84),rgba(31,26,82,0.88))] px-7 py-8 md:px-10 md:py-10">
+        <section className="rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(140deg,rgba(13,16,32,0.96),rgba(43,35,92,0.9),rgba(70,54,201,0.5))] px-7 py-8 md:px-10 md:py-10">
           <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">{eyebrow}</p>
           <h1 className="mt-3 max-w-5xl font-display text-5xl leading-[0.96] text-[var(--text-primary)] md:text-7xl">{title}</h1>
           <p className="mt-4 max-w-4xl text-lg leading-8 text-[var(--text-secondary)] md:text-xl">{summary}</p>
           <div className="mt-6 flex flex-wrap gap-3 text-sm">
-            <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.1)] px-4 py-1.5 text-[var(--text-secondary)]">Effective: {effectiveDate}</span>
-            <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.1)] px-4 py-1.5 text-[var(--text-secondary)]">Updated: {lastUpdated}</span>
+            <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(21,26,48,0.94)] px-4 py-1.5 text-[var(--text-secondary)]">Effective: {effectiveDate}</span>
+            <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(21,26,48,0.94)] px-4 py-1.5 text-[var(--text-secondary)]">Updated: {lastUpdated}</span>
             <Link
               href="mailto:legal@btaintel.com"
-              className="rounded-full border border-[var(--border-soft)] bg-[rgba(31,25,80,0.58)] px-4 py-1.5 font-semibold text-[var(--text-primary)]"
+              className="rounded-full border border-[var(--accent-primary-dark)] bg-[var(--accent-primary)] px-4 py-1.5 font-semibold text-[var(--accent-on)]"
             >
               Legal Contact
             </Link>
@@ -58,7 +58,7 @@ export function PolicyPage({
                 <li key={section.id}>
                   <a
                     href={`#${section.id}`}
-                    className="block rounded-lg border border-[var(--border-soft)] bg-[rgba(31,25,80,0.48)] px-3 py-2 text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+                    className="block rounded-lg border border-[var(--border-soft)] bg-[rgba(21,26,48,0.92)] px-3 py-2 text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
                   >
                     {index + 1}. {section.title}
                   </a>
@@ -83,7 +83,7 @@ export function PolicyPage({
                       {section.bullets.map((bullet) => (
                         <li
                           key={bullet}
-                          className="rounded-lg border border-[var(--border-soft)] bg-[rgba(31,25,80,0.48)] px-3 py-2 text-[15px] leading-7 text-[var(--text-secondary)]"
+                          className="rounded-lg border border-[var(--border-soft)] bg-[rgba(21,26,48,0.92)] px-3 py-2 text-[15px] leading-7 text-[var(--text-secondary)]"
                         >
                           {bullet}
                         </li>

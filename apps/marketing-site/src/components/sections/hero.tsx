@@ -32,7 +32,7 @@ export function Hero(): JSX.Element {
           className="font-display text-6xl leading-[0.92] text-[var(--text-primary)] md:text-[5.4rem]"
         >
           Run stats, film, and coaching decisions
-          <span className="block bg-[linear-gradient(120deg,#fffaff_0%,#f6ecff_32%,#cffff2_72%,#ffe0b8_100%)] bg-clip-text text-transparent">
+          <span className="block bg-[linear-gradient(120deg,var(--accent-ivory)_0%,var(--text-primary)_40%,var(--accent-secondary)_100%)] bg-clip-text text-transparent">
             from one live system.
           </span>
         </motion.h1>
@@ -82,11 +82,11 @@ export function Hero(): JSX.Element {
             transition={shouldReduceMotion ? undefined : { duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
             style={{
               background:
-                "radial-gradient(92% 80% at 50% 0%, rgba(255,248,255,0.24), transparent 60%), radial-gradient(70% 80% at 84% 72%, rgba(143,241,223,0.18), transparent 70%), radial-gradient(60% 70% at 8% 82%, rgba(255,211,156,0.18), transparent 72%)",
+                "radial-gradient(92% 80% at 50% 0%, rgba(110,91,255,0.18), transparent 60%), radial-gradient(70% 80% at 84% 72%, rgba(70,215,255,0.16), transparent 70%), radial-gradient(60% 70% at 8% 82%, rgba(56,227,159,0.12), transparent 72%)",
             }}
           />
           <div className="relative flex h-full flex-col gap-4">
-            <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(112,93,201,0.24)] p-4 backdrop-blur-md">
+            <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.92)] p-4 backdrop-blur-md">
               <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
                 <span className="inline-flex items-center gap-2">
                   <span className="size-1.5 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_8px_rgba(37,210,197,0.7)]" />
@@ -95,7 +95,7 @@ export function Hero(): JSX.Element {
                 <span>Q3 05:12</span>
               </div>
               <div className="grid gap-3 md:grid-cols-[1.05fr_0.95fr]">
-                <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-3">
+                <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(28,35,64,0.94)] p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Score Widget</p>
                     <ShieldCheck className="size-4 text-[var(--accent-secondary)]" />
@@ -108,7 +108,7 @@ export function Hero(): JSX.Element {
                   <p className="mt-2 text-xs text-[var(--text-secondary)]">Home run: 11-4 over last 7 possessions</p>
                 </div>
 
-                <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-3">
+                <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(28,35,64,0.94)] p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Possession Arrow</p>
                     <Activity className="size-4 text-[var(--accent-primary)]" />
@@ -139,7 +139,7 @@ export function Hero(): JSX.Element {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.65, delay: 0.08 }}
-                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4"
+                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(28,35,64,0.94)] p-4"
               >
                 <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
                   <span>Shot Dot Layer</span>
@@ -180,7 +180,7 @@ export function Hero(): JSX.Element {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.65, delay: 0.12 }}
-                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4"
+                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(28,35,64,0.94)] p-4"
               >
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-xs text-[var(--text-tertiary)]">AI Timeline Markers</p>
@@ -197,7 +197,7 @@ export function Hero(): JSX.Element {
                   ].map((item) => (
                     <p
                       key={item}
-                      className="rounded-lg border border-[var(--border-soft)] bg-[rgba(255,255,255,0.12)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                      className="rounded-lg border border-[var(--border-soft)] bg-[rgba(21,26,48,0.94)] px-3 py-2 text-sm text-[var(--text-secondary)]"
                     >
                       {item}
                     </p>
