@@ -9,7 +9,7 @@ import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, marketingBase, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, fetchBillingEntitlement, generateConnectionCode, marketingBase, normalizeConnectionCode, readStoredAuthSession, storeAuthSession, type BillingEntitlement } from "./platform.js";
 import { AdminPage, BillingPage, CheckoutCancelPage, CheckoutSuccessPage, ContactPage, DataDeletionPage, DemoBookingPage, EmailVerificationPage, InviteAcceptancePage, SupportPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -57,6 +57,33 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
 
 function isPublicRoute(route: AppRoute): boolean {
   return PUBLIC_ROUTES.has(route);
+}
+
+const PAYWALL_EXEMPT_ROUTES: ReadonlySet<AppRoute> = new Set([
+  "login",
+  "invite-accept",
+  "email-verify",
+  "forgot-password",
+  "reset-password",
+  "support",
+  "contact",
+  "book-demo",
+  "data-deletion",
+  "not-found",
+  "forbidden",
+  "unauthorized",
+  "server-error",
+  "offline",
+  "session-expired",
+  "checkout-success",
+  "checkout-cancel",
+  "setup",
+  "account",
+  "billing",
+]);
+
+function isPaywallExemptRoute(route: AppRoute): boolean {
+  return PAYWALL_EXEMPT_ROUTES.has(route);
 }
 
 function upsertMeta(selector: string, attrs: Record<string, string>, content: string) {
@@ -225,6 +252,7 @@ export function UnifiedCoachApp() {
   const [refreshingSession, setRefreshingSession] = useState(false);
   const [sessionRefreshStatus, setSessionRefreshStatus] = useState("");
   const [dismissedExpiryAtMs, setDismissedExpiryAtMs] = useState<number | null>(null);
+  const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
 
   const currentSession = readStoredAuthSession();
   const sessionExpiryAtMs = decodeTokenExpiryMs(currentSession?.token);
@@ -303,9 +331,10 @@ export function UnifiedCoachApp() {
 
     async function loadSetupState() {
       try {
-        const [sessionResponse, onboardingResponse] = await Promise.all([
+        const [sessionResponse, onboardingResponse, entitlement] = await Promise.all([
           fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/onboarding/state`, { headers: apiKeyHeader() }),
+          fetchBillingEntitlement(),
         ]);
 
         const sessionPayload = sessionResponse.ok
@@ -334,6 +363,7 @@ export function UnifiedCoachApp() {
           setIsAuthenticated(authenticated);
           setCurrentRole(normalizeUserRole(sessionRole));
           setRequiresSetup(!authenticated || !Boolean(onboardingPayload.completed));
+          setBillingEntitlement(entitlement);
         }
       } catch {
         if (!cancelled) {
@@ -341,6 +371,7 @@ export function UnifiedCoachApp() {
           setIsAuthenticated(Boolean(storedSession?.token));
           setCurrentRole(normalizeUserRole(storedSession?.role));
           setRequiresSetup(!Boolean(storedSession?.token));
+          setBillingEntitlement(null);
         }
       }
     }
@@ -364,6 +395,23 @@ export function UnifiedCoachApp() {
     window.history.replaceState({}, "", targetPath);
     setRoute(resolveCoachRoute(targetPath));
   }, [isAuthenticated, requiresSetup, route]);
+
+  useEffect(() => {
+    if (!isAuthenticated || requiresSetup) {
+      return;
+    }
+
+    if (!billingEntitlement?.paywallEnabled || billingEntitlement.accessActive) {
+      return;
+    }
+
+    if (isPaywallExemptRoute(route)) {
+      return;
+    }
+
+    window.history.replaceState({}, "", "/billing");
+    setRoute("billing");
+  }, [billingEntitlement, isAuthenticated, requiresSetup, route]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -499,6 +547,19 @@ export function UnifiedCoachApp() {
 
     if (isAuthenticated && !requiresSetup && isPlayerRole(currentRole) && (targetPathname === "/live" || targetPathname === "/stats/settings" || targetPathname === "/org/settings" || targetPathname === "/setup")) {
       nextPath = "/stats";
+    }
+
+    const targetRoute = resolveCoachRoute(targetPathname);
+    const paywallBlocks = Boolean(
+      isAuthenticated
+      && !requiresSetup
+      && billingEntitlement?.paywallEnabled
+      && !billingEntitlement.accessActive
+      && !isPaywallExemptRoute(targetRoute)
+    );
+
+    if (paywallBlocks) {
+      nextPath = "/billing";
     }
 
     const currentLocation = `${window.location.pathname}${window.location.search}`;

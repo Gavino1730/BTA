@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
+import Stripe from "stripe";
 import { logger } from "./logger.js";
 import {
   sendAccountDeletionCanceledEmail,
@@ -78,7 +79,11 @@ import {
   saveLocalAuthAccount,
   recordLocalAuthLogin,
   saveOrganizationMember,
+  saveBillingState,
   deleteOrganizationMember,
+  ensureTrialBillingState,
+  getBillingStateByScope,
+  type BillingState,
   type LocalAuthAccount,
   type GameEditOverride,
   getGameOverrideMap,
@@ -237,6 +242,7 @@ app.use(cors({
   },
   credentials: true
 }));
+app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }));
 app.use(express.json());
 
 // Simple rate limiter: scoped per route family and IP.
@@ -673,6 +679,101 @@ function buildAuthSessionResponse(
     currentMember,
     onboarding: buildOnboardingCompletionSummary(schoolId),
   };
+}
+
+interface BillingEntitlementResponse {
+  paywallEnabled: boolean;
+  accessActive: boolean;
+  status: BillingState["status"];
+  planId: string;
+  trialEndsAtIso: string | null;
+  currentPeriodEndsAtIso: string | null;
+  reason: "paywall_disabled" | "trial_active" | "subscription_active" | "trial_expired" | "inactive_subscription";
+}
+
+function buildBillingEntitlement(schoolId: string): BillingEntitlementResponse {
+  const billingState = ensureTrialBillingState({ schoolId }, BILLING_TRIAL_DAYS);
+  const nowMs = Date.now();
+  const trialEndsMs = billingState.trialEndsAtIso ? Date.parse(billingState.trialEndsAtIso) : Number.NaN;
+  const trialActive = Number.isFinite(trialEndsMs) && trialEndsMs > nowMs;
+  const activeSubscription = billingState.status === "active";
+
+  if (!PAYWALL_ENABLED) {
+    return {
+      paywallEnabled: false,
+      accessActive: true,
+      status: billingState.status,
+      planId: billingState.planId,
+      trialEndsAtIso: billingState.trialEndsAtIso ?? null,
+      currentPeriodEndsAtIso: billingState.currentPeriodEndsAtIso ?? null,
+      reason: "paywall_disabled",
+    };
+  }
+
+  if (activeSubscription) {
+    return {
+      paywallEnabled: true,
+      accessActive: true,
+      status: billingState.status,
+      planId: billingState.planId,
+      trialEndsAtIso: billingState.trialEndsAtIso ?? null,
+      currentPeriodEndsAtIso: billingState.currentPeriodEndsAtIso ?? null,
+      reason: "subscription_active",
+    };
+  }
+
+  if (billingState.status === "trialing" && trialActive) {
+    return {
+      paywallEnabled: true,
+      accessActive: true,
+      status: billingState.status,
+      planId: billingState.planId,
+      trialEndsAtIso: billingState.trialEndsAtIso ?? null,
+      currentPeriodEndsAtIso: billingState.currentPeriodEndsAtIso ?? null,
+      reason: "trial_active",
+    };
+  }
+
+  return {
+    paywallEnabled: true,
+    accessActive: false,
+    status: billingState.status,
+    planId: billingState.planId,
+    trialEndsAtIso: billingState.trialEndsAtIso ?? null,
+    currentPeriodEndsAtIso: billingState.currentPeriodEndsAtIso ?? null,
+    reason: billingState.status === "trialing" ? "trial_expired" : "inactive_subscription",
+  };
+}
+
+function planIdFromStripePriceId(priceId: string | undefined): "monthly" | "yearly" | "trial" {
+  if (!priceId) {
+    return "trial";
+  }
+  if (STRIPE_PRICE_ID_YEARLY && priceId === STRIPE_PRICE_ID_YEARLY) {
+    return "yearly";
+  }
+  if (STRIPE_PRICE_ID_MONTHLY && priceId === STRIPE_PRICE_ID_MONTHLY) {
+    return "monthly";
+  }
+  return "trial";
+}
+
+function mapStripeSubscriptionStatus(status: string | undefined): BillingState["status"] {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "active") return "active";
+  if (normalized === "trialing") return "trialing";
+  if (normalized === "past_due") return "past_due";
+  if (normalized === "canceled") return "canceled";
+  if (normalized === "unpaid") return "unpaid";
+  return "incomplete";
+}
+
+function readStripeEpochIso(rawValue: unknown): string | undefined {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return undefined;
+  }
+  return new Date(numeric * 1000).toISOString();
 }
 
 function readAuthClaim(authContext: AuthContext | undefined, path: string): unknown {
@@ -1904,6 +2005,21 @@ const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
+const PAYWALL_ENABLED = process.env.BTA_PAYWALL_ENABLED === "1";
+const BILLING_TRIAL_DAYS = Math.max(1, Number.parseInt(String(process.env.BTA_BILLING_TRIAL_DAYS ?? "14"), 10) || 14);
+const STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim() || "";
+const STRIPE_WEBHOOK_SECRET = process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim() || "";
+const STRIPE_PRICE_ID_MONTHLY = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim() || "";
+const STRIPE_PRICE_ID_YEARLY = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim() || "";
+const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+const processedStripeEventIds = new Set<string>();
+const PAYWALL_BYPASS_PREFIXES = [
+  "/auth",
+  "/onboarding",
+  "/billing",
+  "/webhooks/stripe",
+  "/intake",
+];
 const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
 const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
 const AI_ALERT_COST_USD_THRESHOLD = readOptionalPositiveNumber(process.env.BTA_AI_ALERT_COST_USD_THRESHOLD);
@@ -2632,6 +2748,44 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
   next();
 }
 
+function requirePaidPlan(req: Request, res: Response, next: NextFunction): void {
+  if (!PAYWALL_ENABLED) {
+    next();
+    return;
+  }
+
+  if (hasValidApiKeyRequest(req)) {
+    next();
+    return;
+  }
+
+  const path = req.path;
+  if (PAYWALL_BYPASS_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    next();
+    return;
+  }
+
+  let schoolId: string;
+  try {
+    schoolId = getSchoolIdFromRequest(req);
+  } catch {
+    next();
+    return;
+  }
+
+  const entitlement = buildBillingEntitlement(schoolId);
+  if (entitlement.accessActive) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    error: "Active subscription required",
+    code: "billing_required",
+    entitlement,
+  });
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: process.env.NODE_ENV !== "production"
@@ -2978,6 +3132,7 @@ app.get("/health", (_req, res) => {
 
 app.use(attachAuthContext);
 app.use("/api", requireTenantScope);
+app.use("/api", requirePaidPlan);
 app.use("/teams", requireTenantScope);
 app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
@@ -3053,6 +3208,491 @@ app.get("/api/auth/session", (req, res) => {
     currentMember,
     onboarding: buildOnboardingCompletionSummary(schoolId),
   });
+});
+
+app.get("/api/billing/entitlement", requireApiKey, (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const entitlement = buildBillingEntitlement(schoolId);
+  const billing = getBillingStateByScope({ schoolId }) ?? ensureTrialBillingState({ schoolId }, BILLING_TRIAL_DAYS);
+
+  res.json({
+    schoolId,
+    entitlement,
+    billing,
+  });
+});
+
+app.post("/api/billing/validate-coupon", requireApiKey, async (req, res) => {
+  if (!PAYWALL_ENABLED) {
+    res.status(409).json({ error: "Paywall is disabled" });
+    return;
+  }
+
+  if (!stripeClient) {
+    res.status(503).json({ error: "Stripe is not configured" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const couponCode = String(payload.couponCode ?? "").trim().toUpperCase();
+
+  if (!couponCode) {
+    res.status(400).json({ error: "Coupon code is required" });
+    return;
+  }
+
+  try {
+    const coupon = await stripeClient.coupons.retrieve(couponCode);
+
+    if (!coupon.valid) {
+      res.status(400).json({ error: "Coupon is no longer valid" });
+      return;
+    }
+
+    if (coupon.redeem_by && coupon.redeem_by * 1000 < Date.now()) {
+      res.status(400).json({ error: "Coupon has expired" });
+      return;
+    }
+
+    if (typeof coupon.times_redeemed === "number" && typeof coupon.max_redemptions === "number") {
+      if (coupon.times_redeemed >= coupon.max_redemptions) {
+        res.status(400).json({ error: "Coupon has reached maximum redemptions" });
+        return;
+      }
+    }
+
+    res.json({
+      valid: true,
+      couponId: coupon.id,
+      percentOff: coupon.percent_off || null,
+      amountOff: coupon.amount_off || null,
+      currency: coupon.currency || null,
+      duration: coupon.duration || null,
+      durationInMonths: coupon.duration_in_months || null,
+    });
+  } catch (error) {
+    const stripeError = error as { code?: string; message?: string };
+    if (stripeError.code === "resource_missing") {
+      res.status(404).json({ error: "Coupon not found" });
+    } else {
+      logger.warn("billing.coupon_validation_failed", {
+        couponCode,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(400).json({ error: "Could not validate coupon" });
+    }
+  }
+});
+
+app.post("/api/billing/apply-coupon", requireApiKey, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const couponCode = String(payload.couponCode ?? "").trim().toUpperCase();
+
+  if (!couponCode) {
+    res.status(400).json({ error: "Coupon code is required" });
+    return;
+  }
+
+  try {
+    const billing = getBillingStateByScope({ schoolId });
+    if (!billing) {
+      res.status(404).json({ error: "No billing state found for this school" });
+      return;
+    }
+
+    saveBillingState({
+      couponCode,
+    }, { schoolId });
+
+    res.json({
+      applied: true,
+      couponCode,
+      message: `Coupon ${couponCode} has been applied. It will be used at checkout.`,
+    });
+  } catch (error) {
+    logger.error("billing.coupon_apply_failed", {
+      schoolId,
+      couponCode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: "Could not apply coupon" });
+  }
+});
+
+app.post("/api/billing/checkout-session", requireApiKey, async (req, res) => {
+  if (!PAYWALL_ENABLED) {
+    res.status(409).json({ error: "Paywall is disabled" });
+    return;
+  }
+
+  if (!stripeClient) {
+    res.status(503).json({ error: "Stripe is not configured" });
+    return;
+  }
+
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const cycle = String(payload.planCycle ?? "monthly").trim().toLowerCase();
+  const isYearly = cycle === "yearly";
+  const priceId = isYearly ? STRIPE_PRICE_ID_YEARLY : STRIPE_PRICE_ID_MONTHLY;
+
+  if (!priceId) {
+    res.status(400).json({ error: `Missing Stripe price ID for ${isYearly ? "yearly" : "monthly"} plan` });
+    return;
+  }
+
+  const entitlement = buildBillingEntitlement(schoolId);
+  if (entitlement.accessActive && entitlement.reason === "subscription_active") {
+    res.status(409).json({ error: "An active subscription already exists" });
+    return;
+  }
+
+  const localAccount = resolveAuthenticatedLocalAccount(req, schoolId);
+  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+  const fallbackEmail = sanitizeTextField(currentMember?.email, 160).toLowerCase();
+  const customerEmail = localAccount?.email ?? fallbackEmail;
+  const coachBase = resolveCoachAppBaseUrl(req);
+  const successPath = buildCoachAppPath("/checkout/success", schoolId);
+  const cancelPath = buildCoachAppPath("/checkout/cancel", schoolId);
+  const billing = getBillingStateByScope({ schoolId });
+  const discounts = billing?.couponCode ? [{ coupon: billing.couponCode }] : undefined;
+
+  try {
+    const session = await stripeClient.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${coachBase}${successPath}`,
+      cancel_url: `${coachBase}${cancelPath}`,
+      customer_email: customerEmail || undefined,
+      discounts,
+      subscription_data: {
+        metadata: {
+          schoolId,
+          planCycle: isYearly ? "yearly" : "monthly",
+        },
+      },
+      metadata: {
+        schoolId,
+        planCycle: isYearly ? "yearly" : "monthly",
+      },
+    });
+
+    saveBillingState({
+      planId: isYearly ? "yearly" : "monthly",
+      status: "incomplete",
+      stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
+    }, { schoolId });
+
+    res.json({
+      sessionId: session.id,
+      url: session.url,
+    });
+  } catch (error) {
+    logger.warn("billing.checkout_session_failed", {
+      schoolId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(502).json({ error: "Could not start checkout session" });
+  }
+});
+
+app.get("/api/billing/portal-session", requireApiKey, async (req, res) => {
+  if (!PAYWALL_ENABLED) {
+    res.status(409).json({ error: "Paywall is disabled" });
+    return;
+  }
+
+  if (!stripeClient) {
+    res.status(503).json({ error: "Stripe is not configured" });
+    return;
+  }
+
+  const schoolId = getSchoolIdFromRequest(req);
+  const billing = getBillingStateByScope({ schoolId });
+
+  if (!billing?.stripeCustomerId) {
+    res.status(404).json({ error: "No active billing found" });
+    return;
+  }
+
+  const coachBase = resolveCoachAppBaseUrl(req);
+  const returnPath = buildCoachAppPath("/billing", schoolId);
+
+  try {
+    const session = await stripeClient.billingPortal.sessions.create({
+      customer: billing.stripeCustomerId,
+      return_url: `${coachBase}${returnPath}`,
+    });
+
+    res.json({
+      url: session.url,
+    });
+  } catch (error) {
+    logger.warn("billing.portal_session_failed", {
+      schoolId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(502).json({ error: "Could not create billing portal session" });
+  }
+});
+
+app.post("/api/admin/billing/webhook-test", requireApiKey, requireWriteRole, async (req, res) => {
+  if (!stripeClient) {
+    res.status(503).json({ error: "Stripe is not configured" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const eventType = String(payload.eventType ?? "checkout.session.completed").trim();
+  const schoolId = String(payload.schoolId ?? getSchoolIdFromRequest(req)).trim();
+
+  if (!schoolId) {
+    res.status(400).json({ error: "schoolId is required" });
+    return;
+  }
+
+  const supportedEvents = [
+    "checkout.session.completed",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.payment_failed",
+  ];
+
+  if (!supportedEvents.includes(eventType)) {
+    res.status(400).json({ 
+      error: `Unsupported event type. Supported: ${supportedEvents.join(", ")}` 
+    });
+    return;
+  }
+
+  try {
+    let eventData: Record<string, unknown> = {
+      id: `evt_test_${Date.now()}`,
+      type: eventType,
+      data: { object: {} },
+    };
+
+    if (eventType === "checkout.session.completed") {
+      const mockSession = {
+        id: `cs_test_${Date.now()}`,
+        object: "checkout.session",
+        customer: `cus_test_${Date.now()}`,
+        subscription: `sub_test_${Date.now()}`,
+        metadata: { schoolId, planCycle: "monthly" },
+      };
+      eventData.data = { object: mockSession };
+    } else if (eventType === "customer.subscription.updated" || eventType === "customer.subscription.deleted") {
+      const mockSubscription = {
+        id: `sub_test_${Date.now()}`,
+        object: "subscription",
+        customer: `cus_test_${Date.now()}`,
+        status: "active",
+        items: {
+          data: [{ price: { id: STRIPE_PRICE_ID_MONTHLY || "price_test" } }],
+        },
+        metadata: { schoolId },
+        current_period_end: Math.floor(Date.now() / 1000) + 2592000,
+        trial_end: null,
+      };
+      eventData.data = { object: mockSubscription };
+    } else if (eventType === "invoice.payment_failed") {
+      const mockInvoice = {
+        id: `in_test_${Date.now()}`,
+        object: "invoice",
+        customer: `cus_test_${Date.now()}`,
+        status: "open",
+        metadata: { schoolId },
+      };
+      eventData.data = { object: mockInvoice };
+    }
+
+    const testEvent = eventData as unknown as Stripe.Event;
+
+    if (testEvent.type === "checkout.session.completed") {
+      const session = testEvent.data.object as Stripe.Checkout.Session;
+      const sessionSchoolId = sanitizeTextField(session.metadata?.schoolId, 80);
+      if (!sessionSchoolId) {
+        logger.warn("billing.webhook_test_missing_school", { eventId: testEvent.id, type: testEvent.type });
+      } else if (typeof session.subscription === "string") {
+        const mockSubscription = {
+          id: session.subscription,
+          customer: session.customer,
+          status: "active",
+          items: { data: [{ price: { id: STRIPE_PRICE_ID_MONTHLY || "price_" } }] },
+          trial_end: null,
+          current_period_end: Math.floor(Date.now() / 1000) + 2592000,
+        };
+        saveBillingState({
+          planId: "monthly",
+          status: "active",
+          stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined,
+          stripeSubscriptionId: session.subscription,
+          currentPeriodEndsAtIso: readStripeEpochIso(Math.floor(Date.now() / 1000) + 2592000),
+          trialEndsAtIso: undefined,
+        }, { schoolId: sessionSchoolId });
+      }
+    }
+
+    if (testEvent.type === "customer.subscription.updated" || testEvent.type === "customer.subscription.deleted") {
+      const subscription = testEvent.data.object as Stripe.Subscription;
+      const subSchoolId = sanitizeTextField(subscription.metadata?.schoolId, 80);
+      if (subSchoolId) {
+        saveBillingState({
+          planId: "monthly",
+          status: testEvent.type === "customer.subscription.deleted"
+            ? "canceled"
+            : "active",
+          stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : undefined,
+          stripeSubscriptionId: subscription.id,
+          currentPeriodEndsAtIso: readStripeEpochIso(
+            (subscription as unknown as { current_period_end?: unknown }).current_period_end
+          ),
+          trialEndsAtIso: readStripeEpochIso(subscription.trial_end),
+        }, { schoolId: subSchoolId });
+      }
+    }
+
+    if (testEvent.type === "invoice.payment_failed") {
+      const invoice = testEvent.data.object as Stripe.Invoice;
+      const invSchoolId = sanitizeTextField(invoice.metadata?.schoolId, 80);
+      if (invSchoolId) {
+        saveBillingState({
+          status: "past_due",
+          stripeCustomerId: typeof invoice.customer === "string" ? invoice.customer : undefined,
+        }, { schoolId: invSchoolId });
+      }
+    }
+
+    logger.info("billing.webhook_test_processed", {
+      eventId: testEvent.id,
+      eventType: testEvent.type,
+      schoolId,
+    });
+
+    res.json({
+      received: true,
+      eventId: testEvent.id,
+      eventType: testEvent.type,
+      schoolId,
+    });
+  } catch (error) {
+    logger.error("billing.webhook_test_failed", {
+      eventType,
+      schoolId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: "Test webhook processing failed" });
+  }
+});
+
+app.post("/api/webhooks/stripe", async (req, res) => {
+  if (!stripeClient) {
+    res.status(503).json({ error: "Stripe is not configured" });
+    return;
+  }
+
+  if (!STRIPE_WEBHOOK_SECRET) {
+    res.status(503).json({ error: "Stripe webhook secret is not configured" });
+    return;
+  }
+
+  const signature = readHeaderValue(req.headers["stripe-signature"]);
+  if (!signature) {
+    res.status(400).json({ error: "Missing Stripe signature" });
+    return;
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripeClient.webhooks.constructEvent(req.body as Buffer, signature, STRIPE_WEBHOOK_SECRET);
+  } catch (error) {
+    logger.warn("billing.webhook_signature_invalid", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(400).json({ error: "Invalid webhook signature" });
+    return;
+  }
+
+  if (processedStripeEventIds.has(event.id)) {
+    res.json({ received: true, duplicate: true });
+    return;
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const schoolId = sanitizeTextField(session.metadata?.schoolId, 80);
+      if (!schoolId) {
+        logger.warn("billing.webhook_missing_school", { eventId: event.id, type: event.type });
+      } else if (typeof session.subscription === "string") {
+        const subscription = await stripeClient.subscriptions.retrieve(session.subscription);
+        const firstItem = subscription.items.data[0];
+        const priceId = typeof firstItem?.price?.id === "string" ? firstItem.price.id : undefined;
+        const currentPeriodEndsAtIso = readStripeEpochIso(
+          (subscription as unknown as { current_period_end?: unknown }).current_period_end
+        );
+        saveBillingState({
+          planId: planIdFromStripePriceId(priceId),
+          status: mapStripeSubscriptionStatus(subscription.status),
+          stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : undefined,
+          stripeSubscriptionId: subscription.id,
+          currentPeriodEndsAtIso,
+          trialEndsAtIso: readStripeEpochIso(subscription.trial_end),
+        }, { schoolId });
+      }
+    }
+
+    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const schoolId = sanitizeTextField(subscription.metadata?.schoolId, 80);
+      if (schoolId) {
+        const firstItem = subscription.items.data[0];
+        const priceId = typeof firstItem?.price?.id === "string" ? firstItem.price.id : undefined;
+        const currentPeriodEndsAtIso = readStripeEpochIso(
+          (subscription as unknown as { current_period_end?: unknown }).current_period_end
+        );
+        saveBillingState({
+          planId: planIdFromStripePriceId(priceId),
+          status: event.type === "customer.subscription.deleted"
+            ? "canceled"
+            : mapStripeSubscriptionStatus(subscription.status),
+          stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : undefined,
+          stripeSubscriptionId: subscription.id,
+          currentPeriodEndsAtIso,
+          trialEndsAtIso: readStripeEpochIso(subscription.trial_end),
+        }, { schoolId });
+      }
+    }
+
+    if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object as Stripe.Invoice;
+      const schoolId = sanitizeTextField(invoice.metadata?.schoolId, 80);
+      if (schoolId) {
+        saveBillingState({
+          status: "past_due",
+          stripeCustomerId: typeof invoice.customer === "string" ? invoice.customer : undefined,
+        }, { schoolId });
+      }
+    }
+
+    processedStripeEventIds.add(event.id);
+    if (processedStripeEventIds.size > 10000) {
+      const first = processedStripeEventIds.values().next().value;
+      if (typeof first === "string") {
+        processedStripeEventIds.delete(first);
+      }
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    logger.error("billing.webhook_processing_failed", {
+      eventId: event.id,
+      eventType: event.type,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(500).json({ error: "Webhook processing failed" });
+  }
 });
 
 app.post("/api/auth/register", authRateLimiter, async (req, res) => {

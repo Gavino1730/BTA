@@ -9,8 +9,8 @@
   --panel-4: rgba(43, 51, 90, 0.76);
 
   --text-primary: #f7f8fc;
-  --text-secondary: #c9cde3;
-  --text-tertiary: #8e95b8;
+  --text-secondary: #d8ddf0;
+  --text-tertiary: #a5add0;
   --text-disabled: #666c8f;
 
   --accent-primary: #6e5bff;
@@ -24,7 +24,7 @@
   --accent-glow: rgba(70, 215, 255, 0.4);
 
   --border-soft: #2b335a;
-  --border-strong: #3b4678;
+  --border-strong: #4a588f;
   --ring: rgba(70, 215, 255, 0.5);
 
   --shadow-md: 0 14px 34px rgba(5, 8, 22, 0.44);
@@ -64,7 +64,8 @@ html {
 }
 
 .font-display {
-  font-family: var(--font-display), "Instrument Serif", Georgia, serif;
+  font-family: var(--font-display), "Inter", "Segoe UI", sans-serif;
+  letter-spacing: -0.015em;
 }
 
 .grid-overlay {

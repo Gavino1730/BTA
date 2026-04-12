@@ -11,28 +11,76 @@ Use this as the source of truth for premium marketing styling decisions for the 
 ## Color Tokens
 Apply these tokens through CSS variables in the marketing app global stylesheet.
 
-- --bg-base: #090c14
-- --bg-elevated: #0e1320
-- --panel-1: rgba(16, 24, 39, 0.72)
-- --panel-2: rgba(18, 28, 46, 0.78)
-- --panel-3: rgba(38, 54, 84, 0.5)
-- --text-primary: #f4f7ff
-- --text-secondary: rgba(229, 236, 255, 0.76)
-- --text-tertiary: rgba(206, 216, 242, 0.56)
-- --accent-primary: #4f6dff
-- --accent-secondary: #25d2c5
-- --accent-on: #f6f8ff
-- --accent-glow: rgba(79, 109, 255, 0.55)
-- --border-soft: rgba(175, 196, 248, 0.18)
-- --border-strong: rgba(190, 212, 255, 0.35)
-- --ring: rgba(107, 133, 255, 0.75)
+Brand Primaries:
+- --accent-primary: #6E5BFF (Courtside Violet)
+- --accent-primary-dark: #4636C9 (Deep Violet)
+- --hero-tone: #2B235C (Night Indigo)
+
+Background System:
+- --bg-base: #0D1020
+- --bg-elevated: #151A30
+- --panel-1: #151A30
+- --panel-2: #1C2340
+- --panel-3: #2B335A
+- --border-soft: #2B335A
+- --border-strong: #3B4678
+
+Text System:
+- --text-primary: #F7F8FC
+- --text-secondary: #C9CDE3
+- --text-tertiary: #8E95B8
+- --text-disabled: #666C8F
+
+Accent Colors:
+- --accent-secondary: #46D7FF (Signal Cyan)
+- --accent-success: #38E39F (Victory Green)
+- --accent-signal: #FFB84D (Alert Amber)
+- --accent-danger: #FF5D73 (Competitive Red)
+- --accent-ivory: #F5EDE2 (Soft Ivory, headings emphasis only)
+
+Interaction:
+- --accent-on: #FFFFFF
+- --accent-glow: rgba(70, 215, 255, 0.4)
+- --ring: rgba(70, 215, 255, 0.5)
 
 ## Typography Rules
-- Display font: Cormorant Garamond.
-- Body/UI font: Manrope.
+- Display font: Instrument Serif.
+- Body/UI font: Inter.
 - Headline behavior: high contrast, large, tight line-height.
 - Body copy behavior: concise, neutral, utility-focused.
 - Avoid long paragraphs and buzzword copy.
+
+## Gradient System
+- Hero gradient: linear-gradient(135deg, #2B235C 0%, #4636C9 45%, #6E5BFF 100%)
+- CTA gradient: linear-gradient(135deg, #6E5BFF 0%, #46D7FF 100%)
+- Subtle background wash: radial-gradient(circle at top right, rgba(110,91,255,.22), transparent 45%)
+
+## Exact UI Usage
+- Navbar:
+  - Background: rgba(13,16,32,.72) blur
+  - Border: #2B335A
+- Hero card:
+  - Background: #151A30
+- Primary button:
+  - Background: #6E5BFF
+  - Text: white
+  - Hover: #7C6BFF
+- Secondary button:
+  - Background: transparent
+  - Border: #2B335A
+- Cards:
+  - Background: #151A30 or #1C2340
+- Charts/stats:
+  - Primary: #6E5BFF
+  - Secondary: #46D7FF
+  - Positive: #38E39F
+  - Warning: #FFB84D
+  - Negative: #FF5D73
+
+## Color Ratio Rule
+- 70% dark neutrals
+- 20% violet tones
+- 10% accents
 
 ## Elevation and Surface Rules
 - Glass panels require: translucent dark panel, soft border, large blur, deep shadow.
@@ -111,3 +159,4 @@ Homepage sections must remain in this sequence:
 - CSS variables live in global stylesheet and drive Tailwind utility values.
 - shadcn/ui base components should be customized with token-driven class variants.
 - Section content should be centralized in a content config for fast iteration.
+- This file is the reusable AI reference for future design edits in this repo.

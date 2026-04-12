@@ -143,6 +143,28 @@ export interface LocalAuthAccountInput {
   scheduledDeletionAtIso?: string;
 }
 
+export type BillingSubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete";
+
+export interface BillingState {
+  schoolId?: string;
+  planId: string;
+  status: BillingSubscriptionStatus;
+  trialStartedAtIso?: string;
+  trialEndsAtIso?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  currentPeriodEndsAtIso?: string;
+  couponCode?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
 export interface CoachAiSettings {
   playingStyle: string;
   teamContext: string;
@@ -434,6 +456,7 @@ interface PersistedSnapshot {
   organizationMembersBySchool?: Record<string, OrganizationMember[]>;
   localAuthAccountsBySchool?: Record<string, LocalAuthAccount[]>;
   gameOverridesBySchool?: Record<string, Record<string, GameEditOverride>>;
+  billingBySchool?: Record<string, BillingState>;
 }
 
 export interface TenantScope {
@@ -472,6 +495,7 @@ const onboardingAccountsBySchool = new Map<string, OnboardingAccountState>();
 const organizationMembersBySchool = new Map<string, OrganizationMember[]>();
 const localAuthAccountsBySchool = new Map<string, LocalAuthAccount[]>();
 const gameOverridesBySchool = new Map<string, Map<string, GameEditOverride>>();
+const billingBySchool = new Map<string, BillingState>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -2233,6 +2257,7 @@ function buildPersistedSnapshot(): PersistedSnapshot {
     onboardingAccountsBySchool: Object.fromEntries(onboardingAccountsBySchool.entries()),
     organizationMembersBySchool: Object.fromEntries(organizationMembersBySchool.entries()),
     localAuthAccountsBySchool: Object.fromEntries(localAuthAccountsBySchool.entries()),
+    billingBySchool: Object.fromEntries(billingBySchool.entries()),
     gameOverridesBySchool: Object.fromEntries(
       [...gameOverridesBySchool.entries()].map(([schoolId, overrideMap]) => [
         schoolId,
@@ -2287,6 +2312,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedOrganizationMembers = Array.isArray(payload) ? undefined : payload.organizationMembersBySchool;
   const persistedLocalAuthAccounts = Array.isArray(payload) ? undefined : payload.localAuthAccountsBySchool;
   const persistedGameOverrides = Array.isArray(payload) ? undefined : payload.gameOverridesBySchool;
+  const persistedBilling = Array.isArray(payload) ? undefined : payload.billingBySchool;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
@@ -2295,6 +2321,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   organizationMembersBySchool.clear();
   localAuthAccountsBySchool.clear();
   gameOverridesBySchool.clear();
+  billingBySchool.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -2337,6 +2364,27 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
         }
       }
       gameOverridesBySchool.set(normalizeSchoolId(schoolId), overrideMap);
+    }
+  }
+
+  if (persistedBilling && typeof persistedBilling === "object") {
+    for (const [schoolId, billing] of Object.entries(persistedBilling)) {
+      if (!billing || typeof billing !== "object") {
+        continue;
+      }
+      const nowIso = new Date().toISOString();
+      billingBySchool.set(normalizeSchoolId(schoolId), {
+        schoolId: normalizeSchoolId(schoolId),
+        planId: String((billing as BillingState).planId ?? "trial"),
+        status: ((billing as BillingState).status ?? "trialing") as BillingSubscriptionStatus,
+        trialStartedAtIso: (billing as BillingState).trialStartedAtIso,
+        trialEndsAtIso: (billing as BillingState).trialEndsAtIso,
+        stripeCustomerId: (billing as BillingState).stripeCustomerId,
+        stripeSubscriptionId: (billing as BillingState).stripeSubscriptionId,
+        currentPeriodEndsAtIso: (billing as BillingState).currentPeriodEndsAtIso,
+        createdAtIso: (billing as BillingState).createdAtIso ?? nowIso,
+        updatedAtIso: (billing as BillingState).updatedAtIso ?? nowIso,
+      });
     }
   }
 
@@ -2705,6 +2753,7 @@ export function resetAllData(scope?: TenantScope): void {
     organizationMembersBySchool.clear();
     localAuthAccountsBySchool.clear();
     gameOverridesBySchool.clear();
+    billingBySchool.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -2721,8 +2770,64 @@ export function resetAllData(scope?: TenantScope): void {
   organizationMembersBySchool.delete(schoolId);
   localAuthAccountsBySchool.delete(schoolId);
   gameOverridesBySchool.delete(schoolId);
+  billingBySchool.delete(schoolId);
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
+}
+
+export function getBillingStateByScope(scope?: TenantScope): BillingState | null {
+  const schoolId = resolveSchoolId(scope);
+  const existing = billingBySchool.get(schoolId);
+  return existing ? { ...existing } : null;
+}
+
+export function ensureTrialBillingState(scope?: TenantScope, trialDays = 14): BillingState {
+  const schoolId = resolveSchoolId(scope);
+  const existing = billingBySchool.get(schoolId);
+  if (existing) {
+    return { ...existing };
+  }
+
+  const now = new Date();
+  const end = new Date(now.getTime());
+  end.setUTCDate(end.getUTCDate() + Math.max(1, Math.floor(trialDays)));
+
+  const created: BillingState = {
+    schoolId,
+    planId: "trial",
+    status: "trialing",
+    trialStartedAtIso: now.toISOString(),
+    trialEndsAtIso: end.toISOString(),
+    createdAtIso: now.toISOString(),
+    updatedAtIso: now.toISOString(),
+  };
+
+  billingBySchool.set(schoolId, created);
+  persistSessions();
+  return { ...created };
+}
+
+export function saveBillingState(state: Partial<BillingState>, scope?: TenantScope): BillingState {
+  const schoolId = resolveSchoolId(scope);
+  const nowIso = new Date().toISOString();
+  const existing = billingBySchool.get(schoolId);
+
+  const saved: BillingState = {
+    schoolId,
+    planId: String(state.planId ?? existing?.planId ?? "trial"),
+    status: (state.status ?? existing?.status ?? "trialing") as BillingSubscriptionStatus,
+    trialStartedAtIso: state.trialStartedAtIso ?? existing?.trialStartedAtIso,
+    trialEndsAtIso: state.trialEndsAtIso ?? existing?.trialEndsAtIso,
+    stripeCustomerId: state.stripeCustomerId ?? existing?.stripeCustomerId,
+    stripeSubscriptionId: state.stripeSubscriptionId ?? existing?.stripeSubscriptionId,
+    currentPeriodEndsAtIso: state.currentPeriodEndsAtIso ?? existing?.currentPeriodEndsAtIso,
+    createdAtIso: existing?.createdAtIso ?? state.createdAtIso ?? nowIso,
+    updatedAtIso: nowIso,
+  };
+
+  billingBySchool.set(schoolId, saved);
+  persistSessions();
+  return { ...saved };
 }
 
 export function getOrganizationProfileByScope(scope?: TenantScope): OrganizationProfile | null {

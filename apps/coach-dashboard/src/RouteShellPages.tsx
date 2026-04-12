@@ -1,5 +1,5 @@
-import { type FormEvent, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { type FormEvent, useMemo, useState, useEffect } from "react";
+import { apiBase, apiKeyHeader, fetchBillingEntitlement, fetchBillingPortalUrl, validateCoupon, applyCoupon, type BillingEntitlement } from "./platform.js";
 
 interface RoutedPageProps {
   onNavigate: (path: string) => void;
@@ -449,35 +449,239 @@ export function CheckoutCancelPage({ onNavigate }: RoutedPageProps) {
 }
 
 export function BillingPage({ onNavigate }: RoutedPageProps) {
+  const [submittingCycle, setSubmittingCycle] = useState<"monthly" | "yearly" | null>(null);
+  const [submittingPortal, setSubmittingPortal] = useState(false);
+  const [status, setStatus] = useState("Loading billing information...");
+  const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [couponCode, setCouponCode] = useState("");
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponStatus, setCouponStatus] = useState("");
+  const [couponError, setCouponError] = useState("");
+
+  useEffect(() => {
+    const loadBilling = async () => {
+      setLoading(true);
+      const entitlement = await fetchBillingEntitlement();
+      setBillingEntitlement(entitlement);
+      if (entitlement?.accessActive) {
+        setStatus("Your subscription is active. Use the button below to manage your plan through Stripe.");
+      } else {
+        setStatus("Start a checkout session to activate monthly or yearly access. You can apply a promo code before checkout.");
+      }
+      setLoading(false);
+    };
+    void loadBilling();
+  }, []);
+
+  async function validateAndApplyCoupon(e?: React.FormEvent) {
+    if (e) {
+      e.preventDefault();
+    }
+    const code = couponCode.trim().toUpperCase();
+    if (!code) {
+      setCouponError("Please enter a coupon code");
+      return;
+    }
+
+    setValidatingCoupon(true);
+    setCouponError("");
+    setCouponStatus("Validating coupon...");
+
+    try {
+      const result = await validateCoupon(code);
+      if (!result || !result.valid) {
+        setCouponError(result?.error || "Coupon is not valid");
+        setCouponStatus("");
+        setValidatingCoupon(false);
+        return;
+      }
+
+      const applied = await applyCoupon(code);
+      if (applied.applied) {
+        setCouponStatus(`✓ Coupon ${code} applied! You'll get ${result.percentOff ?? result.amountOff} off at checkout.`);
+        setCouponCode("");
+      } else {
+        setCouponError(applied.error || "Could not apply coupon");
+        setCouponStatus("");
+      }
+    } catch {
+      setCouponError("Could not validate coupon. Please try again.");
+      setCouponStatus("");
+    } finally {
+      setValidatingCoupon(false);
+    }
+  }
+
+  async function startCheckout(planCycle: "monthly" | "yearly") {
+    setSubmittingCycle(planCycle);
+    setStatus(`Starting ${planCycle} checkout...`);
+    try {
+      const response = await fetch(`${apiBase}/api/billing/checkout-session`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ planCycle }),
+      });
+
+      const payload = await response.json() as { error?: string; url?: string };
+      if (!response.ok || !payload.url) {
+        setStatus(payload.error || "Could not start checkout right now.");
+        return;
+      }
+
+      window.location.assign(payload.url);
+    } catch {
+      setStatus("Could not reach billing service. Please try again.");
+    } finally {
+      setSubmittingCycle(null);
+    }
+  }
+
+  async function openPortal() {
+    setSubmittingPortal(true);
+    setStatus("Opening subscription management portal...");
+    try {
+      const portalUrl = await fetchBillingPortalUrl();
+      if (!portalUrl) {
+        setStatus("Could not open portal right now. Please try again.");
+        return;
+      }
+
+      window.location.assign(portalUrl);
+    } catch {
+      setStatus("Could not reach portal service. Please try again.");
+    } finally {
+      setSubmittingPortal(false);
+    }
+  }
+
+  const showCheckout = !loading && billingEntitlement && !billingEntitlement.accessActive;
+  const showPortal = !loading && billingEntitlement && billingEntitlement.accessActive;
+
   return (
-    <PolicyPage
-      onNavigate={onNavigate}
-      title="Billing"
-      subtitle="Billing is still pilot-managed. This page outlines the current workflow and the self-serve controls planned for launch."
-      sections={[
-        {
-          heading: "Current Pilot Billing Workflow",
-          body: "Billing and renewals are handled manually with school stakeholders.",
-          bullets: [
-            "Pricing and term details are finalized through direct pilot agreements.",
-            "Invoices and payment instructions are not yet self-serve.",
-          ],
-        },
-        {
-          heading: "Planned Billing Capabilities",
-          body: "These features are planned for production readiness.",
-          bullets: [
-            "Plan and seat management",
-            "Invoice history and downloadable receipts",
-            "Renewal reminders and billing notifications",
-          ],
-        },
-      ]}
-      onPrimary={() => onNavigate("/account")}
-      primaryLabel="Open Account"
-      onSecondary={() => onNavigate("/live")}
-      secondaryLabel="Back to Dashboard"
-    />
+    <div className="stats-page policy-page">
+      <section className="stats-page-card policy-page-hero">
+        <p className="stats-page-eyebrow">Preproduction</p>
+        <h1>Billing</h1>
+        <p className="stats-page-subtitle">{showPortal 
+          ? "Your subscription is active. Manage your account, update payment methods, or cancel anytime."
+          : "Subscription access is now managed through Stripe checkout. Activate a plan to unlock full app access."
+        }</p>
+      </section>
+
+      {showPortal && (
+        <section className="stats-page-card policy-page-section">
+          <h3 className="policy-section-heading">Manage Subscription</h3>
+          <p className="stats-page-subcopy policy-section-body">{status}</p>
+          <ul className="policy-section-list">
+            <li>View and manage your subscription in the Stripe billing portal.</li>
+            <li>Update your payment method or billing address.</li>
+            <li>Cancel or change your plan anytime.</li>
+          </ul>
+        </section>
+      )}
+
+      {showCheckout && (
+        <>
+          <section className="stats-page-card policy-page-section">
+            <h3 className="policy-section-heading">Have a Promo Code?</h3>
+            <p className="stats-page-subcopy policy-section-body">Enter your coupon code to get a discount on your first plan.</p>
+            <form onSubmit={(e) => void validateAndApplyCoupon(e)} style={{ marginTop: "1rem" }}>
+              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <input
+                  type="text"
+                  value={couponCode}
+                  onChange={(e) => {
+                    setCouponCode(e.target.value);
+                    setCouponError("");
+                  }}
+                  placeholder="Enter coupon code"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={validatingCoupon}
+                  style={{
+                    flex: 1,
+                    padding: "0.5rem",
+                    borderRadius: "0.375rem",
+                    border: "1px solid rgba(232, 234, 240, 0.2)",
+                    backgroundColor: "rgba(17, 24, 39, 0.5)",
+                    color: "rgba(232, 234, 240, 0.9)",
+                    fontSize: "0.875rem",
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={validatingCoupon || !couponCode.trim()}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    borderRadius: "0.375rem",
+                    backgroundColor: validatingCoupon || !couponCode.trim() ? "rgba(107, 114, 128, 0.5)" : "rgba(59, 130, 246, 0.8)",
+                    color: "white",
+                    fontSize: "0.875rem",
+                    cursor: validatingCoupon || !couponCode.trim() ? "not-allowed" : "pointer",
+                    border: "none",
+                  }}
+                >
+                  {validatingCoupon ? "Validating..." : "Apply"}
+                </button>
+              </div>
+              {couponStatus && <p style={{ color: "rgba(74, 222, 128, 0.8)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{couponStatus}</p>}
+              {couponError && <p style={{ color: "rgba(248, 113, 113, 0.8)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{couponError}</p>}
+            </form>
+          </section>
+
+          <section className="stats-page-card policy-page-section">
+            <h3 className="policy-section-heading">Start Subscription</h3>
+            <p className="stats-page-subcopy policy-section-body">{status}</p>
+            <ul className="policy-section-list">
+              <li>Monthly and yearly checkout are available in Stripe-hosted checkout.</li>
+              <li>After checkout, return to the dashboard and refresh if access does not update immediately.</li>
+            </ul>
+          </section>
+        </>
+      )}
+
+      <section className="stats-page-card policy-page-section">
+        <h3 className="policy-section-heading">Current Rollout</h3>
+        <p className="stats-page-subcopy policy-section-body">This phase includes core checkout and subscription management.</p>
+        <ul className="policy-section-list">
+          <li>Hosted checkout for monthly and yearly plans</li>
+          <li>Org-level entitlement and billing portal</li>
+          <li>Trial-to-paid enforcement</li>
+          <li>Promo code support (beta)</li>
+        </ul>
+      </section>
+
+      <section className="stats-page-card policy-page-actions-wrap">
+        <div className="policy-page-actions">
+          {showPortal && (
+            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void openPortal()}>
+              {submittingPortal ? "Opening Portal..." : "Manage Subscription"}
+            </button>
+          )}
+          {showCheckout && (
+            <>
+              <button
+                type="button"
+                className="shell-nav-link shell-nav-link-active"
+                onClick={() => void startCheckout("monthly")}
+                disabled={submittingCycle !== null}
+              >
+                {submittingCycle === "monthly" ? "Starting Monthly..." : "Start Monthly Plan"}
+              </button>
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => void startCheckout("yearly")}
+                disabled={submittingCycle !== null}
+              >
+                {submittingCycle === "yearly" ? "Starting Yearly..." : "Start Yearly Plan"}
+              </button>
+            </>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 

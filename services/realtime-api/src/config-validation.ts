@@ -9,6 +9,9 @@ export interface RuntimeConfig {
   allowedOriginsConfigured: boolean;
   databaseUrlConfigured: boolean;
   localAuthSecretConfigured: boolean;
+  paywallEnabled: boolean;
+  stripeConfigured: boolean;
+  stripeWebhookSecretConfigured: boolean;
 }
 
 export interface RuntimeValidationResult {
@@ -29,6 +32,13 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     localAuthSecretConfigured: Boolean(
       process.env.BTA_LOCAL_AUTH_SECRET?.trim() || process.env.BTA_AUTH_SECRET?.trim()
     ),
+    paywallEnabled: process.env.BTA_PAYWALL_ENABLED === "1",
+    stripeConfigured: Boolean(
+      process.env.BTA_STRIPE_SECRET_KEY?.trim()
+      && process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim()
+      && process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim()
+    ),
+    stripeWebhookSecretConfigured: Boolean(process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim()),
   };
 }
 
@@ -69,6 +79,17 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
       "Production requires a dedicated local auth signing secret. " +
       "Set BTA_LOCAL_AUTH_SECRET (or legacy BTA_AUTH_SECRET) and do not reuse BTA_API_KEY for token signing."
     );
+  }
+
+  if (config.paywallEnabled && !config.stripeConfigured) {
+    errors.push(
+      "Paywall is enabled but Stripe is not fully configured. " +
+      "Set BTA_STRIPE_SECRET_KEY, BTA_STRIPE_PRICE_ID_MONTHLY, and BTA_STRIPE_PRICE_ID_YEARLY."
+    );
+  }
+
+  if (config.paywallEnabled && !config.stripeWebhookSecretConfigured) {
+    errors.push("Paywall is enabled but BTA_STRIPE_WEBHOOK_SECRET is missing.");
   }
 
   return { errors, warnings };

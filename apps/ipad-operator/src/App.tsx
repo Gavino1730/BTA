@@ -155,9 +155,12 @@ export function App() {
         const payload = await response.json() as { user?: { role?: string } | null };
         const role = String(payload.user?.role ?? "").trim().toLowerCase();
         if (!cancelled) {
-          setAccessBlockedMessage(role === "player"
-            ? "Player accounts cannot use the Score Operator app. Use the coach dashboard for read-only views."
-            : null);
+          if (role === "player") {
+            setAccessBlockedMessage("Player accounts cannot use the Score Operator app. Use the coach dashboard for read-only views.");
+            return;
+          }
+
+          setAccessBlockedMessage(null);
         }
       } catch {
         // Best-effort check only.

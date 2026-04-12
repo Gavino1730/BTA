@@ -457,3 +457,82 @@ export function apiKeyHeader(json = false): Record<string, string> {
   }
   return headers;
 }
+
+export interface BillingEntitlement {
+  paywallEnabled: boolean;
+  accessActive: boolean;
+  status: "trialing" | "active" | "past_due" | "canceled" | "unpaid" | "incomplete";
+  planId: string;
+  trialEndsAtIso: string | null;
+  currentPeriodEndsAtIso: string | null;
+  reason: "paywall_disabled" | "trial_active" | "subscription_active" | "trial_expired" | "inactive_subscription";
+}
+
+export async function fetchBillingEntitlement(): Promise<BillingEntitlement | null> {
+  const response = await fetch(`${apiBase}/api/billing/entitlement`, {
+    headers: apiKeyHeader(),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json() as { entitlement?: BillingEntitlement };
+  return payload.entitlement ?? null;
+}
+
+export async function fetchBillingPortalUrl(): Promise<string | null> {
+  const response = await fetch(`${apiBase}/api/billing/portal-session`, {
+    headers: apiKeyHeader(),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json() as { url?: string };
+  return payload.url ?? null;
+}
+
+export interface CouponValidationResult {
+  valid: boolean;
+  couponId?: string;
+  percentOff?: number | null;
+  amountOff?: number | null;
+  currency?: string | null;
+  duration?: string | null;
+  durationInMonths?: number | null;
+  error?: string;
+}
+
+export async function validateCoupon(couponCode: string): Promise<CouponValidationResult | null> {
+  const response = await fetch(`${apiBase}/api/billing/validate-coupon`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify({ couponCode }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json() as { error?: string };
+    return { valid: false, error: error.error };
+  }
+
+  const payload = await response.json() as CouponValidationResult;
+  return payload;
+}
+
+export async function applyCoupon(couponCode: string): Promise<{ applied: boolean; error?: string }> {
+  const response = await fetch(`${apiBase}/api/billing/apply-coupon`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify({ couponCode }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json() as { error?: string };
+    return { applied: false, error: error.error };
+  }
+
+  return { applied: true };
+}
+

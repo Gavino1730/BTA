@@ -10,7 +10,10 @@ function baseConfig(): RuntimeConfig {
     apiKeyPresent: false,
     allowedOriginsConfigured: true,
     databaseUrlConfigured: true,
-    localAuthSecretConfigured: true
+    localAuthSecretConfigured: true,
+    paywallEnabled: false,
+    stripeConfigured: false,
+    stripeWebhookSecretConfigured: false
   };
 }
 
