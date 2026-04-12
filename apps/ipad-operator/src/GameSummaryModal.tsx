@@ -16,7 +16,6 @@ type TeamStats = {
 
 export interface GameSummaryModalProps {
   onClose: () => void;
-  onQuickAction: (action: "plus2" | "plus3" | "turnover" | "foul") => void;
   onPlayerQuickShot: (player: Player, points: 2 | 3, made: boolean) => void;
   onPlayerQuickStat: (player: Player, stat: "foul" | "def_reb" | "off_reb" | "turnover" | "steal" | "block" | "assist") => void;
 
@@ -86,7 +85,7 @@ function getGameMomentOptions(period: string): Array<{ value: string; label: str
 
 export function GameSummaryModal(props: GameSummaryModalProps) {
   const {
-    onClose, onQuickAction, onPlayerQuickShot, onPlayerQuickStat,
+    onClose, onPlayerQuickShot, onPlayerQuickStat,
     period, overtimeCount, clockInput, setClockInput, changePeriod, getPeriodOrder,
     gameMoment, setGameMoment, vcSideSetup, homeTeamName, awayTeamName, homeTeamAbbr, awayTeamAbbr,
     scores, homeTeamStats, awayTeamStats, periodTeamFouls, totalTimeoutsLeft,
@@ -506,13 +505,6 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
         <div className="summary-body">
           {/* Teams tab */}
           {summaryTab === "teams" && (<>
-            <div className="summary-quick-actions">
-              <button className="summary-qa-btn" onClick={() => onQuickAction("plus2")}>+2 PTS</button>
-              <button className="summary-qa-btn" onClick={() => onQuickAction("plus3")}>+3 PTS</button>
-              <button className="summary-qa-btn summary-qa-btn-alert" onClick={() => onQuickAction("turnover")}>TURNOVER</button>
-              <button className="summary-qa-btn summary-qa-btn-alert" onClick={() => onQuickAction("foul")}>FOUL</button>
-            </div>
-
             <div className="summary-compare-card">
               <div className="summary-compare-header">
                 <span className="summary-compare-label">Stat</span>

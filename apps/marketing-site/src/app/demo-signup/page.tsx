@@ -15,25 +15,46 @@ export default function DemoSignupPage(): JSX.Element {
     <ContentPage
       eyebrow="Demo"
       title="Schedule a live product session"
-      summary="Share your program structure and we will walk your staff through a complete game-day and review workflow using BTA Courtside."
+      summary="Tell us how your staff currently captures, reviews, and coaches, and we will run a practical session mapped to your reality. The goal is to show exactly how BTA Courtside supports your team under real game pressure, not a generic software walkthrough."
       primaryCta={{ label: "Email Demo Team", href: "mailto:demo@btaintel.com" }}
       secondaryCta={{ label: "Contact Sales", href: "/contact" }}
+      variant="sprint"
+      sectionLayout="timeline"
+      keyMetrics={[
+        { label: "Session Length", value: "45-60 Min", detail: "Live workflow walkthrough with Q&A" },
+        { label: "Attendees", value: "3-8 Staff", detail: "Coaches, operators, analysts, admins" },
+        { label: "Output", value: "Pilot Plan", detail: "Operational fit and next-step rollout guidance" },
+      ]}
       sections={[
         {
-          title: "What We Cover",
+          title: "Discovery and Baseline",
+          intro: "We start with your existing process so recommendations are grounded in your reality.",
           points: [
-            "Operator workflow from tip-off through corrections and period transitions.",
-            "Coach dashboard views for lineup impact, pace swings, and context panels.",
-            "Film-sync and review loop for postgame teaching sessions.",
+            "Current game-day workflow mapping: tools, roles, pain points, and timing bottlenecks.",
+            "Staff responsibility map for operators, bench coaches, analysts, and program leads.",
+            "Priority outcomes for pilot success, such as cleaner corrections or faster review turnaround.",
           ],
+          note: "This phase ensures the demo targets your constraints, not ours.",
         },
         {
-          title: "What To Send Ahead",
+          title: "Live Workflow Session",
+          intro: "Then we run through a practical end-to-end flow inside the product.",
           points: [
-            "Team level and season timeline (varsity, club, academy, or mixed).",
-            "Current tools and pain points across stat entry, review, and reporting.",
-            "Desired staff roles in your pilot group and target launch window.",
+            "Operator controls from tip-off through substitutions, fouls, period transitions, and corrections.",
+            "Coaching surfaces showing lineup context, pace trends, and possession-level signal quality.",
+            "Review loop from event timeline to synchronized clips and coaching action items.",
           ],
+          note: "We focus on decision quality and staff confidence, not feature checklists.",
+        },
+        {
+          title: "Pilot Readiness",
+          intro: "Every demo ends with a practical next-step plan.",
+          points: [
+            "Suggested pilot roster and role assignments for first live events.",
+            "Implementation sequence covering setup, training, and first-game support checkpoints.",
+            "Success metrics and review cadence for deciding full rollout timing.",
+          ],
+          note: "If there is not a clear pilot path, we will say so directly.",
         },
       ]}
     />

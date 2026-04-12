@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { type RosterTeam } from "@bta/shared-schema";
 import type { AppData, GameSetup, OperatorAlert, OperatorLinkResponse } from "../types.js";
@@ -48,6 +48,16 @@ export function useSocket({
   onGameSubmitted,
   showInlineNotice,
 }: SocketDeps): void {
+  const onGameSubmittedRef = useRef(onGameSubmitted);
+  const showInlineNoticeRef = useRef(showInlineNotice);
+  const persistPhaseRef = useRef(persistPhase);
+
+  useEffect(() => {
+    onGameSubmittedRef.current = onGameSubmitted;
+    showInlineNoticeRef.current = showInlineNotice;
+    persistPhaseRef.current = persistPhase;
+  }, [onGameSubmitted, showInlineNotice, persistPhase]);
+
   useEffect(() => {
     if (gamePhase !== "live" && gamePhase !== "post-game") {
       setConnectedOperatorCount(0);
@@ -101,13 +111,13 @@ export function useSocket({
 
     socket.on("connect_error", (error: unknown) => {
       const msg = error instanceof Error ? error.message : "Connection error";
-      showInlineNotice(`Server connection failed: ${msg}. Retrying...`, "error");
+      showInlineNoticeRef.current(`Server connection failed: ${msg}. Retrying...`, "error");
     });
 
     socket.on("disconnect", (reason: string) => {
       setConnectedOperatorCount(0);
       if (reason !== "io client namespace disconnect") {
-        showInlineNotice(`Disconnected from server (${reason}). Check your connection.`, "warning");
+        showInlineNoticeRef.current(`Disconnected from server (${reason}). Check your connection.`, "warning");
       }
     });
 
@@ -119,7 +129,7 @@ export function useSocket({
           : typeof error === "object" && error !== null && "error" in error
             ? String((error as Record<string, unknown>).error)
             : String(error);
-      showInlineNotice(`Server error: ${msg}`, "error");
+      showInlineNoticeRef.current(`Server error: ${msg}`, "error");
     });
 
     socket.on("game:insights", (insightsPayload: unknown) => {
@@ -168,7 +178,7 @@ export function useSocket({
 
     socket.on("game:deleted", () => {
       if (gamePhase === "live") {
-        persistPhase("post-game");
+        persistPhaseRef.current("post-game");
       }
     });
 
@@ -184,9 +194,9 @@ export function useSocket({
         return;
       }
 
-      persistPhase("finished");
-      onGameSubmitted();
-      showInlineNotice("Game ended on another device. Switched to finished view.", "info", 4500);
+      persistPhaseRef.current("finished");
+      onGameSubmittedRef.current();
+      showInlineNoticeRef.current("Game ended on another device. Switched to finished view.", "info", 4500);
     });
 
     socket.on("operator:link:updated", (linkPayload: unknown) => {
@@ -274,5 +284,5 @@ export function useSocket({
         socketRef.current = null;
       }
     };
-  }, [gameSetup.apiKey, gameSetup.apiUrl, gameSetup.connectionId, gameId, gamePhase, onGameSubmitted]);
+  }, [gameSetup.apiKey, gameSetup.apiUrl, gameSetup.connectionId, gameId, gamePhase]);
 }

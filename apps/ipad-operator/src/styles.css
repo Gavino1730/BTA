@@ -2493,11 +2493,39 @@ html, body {
 
 .summary-tab-btn {
   min-height: 50px;
-  border-bottom-width: 4px;
+  padding: 0 1.2rem;
+  border: none;
+  border-bottom: 3px solid transparent;
   font-size: 0.86rem;
   font-weight: 850;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  background: transparent;
+  color: rgba(200, 209, 230, 0.5);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.summary-tab-btn::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  border: 1.5px solid rgba(183, 204, 238, 0.5);
+  transition: all 0.15s;
+}
+
+.summary-tab-btn:hover {
+  color: rgba(200, 209, 230, 0.8);
+  border-bottom-color: rgba(105, 171, 255, 0.3);
+}
+
+.summary-tab-btn:hover::before {
+  border-color: rgba(183, 204, 238, 0.9);
 }
 
 .summary-tab-btn.active {
@@ -2506,14 +2534,9 @@ html, body {
   background: linear-gradient(180deg, rgba(105, 171, 255, 0.12), rgba(105, 171, 255, 0));
 }
 
-.summary-tab-btn::before {
-  content: "";
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  margin-right: 0.45rem;
-  border-radius: 2px;
-  border: 1px solid rgba(183, 204, 238, 0.7);
+.summary-tab-btn.active::before {
+  border-color: #69abff;
+  background: #69abff;
 }
 
 @media (max-width: 760px) {
@@ -4530,6 +4553,46 @@ html, body {
 .pregame-settings-link:focus-visible {
   outline: 2px solid rgba(125,189,255,0.95);
   outline-offset: 2px;
+}
+
+.pregame-device-name-section {
+  margin-top: 1.2rem;
+  margin-bottom: 1.2rem;
+}
+
+.pregame-device-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pregame-device-name-hint {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin: 0;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.pregame-device-name-input {
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(79,140,255,0.25);
+  background: rgba(20,25,35,0.5);
+  color: #e8eaf0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.pregame-device-name-input:focus {
+  outline: none;
+  border-color: rgba(79,140,255,0.6);
+  background: rgba(20,25,35,0.7);
+}
+
+.pregame-device-name-input::placeholder {
+  color: #6b7280;
 }
 
 /* Pre-game lineup setup */

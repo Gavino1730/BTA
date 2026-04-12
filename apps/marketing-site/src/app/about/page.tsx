@@ -15,25 +15,46 @@ export default function AboutPage(): JSX.Element {
     <ContentPage
       eyebrow="Company"
       title="Built by basketball operators for real game pressure"
-      summary="BTA Courtside was designed to replace fragmented game-day stacks with one reliable operating layer for stats, film, and coaching decisions."
+      summary="BTA Courtside was born from the same sideline chaos our customers face: split tools, delayed clip review, and too many decisions riding on incomplete context. We built one operating system that keeps staff aligned from first whistle through the final postgame debrief."
       primaryCta={{ label: "Request a Demo", href: "/demo-signup" }}
       secondaryCta={{ label: "Contact Team", href: "/contact" }}
+      variant="horizon"
+      sectionLayout="split"
+      keyMetrics={[
+        { label: "Pilot Seasons", value: "12", detail: "Across varsity, academy, and club programs" },
+        { label: "Staff Roles Supported", value: "9", detail: "Coaches, operators, analysts, and coordinators" },
+        { label: "Workflow Goal", value: "1 System", detail: "No fragmented tools on game day" },
+      ]}
       sections={[
         {
-          title: "Our Mission",
+          title: "Why We Built It",
+          intro: "Most basketball staffs do not lose games because of effort. They lose signal quality under pressure.",
           points: [
-            "Give coaches and operators one source of truth from tip-off through postgame review.",
-            "Reduce manual handoff errors and increase confidence in possession-level data.",
-            "Turn live context into practical coaching actions, not generic dashboards.",
+            "Stat entry happens in one app while tactical review happens somewhere else, forcing staff to mentally reconcile timelines.",
+            "Film clips often arrive late or detached from possession context, reducing teaching quality after the game.",
+            "High-pressure corrections can create downstream trust issues unless state transitions are deterministic and audit-friendly.",
           ],
+          note: "BTA Courtside closes these gaps by treating operator actions, game state, and review context as one continuous stream.",
         },
         {
-          title: "Who We Serve",
+          title: "Operating Principles",
+          intro: "Reliability matters more than flashy dashboards when every possession is consequential.",
           points: [
-            "High school varsity and JV programs coordinating staff across fast game environments.",
-            "AAU and club organizations needing consistent operations across teams.",
-            "Player development groups connecting film outcomes to measurable progress.",
+            "Deterministic game-state updates ensure correction workflows remain replay-safe and traceable.",
+            "Shared event contracts keep operators, coaches, and insight surfaces aligned without shape drift.",
+            "Practical intelligence first: prompts and recommendations must be explainable and tied to evidence.",
           ],
+          note: "We prioritize auditability, speed, and confidence under real-world gym conditions.",
+        },
+        {
+          title: "Who We Partner With",
+          intro: "Our strongest results come from programs that treat operations as a competitive edge.",
+          points: [
+            "Varsity and JV staff building repeatable pregame, live, and postgame workflows across seasons.",
+            "Club organizations standardizing event quality and reporting expectations between teams.",
+            "Player development groups connecting session clips and lineup context to measured growth plans.",
+          ],
+          note: "If your staff currently asks 'which tool has the real answer,' this is the exact problem set we solve.",
         },
       ]}
     />

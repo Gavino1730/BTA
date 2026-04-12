@@ -48,6 +48,58 @@ function buildSupportPayload(flow: "invite" | "verify", email: string, token: st
   ].join("\n");
 }
 
+interface AuthRouteFrameProps {
+  subtitle: string;
+  title: string;
+  titleAccent: string;
+  topbarSubtitle: string;
+  primaryAction: React.ReactNode;
+  secondaryAction?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+function AuthRouteFrame({
+  subtitle,
+  title,
+  titleAccent,
+  topbarSubtitle,
+  primaryAction,
+  secondaryAction,
+  children,
+}: AuthRouteFrameProps) {
+  return (
+    <div className="auth-page">
+      <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
+      <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
+
+      <header className="auth-topbar">
+        {primaryAction}
+        <div className="auth-brand-lockup" aria-label="BTA Courtside">
+          <span className="auth-brand-badge">BTA</span>
+          <div>
+            <p className="auth-brand-name">Courtside</p>
+            <p className="auth-brand-subtitle">{topbarSubtitle}</p>
+          </div>
+        </div>
+        {secondaryAction ?? <span className="auth-topbar-pill">Coach Access</span>}
+      </header>
+
+      <main className="auth-shell auth-shell-compact">
+        <section className="auth-hero-panel auth-hero-panel-compact">
+          <span className="auth-kicker">Secure Access</span>
+          <h1 className="auth-display-title">
+            {title}
+            <span>{titleAccent}</span>
+          </h1>
+          <p className="auth-hero-copy">{subtitle}</p>
+        </section>
+
+        {children}
+      </main>
+    </div>
+  );
+}
+
 function ShellPage({ title, subtitle, bullets = [], onPrimary, primaryLabel, onSecondary, secondaryLabel }: ShellPageProps) {
   return (
     <div className="stats-page">
@@ -166,54 +218,67 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
   };
 
   return (
-    <div className="stats-page">
-      <section className="stats-page-card policy-page-hero">
-        <p className="stats-page-eyebrow">Invite Access</p>
-        <h1>Accept Team Invite</h1>
-        <p className="stats-page-subtitle">Use the invited email and invite token to continue into login.</p>
-      </section>
+    <AuthRouteFrame
+      topbarSubtitle="Invitation Confirmation"
+      title="Accept a staff invite and"
+      titleAccent="join the coach workspace."
+      subtitle="Use the invited email and invite token from your organization email. Once accepted, you can continue directly into login with the same address."
+      primaryAction={<button type="button" className="auth-topbar-link" onClick={() => onNavigate(nextLoginPath)}>Back to Login</button>}
+      secondaryAction={<span className="auth-topbar-pill">Invite Access</span>}
+    >
+      <section className="auth-card" aria-labelledby="invite-accept-title">
+        <div className="auth-card-head">
+          <p className="auth-kicker">Team Invite</p>
+          <h2 id="invite-accept-title">Confirm invite details</h2>
+          <p>Paste the invite token exactly as sent. If the email is already filled from the link, you only need to review and submit.</p>
+        </div>
 
-      <section className="stats-page-card policy-page-section">
-        <h3 className="policy-section-heading">Invite Details</h3>
-        <div className="setup-grid">
-          <label className="stats-filter-field">
+        <div className="auth-form">
+          <label className="auth-field">
             <span>Invited Email</span>
             <input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="coach@program.org"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </label>
-          <label className="stats-filter-field">
+
+          <label className="auth-field">
             <span>Invite Token</span>
             <input
               value={token}
               onChange={(event) => setToken(event.target.value)}
               placeholder="Paste invite token"
+              autoComplete="one-time-code"
+              spellCheck={false}
             />
           </label>
-        </div>
-        <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
-          {hasToken
-            ? "Token detected. Continue to login with your invited email."
-            : "No token detected. Ask your admin to resend the invite link."}
-        </p>
-        {statusMessage && <p className="stats-page-subcopy">{statusMessage}</p>}
-        {errorMessage && <p className="stats-page-subcopy" style={{ color: "#fca5a5" }}>{errorMessage}</p>}
-      </section>
 
-      <section className="stats-page-card policy-page-actions-wrap">
-        <div className="policy-page-actions">
-          <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => { void handleAcceptInvite(); }} disabled={submitting}>
+          <p className="auth-support-copy">
+            {hasToken
+              ? "Invite token detected. Submit below to activate access for this email."
+              : "No token detected. Ask your admin to resend the invite email if needed."}
+          </p>
+
+          {statusMessage && <p className="auth-status" aria-live="polite">{statusMessage}</p>}
+          {errorMessage && <p className="auth-status" aria-live="polite" style={{ color: "#fecaca" }}>{errorMessage}</p>}
+
+          <button type="button" className="auth-primary-button" onClick={() => { void handleAcceptInvite(); }} disabled={submitting}>
             {submitting ? "Accepting..." : "Accept Invite"}
           </button>
-          <button type="button" className="shell-nav-link" onClick={() => onNavigate(nextLoginPath)}>
+        </div>
+
+        <div className="auth-link-row">
+          <button type="button" className="auth-secondary-button" onClick={() => onNavigate(nextLoginPath)}>
             Continue to Login
           </button>
           <button
             type="button"
-            className="shell-nav-link"
+            className="auth-secondary-button"
             onClick={() => {
               const payload = buildSupportPayload("invite", email, token);
               void navigator.clipboard?.writeText(payload);
@@ -223,7 +288,7 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
           </button>
         </div>
       </section>
-    </div>
+    </AuthRouteFrame>
   );
 }
 
@@ -273,54 +338,67 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
   };
 
   return (
-    <div className="stats-page">
-      <section className="stats-page-card policy-page-hero">
-        <p className="stats-page-eyebrow">Email Verification</p>
-        <h1>Verify Email</h1>
-        <p className="stats-page-subtitle">Confirm your verification details, then continue to login.</p>
-      </section>
+    <AuthRouteFrame
+      topbarSubtitle="Email Confirmation"
+      title="Verify your email and"
+      titleAccent="unlock coach access."
+      subtitle="Confirm the verification token from your inbox. After verification, you can continue to login without leaving the same auth flow."
+      primaryAction={<button type="button" className="auth-topbar-link" onClick={() => onNavigate(nextLoginPath)}>Back to Login</button>}
+      secondaryAction={<span className="auth-topbar-pill">Email Verification</span>}
+    >
+      <section className="auth-card" aria-labelledby="email-verify-title">
+        <div className="auth-card-head">
+          <p className="auth-kicker">Verification</p>
+          <h2 id="email-verify-title">Confirm your verification details</h2>
+          <p>Use the same email and token that were sent in the verification message. If you opened the link directly, the token should already be present.</p>
+        </div>
 
-      <section className="stats-page-card policy-page-section">
-        <h3 className="policy-section-heading">Verification Details</h3>
-        <div className="setup-grid">
-          <label className="stats-filter-field">
+        <div className="auth-form">
+          <label className="auth-field">
             <span>Email</span>
             <input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="coach@program.org"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </label>
-          <label className="stats-filter-field">
+
+          <label className="auth-field">
             <span>Verification Token</span>
             <input
               value={token}
               onChange={(event) => setToken(event.target.value)}
               placeholder="Paste verification token"
+              autoComplete="one-time-code"
+              spellCheck={false}
             />
           </label>
-        </div>
-        <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
-          {hasToken
-            ? "Token detected. Continue to login after verification."
-            : "Token missing. Request a fresh verification link from your admin."}
-        </p>
-        {statusMessage && <p className="stats-page-subcopy">{statusMessage}</p>}
-        {errorMessage && <p className="stats-page-subcopy" style={{ color: "#fca5a5" }}>{errorMessage}</p>}
-      </section>
 
-      <section className="stats-page-card policy-page-actions-wrap">
-        <div className="policy-page-actions">
-          <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => { void handleVerifyEmail(); }} disabled={submitting}>
+          <p className="auth-support-copy">
+            {hasToken
+              ? "Verification token detected. Submit below to confirm the account email."
+              : "Token missing. Request a fresh verification message if this page was opened manually."}
+          </p>
+
+          {statusMessage && <p className="auth-status" aria-live="polite">{statusMessage}</p>}
+          {errorMessage && <p className="auth-status" aria-live="polite" style={{ color: "#fecaca" }}>{errorMessage}</p>}
+
+          <button type="button" className="auth-primary-button" onClick={() => { void handleVerifyEmail(); }} disabled={submitting}>
             {submitting ? "Verifying..." : "Verify Email"}
           </button>
-          <button type="button" className="shell-nav-link" onClick={() => onNavigate(nextLoginPath)}>
+        </div>
+
+        <div className="auth-link-row">
+          <button type="button" className="auth-secondary-button" onClick={() => onNavigate(nextLoginPath)}>
             Continue to Login
           </button>
           <button
             type="button"
-            className="shell-nav-link"
+            className="auth-secondary-button"
             onClick={() => {
               const payload = buildSupportPayload("verify", email, token);
               void navigator.clipboard?.writeText(payload);
@@ -330,7 +408,7 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
           </button>
         </div>
       </section>
-    </div>
+    </AuthRouteFrame>
   );
 }
 

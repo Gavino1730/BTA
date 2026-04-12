@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
 import { SettingsScreen } from "./SettingsScreen.js";
@@ -291,6 +291,11 @@ export function App() {
   const [connectedOperatorCount, setConnectedOperatorCount] = useState(0);
   const { syncFromCoachCode } = useCoachSync({ appData, setAppData, setConnectionSyncStatus, showInlineNotice });
 
+  const handleGameSubmitted = useCallback(() => {
+    setSubmitStatus("success");
+    setSubmitMessage("Game has been submitted. This iPad is now in finished summary mode.");
+  }, []);
+
   useLineupSync({
     gamePhase,
     appData,
@@ -313,10 +318,7 @@ export function App() {
     setConnectionSyncStatus,
     setConnectedOperatorCount,
     persistPhase,
-    onGameSubmitted() {
-      setSubmitStatus("success");
-      setSubmitMessage("Game has been submitted. This iPad is now in finished summary mode.");
-    },
+    onGameSubmitted: handleGameSubmitted,
     showInlineNotice,
   });
 
@@ -749,21 +751,6 @@ export function App() {
       {showGameSummary && (
         <GameSummaryModal
           onClose={() => setShowGameSummary(false)}
-          onQuickAction={(action) => {
-            if (action === "plus2") {
-              setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) });
-              return;
-            }
-            if (action === "plus3") {
-              setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) });
-              return;
-            }
-            if (action === "turnover") {
-              setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup });
-              return;
-            }
-            setModal({ kind: "stat", stat: "foul", teamId: vcSideSetup });
-          }}
           onPlayerQuickShot={handlePlayerQuickShot}
           onPlayerQuickStat={handlePlayerQuickStat}
           period={period}

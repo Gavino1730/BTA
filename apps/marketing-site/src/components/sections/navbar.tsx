@@ -2,20 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { motion } from "motion/react";
 
 import { navLinks } from "@/content/homepage";
 import { buttonVariants } from "@/components/ui/button";
 import { getDashboardLoginUrl } from "@/lib/site-url";
 import { cn } from "@/lib/utils";
-
-const productItems = [
-  "Live possession tracking",
-  "Bench-side dashboard",
-  "Film cue synchronization",
-  "AI recommendation stream",
-] as const;
 
 export function Navbar(): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
@@ -42,7 +35,7 @@ export function Navbar(): JSX.Element {
       <div className="relative rounded-2xl border border-[rgba(255,247,255,0.2)] bg-[rgba(69,54,138,0.82)] px-5 py-3 backdrop-blur-xl md:px-7">
         <div className="absolute inset-0 bg-[radial-gradient(120%_150%_at_10%_0%,rgba(255,255,255,0.08),transparent_38%),linear-gradient(180deg,rgba(39,29,88,0.12),transparent)]" />
         <nav className="relative flex items-center justify-between gap-4">
-          <Link href="#" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <span className="inline-grid size-8 place-items-center rounded-lg border border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.12)] text-sm font-semibold text-[var(--text-primary)]">
               BTA
             </span>
@@ -50,33 +43,6 @@ export function Navbar(): JSX.Element {
           </Link>
 
           <div className="hidden items-center gap-8 lg:flex">
-            <div className="group relative">
-              <button
-                className="flex items-center gap-1 text-sm text-[rgba(255,249,255,0.88)] transition-colors hover:text-[var(--text-primary)]"
-                aria-haspopup="menu"
-                aria-label="Open product menu"
-              >
-                Product
-                <ChevronDown className="size-4" />
-              </button>
-              <div className="pointer-events-none absolute left-1/2 top-full z-30 w-72 -translate-x-1/2 pt-4 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                <div
-                  className="rounded-xl border border-[var(--border-strong)] bg-[rgba(110,92,198,0.9)] p-3 shadow-[var(--shadow-lg)] backdrop-blur-xl"
-                  role="menu"
-                  aria-label="Product features"
-                >
-                  {productItems.map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.14)] hover:text-[var(--text-primary)]"
-                      role="menuitem"
-                    >
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
             {navLinks.map((link) => (
               <Link
                 key={link.label}
@@ -133,18 +99,7 @@ export function Navbar(): JSX.Element {
           className="overflow-hidden lg:hidden"
         >
           <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
-            <div className="mb-2 grid gap-1">
-              {productItems.map((item) => (
-                <p
-                  key={item}
-                  className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)]"
-                >
-                  {item}
-                </p>
-              ))}
-            </div>
-            <div className="h-px bg-[var(--border-soft)]" />
-            <div className="mt-2 grid gap-1">
+            <div className="grid gap-1">
               <Link
                 href={dashboardLoginUrl}
                 onClick={() => setIsOpen(false)}

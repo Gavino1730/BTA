@@ -152,38 +152,6 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
       </header>
 
       <main className="auth-shell auth-shell-wide">
-        <section className="auth-hero-panel">
-          <span className="auth-kicker">Unified Game-Day Workflow</span>
-          <h1 className="auth-display-title">
-            Run the bench-side dashboard
-            <span>with the same polish as the marketing site.</span>
-          </h1>
-          <p className="auth-hero-copy">
-            Sign in to the live coach workspace for synced stats, film context, secure account controls, and production-grade session handling.
-          </p>
-
-          <div className="auth-metric-grid" aria-label="Product highlights">
-            <article className="auth-metric-card">
-              <span>Live Feed</span>
-              <strong>Realtime dashboard sync</strong>
-            </article>
-            <article className="auth-metric-card">
-              <span>Session Security</span>
-              <strong>Remembered or browser-session sign-in</strong>
-            </article>
-            <article className="auth-metric-card">
-              <span>Recovery</span>
-              <strong>Email-based password reset flow</strong>
-            </article>
-          </div>
-
-          <div className="auth-side-note">
-            <strong>New to BTA Courtside?</strong>
-            <p>Create your coach account first, finish setup once, and then return directly to live operations on future sign-ins.</p>
-            <button type="button" className="auth-secondary-button" onClick={onCreateAccount}>Create Account</button>
-          </div>
-        </section>
-
         <section className="auth-card" aria-labelledby="coach-login-title">
           <div className="auth-card-head">
             <p className="auth-kicker">Coach Login</p>
@@ -241,6 +209,38 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
           <div className="auth-link-row">
             <button type="button" className="auth-secondary-button" onClick={onAcceptInvite}>Accept Team Invite</button>
             <button type="button" className="auth-secondary-button" onClick={onVerifyEmail}>Verify Email</button>
+          </div>
+        </section>
+
+        <section className="auth-hero-panel">
+          <span className="auth-kicker">Unified Game-Day Workflow</span>
+          <h1 className="auth-display-title">
+            Run the bench-side dashboard
+            <span>with the same polish as the marketing site.</span>
+          </h1>
+          <p className="auth-hero-copy">
+            Sign in to the live coach workspace for synced stats, film context, secure account controls, and production-grade session handling.
+          </p>
+
+          <div className="auth-metric-grid" aria-label="Product highlights">
+            <article className="auth-metric-card">
+              <span>Live Feed</span>
+              <strong>Realtime dashboard sync</strong>
+            </article>
+            <article className="auth-metric-card">
+              <span>Session Security</span>
+              <strong>Remembered or browser-session sign-in</strong>
+            </article>
+            <article className="auth-metric-card">
+              <span>Recovery</span>
+              <strong>Email-based password reset flow</strong>
+            </article>
+          </div>
+
+          <div className="auth-side-note">
+            <strong>New to BTA Courtside?</strong>
+            <p>Create your coach account first, finish setup once, and then return directly to live operations on future sign-ins.</p>
+            <button type="button" className="auth-secondary-button" onClick={onCreateAccount}>Create Account</button>
           </div>
         </section>
       </main>

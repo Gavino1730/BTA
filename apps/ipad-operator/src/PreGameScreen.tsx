@@ -152,6 +152,29 @@ export function PreGameScreen({
             Sync Now
           </button>
         </div>
+
+        <div className="pregame-device-name-section">
+          <div className="pregame-device-name-field">
+            <label className="pregame-device-label">Device Name</label>
+            <p className="pregame-device-name-hint">A label for this device shown to the coach on the Manage Operators screen.</p>
+            <input
+              className="pregame-device-name-input"
+              value={appData.gameSetup.deviceName ?? ""}
+              onChange={(event) => {
+                onPersist({
+                  ...appData,
+                  gameSetup: {
+                    ...appData.gameSetup,
+                    deviceName: event.target.value || undefined,
+                  },
+                });
+              }}
+              placeholder="e.g. iPad 1, Scorer's Table"
+              autoComplete="off"
+              aria-label="Device name"
+            />
+          </div>
+        </div>
         <p className="pregame-settings-hint">{connectionSyncStatus}</p>
         {lineupSyncStatus && (
           <p className="pregame-error">{lineupSyncStatus}</p>

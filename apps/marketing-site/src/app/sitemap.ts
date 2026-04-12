@@ -18,6 +18,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/cookie-policy",
     "/acceptable-use",
     "/data-deletion",
+    "/billing-refund-policy",
+    "/copyright-policy",
+    "/youth-student-data-policy",
+    "/community-standards",
+    "/ai-accuracy-disclaimer",
+    "/contact-notice-procedure",
   ] as const;
 
   return routes.map((route) => ({
