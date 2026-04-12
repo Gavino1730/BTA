@@ -58,11 +58,14 @@ function buildEmptyRosterRow(id: number): RosterRow {
 }
 
 export function SetupPage({ onComplete }: SetupPageProps) {
+  const authQuery = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+  const bootstrapSchoolId = (authQuery.get("schoolId") ?? "").trim();
+  const bootstrapEmail = (authQuery.get("email") ?? "").trim().toLowerCase();
   const currentSeason = String(new Date().getFullYear());
   const schoolPlaceholder = "School or program name";
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
-  const [coachEmail, setCoachEmail] = useState("");
+  const [coachEmail, setCoachEmail] = useState(bootstrapEmail);
   const [teamName, setTeamName] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
   const [season, setSeason] = useState(currentSeason);
@@ -76,6 +79,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [authSession, setAuthSession] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState("Create a coach account with email and password to secure this workspace.");
   const [authBusy, setAuthBusy] = useState(false);
+  const [checkoutCycle, setCheckoutCycle] = useState<"monthly" | "yearly">("monthly");
 
   useEffect(() => {
     void (async () => {
@@ -189,9 +193,32 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     }
 
     setAuthBusy(true);
-    setAuthStatus(authMode === "login" ? "Signing in..." : "Creating your secure coach account...");
+    setAuthStatus(authMode === "login" ? "Signing in..." : "Preparing secure account flow...");
 
     try {
+      if (authMode === "register" && !bootstrapSchoolId) {
+        setAuthStatus("Redirecting to secure checkout...");
+        const checkoutResponse = await fetch(`${apiBase}/api/billing/bootstrap-checkout-session`, {
+          method: "POST",
+          headers: apiKeyHeader(true),
+          body: JSON.stringify({
+            fullName: normalizedName,
+            email: normalizedEmail,
+            schoolName: schoolName.trim() || undefined,
+            teamName: teamName.trim() || undefined,
+            planCycle: checkoutCycle,
+          }),
+        });
+
+        const checkoutPayload = await checkoutResponse.json() as { error?: string; url?: string };
+        if (!checkoutResponse.ok || !checkoutPayload.url) {
+          throw new Error(checkoutPayload.error || "Could not start checkout right now.");
+        }
+
+        window.location.assign(checkoutPayload.url);
+        return;
+      }
+
       const response = await fetch(`${apiBase}/api/auth/${authMode === "login" ? "login" : "register"}`, {
         method: "POST",
         headers: apiKeyHeader(true),
@@ -199,6 +226,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           fullName: normalizedName,
           email: normalizedEmail,
           password: normalizedPassword,
+          schoolId: bootstrapSchoolId || undefined,
           schoolName: schoolName.trim() || undefined,
           teamName: teamName.trim() || undefined,
         }),
@@ -322,7 +350,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           <div className="setup-section-head setup-section-head-inline">
             <div>
               <h3>Account Access</h3>
-              <p className="setup-section-copy">Secure this workspace with an email/password coach account before finishing onboarding.</p>
+              <p className="setup-section-copy">
+                {bootstrapSchoolId
+                  ? "Checkout complete. Create your coach account to finish onboarding."
+                  : "Checkout is required before creating a coach account. Complete payment, then return to finish setup."}
+              </p>
             </div>
             <span className={`setup-auth-pill ${authSession ? "setup-auth-pill-active" : ""}`}>
               {authSession ? "Signed in" : "Step 1"}
@@ -362,6 +394,18 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   </button>
                 </div>
 
+                {authMode === "register" && !bootstrapSchoolId && (
+                  <div className="setup-grid">
+                    <label className="stats-filter-field">
+                      <span>Plan</span>
+                      <select value={checkoutCycle} onChange={(event) => setCheckoutCycle(event.target.value === "yearly" ? "yearly" : "monthly")}>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+
                 <div className="setup-grid">
                   <label className="stats-filter-field">
                     <span>Coach Name</span>
@@ -390,7 +434,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     onClick={() => void handleAuthSubmit()}
                     disabled={authBusy}
                   >
-                    {authBusy ? (authMode === "login" ? "Signing In..." : "Creating Account...") : (authMode === "login" ? "Sign In" : "Create Secure Account")}
+                    {authBusy
+                      ? (authMode === "login" ? "Signing In..." : (bootstrapSchoolId ? "Creating Account..." : "Redirecting To Checkout..."))
+                      : (authMode === "login" ? "Sign In" : (bootstrapSchoolId ? "Create Secure Account" : "Continue To Payment"))}
                   </button>
                   <p className="stats-page-status">{authStatus}</p>
                 </div>

@@ -413,17 +413,24 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
 }
 
 export function CheckoutSuccessPage({ onNavigate }: RoutedPageProps) {
+  const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+  const schoolId = (params.get("schoolId") ?? "").trim();
+  const email = (params.get("email") ?? "").trim().toLowerCase();
+  const setupPath = schoolId
+    ? `/setup?schoolId=${encodeURIComponent(schoolId)}${email ? `&email=${encodeURIComponent(email)}` : ""}`
+    : "/setup";
+
   return (
     <ShellPage
       title="Checkout Complete"
-      subtitle="Your billing workflow is marked complete. Subscription activation and entitlement sync can take a moment during preproduction."
+      subtitle="Your billing workflow is marked complete. Create your account in setup to continue."
       bullets={[
-        "If this was a trial start, your trial window should now be active.",
-        "If you do not see updated billing status, refresh Billing in a few seconds.",
-        "Return to Billing if activation status looks stale.",
+        "If webhook sync is still processing, wait a few seconds and retry account creation.",
+        "Setup will preserve your school scope and continue onboarding.",
+        "You can still open Billing after account creation to manage subscription details.",
       ]}
-      onPrimary={() => onNavigate("/billing")}
-      primaryLabel="Open Billing"
+      onPrimary={() => onNavigate(setupPath)}
+      primaryLabel="Continue Setup"
       onSecondary={() => onNavigate("/stats")}
       secondaryLabel="Open Dashboard"
     />
@@ -729,21 +736,7 @@ export function AdminPage({ onNavigate }: RoutedPageProps) {
 }
 
 export function UserSettingsPage({ onNavigate }: RoutedPageProps) {
-  return (
-    <ShellPage
-      title="User Settings"
-      subtitle="Personal settings are in active build."
-      bullets={[
-        "Theme and display preferences",
-        "Notification preferences",
-        "Timezone, default school, and device management",
-      ]}
-      onPrimary={() => onNavigate("/account")}
-      primaryLabel="Open Account"
-      onSecondary={() => onNavigate("/stats/settings")}
-      secondaryLabel="Open Team Settings"
-    />
-  );
+  return <BillingPage onNavigate={onNavigate} />;
 }
 
 export function SupportPage({ onNavigate }: RoutedPageProps) {

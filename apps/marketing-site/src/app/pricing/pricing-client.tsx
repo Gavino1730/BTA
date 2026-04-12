@@ -12,6 +12,7 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 type Plan = {
   name: string;
   monthly: number;
+  annual: number;
   summary: string;
   features: string[];
   featured?: boolean;
@@ -19,9 +20,10 @@ type Plan = {
 
 const plans: Plan[] = [
   {
-    name: "Team",
-    monthly: 129,
-    summary: "For one team that needs reliable game-day operations and faster postgame review.",
+    name: "Courtside Platform",
+    monthly: 199,
+    annual: 1999,
+    summary: "One complete platform plan for live game operations, coaching workflow, and postgame review.",
     features: [
       "1 team workspace",
       "Live possession tracking + corrections",
@@ -29,31 +31,7 @@ const plans: Plan[] = [
       "Clip-linked timeline review",
       "Email support",
     ],
-  },
-  {
-    name: "Program",
-    monthly: 249,
-    summary: "For multi-team schools and clubs that need shared workflows and reporting control.",
-    features: [
-      "Up to 5 team workspaces",
-      "Role-based staff permissions",
-      "Cross-team reporting views",
-      "Priority onboarding support",
-      "Priority support",
-    ],
     featured: true,
-  },
-  {
-    name: "Enterprise",
-    monthly: 449,
-    summary: "For large organizations requiring governance, rollout support, and custom enablement.",
-    features: [
-      "Up to 12 team workspaces",
-      "Custom implementation planning",
-      "Operational review cadence",
-      "Advanced export and data workflows",
-      "Dedicated success channel",
-    ],
   },
 ];
 
@@ -75,12 +53,11 @@ export function PricingClientPage(): JSX.Element {
         };
       }
 
-      const annualMonthlyEffective = Math.round(plan.monthly * 0.83);
       return {
         ...plan,
-        display: annualMonthlyEffective,
-        suffix: "/mo",
-        note: `Billed annually ($${formatPrice(annualMonthlyEffective * 12)}/yr)`,
+        display: plan.annual,
+        suffix: "/yr",
+        note: "Billed annually",
       };
     });
   }, [annual]);
@@ -93,7 +70,7 @@ export function PricingClientPage(): JSX.Element {
         <section className="rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(135deg,#2B235C_0%,#4636C9_45%,#6E5BFF_100%)] px-7 py-10 md:px-12 md:py-14">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[rgba(247,248,252,0.82)]">Plans and Pricing</p>
           <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold leading-[0.95] text-[var(--text-primary)] md:text-7xl">
-            Pick the plan that fits your sideline workflow.
+            One clear plan for your sideline workflow.
           </h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-[rgba(247,248,252,0.9)]">
             Clear pricing, real operational value, and zero guesswork. Start with one team or roll out across your entire program.
@@ -122,15 +99,15 @@ export function PricingClientPage(): JSX.Element {
             >
               Annual
             </button>
-            <span className="text-sm font-semibold text-[var(--accent-signal)]">Save 17%</span>
+            <span className="text-sm font-semibold text-[var(--accent-signal)]">Save $389 yearly</span>
           </div>
         </section>
 
-        <section className="mt-8 grid gap-5 lg:grid-cols-3">
+        <section className="mt-8 grid gap-5 lg:grid-cols-1">
           {renderedPlans.map((plan) => (
             <GlassPanel
               key={plan.name}
-              className={`p-7 ${plan.featured ? "border-[var(--accent-primary)] shadow-[0_0_0_1px_rgba(110,91,255,0.35),0_22px_52px_rgba(8,10,24,0.62)]" : ""}`}
+              className={`mx-auto w-full max-w-2xl p-7 ${plan.featured ? "border-[var(--accent-primary)] shadow-[0_0_0_1px_rgba(110,91,255,0.35),0_22px_52px_rgba(8,10,24,0.62)]" : ""}`}
             >
               {plan.featured ? (
                 <p className="mb-4 inline-flex rounded-full border border-[rgba(70,215,255,0.38)] bg-[rgba(70,215,255,0.16)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--accent-secondary)]">

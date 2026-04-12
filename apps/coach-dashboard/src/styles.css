@@ -1513,6 +1513,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  row-gap: 1.35rem;
   align-items: center;
 }
 
@@ -1525,6 +1526,7 @@ body {
   height: 44px;
   border-radius: 999px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+  margin-bottom: 0.15rem;
 }
 
 .setup-jersey-swatch[aria-pressed="true"] {
