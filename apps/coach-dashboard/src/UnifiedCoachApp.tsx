@@ -574,7 +574,12 @@ export function UnifiedCoachApp() {
     return (
       <LoginPage
         onBackHome={() => { window.location.assign(marketingBase); }}
-        onCreateAccount={() => navigate("/setup")}
+        onCreateAccount={(email) => {
+          const base = `${marketingBase}/get-started`;
+          const normalizedEmail = (email ?? "").trim().toLowerCase();
+          const target = normalizedEmail ? `${base}?email=${encodeURIComponent(normalizedEmail)}` : base;
+          window.location.assign(target);
+        }}
         onForgotPassword={(email) => navigate(buildAuthPath("/forgot-password", email))}
         onAcceptInvite={() => navigate("/invite/accept")}
         onVerifyEmail={() => navigate("/verify-email")}

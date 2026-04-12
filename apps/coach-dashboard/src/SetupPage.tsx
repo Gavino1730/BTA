@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, clearAuthSession, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, marketingBase, storeAuthSession } from "./platform.js";
 
 interface SetupPageProps {
   onComplete: () => void;
@@ -79,7 +79,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [authSession, setAuthSession] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState("Create a coach account with email and password to secure this workspace.");
   const [authBusy, setAuthBusy] = useState(false);
-  const [checkoutCycle, setCheckoutCycle] = useState<"monthly" | "yearly">("monthly");
 
   useEffect(() => {
     void (async () => {
@@ -197,25 +196,19 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
     try {
       if (authMode === "register" && !bootstrapSchoolId) {
-        setAuthStatus("Redirecting to secure checkout...");
-        const checkoutResponse = await fetch(`${apiBase}/api/billing/bootstrap-checkout-session`, {
-          method: "POST",
-          headers: apiKeyHeader(true),
-          body: JSON.stringify({
-            fullName: normalizedName,
-            email: normalizedEmail,
-            schoolName: schoolName.trim() || undefined,
-            teamName: teamName.trim() || undefined,
-            planCycle: checkoutCycle,
-          }),
-        });
-
-        const checkoutPayload = await checkoutResponse.json() as { error?: string; url?: string };
-        if (!checkoutResponse.ok || !checkoutPayload.url) {
-          throw new Error(checkoutPayload.error || "Could not start checkout right now.");
+        setAuthStatus("Redirecting to Get Started...");
+        const query = new URLSearchParams();
+        if (normalizedEmail) {
+          query.set("email", normalizedEmail);
         }
-
-        window.location.assign(checkoutPayload.url);
+        if (schoolName.trim()) {
+          query.set("schoolName", schoolName.trim());
+        }
+        if (teamName.trim()) {
+          query.set("teamName", teamName.trim());
+        }
+        const suffix = query.toString();
+        window.location.assign(`${marketingBase}/get-started${suffix ? `?${suffix}` : ""}`);
         return;
       }
 
@@ -353,7 +346,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
               <p className="setup-section-copy">
                 {bootstrapSchoolId
                   ? "Checkout complete. Create your coach account to finish onboarding."
-                  : "Checkout is required before creating a coach account. Complete payment, then return to finish setup."}
+                  : "Checkout starts from Get Started on the public site. Return here after payment to create your account."}
               </p>
             </div>
             <span className={`setup-auth-pill ${authSession ? "setup-auth-pill-active" : ""}`}>
@@ -394,18 +387,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   </button>
                 </div>
 
-                {authMode === "register" && !bootstrapSchoolId && (
-                  <div className="setup-grid">
-                    <label className="stats-filter-field">
-                      <span>Plan</span>
-                      <select value={checkoutCycle} onChange={(event) => setCheckoutCycle(event.target.value === "yearly" ? "yearly" : "monthly")}>
-                        <option value="monthly">Monthly</option>
-                        <option value="yearly">Yearly</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
-
                 <div className="setup-grid">
                   <label className="stats-filter-field">
                     <span>Coach Name</span>
@@ -435,8 +416,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     disabled={authBusy}
                   >
                     {authBusy
-                      ? (authMode === "login" ? "Signing In..." : (bootstrapSchoolId ? "Creating Account..." : "Redirecting To Checkout..."))
-                      : (authMode === "login" ? "Sign In" : (bootstrapSchoolId ? "Create Secure Account" : "Continue To Payment"))}
+                      ? (authMode === "login" ? "Signing In..." : (bootstrapSchoolId ? "Creating Account..." : "Redirecting To Get Started..."))
+                      : (authMode === "login" ? "Sign In" : (bootstrapSchoolId ? "Create Secure Account" : "Go To Get Started"))}
                   </button>
                   <p className="stats-page-status">{authStatus}</p>
                 </div>

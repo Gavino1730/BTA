@@ -4,7 +4,7 @@ import { apiBase, apiKeyHeader, storeAuthSession, type AuthSessionPersistence } 
 interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
   onBackHome: () => void;
-  onCreateAccount: () => void;
+  onCreateAccount: (email?: string) => void;
   onForgotPassword: (email?: string) => void;
   onAcceptInvite: () => void;
   onVerifyEmail: () => void;
@@ -134,6 +134,11 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     onForgotPassword(normalizedEmail || undefined);
   }
 
+  function handleCreateAccount() {
+    const normalizedEmail = coachEmail.trim().toLowerCase();
+    onCreateAccount(normalizedEmail || undefined);
+  }
+
   return (
     <div className="auth-page">
       <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
@@ -240,7 +245,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
           <div className="auth-side-note">
             <strong>New to BTA Courtside?</strong>
             <p>Create your coach account first, finish setup once, and then return directly to live operations on future sign-ins.</p>
-            <button type="button" className="auth-secondary-button" onClick={onCreateAccount}>Create Account</button>
+            <button type="button" className="auth-secondary-button" onClick={handleCreateAccount}>Create Account</button>
           </div>
         </section>
       </main>

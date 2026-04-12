@@ -1003,8 +1003,8 @@ body {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(90% 52% at 14% -6%, rgba(193, 18, 31, 0.18), transparent 58%),
-    radial-gradient(76% 44% at 90% 8%, rgba(255, 209, 102, 0.12), transparent 62%);
+    radial-gradient(90% 52% at 14% -6%, rgba(70, 122, 255, 0.2), transparent 58%),
+    radial-gradient(76% 44% at 90% 8%, rgba(255, 184, 92, 0.12), transparent 62%);
   z-index: 0;
 }
 
@@ -1016,9 +1016,9 @@ body {
 .setup-page .stats-page-hero {
   margin-bottom: 1.35rem;
   padding: 1.1rem 1.2rem;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border: 1px solid rgba(142, 182, 255, 0.16);
   border-radius: 18px;
-  background: linear-gradient(145deg, rgba(26, 35, 54, 0.9), rgba(20, 27, 43, 0.92));
+  background: linear-gradient(145deg, rgba(10, 20, 38, 0.92), rgba(8, 16, 30, 0.92));
   box-shadow: 0 18px 48px rgba(4, 8, 20, 0.52);
 }
 
@@ -1028,7 +1028,7 @@ body {
 }
 
 .setup-page .stats-page-eyebrow {
-  color: color-mix(in srgb, var(--brand-accent, #ffd166) 86%, white 14%);
+  color: #8eb6ff;
 }
 
 .setup-page .stats-page-subtitle,
@@ -1041,8 +1041,8 @@ body {
   overflow: hidden;
   gap: 1.2rem;
   padding: 1.2rem;
-  background: linear-gradient(180deg, rgba(20, 27, 43, 0.96), rgba(16, 23, 37, 0.98));
-  border-color: var(--border, rgba(255, 255, 255, 0.1));
+  background: linear-gradient(180deg, rgba(10, 20, 38, 0.96), rgba(8, 16, 30, 0.98));
+  border-color: rgba(142, 182, 255, 0.16);
   box-shadow: 0 26px 60px rgba(4, 8, 20, 0.54);
 }
 
@@ -1052,8 +1052,8 @@ body {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at top right, rgba(193, 18, 31, 0.14), transparent 26%),
-    radial-gradient(circle at bottom left, rgba(255, 209, 102, 0.1), transparent 28%);
+    radial-gradient(circle at top right, rgba(70, 122, 255, 0.14), transparent 26%),
+    radial-gradient(circle at bottom left, rgba(255, 184, 92, 0.1), transparent 28%);
 }
 
 .setup-form-shell > * {
@@ -1079,8 +1079,8 @@ body {
 }
 
 .setup-summary-card-accent {
-  background: linear-gradient(180deg, rgba(193, 18, 31, 0.3), rgba(255, 255, 255, 0.04));
-  border-color: color-mix(in srgb, var(--brand-primary, #c1121f) 45%, white 8%);
+  background: linear-gradient(180deg, rgba(70, 122, 255, 0.24), rgba(255, 255, 255, 0.04));
+  border-color: rgba(142, 182, 255, 0.32);
 }
 
 .setup-summary-label {
@@ -1127,9 +1127,9 @@ body {
 }
 
 .setup-auth-pill-active {
-  border-color: color-mix(in srgb, var(--brand-primary, #c1121f) 48%, white 12%);
-  background: color-mix(in srgb, var(--brand-primary, #c1121f) 24%, transparent);
-  color: #ffe6e8;
+  border-color: rgba(142, 182, 255, 0.42);
+  background: rgba(70, 122, 255, 0.2);
+  color: #dbeafe;
 }
 
 .setup-page .shell-nav-link {
@@ -1143,10 +1143,10 @@ body {
 }
 
 .setup-page .shell-nav-link-active {
-  background: linear-gradient(90deg, var(--brand-primary, #c1121f) 0%, var(--brand-primary-strong, #e5383b) 100%);
-  border-color: color-mix(in srgb, var(--brand-primary, #c1121f) 48%, white 16%);
-  color: #ffffff;
-  box-shadow: 0 12px 28px rgba(140, 16, 25, 0.3);
+  color: #140b00;
+  border-color: transparent;
+  background: linear-gradient(135deg, #ffe08a 0%, #f8b84f 55%, #f28c28 100%);
+  box-shadow: 0 16px 30px rgba(242, 140, 40, 0.28);
 }
 
 .setup-auth-toggle {
@@ -1883,7 +1883,7 @@ body {
 
 .setup-submit-button {
   min-width: 11rem;
-  box-shadow: 0 14px 28px rgba(140, 16, 25, 0.28);
+  box-shadow: 0 14px 28px rgba(242, 140, 40, 0.28);
 }
 
 .game-detail-hero {
@@ -6832,10 +6832,10 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   overflow: hidden;
   padding: 1.5rem;
   background:
-    radial-gradient(120% 110% at 8% -8%, rgba(193, 18, 31, 0.2), transparent 52%),
-    radial-gradient(95% 85% at 92% 0%, rgba(255, 209, 102, 0.12), transparent 56%),
-    radial-gradient(100% 90% at 50% 100%, rgba(229, 56, 59, 0.12), transparent 60%),
-    linear-gradient(180deg, #0b111d 0%, #0f1624 38%, #131c2d 100%);
+    radial-gradient(circle at top left, rgba(70, 122, 255, 0.22), transparent 0 28%),
+    radial-gradient(circle at top right, rgba(255, 184, 92, 0.12), transparent 0 24%),
+    radial-gradient(circle at bottom center, rgba(72, 212, 255, 0.1), transparent 0 26%),
+    linear-gradient(135deg, #040814 0%, #09142b 45%, #07111f 100%);
   color: var(--text, #f4f6fb);
 }
 
@@ -6851,14 +6851,14 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   inset: 6rem auto auto -5rem;
   width: 20rem;
   height: 20rem;
-  background: radial-gradient(circle, rgba(193, 18, 31, 0.24), transparent 68%);
+  background: radial-gradient(circle, rgba(70, 122, 255, 0.24), transparent 68%);
 }
 
 .auth-page-glow-right {
   inset: auto -4rem 7rem auto;
   width: 18rem;
   height: 18rem;
-  background: radial-gradient(circle, rgba(255, 209, 102, 0.2), transparent 70%);
+  background: radial-gradient(circle, rgba(255, 184, 92, 0.2), transparent 70%);
 }
 
 .auth-topbar,
@@ -6876,8 +6876,8 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   margin: 0 auto 1.5rem;
   padding: 1rem 1.15rem;
   border-radius: 1.5rem;
-  border: 1px solid var(--border-hi, rgba(255, 255, 255, 0.2));
-  background: rgba(20, 27, 43, 0.85);
+  border: 1px solid rgba(142, 182, 255, 0.14);
+  background: rgba(7, 12, 27, 0.72);
   box-shadow: 0 20px 52px rgba(2, 5, 12, 0.54);
   backdrop-filter: blur(20px);
 }
@@ -6886,9 +6886,9 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .auth-secondary-button,
 .auth-text-link {
   border-radius: 999px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  background: color-mix(in srgb, var(--bg-layer-2, #202b42) 72%, transparent);
-  color: var(--text, #f4f6fb);
+  border: 1px solid rgba(142, 182, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #edf4ff;
 }
 
 .auth-topbar-link,
@@ -6902,8 +6902,9 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .auth-topbar-link:hover,
 .auth-secondary-button:hover,
 .auth-text-link:hover {
-  border-color: var(--border-hi, rgba(255, 255, 255, 0.2));
-  background: color-mix(in srgb, var(--bg-layer-2, #202b42) 88%, transparent);
+  border-color: rgba(245, 184, 92, 0.36);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 28px rgba(5, 10, 24, 0.28);
 }
 
 .auth-brand-lockup {
@@ -6919,8 +6920,8 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   width: 2.45rem;
   height: 2.45rem;
   border-radius: 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--brand-primary, #c1121f) 52%, white 16%);
-  background: color-mix(in srgb, var(--brand-primary, #c1121f) 30%, transparent);
+  border: 1px solid rgba(142, 182, 255, 0.38);
+  background: rgba(70, 122, 255, 0.22);
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -6963,13 +6964,13 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   min-height: 34px;
   padding: 0.4rem 0.8rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--brand-accent, #ffd166) 45%, white 10%);
-  background: color-mix(in srgb, var(--brand-accent, #ffd166) 18%, transparent);
+  border: 1px solid rgba(255, 184, 92, 0.26);
+  background: rgba(255, 184, 92, 0.12);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--brand-accent, #ffd166) 88%, white 12%);
+  color: #ffdca7;
 }
 
 .auth-shell {
@@ -7006,10 +7007,10 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   min-height: 100%;
   padding: clamp(1.4rem, 3vw, 2rem);
   background:
-    radial-gradient(100% 88% at 50% -2%, rgba(193, 18, 31, 0.2), transparent 60%),
-    radial-gradient(70% 78% at 86% 76%, rgba(255, 209, 102, 0.14), transparent 72%),
-    radial-gradient(62% 74% at 12% 84%, rgba(229, 56, 59, 0.14), transparent 74%),
-    linear-gradient(160deg, rgba(20, 27, 43, 0.86), rgba(16, 23, 37, 0.9));
+    radial-gradient(90% 80% at 12% -8%, rgba(70, 122, 255, 0.24), transparent 58%),
+    radial-gradient(70% 74% at 90% 74%, rgba(255, 184, 92, 0.16), transparent 72%),
+    radial-gradient(62% 72% at 12% 84%, rgba(72, 212, 255, 0.12), transparent 74%),
+    linear-gradient(160deg, rgba(12, 22, 40, 0.92), rgba(9, 16, 30, 0.94));
 }
 
 .auth-hero-panel-compact {
@@ -7028,7 +7029,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .auth-display-title span {
-  background: linear-gradient(120deg, #f4f6fb 0%, #ffd166 44%, #e5383b 100%);
+  background: linear-gradient(120deg, #f4f6fb 0%, #8eb6ff 34%, #ffd166 70%, #2ad39a 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -7088,7 +7089,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   gap: 1.15rem;
   align-content: start;
   padding: clamp(1.3rem, 3vw, 1.8rem);
-  background: linear-gradient(160deg, rgba(26, 35, 54, 0.92), rgba(20, 27, 43, 0.96));
+  background: linear-gradient(160deg, rgba(12, 22, 40, 0.92), rgba(9, 16, 30, 0.95));
 }
 
 .auth-card-head {
@@ -7129,8 +7130,8 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
 .auth-field input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--brand-primary, #c1121f) 50%, white 24%);
-  box-shadow: 0 0 0 4px rgba(193, 18, 31, 0.18);
+  border-color: rgba(142, 182, 255, 0.52);
+  box-shadow: 0 0 0 4px rgba(70, 122, 255, 0.18);
   background: color-mix(in srgb, var(--bg-layer-2, #202b42) 74%, transparent);
 }
 
@@ -7157,7 +7158,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 .auth-checkbox input {
   width: 1.05rem;
   height: 1.05rem;
-  accent-color: var(--brand-primary, #c1121f);
+  accent-color: #5ea8ff;
 }
 
 .auth-text-link {
@@ -7171,16 +7172,16 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   min-height: 52px;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--brand-primary, #c1121f) 0%, var(--brand-primary-strong, #e5383b) 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #ffe08a 0%, #f8b84f 55%, #f28c28 100%);
+  color: #140b00;
   font-size: 0.98rem;
   font-weight: 700;
   letter-spacing: 0.03em;
-  box-shadow: 0 16px 32px rgba(140, 16, 25, 0.34);
+  box-shadow: 0 16px 30px rgba(242, 140, 40, 0.28);
 }
 
 .auth-primary-button:hover {
-  background: linear-gradient(90deg, #d11824 0%, #ef4444 100%);
+  filter: saturate(1.08);
 }
 
 .auth-primary-button:disabled {
