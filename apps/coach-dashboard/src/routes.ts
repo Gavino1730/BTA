@@ -111,7 +111,7 @@ export function resolveCoachRoute(pathname: string): AppRoute {
     return "billing";
   }
   if (canonical === "/settings") {
-    return "settings";
+    return "stats-settings";
   }
   if (canonical === "/admin") {
     return "admin";

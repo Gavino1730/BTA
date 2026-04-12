@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 
 import { navLinks } from "@/content/homepage";
 import { buttonVariants } from "@/components/ui/button";
+import { CrossAppLink } from "@/components/ui/cross-app-link";
 import { getDashboardLoginUrl } from "@/lib/site-url";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,7 @@ export function Navbar(): JSX.Element {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
+            <CrossAppLink
               href={dashboardLoginUrl}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "md" }),
@@ -63,7 +64,7 @@ export function Navbar(): JSX.Element {
               )}
             >
               Login
-            </Link>
+            </CrossAppLink>
             <Link
               href="/demo-signup"
               className={cn(
@@ -107,13 +108,13 @@ export function Navbar(): JSX.Element {
               >
                 Get Started
               </Link>
-              <Link
+              <CrossAppLink
                 href={dashboardLoginUrl}
                 onClick={() => setIsOpen(false)}
                 className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--panel-1)]"
               >
                 Login
-              </Link>
+              </CrossAppLink>
               {navLinks.map((link) => (
                 <Link
                   key={link.label}

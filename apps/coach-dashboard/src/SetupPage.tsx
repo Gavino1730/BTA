@@ -325,7 +325,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   }
 
   return (
-    <div className="stats-page setup-page">
+    <div className="marketing-page">
+      <div className="stats-page setup-page">
       <section className="stats-page-hero setup-hero">
         <div>
           <p className="stats-page-eyebrow">Coach onboarding</p>
@@ -582,6 +583,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }

@@ -56,6 +56,21 @@ body {
   color: var(--foreground);
   font-family: var(--font-body), "Inter", "Segoe UI", sans-serif;
   min-height: 100%;
+  transition: opacity 210ms ease, transform 210ms ease, filter 210ms ease;
+}
+
+body.app-exit-to-external {
+  opacity: 0.7;
+  transform: translateY(-4px) scale(0.996);
+  filter: blur(2px);
+}
+
+body.app-exit-to-external::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 40%, rgba(70, 215, 255, 0.16), rgba(13, 16, 32, 0.36));
 }
 
 html {

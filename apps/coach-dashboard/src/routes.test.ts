@@ -18,7 +18,7 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/checkout/cancel")).toBe("checkout-cancel");
     expect(resolveCoachRoute("/notifications")).toBe("stats-notifications");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
-    expect(resolveCoachRoute("/settings")).toBe("settings");
+    expect(resolveCoachRoute("/settings")).toBe("stats-settings");
     expect(resolveCoachRoute("/admin")).toBe("admin");
     expect(resolveCoachRoute("/live")).toBe("live");
     expect(resolveCoachRoute("/support")).toBe("support");

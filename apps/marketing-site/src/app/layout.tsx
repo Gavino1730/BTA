@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { getSiteUrl } from "@/lib/site-url";
+import { PageTransition } from "@/components/layout/page-transition";
 import "./globals.css";
 
 const bodyFont = Inter({
@@ -60,7 +61,7 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        {children}
+        <PageTransition>{children}</PageTransition>
       </body>
     </html>
   );

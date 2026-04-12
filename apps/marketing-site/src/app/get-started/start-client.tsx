@@ -7,6 +7,7 @@ import { AmbientGrid } from "@/components/sections/ambient-grid";
 import { Footer } from "@/components/sections/footer";
 import { Navbar } from "@/components/sections/navbar";
 import { GlassPanel } from "@/components/ui/glass-panel";
+import { CrossAppLink } from "@/components/ui/cross-app-link";
 import { getApiBaseUrl, getDashboardLoginUrl } from "@/lib/site-url";
 
 type PlanCycle = "monthly" | "yearly";
@@ -171,12 +172,12 @@ export function GetStartedClientPage(): JSX.Element {
 
             <div className="mt-6 rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] p-4">
               <p className="text-sm text-[var(--text-secondary)]">Already have an account?</p>
-              <Link
+              <CrossAppLink
                 href={loginUrl}
                 className="mt-2 inline-flex rounded-lg border border-[var(--border-soft)] bg-transparent px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[rgba(28,35,64,0.9)]"
               >
                 Go to Coach Login
-              </Link>
+              </CrossAppLink>
             </div>
           </GlassPanel>
         </section>

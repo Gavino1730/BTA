@@ -10,7 +10,7 @@ import { LoginPage } from "./LoginPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, fetchBillingEntitlement, generateConnectionCode, marketingBase, normalizeConnectionCode, readStoredAuthSession, storeAuthSession, type BillingEntitlement } from "./platform.js";
-import { AdminPage, BillingPage, CheckoutCancelPage, CheckoutSuccessPage, ContactPage, DataDeletionPage, DemoBookingPage, EmailVerificationPage, InviteAcceptancePage, SupportPage, UserSettingsPage } from "./RouteShellPages.js";
+import { AdminPage, BillingPage, CheckoutCancelPage, CheckoutSuccessPage, ContactPage, DataDeletionPage, DemoBookingPage, EmailVerificationPage, InviteAcceptancePage, SupportPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { seoForRoute } from "./seo.js";
@@ -123,10 +123,9 @@ function AppFooter({ onNavigate }: AppFooterProps) {
           <button type="button" onClick={() => onNavigate("/stats/games")}>Games</button>
           <button type="button" onClick={() => onNavigate("/stats/players")}>Players</button>
           <button type="button" onClick={() => onNavigate("/notifications")}>Notifications</button>
-          <button type="button" onClick={() => onNavigate("/account")}>Account</button>
-          <button type="button" onClick={() => onNavigate("/settings")}>Settings</button>
-          <button type="button" onClick={() => onNavigate("/billing")}>Billing</button>
-          <button type="button" onClick={() => onNavigate("/admin")}>Admin</button>
+          <button type="button" onClick={() => onNavigate("/stats/settings")}>Team Settings</button>
+          <button type="button" onClick={() => onNavigate("/account")}>My Account</button>
+          <button type="button" onClick={() => onNavigate("/support")}>Support</button>
         </nav>
         <span className="coach-app-footer-meta">© {currentYear} BTA Courtside · Preproduction</span>
       </div>
@@ -802,7 +801,7 @@ export function UnifiedCoachApp() {
           )}
           {route === "billing" && <BillingPage onNavigate={navigate} />}
           {route === "admin" && <AdminPage onNavigate={navigate} />}
-          {route === "settings" && <UserSettingsPage onNavigate={navigate} />}
+          {route === "settings" && <TeamSettingsPage initialSection="profile" onNavigate={navigate} />}
         </main>
         <AppFooter onNavigate={navigate} />
       </div>
