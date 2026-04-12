@@ -44,12 +44,12 @@ export function FinalCta(): JSX.Element {
             Bring your stats, film, and coaching intelligence into one live command center.
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-[var(--text-secondary)]">
-            Schedule a product session and see how BTA Courtside runs from game entry to review in a single workflow.
+            Start your subscription, create your coach account, and launch your workspace today without waiting on a demo call.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Button size="lg" onClick={() => window.location.assign("/demo-signup")}>Book a Product Session</Button>
+            <Button size="lg" onClick={() => window.location.assign("/get-started")}>Get Started Now</Button>
             <Button size="lg" variant="ghost" onClick={() => window.location.assign("/pricing")}>
-              Download Overview
+              View Pricing
             </Button>
           </div>
         </motion.div>

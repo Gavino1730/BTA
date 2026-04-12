@@ -23,3 +23,14 @@ export function getDashboardUrl(): string {
 export function getDashboardLoginUrl(): string {
   return `${getDashboardUrl()}/login`;
 }
+
+export function getApiBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_API_BASE?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  return process.env.NODE_ENV === "production"
+    ? "https://api.btaintel.com"
+    : "http://localhost:4000";
+}

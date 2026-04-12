@@ -73,8 +73,8 @@ export function Navbar(): JSX.Element {
             >
               Watch Demo
             </Link>
-            <Link href="/contact" className={buttonVariants({ size: "md" })}>
-              Book a Session
+            <Link href="/get-started" className={buttonVariants({ size: "md" })}>
+              Get Started
             </Link>
             <button
               type="button"
@@ -100,6 +100,13 @@ export function Navbar(): JSX.Element {
         >
           <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
             <div className="grid gap-1">
+              <Link
+                href="/get-started"
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--panel-1)]"
+              >
+                Get Started
+              </Link>
               <Link
                 href={dashboardLoginUrl}
                 onClick={() => setIsOpen(false)}

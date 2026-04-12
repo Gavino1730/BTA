@@ -265,7 +265,7 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
           </p>
 
           {statusMessage && <p className="auth-status" aria-live="polite">{statusMessage}</p>}
-          {errorMessage && <p className="auth-status" aria-live="polite" style={{ color: "#fecaca" }}>{errorMessage}</p>}
+          {errorMessage && <p className="auth-status auth-status-error" aria-live="polite">{errorMessage}</p>}
 
           <button type="button" className="auth-primary-button" onClick={() => { void handleAcceptInvite(); }} disabled={submitting}>
             {submitting ? "Accepting..." : "Accept Invite"}
@@ -385,7 +385,7 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
           </p>
 
           {statusMessage && <p className="auth-status" aria-live="polite">{statusMessage}</p>}
-          {errorMessage && <p className="auth-status" aria-live="polite" style={{ color: "#fecaca" }}>{errorMessage}</p>}
+          {errorMessage && <p className="auth-status auth-status-error" aria-live="polite">{errorMessage}</p>}
 
           <button type="button" className="auth-primary-button" onClick={() => { void handleVerifyEmail(); }} disabled={submitting}>
             {submitting ? "Verifying..." : "Verify Email"}

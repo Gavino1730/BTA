@@ -87,7 +87,7 @@ export const footerGroups = [
     links: [
       { label: "Features", href: "/features" },
       { label: "Pricing", href: "/pricing" },
-      { label: "Demo Signup", href: "/demo-signup" },
+      { label: "Get Started", href: "/get-started" },
       { label: "About", href: "/about" },
     ],
   },
@@ -120,7 +120,7 @@ export const footerGroups = [
     title: "Access",
     links: [
       { label: "Coach Login", href: "https://dashboard.btaintel.com/login" },
-      { label: "Book Demo", href: "/demo-signup" },
+      { label: "Start Signup", href: "/get-started" },
       { label: "Contact Team", href: "/contact" },
       { label: "Support", href: "/support" },
     ],

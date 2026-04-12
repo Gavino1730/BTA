@@ -124,16 +124,17 @@ export function PricingClientPage(): JSX.Element {
                 <span className="mb-1 text-xl text-[var(--text-tertiary)]">{plan.suffix}</span>
               </div>
               <p className="mt-2 text-sm text-[var(--text-tertiary)]">{plan.note}</p>
+              <p className="mt-1 text-xs text-[var(--accent-secondary)]">No demo required. Checkout and signup are self-serve.</p>
 
               <Link
-                href="/demo-signup"
+                href={annual ? "/get-started?cycle=yearly" : "/get-started?cycle=monthly"}
                 className={`mt-6 inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                   plan.featured
                     ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--accent-on)] hover:bg-[#7C6BFF]"
                     : "border-[var(--border-soft)] bg-[rgba(28,35,64,0.9)] text-[var(--text-primary)] hover:bg-[rgba(35,44,79,0.95)]"
                 }`}
               >
-                Get Started
+                Start {annual ? "Annual" : "Monthly"} Signup
               </Link>
 
               <ul className="mt-6 space-y-3">
@@ -161,10 +162,10 @@ export function PricingClientPage(): JSX.Element {
               Talk to Sales
             </Link>
             <Link
-              href="/demo-signup"
+              href="/get-started"
               className="inline-flex rounded-lg border border-[var(--border-soft)] bg-transparent px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[rgba(28,35,64,0.9)]"
             >
-              Book a Demo
+              Self-Serve Signup
             </Link>
           </div>
         </section>
