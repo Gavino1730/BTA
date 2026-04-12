@@ -32,8 +32,9 @@ export const TEAM_COLOR_OPTIONS = [
 
 // ─── Side / navigation ──────────────────────────────────────────────────
 export type TeamSide = "home" | "away";
-export type SettingsView = "menu" | "game-setup" | "ipad-tips";
-export type FeedbackTone = "event" | "undo" | "warning";
+export type SettingsView = "menu" | "game-setup" | "ipad-tips" | "sound";
+export type SoundProfile = "click" | "soft" | "sharp";
+export type FeedbackTone = "event" | "undo" | "warning" | "tap" | "toggle" | "confirm" | "danger" | "modal";
 export type NoticeTone = "info" | "success" | "warning" | "error";
 
 // ─── Data model ─────────────────────────────────────────────────────────
@@ -73,6 +74,10 @@ export interface GameSetup {
   opponentTrackStats?: OpponentTrackStat[];
   homeTeamColor?: string;
   awayTeamColor?: string;
+  soundEnabled?: boolean;
+  soundProfile?: SoundProfile;
+  soundVolume?: number;
+  hapticsEnabled?: boolean;
   statsGameId?: number;
   startingLineup?: string[];
   deviceName?: string;

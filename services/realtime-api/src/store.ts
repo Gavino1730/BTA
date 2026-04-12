@@ -125,6 +125,7 @@ export interface LocalAuthAccount {
   updatedAtIso: string;
   lastLoginAtIso?: string;
   sessionInvalidBeforeIso?: string;
+  scheduledDeletionAtIso?: string;
 }
 
 export interface LocalAuthAccountInput {
@@ -139,6 +140,7 @@ export interface LocalAuthAccountInput {
   status?: LocalAuthAccount["status"];
   lastLoginAtIso?: string;
   sessionInvalidBeforeIso?: string;
+  scheduledDeletionAtIso?: string;
 }
 
 export interface CoachAiSettings {
@@ -1106,6 +1108,7 @@ function sanitizeLocalAuthAccount(
     updatedAtIso: now,
     lastLoginAtIso: trimProfileField(input.lastLoginAtIso ?? existing?.lastLoginAtIso, 64) || undefined,
     sessionInvalidBeforeIso: trimProfileField(input.sessionInvalidBeforeIso ?? existing?.sessionInvalidBeforeIso, 64) || undefined,
+    scheduledDeletionAtIso: trimProfileField(input.scheduledDeletionAtIso ?? existing?.scheduledDeletionAtIso, 64) || undefined,
   };
 }
 
@@ -1159,6 +1162,7 @@ function touchLocalAuthAccountLoginForSchool(schoolId: string, accountId: string
     role: existing.role,
     status: existing.status,
     lastLoginAtIso: new Date().toISOString(),
+    scheduledDeletionAtIso: existing.scheduledDeletionAtIso,
   });
 }
 

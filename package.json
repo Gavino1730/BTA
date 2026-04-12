@@ -11,12 +11,13 @@
     "services/*"
   ],
   "scripts": {
-    "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && npm run build -w @bta/insight-engine && npm run build -w @bta/realtime-api && npm run build -w @bta/coach-dashboard && npm run build -w @bta/ipad-operator",
+    "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && npm run build -w @bta/insight-engine && npm run build -w @bta/realtime-api && npm run build -w @bta/coach-dashboard && npm run build -w @bta/ipad-operator && npm run build -w @bta/marketing-site",
     "test": "npm run test --workspaces --if-present",
     "dev:api": "npm run dev -w @bta/realtime-api",
     "start:api": "npm run start -w @bta/realtime-api",
     "dev:coach": "npm run dev -w @bta/coach-dashboard",
     "dev:operator": "npm run dev -w @bta/ipad-operator",
+    "dev:marketing": "npm run dev -w @bta/marketing-site",
     "dev:stats": "npm run dev:coach",
     "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach --prefix-colors cyan,green,yellow \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\"",
     "game-day": "node scripts/run-ps.mjs scripts/game-day.ps1",

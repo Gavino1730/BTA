@@ -1,4 +1,4 @@
-# BTA Platform — Consolidated Improvements Tracker
+# BTA Courtside — Consolidated Improvements Tracker
 
 Last updated: April 10, 2026.
 

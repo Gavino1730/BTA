@@ -1,6 +1,8 @@
-# BTA Platform
+# BTA Courtside
 
-Realtime basketball platform for high school programs, with deterministic game-state replay, live operator capture, coach-facing dashboards, and rules-based AI insights.
+BTA Courtside is a realtime basketball intelligence platform for high school programs, with deterministic game-state replay, live operator capture, coach-facing dashboards, and rules-based AI insights.
+
+BTA stands for Beyond the Arc.
 
 ## What this repo includes
 

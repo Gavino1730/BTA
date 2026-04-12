@@ -74,7 +74,7 @@ export function MarketingPage({ onNavigate, isAuthenticated = false }: Marketing
             <p className="mkt-home-kicker">Built for high school basketball programs</p>
             <h1>Know what call to make before the next possession starts.</h1>
             <p>
-              BTA is for during-game decisions. Not post-game film review.<br />
+              BTA Courtside is for during-game decisions. Not post-game film review.<br />
               Your staff sees momentum, lineup impact, and recommendation timing in one view.
             </p>
             <div className="mkt-home-actions">

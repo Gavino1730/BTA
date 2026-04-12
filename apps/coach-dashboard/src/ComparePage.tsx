@@ -33,13 +33,13 @@ export function ComparePage({ onNavigate }: ComparePageProps) {
       <main className="mkt-detail-main modern-main">
         <section className="mkt-detail-hero modern-hero">
           <p className="mkt-badge">Compare</p>
-          <h1>BTA is for during-game calls. Film suites, including Hudl, are strongest after games.</h1>
+          <h1>BTA Courtside is for during-game calls. Film suites, including Hudl, are strongest after games.</h1>
           <p>
-            This is not either-or. Keep film for breakdown. Use BTA for live possession decisions,
+            This is not either-or. Keep film for breakdown. Use BTA Courtside for live possession decisions,
             momentum response, and shared staff context.
           </p>
           <p>
-            If your staff already uses Hudl, BTA fits alongside it: BTA for real-time bench operations,
+            If your staff already uses Hudl, BTA Courtside fits alongside it: BTA Courtside for real-time bench operations,
             Hudl for film and post-game breakdown.
           </p>
         </section>
@@ -47,7 +47,7 @@ export function ComparePage({ onNavigate }: ComparePageProps) {
           {ITEMS.map((item, i) => (
             <div key={item.label} className="modern-compare-item" tabIndex={0} aria-label={item.label} style={{ animationDelay: `${i * 0.1}s` }}>
               <h2>{item.label}</h2>
-              <p><strong>BTA:</strong> {item.bta}</p>
+              <p><strong>BTA Courtside:</strong> {item.bta}</p>
               <p><strong>Current workflow:</strong> {item.legacy}</p>
             </div>
           ))}

@@ -1,4 +1,4 @@
-# BTA Platform — Improvements Backlog
+# BTA Courtside — Improvements Backlog
 
 This file is now an index only.
 

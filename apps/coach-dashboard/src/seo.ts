@@ -28,7 +28,7 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   },
   product: {
     title: `${BASE_TITLE} Product | In-Game Decision Workflow`,
-    description: "See how BTA combines live bench context, iPad operator entry, and post-game review in one high school basketball workflow.",
+    description: "See how BTA Courtside combines live bench context, iPad operator entry, and post-game review in one high school basketball workflow.",
     path: "/product",
     imagePath: "/og-product.svg",
   },
@@ -170,7 +170,7 @@ const PUBLIC_SEO: Partial<Record<AppRoute, Omit<SeoEntry, "robots">>> = {
   },
   "invite-accept": {
     title: `${BASE_TITLE} Invite | Accept Team Access`,
-    description: "Accept your BTA team invite, sign in, and verify role-based access for your organization.",
+    description: "Accept your BTA Courtside team invite, sign in, and verify role-based access for your organization.",
     path: "/invite/accept",
     imagePath: "/og-home.svg",
   },

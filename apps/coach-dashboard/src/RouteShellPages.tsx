@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { PublicSiteChrome } from "./PublicSiteChrome.js";
+import { apiBase, apiKeyHeader } from "./platform.js";
 
 interface RouteShellPageProps {
   onNavigate: (path: string) => void;
@@ -262,11 +263,11 @@ export function FeaturesPage({ onNavigate }: RoutedPageProps) {
     <PublicMarketingPage
       kicker="Product Overview"
       title="Features built for real game pressure"
-      subtitle="BTA combines live game context, analytics, and team operations in one professional workflow coaches can trust."
+      subtitle="BTA Courtside combines live game context, analytics, and team operations in one professional workflow coaches can trust."
       onNavigate={onNavigate}
       primaryLabel="Get Started"
       primaryPath="/login"
-      secondaryLabel="About BTA"
+      secondaryLabel="About BTA Courtside"
       secondaryPath="/about"
       sections={[
         {
@@ -306,7 +307,7 @@ export function AboutPage({ onNavigate }: RoutedPageProps) {
     <PublicMarketingPage
       kicker="About"
       title="A platform focused on reliability and coaching clarity"
-      subtitle="BTA is purpose-built for high school basketball programs that need dependable live operations and practical analytics."
+      subtitle="BTA Courtside is purpose-built for high school basketball programs that need dependable live operations and practical analytics."
       onNavigate={onNavigate}
       primaryLabel="View Features"
       primaryPath="/features"
@@ -609,11 +610,47 @@ export function OnboardingWizardPage({ onNavigate }: RoutedPageProps) {
 export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
   const [email, setEmail] = useState(() => readAuthQueryValue("email").toLowerCase());
   const [token, setToken] = useState(() => readAuthQueryValue("token"));
+  const [submitting, setSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const hasToken = Boolean(token.trim());
   const nextLoginPath = useMemo(() => {
     const normalizedEmail = email.trim().toLowerCase();
     return normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login";
   }, [email]);
+
+  const handleAcceptInvite = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedToken = token.trim();
+    if (!normalizedToken) {
+      setErrorMessage("Invite token is required.");
+      setStatusMessage("");
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const response = await fetch(`${apiBase}/api/org/members/accept-invite`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email: normalizedEmail, token: normalizedToken }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setErrorMessage(typeof payload.error === "string" ? payload.error : "Could not accept invite.");
+        return;
+      }
+
+      setStatusMessage("Invite accepted. Redirecting to login.");
+      onNavigate(normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login");
+    } catch {
+      setErrorMessage("Could not reach the API. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
@@ -651,11 +688,16 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
                 ? "Token detected. Continue to login with your invited email."
                 : "No token detected. Ask your admin to resend the invite link."}
             </p>
+            {statusMessage && <p className="stats-page-subcopy">{statusMessage}</p>}
+            {errorMessage && <p className="stats-page-subcopy" style={{ color: "#fca5a5" }}>{errorMessage}</p>}
           </section>
 
           <section className="stats-page-card policy-page-actions-wrap">
             <div className="policy-page-actions">
-              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onNavigate(nextLoginPath)}>
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => { void handleAcceptInvite(); }} disabled={submitting}>
+                {submitting ? "Accepting..." : "Accept Invite"}
+              </button>
+              <button type="button" className="shell-nav-link" onClick={() => onNavigate(nextLoginPath)}>
                 Continue to Login
               </button>
               <button
@@ -680,11 +722,47 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
 export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
   const [email, setEmail] = useState(() => readAuthQueryValue("email").toLowerCase());
   const [token, setToken] = useState(() => readAuthQueryValue("token"));
+  const [submitting, setSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const hasToken = Boolean(token.trim());
   const nextLoginPath = useMemo(() => {
     const normalizedEmail = email.trim().toLowerCase();
     return normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login";
   }, [email]);
+
+  const handleVerifyEmail = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedToken = token.trim();
+    if (!normalizedToken) {
+      setErrorMessage("Verification token is required.");
+      setStatusMessage("");
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    try {
+      const response = await fetch(`${apiBase}/api/auth/email-verify/confirm`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email: normalizedEmail, token: normalizedToken }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setErrorMessage(typeof payload.error === "string" ? payload.error : "Could not verify email.");
+        return;
+      }
+
+      setStatusMessage("Email verified. Redirecting to login.");
+      onNavigate(normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login");
+    } catch {
+      setErrorMessage("Could not reach the API. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <PublicSiteChrome onNavigate={onNavigate}>
@@ -722,11 +800,16 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
                 ? "Token detected. Continue to login after verification."
                 : "Token missing. Request a fresh verification link or contact support."}
             </p>
+            {statusMessage && <p className="stats-page-subcopy">{statusMessage}</p>}
+            {errorMessage && <p className="stats-page-subcopy" style={{ color: "#fca5a5" }}>{errorMessage}</p>}
           </section>
 
           <section className="stats-page-card policy-page-actions-wrap">
             <div className="policy-page-actions">
-              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onNavigate(nextLoginPath)}>
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => { void handleVerifyEmail(); }} disabled={submitting}>
+                {submitting ? "Verifying..." : "Verify Email"}
+              </button>
+              <button type="button" className="shell-nav-link" onClick={() => onNavigate(nextLoginPath)}>
                 Continue to Login
               </button>
               <button

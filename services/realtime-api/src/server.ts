@@ -7,9 +7,18 @@ import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { logger } from "./logger.js";
 import {
+  sendAccountDeletionCanceledEmail,
+  sendAccountDeletionScheduledEmail,
   sendAccountNoticeEmail,
+  sendContactIntakeConfirmationEmail,
+  sendDataDeletionRequestConfirmationEmail,
+  sendDemoRequestConfirmationEmail,
+  sendEmailVerificationEmail,
+  sendOnboardingWelcomeEmail,
   sendOrganizationInviteEmail,
   sendPasswordResetEmail,
+  sendSecurityAlertEmail,
+  sendSupportIntakeConfirmationEmail,
 } from "./email.js";
 import {
   normalizeTeamColor,
@@ -284,6 +293,10 @@ function createRateLimitMiddleware(bucket: string, maxRequests: number, windowMs
 const eventRateLimiter = createRateLimitMiddleware("events", 100, 60000); // 100 events/min per IP
 const authRateLimiter = createRateLimitMiddleware("auth", 20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
 const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const EMAIL_VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const INVITE_ACCEPT_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ACCOUNT_DELETION_GRACE_DAYS = Math.max(1, Number.parseInt(String(process.env.BTA_ACCOUNT_DELETION_GRACE_DAYS ?? "7"), 10) || 7);
+const SUPPORT_INBOX = sanitizeTextField(process.env.BTA_SUPPORT_INBOX, 160).toLowerCase();
 const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
 const DEFAULT_COACH_APP_URL = "http://localhost:5173";
 
@@ -296,12 +309,48 @@ interface PasswordResetTokenRecord {
   createdAt: number;
 }
 
+interface EmailVerificationTokenRecord {
+  token: string;
+  schoolId: string;
+  accountId: string;
+  email: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+interface InviteAcceptTokenRecord {
+  token: string;
+  schoolId: string;
+  memberId: string;
+  email: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
 const passwordResetTokens = new Map<string, PasswordResetTokenRecord>();
+const emailVerificationTokens = new Map<string, EmailVerificationTokenRecord>();
+const inviteAcceptTokens = new Map<string, InviteAcceptTokenRecord>();
 
 function pruneExpiredPasswordResetTokens(now = Date.now()): void {
   for (const [token, record] of passwordResetTokens.entries()) {
     if (record.expiresAt <= now) {
       passwordResetTokens.delete(token);
+    }
+  }
+}
+
+function pruneExpiredEmailVerificationTokens(now = Date.now()): void {
+  for (const [token, record] of emailVerificationTokens.entries()) {
+    if (record.expiresAt <= now) {
+      emailVerificationTokens.delete(token);
+    }
+  }
+}
+
+function pruneExpiredInviteAcceptTokens(now = Date.now()): void {
+  for (const [token, record] of inviteAcceptTokens.entries()) {
+    if (record.expiresAt <= now) {
+      inviteAcceptTokens.delete(token);
     }
   }
 }
@@ -474,6 +523,78 @@ function buildMemberRoleLabel(role: OrganizationMember["role"]): string {
   return "Player";
 }
 
+function buildCoachAppPath(pathname: string, schoolId: string, extraQuery?: Record<string, string>): string {
+  const params = new URLSearchParams();
+  if (schoolId) {
+    params.set("schoolId", schoolId);
+  }
+  if (extraQuery) {
+    for (const [key, value] of Object.entries(extraQuery)) {
+      if (value?.trim()) {
+        params.set(key, value);
+      }
+    }
+  }
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+function createEmailVerificationToken(schoolId: string, accountId: string, email: string): string {
+  pruneExpiredEmailVerificationTokens();
+  for (const [token, record] of emailVerificationTokens.entries()) {
+    if (record.schoolId === schoolId && record.accountId === accountId) {
+      emailVerificationTokens.delete(token);
+    }
+  }
+
+  const token = randomBytes(24).toString("hex");
+  const now = Date.now();
+  emailVerificationTokens.set(token, {
+    token,
+    schoolId,
+    accountId,
+    email,
+    createdAt: now,
+    expiresAt: now + EMAIL_VERIFICATION_TOKEN_TTL_MS,
+  });
+  return token;
+}
+
+function createInviteAcceptToken(schoolId: string, memberId: string, email: string): string {
+  pruneExpiredInviteAcceptTokens();
+  for (const [token, record] of inviteAcceptTokens.entries()) {
+    if (record.schoolId === schoolId && record.memberId === memberId) {
+      inviteAcceptTokens.delete(token);
+    }
+  }
+
+  const token = randomBytes(24).toString("hex");
+  const now = Date.now();
+  inviteAcceptTokens.set(token, {
+    token,
+    schoolId,
+    memberId,
+    email,
+    createdAt: now,
+    expiresAt: now + INVITE_ACCEPT_TOKEN_TTL_MS,
+  });
+  return token;
+}
+
+async function sendSupportRoutingCopy(subject: string, summary: string): Promise<void> {
+  if (!SUPPORT_INBOX || !isValidEmail(SUPPORT_INBOX)) {
+    return;
+  }
+
+  await sendSupportIntakeConfirmationEmail({
+    to: SUPPORT_INBOX,
+    fullName: "BTA operations",
+    title: subject,
+    summary,
+    nextStep: "Route this request to the appropriate owner and acknowledge the requester.",
+  });
+}
+
 function hashPassword(password: string, salt?: string): { passwordHash: string; passwordSalt: string } {
   const passwordSalt = salt ?? randomBytes(16).toString("hex");
   const passwordHash = scryptSync(password, passwordSalt, 64).toString("hex");
@@ -519,6 +640,7 @@ function buildAuthUserView(account: LocalAuthAccount, currentMember: Organizatio
     organizationId: currentMember?.organizationId ?? account.organizationId,
     lastLoginAtIso: account.lastLoginAtIso,
     profilePhotoDataUrl: account.profilePhotoDataUrl ?? null,
+    scheduledDeletionAtIso: account.scheduledDeletionAtIso ?? null,
   };
 }
 
@@ -711,6 +833,28 @@ function requireOrganizationManager(req: Request, res: Response): OrganizationMe
   return currentMember;
 }
 
+function isDeletionDue(account: LocalAuthAccount, now = Date.now()): boolean {
+  const scheduledAtMs = Date.parse(account.scheduledDeletionAtIso ?? "");
+  return Number.isFinite(scheduledAtMs) && scheduledAtMs > 0 && scheduledAtMs <= now;
+}
+
+function purgeAccountIfDeletionDue(schoolId: string, account: LocalAuthAccount): boolean {
+  if (!isDeletionDue(account)) {
+    return false;
+  }
+
+  const linkedMembers = getOrganizationMembersByScope({ schoolId }).filter((member) =>
+    member.authSubject === account.accountId || member.email === account.email
+  );
+
+  for (const member of linkedMembers) {
+    deleteOrganizationMember(member.memberId, { schoolId });
+  }
+
+  deleteLocalAuthAccount(account.accountId, { schoolId });
+  return true;
+}
+
 function resolveAuthenticatedLocalAccount(req: Request, schoolId: string): LocalAuthAccount | null {
   const authContext = (req as ScopedRequest).authContext;
   if (!authContext) {
@@ -725,12 +869,19 @@ function resolveAuthenticatedLocalAccount(req: Request, schoolId: string): Local
   if (subject) {
     const bySubject = accounts.find((account) => account.accountId === subject) ?? null;
     if (bySubject) {
+      if (purgeAccountIfDeletionDue(schoolId, bySubject)) {
+        return null;
+      }
       return bySubject;
     }
   }
 
   if (email) {
-    return accounts.find((account) => account.email === email) ?? null;
+    const byEmail = accounts.find((account) => account.email === email) ?? null;
+    if (byEmail && purgeAccountIfDeletionDue(schoolId, byEmail)) {
+      return null;
+    }
+    return byEmail;
   }
 
   return null;
@@ -744,12 +895,19 @@ function resolveLocalAuthAccountFromContext(authContext: AuthContext, schoolId: 
   if (subject) {
     const bySubject = accounts.find((account) => account.accountId === subject) ?? null;
     if (bySubject) {
+      if (purgeAccountIfDeletionDue(schoolId, bySubject)) {
+        return null;
+      }
       return bySubject;
     }
   }
 
   if (email) {
-    return accounts.find((account) => account.email === email) ?? null;
+    const byEmail = accounts.find((account) => account.email === email) ?? null;
+    if (byEmail && purgeAccountIfDeletionDue(schoolId, byEmail)) {
+      return null;
+    }
+    return byEmail;
   }
 
   return null;
@@ -2899,7 +3057,7 @@ app.get("/api/auth/session", (req, res) => {
   });
 });
 
-app.post("/api/auth/register", authRateLimiter, (req, res) => {
+app.post("/api/auth/register", authRateLimiter, async (req, res) => {
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const fullName = sanitizeTextField(payload.fullName ?? payload.coachName, 120);
   const email = sanitizeTextField(payload.email ?? payload.coachEmail, 160).toLowerCase();
@@ -2973,6 +3131,16 @@ app.post("/api/auth/register", authRateLimiter, (req, res) => {
     return;
   }
 
+  const verifyToken = createEmailVerificationToken(schoolId, account.accountId, account.email);
+  const verifyPath = buildCoachAppPath("/verify-email", schoolId, { token: verifyToken, email: account.email });
+  await sendEmailVerificationEmail({
+    to: account.email,
+    fullName: account.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    verifyUrl: `${resolveCoachAppBaseUrl(req)}${verifyPath}`,
+    expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
+  });
+
   res.status(201).json(buildAuthSessionResponse(schoolId, account, currentMember, token));
 });
 
@@ -2996,6 +3164,10 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
       const schoolId = account.schoolId;
       if (!schoolId) {
         res.status(500).json({ error: "Account tenant scope is missing" });
+        return;
+      }
+      if (purgeAccountIfDeletionDue(schoolId, account)) {
+        res.status(401).json({ error: "Invalid email or password" });
         return;
       }
       const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
@@ -3062,6 +3234,11 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
     }
   }
 
+  if (purgeAccountIfDeletionDue(schoolId, account)) {
+    res.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+
   const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
   saveOnboardingAccountState({
     organization: { schoolId },
@@ -3124,6 +3301,112 @@ app.post("/api/auth/logout-all", requireApiKey, (req, res) => {
   }, { schoolId });
 
   res.status(204).send();
+});
+app.post("/api/auth/email-verify/resend", authRateLimiter, requireApiKey, async (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  let schoolId = getSchoolIdFromRequest(req);
+
+  if (!email || !isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address" });
+    return;
+  }
+
+  let account = schoolId ? getLocalAuthAccountByEmail(email, { schoolId }) : null;
+  if (!account && !schoolId) {
+    const matches = getLocalAuthAccountsByEmailAcrossSchools(email);
+    if (matches.length === 1 && matches[0]?.schoolId) {
+      account = matches[0];
+      schoolId = matches[0].schoolId;
+    }
+  }
+
+  if (!account || !schoolId || account.role === "player") {
+    res.json({ message: "If this email exists, verification instructions have been sent." });
+    return;
+  }
+
+  const verifyToken = createEmailVerificationToken(schoolId, account.accountId, account.email);
+  const verifyPath = buildCoachAppPath("/verify-email", schoolId, { token: verifyToken, email: account.email });
+  await sendEmailVerificationEmail({
+    to: account.email,
+    fullName: account.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    verifyUrl: `${resolveCoachAppBaseUrl(req)}${verifyPath}`,
+    expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
+  });
+
+  res.json({
+    message: "If this email exists, verification instructions have been sent.",
+    expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
+    verifyPath,
+    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { verifyToken } : {}),
+  });
+});
+
+app.post("/api/auth/email-verify/confirm", authRateLimiter, requireApiKey, async (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const token = sanitizeTextField(payload.token, 120);
+  const requestedEmail = sanitizeTextField(payload.email, 160).toLowerCase();
+  const requestedSchoolId = getSchoolIdFromRequest(req);
+
+  if (!token) {
+    res.status(400).json({ error: "token is required" });
+    return;
+  }
+
+  pruneExpiredEmailVerificationTokens();
+  const record = emailVerificationTokens.get(token);
+  if (!record) {
+    res.status(400).json({ error: "Invalid or expired verification token" });
+    return;
+  }
+  if (requestedSchoolId && requestedSchoolId !== record.schoolId) {
+    res.status(400).json({ error: "Invalid or expired verification token" });
+    return;
+  }
+  if (requestedEmail && requestedEmail !== record.email) {
+    res.status(400).json({ error: "Invalid or expired verification token" });
+    return;
+  }
+
+  const account = getLocalAuthAccountsByScope({ schoolId: record.schoolId }).find((entry) => entry.accountId === record.accountId) ?? null;
+  if (!account || account.email !== record.email) {
+    emailVerificationTokens.delete(token);
+    res.status(400).json({ error: "Invalid or expired verification token" });
+    return;
+  }
+
+  const updatedAccount = saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: account.passwordHash,
+    passwordSalt: account.passwordSalt,
+    profilePhotoDataUrl: account.profilePhotoDataUrl,
+    role: account.role,
+    status: "active",
+    lastLoginAtIso: account.lastLoginAtIso,
+    sessionInvalidBeforeIso: account.sessionInvalidBeforeIso,
+  }, { schoolId: record.schoolId });
+
+  const activatedMember = activateKnownMemberForAccount(record.schoolId, updatedAccount);
+  emailVerificationTokens.delete(token);
+
+  const primaryTeam = getPrimaryTeam(record.schoolId).team?.name ?? "your team";
+  await sendOnboardingWelcomeEmail({
+    to: updatedAccount.email,
+    fullName: updatedAccount.fullName,
+    organizationName: resolveOrganizationName(record.schoolId),
+    teamName: sanitizeTextField(primaryTeam, 120) || "your team",
+    loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", record.schoolId)}`,
+  });
+
+  res.json({
+    verified: true,
+    user: buildAuthUserView(updatedAccount, activatedMember),
+  });
 });
 
 app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, async (req, res) => {
@@ -3248,7 +3531,7 @@ app.get("/api/auth/me", (req, res) => {
   });
 });
 
-app.put("/api/auth/me", requireApiKey, (req, res) => {
+app.put("/api/auth/me", requireApiKey, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const account = resolveAuthenticatedLocalAccount(req, schoolId);
   if (!account) {
@@ -3346,10 +3629,42 @@ app.put("/api/auth/me", requireApiKey, (req, res) => {
     role: savedMember?.role ?? savedAccount.role,
   });
 
+  if (isEmailChange) {
+    const verifyToken = createEmailVerificationToken(schoolId, savedAccount.accountId, savedAccount.email);
+    const verifyPath = buildCoachAppPath("/verify-email", schoolId, { token: verifyToken, email: savedAccount.email });
+    await sendEmailVerificationEmail({
+      to: savedAccount.email,
+      fullName: savedAccount.fullName,
+      organizationName: resolveOrganizationName(schoolId),
+      verifyUrl: `${resolveCoachAppBaseUrl(req)}${verifyPath}`,
+      expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
+    });
+
+    await sendSecurityAlertEmail({
+      to: account.email,
+      fullName: account.fullName,
+      organizationName: resolveOrganizationName(schoolId),
+      title: "Your BTA login email changed",
+      detail: `The login email was changed to ${savedAccount.email}`,
+      loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", schoolId)}`,
+    });
+  }
+
+  if (isPasswordChange) {
+    await sendSecurityAlertEmail({
+      to: savedAccount.email,
+      fullName: savedAccount.fullName,
+      organizationName: resolveOrganizationName(schoolId),
+      title: "Your BTA password changed",
+      detail: "The password for this account was updated",
+      loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", schoolId)}`,
+    });
+  }
+
   res.json(buildAuthSessionResponse(schoolId, savedAccount, savedMember, token));
 });
 
-app.delete("/api/auth/me", requireApiKey, (req, res) => {
+app.delete("/api/auth/me", requireApiKey, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const account = resolveAuthenticatedLocalAccount(req, schoolId);
   if (!account) {
@@ -3382,12 +3697,203 @@ app.delete("/api/auth/me", requireApiKey, (req, res) => {
     }
   }
 
-  if (currentMember) {
-    deleteOrganizationMember(currentMember.memberId, { schoolId });
-  }
-  deleteLocalAuthAccount(account.accountId, { schoolId });
+  const scheduledDeletionAtIso = account.scheduledDeletionAtIso
+    && Date.parse(account.scheduledDeletionAtIso) > Date.now()
+    ? account.scheduledDeletionAtIso
+    : new Date(Date.now() + ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  res.status(204).send();
+  saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: account.passwordHash,
+    passwordSalt: account.passwordSalt,
+    profilePhotoDataUrl: account.profilePhotoDataUrl,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+    sessionInvalidBeforeIso: account.sessionInvalidBeforeIso,
+    scheduledDeletionAtIso,
+  }, { schoolId });
+
+  await sendAccountDeletionScheduledEmail({
+    to: account.email,
+    fullName: account.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    scheduledAtIso: scheduledDeletionAtIso,
+    cancelUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/account", schoolId)}`,
+  });
+
+  res.status(202).json({
+    message: "Account deletion scheduled",
+    scheduledDeletionAtIso,
+    graceDays: ACCOUNT_DELETION_GRACE_DAYS,
+  });
+});
+
+app.post("/api/auth/me/cancel-deletion", requireApiKey, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const account = resolveAuthenticatedLocalAccount(req, schoolId);
+  if (!account) {
+    res.status(401).json({ error: "Authenticated account required" });
+    return;
+  }
+
+  if (!account.scheduledDeletionAtIso) {
+    res.status(400).json({ error: "No scheduled deletion is active" });
+    return;
+  }
+
+  const updatedAccount = saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: account.passwordHash,
+    passwordSalt: account.passwordSalt,
+    profilePhotoDataUrl: account.profilePhotoDataUrl,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+    sessionInvalidBeforeIso: account.sessionInvalidBeforeIso,
+    scheduledDeletionAtIso: "",
+  }, { schoolId });
+
+  await sendAccountDeletionCanceledEmail({
+    to: updatedAccount.email,
+    fullName: updatedAccount.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", schoolId)}`,
+  });
+
+  res.json({
+    message: "Scheduled deletion canceled",
+    user: buildAuthUserView(updatedAccount, ensureAuthenticatedOrganizationMember(req, schoolId)),
+  });
+});
+
+app.post("/api/intake/support", requireApiKey, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const fullName = sanitizeTextField(payload.fullName, 120) || "Coach";
+  const message = sanitizeTextField(payload.message, 3000);
+  const topic = sanitizeTextField(payload.topic, 40) || "help";
+  const severity = sanitizeTextField(payload.severity, 20) || "medium";
+  const gameId = sanitizeTextField(payload.gameId, 80);
+  const device = sanitizeTextField(payload.device, 160);
+
+  if (!email || !isValidEmail(email) || !message) {
+    res.status(400).json({ error: "email and message are required" });
+    return;
+  }
+
+  const requestId = `sup-${randomBytes(6).toString("hex")}`;
+  await sendSupportIntakeConfirmationEmail({
+    to: email,
+    fullName,
+    title: "We received your BTA support request",
+    summary: `Request ${requestId} was recorded for ${resolveOrganizationName(schoolId)} (${topic}, ${severity} severity).`,
+    nextStep: "Our team will follow up according to severity. For live game blockers, include updates with timestamps and game ID.",
+  });
+
+  await sendSupportRoutingCopy(
+    `New support intake ${requestId}`,
+    `School: ${schoolId || "unknown"}; Topic: ${topic}; Severity: ${severity}; Email: ${email}; Game: ${gameId || "n/a"}; Device: ${device || "n/a"}; Message: ${message}`,
+  );
+
+  res.status(202).json({ message: "Support intake received", requestId });
+});
+
+app.post("/api/intake/contact", requireApiKey, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const fullName = sanitizeTextField(payload.name ?? payload.fullName, 120);
+  const message = sanitizeTextField(payload.message, 3000);
+  const category = sanitizeTextField(payload.category, 40) || "support";
+  const organization = sanitizeTextField(payload.organization, 160);
+
+  if (!email || !fullName || !message || !isValidEmail(email)) {
+    res.status(400).json({ error: "name, email, and message are required" });
+    return;
+  }
+
+  const requestId = `cnt-${randomBytes(6).toString("hex")}`;
+  await sendContactIntakeConfirmationEmail({
+    to: email,
+    fullName,
+    title: "We received your BTA contact request",
+    summary: `Request ${requestId} was recorded${organization ? ` for ${organization}` : ""} (${category}).`,
+    nextStep: "We will route this to the right team and follow up as soon as possible.",
+  });
+
+  await sendSupportRoutingCopy(
+    `New contact intake ${requestId}`,
+    `School: ${schoolId || "unknown"}; Category: ${category}; Name: ${fullName}; Email: ${email}; Organization: ${organization || "n/a"}; Message: ${message}`,
+  );
+
+  res.status(202).json({ message: "Contact intake received", requestId });
+});
+
+app.post("/api/intake/demo", requireApiKey, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const fullName = sanitizeTextField(payload.fullName ?? payload.name, 120);
+  const organization = sanitizeTextField(payload.organization, 160);
+  const details = sanitizeTextField(payload.details ?? payload.message, 3000);
+
+  if (!email || !fullName || !isValidEmail(email)) {
+    res.status(400).json({ error: "fullName and valid email are required" });
+    return;
+  }
+
+  const requestId = `dem-${randomBytes(6).toString("hex")}`;
+  await sendDemoRequestConfirmationEmail({
+    to: email,
+    fullName,
+    title: "We received your BTA demo request",
+    summary: `Request ${requestId} is in queue${organization ? ` for ${organization}` : ""}.`,
+    nextStep: "Our team will reach out with scheduling options and onboarding prep details.",
+  });
+
+  await sendSupportRoutingCopy(
+    `New demo request ${requestId}`,
+    `School: ${schoolId || "unknown"}; Name: ${fullName}; Email: ${email}; Organization: ${organization || "n/a"}; Details: ${details || "n/a"}`,
+  );
+
+  res.status(202).json({ message: "Demo request received", requestId });
+});
+
+app.post("/api/intake/data-deletion", requireApiKey, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const fullName = sanitizeTextField(payload.fullName ?? payload.name, 120);
+  const details = sanitizeTextField(payload.details ?? payload.message, 3000);
+
+  if (!email || !fullName || !isValidEmail(email)) {
+    res.status(400).json({ error: "fullName and valid email are required" });
+    return;
+  }
+
+  const requestId = `ddr-${randomBytes(6).toString("hex")}`;
+  await sendDataDeletionRequestConfirmationEmail({
+    to: email,
+    fullName,
+    title: "We received your BTA data deletion request",
+    summary: `Request ${requestId} has been logged and queued for review.`,
+    nextStep: "A team member may contact you to verify scope before processing.",
+  });
+
+  await sendSupportRoutingCopy(
+    `New data deletion request ${requestId}`,
+    `School: ${schoolId || "unknown"}; Name: ${fullName}; Email: ${email}; Details: ${details || "n/a"}`,
+  );
+
+  res.status(202).json({ message: "Data deletion request received", requestId });
 });
 
 function normalizeStaffRole(value: unknown, fallback: LocalAuthAccount["role"] = "coach"): LocalAuthAccount["role"] {
@@ -3794,7 +4300,7 @@ app.put("/api/onboarding/profile", requireApiKey, requireWriteRole, (req, res) =
   res.json({ message: "Onboarding profile saved", profile: saved, account, member });
 });
 
-app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
   if (!requireOnboardingIdentity(payload, res)) {
@@ -3833,6 +4339,14 @@ app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res)
   const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload, { complete: true }), { schoolId });
   const member = ensureOwnerMembership(req, schoolId, account);
   const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload, { complete: true }), { schoolId });
+
+  await sendOnboardingWelcomeEmail({
+    to: sanitizeTextField(account.primaryCoach.email, 160).toLowerCase(),
+    fullName: sanitizeTextField(account.primaryCoach.fullName, 120),
+    organizationName: resolveOrganizationName(schoolId),
+    teamName: persistedTeams[0]?.name ?? teamName,
+    loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", schoolId)}`,
+  });
 
   res.status(201).json({
     message: "Onboarding completed successfully",
@@ -3886,7 +4400,9 @@ app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) =
     invitedAtIso: new Date().toISOString(),
   }, { schoolId });
 
-  const inviteUrl = `${resolveCoachAppBaseUrl(req)}/invite/accept?email=${encodeURIComponent(member.email)}`;
+  const inviteToken = createInviteAcceptToken(schoolId, member.memberId, member.email);
+  const invitePath = buildCoachAppPath("/invite/accept", schoolId, { token: inviteToken, email: member.email });
+  const inviteUrl = `${resolveCoachAppBaseUrl(req)}${invitePath}`;
   await sendOrganizationInviteEmail({
     to: member.email,
     fullName: member.fullName,
@@ -3896,7 +4412,117 @@ app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) =
     inviteUrl,
   });
 
-  res.status(201).json({ member, members: getOrganizationMembersByScope({ schoolId }) });
+  res.status(201).json({
+    member,
+    members: getOrganizationMembersByScope({ schoolId }),
+    invitePath,
+    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { inviteToken } : {}),
+  });
+});
+
+app.post("/api/org/members/:memberId/resend-invite", requireApiKey, requireWriteRole, async (req, res) => {
+  const schoolId = getSchoolIdFromRequest(req);
+  const actingMember = requireOrganizationManager(req, res);
+  if (!actingMember) {
+    return;
+  }
+
+  const memberId = sanitizeTextField(req.params.memberId, 80);
+  const member = getOrganizationMembersByScope({ schoolId }).find((entry) => entry.memberId === memberId) ?? null;
+  if (!member) {
+    res.status(404).json({ error: "Organization member not found" });
+    return;
+  }
+
+  const inviteToken = createInviteAcceptToken(schoolId, member.memberId, member.email);
+  const invitePath = buildCoachAppPath("/invite/accept", schoolId, { token: inviteToken, email: member.email });
+  const inviteUrl = `${resolveCoachAppBaseUrl(req)}${invitePath}`;
+
+  await sendOrganizationInviteEmail({
+    to: member.email,
+    fullName: member.fullName,
+    organizationName: resolveOrganizationName(schoolId),
+    inviterName: actingMember.fullName,
+    roleLabel: buildMemberRoleLabel(member.role),
+    inviteUrl,
+  });
+
+  res.json({
+    message: "Invite resent",
+    member,
+    invitePath,
+    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { inviteToken } : {}),
+  });
+});
+
+app.post("/api/org/members/accept-invite", requireApiKey, authRateLimiter, (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const token = sanitizeTextField(payload.token, 120);
+  const requestedEmail = sanitizeTextField(payload.email, 160).toLowerCase();
+  const requestedSchoolId = getSchoolIdFromRequest(req);
+
+  if (!token) {
+    res.status(400).json({ error: "token is required" });
+    return;
+  }
+
+  pruneExpiredInviteAcceptTokens();
+  const record = inviteAcceptTokens.get(token);
+  if (!record) {
+    res.status(400).json({ error: "Invalid or expired invite token" });
+    return;
+  }
+  if (requestedSchoolId && requestedSchoolId !== record.schoolId) {
+    res.status(400).json({ error: "Invalid or expired invite token" });
+    return;
+  }
+  if (requestedEmail && requestedEmail !== record.email) {
+    res.status(400).json({ error: "Invalid or expired invite token" });
+    return;
+  }
+
+  const member = getOrganizationMembersByScope({ schoolId: record.schoolId }).find((entry) => entry.memberId === record.memberId) ?? null;
+  if (!member || member.email !== record.email) {
+    inviteAcceptTokens.delete(token);
+    res.status(400).json({ error: "Invalid or expired invite token" });
+    return;
+  }
+
+  const activatedMember = saveOrganizationMember({
+    memberId: member.memberId,
+    organizationId: member.organizationId,
+    authSubject: member.authSubject,
+    fullName: member.fullName,
+    email: member.email,
+    role: member.role,
+    status: "active",
+    invitedAtIso: member.invitedAtIso,
+    joinedAtIso: member.joinedAtIso || new Date().toISOString(),
+  }, { schoolId: record.schoolId });
+
+  const account = getLocalAuthAccountByEmail(member.email, { schoolId: record.schoolId });
+  if (account) {
+    saveLocalAuthAccount({
+      accountId: account.accountId,
+      organizationId: activatedMember.organizationId || account.organizationId,
+      email: account.email,
+      fullName: account.fullName,
+      passwordHash: account.passwordHash,
+      passwordSalt: account.passwordSalt,
+      profilePhotoDataUrl: account.profilePhotoDataUrl,
+      role: activatedMember.role,
+      status: "active",
+      lastLoginAtIso: account.lastLoginAtIso,
+      sessionInvalidBeforeIso: account.sessionInvalidBeforeIso,
+    }, { schoolId: record.schoolId });
+  }
+
+  inviteAcceptTokens.delete(token);
+  res.json({
+    accepted: true,
+    member: activatedMember,
+    nextPath: account ? "/login" : "/register",
+  });
 });
 
 app.put("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {

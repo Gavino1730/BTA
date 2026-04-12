@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+:root {
+  --bg-base: #090c14;
+  --bg-elevated: #0e1320;
+  --panel-1: rgba(16, 24, 39, 0.72);
+  --panel-2: rgba(18, 28, 46, 0.78);
+  --panel-3: rgba(38, 54, 84, 0.5);
+
+  --text-primary: #f4f7ff;
+  --text-secondary: rgba(229, 236, 255, 0.76);
+  --text-tertiary: rgba(206, 216, 242, 0.56);
+
+  --accent-primary: #4f6dff;
+  --accent-secondary: #25d2c5;
+  --accent-on: #f6f8ff;
+  --accent-glow: rgba(79, 109, 255, 0.55);
+
+  --border-soft: rgba(175, 196, 248, 0.18);
+  --border-strong: rgba(190, 212, 255, 0.35);
+  --ring: rgba(107, 133, 255, 0.75);
+
+  --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.42);
+  --shadow-xl: 0 34px 90px rgba(0, 0, 0, 0.55);
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.8rem;
+  --radius-lg: 1.1rem;
+  --radius-xl: 1.5rem;
+
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), "Segoe UI", sans-serif;
+  min-height: 100%;
+}
+
+html {
+  min-height: 100%;
+  scroll-behavior: smooth;
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+}
+
+.grid-overlay {
+  background-image:
+    linear-gradient(to right, rgba(140, 162, 220, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(140, 162, 220, 0.11) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+}
+
+::selection {
+  background: rgba(79, 109, 255, 0.28);
+  color: #f8fbff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,6 +1,6 @@
 import { normalizeTeamColor } from "@bta/shared-schema";
 import { APP_DATA_KEY, DEFAULT_API, DEFAULT_AWAY_TEAM_COLOR, DEFAULT_HOME_TEAM_COLOR, DEFAULT_SCHOOL_ID, DEVICE_NAME_KEY, OPERATOR_ID_KEY, STORE } from "../constants.js";
-import type { AppData, GameSetup, OpponentTrackStat } from "../types.js";
+import type { AppData, GameSetup, OpponentTrackStat, SoundProfile } from "../types.js";
 import { DEFAULT_OPPONENT_TRACK_STATS } from "../types.js";
 import { normalizeConnectionId, normalizeOpponentTrackStats } from "./network.js";
 import type { GameEvent } from "@bta/shared-schema";
@@ -23,10 +23,29 @@ const DEFAULT_DATA: AppData = {
     opponentTrackStats: [...DEFAULT_OPPONENT_TRACK_STATS],
     homeTeamColor: DEFAULT_HOME_TEAM_COLOR,
     awayTeamColor: DEFAULT_AWAY_TEAM_COLOR,
+    soundEnabled: true,
+    soundProfile: "click",
+    soundVolume: 70,
+    hapticsEnabled: true,
   },
 };
 
 export { DEFAULT_DATA };
+
+function normalizeSoundProfile(value: string | null | undefined): SoundProfile {
+  if (value === "soft" || value === "sharp" || value === "click") {
+    return value;
+  }
+  return "click";
+}
+
+function normalizeSoundVolume(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 70;
+  }
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
 
 function withStandardizedTeams(data: AppData): AppData {
   const teams = data.teams;
@@ -89,6 +108,10 @@ export function loadAppData(): AppData {
   if (qp.get("trackClock") === "1" || qp.get("trackClock") === "0") urlSetup.trackClock = qp.get("trackClock") === "1";
   if (qp.get("trackPossession") === "1" || qp.get("trackPossession") === "0") urlSetup.trackPossession = qp.get("trackPossession") === "1";
   if (qp.get("trackTimeouts") === "1" || qp.get("trackTimeouts") === "0") urlSetup.trackTimeouts = qp.get("trackTimeouts") === "1";
+  if (qp.get("sound") === "1" || qp.get("sound") === "0") urlSetup.soundEnabled = qp.get("sound") === "1";
+  if (qp.get("haptics") === "1" || qp.get("haptics") === "0") urlSetup.hapticsEnabled = qp.get("haptics") === "1";
+  if (qp.get("soundProfile")) urlSetup.soundProfile = normalizeSoundProfile(qp.get("soundProfile"));
+  if (qp.get("soundVolume")) urlSetup.soundVolume = normalizeSoundVolume(qp.get("soundVolume"));
   if (qp.get("opponentTrackStats")) urlSetup.opponentTrackStats = normalizeOpponentTrackStats((qp.get("opponentTrackStats") ?? "").split(","));
   if (qp.get("homeColor")) urlSetup.homeTeamColor = normalizeTeamColor(qp.get("homeColor") ?? undefined) ?? DEFAULT_HOME_TEAM_COLOR;
   if (qp.get("awayColor")) urlSetup.awayTeamColor = normalizeTeamColor(qp.get("awayColor") ?? undefined) ?? DEFAULT_AWAY_TEAM_COLOR;
@@ -116,6 +139,10 @@ export function loadAppData(): AppData {
       gs.schoolId = gs.schoolId?.trim() || DEFAULT_SCHOOL_ID;
       gs.trackPossession = gs.trackPossession ?? true;
       gs.trackTimeouts = gs.trackTimeouts ?? true;
+      gs.soundEnabled = gs.soundEnabled ?? true;
+      gs.soundProfile = normalizeSoundProfile(gs.soundProfile);
+      gs.soundVolume = normalizeSoundVolume(gs.soundVolume);
+      gs.hapticsEnabled = gs.hapticsEnabled ?? true;
       gs.opponentTrackStats = normalizeOpponentTrackStats(gs.opponentTrackStats);
       gs.homeTeamColor = normalizeTeamColor(gs.homeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR;
       gs.awayTeamColor = normalizeTeamColor(gs.awayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR;

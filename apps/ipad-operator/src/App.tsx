@@ -59,6 +59,7 @@ function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsV
   if (h === "settings/game-setup") return { view: "settings", settingsView: "game-setup" };
   if (h === "settings/ipad-tips") return { view: "settings", settingsView: "ipad-tips" };
   if (h.startsWith("settings")) return { view: "settings", settingsView: "menu" };
+  if (h === "settings/sound") return { view: "settings", settingsView: "sound" };
   return { view: "game", settingsView: "menu" };
 }
 
@@ -68,12 +69,58 @@ function viewToHash(v: "game" | "settings", sv: SettingsView): string {
   return "#game";
 }
 
+function inferFeedbackToneFromTarget(target: HTMLElement): FeedbackTone {
+  const control = target.closest("button, [role='button'], .menu-card, .summary-player-row.clickable") as HTMLElement | null;
+  if (!control) {
+    return "tap";
+  }
+  const className = typeof control.className === "string" ? control.className.toLowerCase() : "";
+  const text = (control.textContent ?? "").trim().toLowerCase();
+
+  if (className.includes("modal-close") || className.includes("clock-numpad") || className.includes("chain-btn-skip")) {
+    return "modal";
+  }
+  if (
+    className.includes("delete") ||
+    className.includes("danger") ||
+    className.includes("undo") ||
+    className.includes("-alert") ||
+    /\b(delete|clear|undo|discard|remove|reset)\b/.test(text)
+  ) {
+    return "danger";
+  }
+  if (
+    className.includes("save") ||
+    className.includes("start") ||
+    className.includes("confirm") ||
+    className.includes("sync") ||
+    /\b(save|start|sync|submit|set)\b/.test(text)
+  ) {
+    return "confirm";
+  }
+  if (
+    className.includes("toggle") ||
+    className.includes("tt-btn") ||
+    className.includes("tab-btn") ||
+    className.includes("period-btn")
+  ) {
+    return "toggle";
+  }
+  return "tap";
+}
+
 export function App() {
   const { triggerFeedback, unlockFeedbackAudio } = useFeedback();
   const operatorId = useMemo(() => getOrCreateOperatorId(), []);
 
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
+  const { triggerFeedback, unlockFeedbackAudio } = useFeedback({
+    enabled: appData.gameSetup.soundEnabled ?? true,
+    profile: appData.gameSetup.soundProfile ?? "click",
+    volume: appData.gameSetup.soundVolume ?? 70,
+    hapticsEnabled: appData.gameSetup.hapticsEnabled ?? true,
+  });
   const [accessBlockedMessage, setAccessBlockedMessage] = useState<string | null>(null);
 
   function persistData(next: AppData) {
@@ -158,6 +205,28 @@ export function App() {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  useEffect(() => {
+    function handleGlobalUiClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const control = target.closest("button, [role='button'], .menu-card, .summary-player-row.clickable") as (HTMLElement & { disabled?: boolean }) | null;
+      if (!control || control.disabled) {
+        return;
+      }
+      const tone = inferFeedbackToneFromTarget(target);
+      const vibrateMs = tone === "confirm" ? 10 : tone === "danger" ? 14 : tone === "toggle" ? 6 : 0;
+      triggerFeedback(tone, vibrateMs);
+    }
+
+    document.addEventListener("click", handleGlobalUiClick, true);
+    return () => {
+      document.removeEventListener("click", handleGlobalUiClick, true);
+    };
+  }, [triggerFeedback]);
+  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips", "sound"]);
 
   // ---- Game session state ----
   const gameId = appData.gameSetup.gameId;

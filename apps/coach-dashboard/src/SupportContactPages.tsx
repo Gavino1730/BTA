@@ -1,29 +1,60 @@
 import { type FormEvent, useState } from "react";
 import { PublicSiteChrome } from "./PublicSiteChrome.js";
+import { apiBase, apiKeyHeader } from "./platform.js";
 
 interface RoutedPageProps {
   onNavigate: (path: string) => void;
 }
 
 export function SupportHubPage({ onNavigate }: RoutedPageProps) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [topic, setTopic] = useState<"bug" | "feature" | "help">("help");
   const [severity, setSeverity] = useState<"low" | "medium" | "high">("medium");
   const [gameId, setGameId] = useState("");
   const [device, setDevice] = useState("");
   const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState("Submit support details below. During preproduction this form records intake and will be connected to the ticket pipeline.");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = message.trim();
-    if (!trimmed) {
-      setStatus("Add details so we can help you faster.");
+    if (!trimmed || !email.trim()) {
+      setStatus("Add your email and issue details so we can help you faster.");
       return;
     }
-    setStatus("Support request recorded. Include screenshots or exact timestamps through Contact if this issue blocks live game operations.");
-    setMessage("");
-    setGameId("");
-    setDevice("");
+
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase}/api/intake/support`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          fullName,
+          email,
+          topic,
+          severity,
+          gameId,
+          device,
+          message: trimmed,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus(typeof payload.error === "string" ? payload.error : "Could not submit support request.");
+        return;
+      }
+
+      setStatus("Support request submitted. Check your email for confirmation.");
+      setMessage("");
+      setGameId("");
+      setDevice("");
+    } catch {
+      setStatus("Could not reach the API. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -100,10 +131,18 @@ export function SupportHubPage({ onNavigate }: RoutedPageProps) {
             <h3>Support Intake</h3>
             <p className="settings-section-desc">Response expectation: 1-2 business days during pilot.</p>
           </div>
-          <button type="submit" className="shell-nav-link shell-nav-link-active">Submit</button>
+          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={submitting}>{submitting ? "Submitting..." : "Submit"}</button>
         </div>
 
         <div className="setup-grid">
+          <label className="stats-filter-field">
+            <span>Name</span>
+            <input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" />
+          </label>
+          <label className="stats-filter-field">
+            <span>Email</span>
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@school.org" />
+          </label>
           <label className="stats-filter-field">
             <span>Type</span>
             <select value={topic} onChange={(event) => setTopic(event.target.value as "bug" | "feature" | "help")}> 
@@ -180,9 +219,10 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
   const [preferredReply, setPreferredReply] = useState<"email" | "phone">("email");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState("Use this preproduction form for support, pilot onboarding, billing, and security inquiries.");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim() || !email.trim() || !message.trim()) {
       setStatus("Complete all fields before submitting.");
@@ -193,9 +233,35 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
       return;
     }
 
-    setStatus("Contact request recorded. For urgent game-day incidents, include school ID and call-back availability in your message.");
-    setMessage("");
-    setPhone("");
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase}/api/intake/contact`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          name,
+          email,
+          organization,
+          category,
+          preferredReply,
+          phone,
+          message,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus(typeof payload.error === "string" ? payload.error : "Could not submit contact request.");
+        return;
+      }
+
+      setStatus("Contact request submitted. Check your email for confirmation.");
+      setMessage("");
+      setPhone("");
+    } catch {
+      setStatus("Could not reach the API. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -216,7 +282,7 @@ export function ContactHubPage({ onNavigate }: RoutedPageProps) {
             <h3>Get In Touch</h3>
             <p className="settings-section-desc">Direct support email placeholder: support@bta.local. Include school ID for faster routing.</p>
           </div>
-          <button type="submit" className="shell-nav-link shell-nav-link-active">Send</button>
+          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={submitting}>{submitting ? "Sending..." : "Send"}</button>
         </div>
 
         <div className="setup-grid">

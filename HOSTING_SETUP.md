@@ -1,4 +1,4 @@
-# BTA Hosting Setup
+# BTA Courtside Hosting Setup
 
 Canonical release execution checklist: `RELEASE_CHECKLIST.md`.
 Use that file for preflight, rollout verification, and rollback procedures.

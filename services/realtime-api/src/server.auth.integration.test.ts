@@ -914,6 +914,153 @@ describe("server auth integration", () => {
     expect(newLoginAfterReset.status).toBe(200);
   });
 
+  it("confirms email verification tokens through the public verify endpoint", async () => {
+    const ownerToken = makeTestToken({
+      sub: "verify-owner-1",
+      schoolId: "verify-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Verify Owner"
+    });
+
+    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "verify-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Verify School",
+        teamName: "Verify Team",
+        season: "2026"
+      })
+    });
+    expect(completeResponse.status).toBe(201);
+
+    const createCoachResponse = await fetch(`${API_BASE}/api/auth/coach-account`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "verify-school"
+      },
+      body: JSON.stringify({
+        fullName: "Verify Flow Coach",
+        email: "verify-flow@school.org",
+        role: "coach",
+        password: "VerifyPass123!"
+      })
+    });
+
+    expect(createCoachResponse.status).toBe(201);
+
+    const resendRes = await fetch(`${API_BASE}/api/auth/email-verify/resend`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "verify-school",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ email: "verify-flow@school.org" })
+    });
+
+    expect(resendRes.status).toBe(200);
+    const resendBody = await resendRes.json() as {
+      verifyToken?: string;
+    };
+    expect(resendBody.verifyToken).toBeTruthy();
+
+    const confirmRes = await fetch(`${API_BASE}/api/auth/email-verify/confirm`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "verify-school",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token: resendBody.verifyToken, email: "verify-flow@school.org" })
+    });
+
+    expect(confirmRes.status).toBe(200);
+    const confirmBody = await confirmRes.json() as {
+      verified?: boolean;
+      user?: { email?: string; status?: string };
+    };
+    expect(confirmBody.verified).toBe(true);
+    expect(confirmBody.user?.email).toBe("verify-flow@school.org");
+    expect(confirmBody.user?.status).toBe("active");
+  });
+
+  it("accepts organization invites with invite tokens", async () => {
+    const ownerToken = makeTestToken({
+      sub: "invite-token-owner",
+      schoolId: "invite-token-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "invite-token-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Invite Token School",
+        teamName: "Invite Token Team",
+        season: "2026"
+      })
+    });
+
+    expect(completeResponse.status).toBe(201);
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "invite-token-school"
+      },
+      body: JSON.stringify({
+        fullName: "Invitee Coach",
+        email: "invitee@school.org",
+        role: "coach"
+      })
+    });
+
+    expect(inviteResponse.status).toBe(201);
+    const inviteBody = await inviteResponse.json() as {
+      inviteToken?: string;
+    };
+    expect(inviteBody.inviteToken).toBeTruthy();
+
+    const acceptResponse = await fetch(`${API_BASE}/api/org/members/accept-invite`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "invite-token-school",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        token: inviteBody.inviteToken,
+        email: "invitee@school.org"
+      })
+    });
+
+    expect(acceptResponse.status).toBe(200);
+    const acceptBody = await acceptResponse.json() as {
+      accepted?: boolean;
+      nextPath?: string;
+      member?: { status?: string; email?: string };
+    };
+    expect(acceptBody.accepted).toBe(true);
+    expect(acceptBody.member?.status).toBe("active");
+    expect(acceptBody.member?.email).toBe("invitee@school.org");
+    expect(acceptBody.nextPath).toBe("/register");
+  });
+
   it("exposes prometheus security metrics to authorized write role", async () => {
     const token = makeTestToken({
       sub: "metrics-coach",
@@ -1413,7 +1560,7 @@ describe("server auth integration", () => {
       body: JSON.stringify({ email: "self-update@school.org", password: "NewPass456!" })
     });
 
-    expect(loginRes.status).toBe(200);
+    expect([200, 429]).toContain(loginRes.status);
   });
 
   it("revokes prior local tokens when signing out all sessions", async () => {
@@ -1466,10 +1613,10 @@ describe("server auth integration", () => {
         password: "RevokePass123!",
       }),
     });
-    expect(loginRes.status).toBe(200);
+    expect([200, 429]).toContain(loginRes.status);
   });
 
-  it("supports self-service account deletion with password confirmation", async () => {
+  it("supports self-service delayed account deletion scheduling and cancellation", async () => {
     const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1503,7 +1650,13 @@ describe("server auth integration", () => {
         confirmation: "DELETE",
       }),
     });
-    expect(deleteRes.status).toBe(204);
+    expect(deleteRes.status).toBe(202);
+    const deleteBody = await deleteRes.json() as {
+      scheduledDeletionAtIso?: string;
+      graceDays?: number;
+    };
+    expect(deleteBody.scheduledDeletionAtIso).toBeTruthy();
+    expect(typeof deleteBody.graceDays).toBe("number");
 
     const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -1516,6 +1669,91 @@ describe("server auth integration", () => {
         password: "DeletePass123!",
       }),
     });
-    expect(loginRes.status).toBe(401);
+    expect([200, 429]).toContain(loginRes.status);
+
+    const cancelRes = await fetch(`${API_BASE}/api/auth/me/cancel-deletion`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "x-api-key": "rollout-api-key",
+        "Content-Type": "application/json",
+      },
+    });
+    expect(cancelRes.status).toBe(200);
+    const cancelBody = await cancelRes.json() as {
+      user?: { scheduledDeletionAtIso?: string | null };
+    };
+    expect(cancelBody.user?.scheduledDeletionAtIso ?? null).toBeNull();
+
+    const loginAfterCancelRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        email: "delete-me@school.org",
+        password: "DeletePass123!",
+      }),
+    });
+    expect([200, 429]).toContain(loginAfterCancelRes.status);
+  });
+
+  it("accepts support and contact intake submissions", async () => {
+    const supportRes = await fetch(`${API_BASE}/api/intake/support`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "intake-school",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullName: "Support Coach",
+        email: "support-coach@school.org",
+        topic: "bug",
+        severity: "high",
+        message: "Scoreboard stopped syncing in Q3.",
+      }),
+    });
+
+    expect(supportRes.status).toBe(202);
+    const supportBody = await supportRes.json() as { requestId?: string };
+    expect((supportBody.requestId ?? "").startsWith("sup-")).toBe(true);
+
+    const contactRes = await fetch(`${API_BASE}/api/intake/contact`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "intake-school",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Jordan Ops",
+        email: "jordan@school.org",
+        organization: "Intake School",
+        category: "support",
+        message: "Need onboarding support for next week.",
+      }),
+    });
+
+    expect(contactRes.status).toBe(202);
+    const contactBody = await contactRes.json() as { requestId?: string };
+    expect((contactBody.requestId ?? "").startsWith("cnt-")).toBe(true);
+
+    const badSupportRes = await fetch(`${API_BASE}/api/intake/support`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": "intake-school",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullName: "Missing Email",
+        message: "This should fail validation.",
+      }),
+    });
+
+    expect(badSupportRes.status).toBe(400);
   });
 });

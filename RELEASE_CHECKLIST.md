@@ -1,4 +1,4 @@
-# BTA Canonical Release Checklist
+# BTA Courtside Canonical Release Checklist
 
 This is the single source of truth for production release execution.
 

@@ -33,6 +33,54 @@ interface AccountNoticeEmailInput {
   loginUrl: string;
 }
 
+interface EmailVerificationEmailInput {
+  to: string;
+  fullName: string;
+  organizationName: string;
+  verifyUrl: string;
+  expiresInHours: number;
+}
+
+interface OnboardingWelcomeEmailInput {
+  to: string;
+  fullName: string;
+  organizationName: string;
+  teamName: string;
+  loginUrl: string;
+}
+
+interface SecurityAlertEmailInput {
+  to: string;
+  fullName: string;
+  organizationName: string;
+  title: string;
+  detail: string;
+  loginUrl: string;
+}
+
+interface AccountDeletionScheduledEmailInput {
+  to: string;
+  fullName: string;
+  organizationName: string;
+  scheduledAtIso: string;
+  cancelUrl: string;
+}
+
+interface AccountDeletionCanceledEmailInput {
+  to: string;
+  fullName: string;
+  organizationName: string;
+  loginUrl: string;
+}
+
+interface IntakeConfirmationEmailInput {
+  to: string;
+  fullName: string;
+  title: string;
+  summary: string;
+  nextStep: string;
+}
+
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY ?? "").trim();
 const EMAIL_FROM = String(process.env.BTA_EMAIL_FROM ?? "BTA Courtside <onboarding@resend.dev>").trim();
 const EMAIL_REPLY_TO = String(process.env.BTA_EMAIL_REPLY_TO ?? "").trim();
@@ -168,4 +216,127 @@ export async function sendAccountNoticeEmail(input: AccountNoticeEmailInput): Pr
   ].join("");
 
   return sendEmail(input.to, "Your BTA account was updated", html);
+}
+
+export async function sendEmailVerificationEmail(input: EmailVerificationEmailInput): Promise<EmailSendResult> {
+  const fullName = escapeHtml(input.fullName || "Coach");
+  const organizationName = escapeHtml(input.organizationName || "your organization");
+  const expiresInHours = Math.max(1, Math.floor(input.expiresInHours));
+
+  const html = [
+    `<div style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;\">`,
+    `<h2 style=\"margin-bottom:8px;\">Verify your BTA email</h2>`,
+    `<p>Hi ${fullName},</p>`,
+    `<p>Confirm your email for ${organizationName} to complete account setup.</p>`,
+    renderButtonLink(input.verifyUrl, "Verify Email"),
+    `<p>This verification link expires in ${expiresInHours} hour${expiresInHours === 1 ? "" : "s"}.</p>`,
+    `<p>If you did not create this account, you can ignore this message.</p>`,
+    `</div>`,
+  ].join("");
+
+  return sendEmail(input.to, "Verify your BTA email", html);
+}
+
+export async function sendOnboardingWelcomeEmail(input: OnboardingWelcomeEmailInput): Promise<EmailSendResult> {
+  const fullName = escapeHtml(input.fullName || "Coach");
+  const organizationName = escapeHtml(input.organizationName || "your organization");
+  const teamName = escapeHtml(input.teamName || "your team");
+
+  const html = [
+    `<div style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;\">`,
+    `<h2 style=\"margin-bottom:8px;\">Welcome to BTA Courtside</h2>`,
+    `<p>Hi ${fullName},</p>`,
+    `<p>Your onboarding for ${organizationName} is complete and ${teamName} is ready.</p>`,
+    `<p>Next steps:</p>`,
+    `<ul><li>Invite staff from team settings</li><li>Pair the iPad operator</li><li>Run a short pregame rehearsal</li></ul>`,
+    renderButtonLink(input.loginUrl, "Open BTA"),
+    `</div>`,
+  ].join("");
+
+  return sendEmail(input.to, "Welcome to BTA Courtside", html);
+}
+
+export async function sendSecurityAlertEmail(input: SecurityAlertEmailInput): Promise<EmailSendResult> {
+  const fullName = escapeHtml(input.fullName || "Team member");
+  const organizationName = escapeHtml(input.organizationName || "your organization");
+  const title = escapeHtml(input.title);
+  const detail = escapeHtml(input.detail);
+
+  const html = [
+    `<div style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;\">`,
+    `<h2 style=\"margin-bottom:8px;\">${title}</h2>`,
+    `<p>Hi ${fullName},</p>`,
+    `<p>${detail} for your ${organizationName} account.</p>`,
+    renderButtonLink(input.loginUrl, "Review Account"),
+    `<p>If this was not expected, reset your password and contact your organization manager.</p>`,
+    `</div>`,
+  ].join("");
+
+  return sendEmail(input.to, title, html);
+}
+
+export async function sendAccountDeletionScheduledEmail(input: AccountDeletionScheduledEmailInput): Promise<EmailSendResult> {
+  const fullName = escapeHtml(input.fullName || "Team member");
+  const organizationName = escapeHtml(input.organizationName || "your organization");
+  const whenText = escapeHtml(new Date(input.scheduledAtIso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }));
+
+  const html = [
+    `<div style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;\">`,
+    `<h2 style=\"margin-bottom:8px;\">Account deletion scheduled</h2>`,
+    `<p>Hi ${fullName},</p>`,
+    `<p>Your BTA account for ${organizationName} is scheduled for deletion on ${whenText}.</p>`,
+    `<p>You can cancel deletion any time before that deadline:</p>`,
+    renderButtonLink(input.cancelUrl, "Open Account Settings"),
+    `<p>If you did not request this, sign in now and cancel the deletion.</p>`,
+    `</div>`,
+  ].join("");
+
+  return sendEmail(input.to, "Your BTA account deletion was scheduled", html);
+}
+
+export async function sendAccountDeletionCanceledEmail(input: AccountDeletionCanceledEmailInput): Promise<EmailSendResult> {
+  const fullName = escapeHtml(input.fullName || "Team member");
+  const organizationName = escapeHtml(input.organizationName || "your organization");
+
+  const html = [
+    `<div style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;\">`,
+    `<h2 style=\"margin-bottom:8px;\">Account deletion canceled</h2>`,
+    `<p>Hi ${fullName},</p>`,
+    `<p>Your scheduled account deletion for ${organizationName} has been canceled.</p>`,
+    renderButtonLink(input.loginUrl, "Open BTA"),
+    `</div>`,
+  ].join("");
+
+  return sendEmail(input.to, "Your BTA account deletion was canceled", html);
+}
+
+function buildIntakeConfirmationHtml(input: IntakeConfirmationEmailInput): string {
+  const fullName = escapeHtml(input.fullName || "there");
+  const summary = escapeHtml(input.summary);
+  const nextStep = escapeHtml(input.nextStep);
+
+  return [
+    `<div style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;\">`,
+    `<h2 style=\"margin-bottom:8px;\">${escapeHtml(input.title)}</h2>`,
+    `<p>Hi ${fullName},</p>`,
+    `<p>${summary}</p>`,
+    `<p>${nextStep}</p>`,
+    `</div>`,
+  ].join("");
+}
+
+export async function sendSupportIntakeConfirmationEmail(input: IntakeConfirmationEmailInput): Promise<EmailSendResult> {
+  return sendEmail(input.to, input.title, buildIntakeConfirmationHtml(input));
+}
+
+export async function sendContactIntakeConfirmationEmail(input: IntakeConfirmationEmailInput): Promise<EmailSendResult> {
+  return sendEmail(input.to, input.title, buildIntakeConfirmationHtml(input));
+}
+
+export async function sendDemoRequestConfirmationEmail(input: IntakeConfirmationEmailInput): Promise<EmailSendResult> {
+  return sendEmail(input.to, input.title, buildIntakeConfirmationHtml(input));
+}
+
+export async function sendDataDeletionRequestConfirmationEmail(input: IntakeConfirmationEmailInput): Promise<EmailSendResult> {
+  return sendEmail(input.to, input.title, buildIntakeConfirmationHtml(input));
 }
