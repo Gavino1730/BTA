@@ -116,7 +116,9 @@ function AppFooter({ onNavigate }: AppFooterProps) {
   return (
     <footer className="coach-app-footer">
       <div className="coach-app-footer-inner">
-        <span className="coach-app-footer-brand">BTA Courtside</span>
+        <span className="coach-app-footer-brand">
+          <img src="/brand-logo.png" alt="BTA Courtside" style={{ height: "1.1rem", width: "auto" }} />
+        </span>
         <nav className="coach-app-footer-links" aria-label="App footer links">
           <button type="button" onClick={() => onNavigate("/live")}>Live</button>
           <button type="button" onClick={() => onNavigate("/stats")}>Overview</button>

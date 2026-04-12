@@ -1600,8 +1600,8 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  row-gap: 1.35rem;
-  align-items: center;
+  row-gap: 0.7rem;
+  align-items: flex-start;
 }
 
 .setup-jersey-swatch {
@@ -1613,7 +1613,8 @@ body {
   height: 44px;
   border-radius: 999px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.35);
-  margin-bottom: 0.15rem;
+  /* Reserve vertical space for the absolute-positioned label under each swatch. */
+  margin-bottom: 1.05rem;
 }
 
 .setup-jersey-swatch[aria-pressed="true"] {

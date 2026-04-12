@@ -20,6 +20,10 @@ export const metadata: Metadata = {
   title: "BTA Courtside Intelligence | Live Basketball Operations Platform",
   description:
     "BTA Courtside Intelligence is premium basketball operations software for live stat keeping, game workflows, synced film review, and AI coaching insights.",
+  icons: {
+    icon: "/brand-icon.png",
+    apple: "/brand-icon.png",
+  },
   metadataBase: new URL(getSiteUrl()),
   alternates: {
     canonical: "/",
