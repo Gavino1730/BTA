@@ -269,7 +269,7 @@ export function useGameFlow({
       return;
     }
 
-    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined as number | undefined };
+    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId };
     if (serverOpponentName) mergedSetup.opponent = serverOpponentName;
     if (serverVcSide) mergedSetup.vcSide = serverVcSide;
     const nextData: AppData = { ...latest, gameSetup: mergedSetup };
@@ -307,7 +307,7 @@ export function useGameFlow({
     const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
     const nextData: AppData = {
       ...latest,
-      gameSetup: { ...latest.gameSetup, gameId: newId, statsGameId: undefined },
+      gameSetup: { ...latest.gameSetup, gameId: newId },
     };
     persistData(nextData);
     resetTimeline(newId);
@@ -359,7 +359,6 @@ export function useGameFlow({
         ...appData.gameSetup,
         gameId: freshId,
         opponent: edits.opponent,
-        statsGameId: undefined,
       },
     });
     resetGameStateFor(freshId);
@@ -393,7 +392,6 @@ export function useGameFlow({
         ...appData.gameSetup,
         gameId: freshId,
         opponent: "",
-        statsGameId: undefined,
         syncedConnectionId: undefined,
       },
     });

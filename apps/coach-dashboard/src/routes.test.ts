@@ -10,24 +10,10 @@ describe("coach route helpers", () => {
   });
 
   it("resolves canonical routes and rejects removed legacy aliases", () => {
-    expect(resolveCoachRoute("/")).toBe("marketing");
-    expect(resolveCoachRoute("/product")).toBe("product");
-    expect(resolveCoachRoute("/how-it-works")).toBe("how-it-works");
-    expect(resolveCoachRoute("/pricing")).toBe("pricing");
-    expect(resolveCoachRoute("/compare")).toBe("compare");
-    expect(resolveCoachRoute("/features")).toBe("features");
-    expect(resolveCoachRoute("/about")).toBe("about");
-    expect(resolveCoachRoute("/status")).toBe("status");
-    expect(resolveCoachRoute("/testimonials")).toBe("testimonials");
-    expect(resolveCoachRoute("/book-demo")).toBe("demo-booking");
-    expect(resolveCoachRoute("/demo-booking")).toBe("demo-booking");
-    expect(resolveCoachRoute("/onboarding-wizard")).toBe("onboarding-wizard");
+    expect(resolveCoachRoute("/")).toBe("login");
     expect(resolveCoachRoute("/invite/accept")).toBe("invite-accept");
     expect(resolveCoachRoute("/verify-email")).toBe("email-verify");
-    expect(resolveCoachRoute("/changelog")).toBe("changelog");
     expect(resolveCoachRoute("/unauthorized")).toBe("unauthorized");
-    expect(resolveCoachRoute("/roadmap")).toBe("roadmap");
-    expect(resolveCoachRoute("/docs")).toBe("docs");
     expect(resolveCoachRoute("/checkout/success")).toBe("checkout-success");
     expect(resolveCoachRoute("/checkout/cancel")).toBe("checkout-cancel");
     expect(resolveCoachRoute("/notifications")).toBe("stats-notifications");
@@ -35,6 +21,9 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/settings")).toBe("settings");
     expect(resolveCoachRoute("/admin")).toBe("admin");
     expect(resolveCoachRoute("/live")).toBe("live");
+    expect(resolveCoachRoute("/product")).toBe("not-found");
+    expect(resolveCoachRoute("/pricing")).toBe("not-found");
+    expect(resolveCoachRoute("/support")).toBe("not-found");
     expect(resolveCoachRoute("/players")).toBe("not-found");
     expect(resolveCoachRoute("/activity")).toBe("not-found");
     expect(resolveCoachRoute("/signin")).toBe("not-found");

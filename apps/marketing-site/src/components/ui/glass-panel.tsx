@@ -9,11 +9,12 @@ export function GlassPanel({ className, children }: GlassPanelProps): JSX.Elemen
   return (
     <div
       className={cn(
-        "premium-outline relative overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,var(--panel-2),var(--panel-1))] shadow-[var(--shadow-lg)] backdrop-blur-xl",
+        "premium-outline relative overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,rgba(91,74,180,0.52),rgba(66,54,143,0.58))] shadow-[var(--shadow-lg)] backdrop-blur-xl",
         className
       )}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.09),transparent_26%,transparent_70%,rgba(37,210,197,0.08)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),transparent_24%,transparent_68%,rgba(143,241,223,0.08)_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[rgba(255,255,255,0.26)]" />
       {children}
     </div>
   );

@@ -208,8 +208,7 @@ describe("operator pairing endpoints", () => {
         opponentName: "Central Christian",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
-        awayTeamColor: "#ef4444",
-        dashboardUrl: "http://localhost:5173/live"
+        awayTeamColor: "#ef4444"
       })
     });
 
@@ -356,8 +355,7 @@ describe("operator pairing endpoints", () => {
         opponentName: "Central Christian",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
-        awayTeamColor: "#10b981",
-        dashboardUrl: "http://localhost:5173/live"
+        awayTeamColor: "#10b981"
       })
     });
     expect(initialPut.status).toBe(200);
@@ -450,11 +448,10 @@ describe("operator pairing endpoints", () => {
 });
 
 describe("unified stats endpoints", () => {
-  it("redirects legacy stats dashboard pages to the coach workspace", async () => {
+  it("does not serve removed legacy stats dashboard routes", async () => {
     const response = await fetch(`${API_BASE}/settings`, { redirect: "manual" });
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe("http://localhost:5173/stats/settings");
+    expect(response.status).toBe(404);
   });
 
   it("serves season stats, players, and live context from realtime-api state", async () => {
@@ -556,7 +553,7 @@ describe("unified stats endpoints", () => {
     expect(liveContextBody.recentGames[0]?.opponent).toBe("OES");
   });
 
-  it("accepts the legacy operator game registration route", async () => {
+  it("does not accept the removed legacy operator game registration route", async () => {
     await resetSchool("legacy-game-route");
 
     const response = await fetch(`${API_BASE}/games`, {
@@ -571,11 +568,7 @@ describe("unified stats endpoints", () => {
       })
     });
 
-    expect(response.status).toBe(201);
-
-    const body = await response.json() as { gameId: string; opponentName?: string };
-    expect(body.gameId).toBe("legacy-route-game");
-    expect(body.opponentName).toBe("OES");
+    expect(response.status).toBe(404);
   });
 
   it("blocks starting a second active game and returns the existing active game", async () => {
@@ -1002,7 +995,7 @@ describe("unified stats endpoints", () => {
     expect(playerBody.full_name).toBe("Jordan Bell");
     expect(playerBody.roster_info?.role).toBe("Primary ball handler");
 
-    const playerDeleteRes = await fetch(`${API_BASE}/api/roster/player/${encodeURIComponent("Jordan Bell")}`, {
+    const playerDeleteRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}`, {
       method: "DELETE",
       headers: { "x-school-id": "compat-school" }
     });
@@ -1013,6 +1006,18 @@ describe("unified stats endpoints", () => {
       headers: { "x-school-id": "compat-school" }
     });
     expect(missingPlayerRes.status).toBe(404);
+
+    const removedRosterDeleteRes = await fetch(`${API_BASE}/api/roster/player/${encodeURIComponent("Jordan Bell")}`, {
+      method: "DELETE",
+      headers: { "x-school-id": "compat-school" }
+    });
+    expect(removedRosterDeleteRes.status).toBe(404);
+
+    const removedPostDeleteRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}/delete`, {
+      method: "POST",
+      headers: { "x-school-id": "compat-school" }
+    });
+    expect(removedPostDeleteRes.status).toBe(404);
   });
 
   it("renames an existing roster player instead of creating a duplicate", async () => {
@@ -1235,7 +1240,7 @@ describe("unified stats endpoints", () => {
     expect(loginBody.currentMember?.role).toBe("owner");
   });
 
-  it("supports game edit and reset compatibility routes", async () => {
+  it("supports game edit and reset routes", async () => {
     await resetSchool("games-compat");
 
     await fetch(`${API_BASE}/config/roster-teams`, {

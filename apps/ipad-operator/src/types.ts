@@ -65,7 +65,6 @@ export interface GameSetup {
   schoolId?: string;
   opponent: string;
   vcSide: "home" | "away";
-  dashboardUrl: string;
   clockVisible?: boolean;
   clockEnabled?: boolean;
   trackClock?: boolean;
@@ -78,7 +77,6 @@ export interface GameSetup {
   soundProfile?: SoundProfile;
   soundVolume?: number;
   hapticsEnabled?: boolean;
-  statsGameId?: number;
   startingLineup?: string[];
   deviceName?: string;
   /** @deprecated use myTeamId + vcSide instead */
@@ -104,7 +102,6 @@ export interface OperatorLinkResponse {
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
-    dashboardUrl?: string;
     startingLineup?: string[];
     updatedAtIso?: string;
   } | null;

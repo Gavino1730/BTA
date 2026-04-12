@@ -6,7 +6,9 @@ import { ChevronDown, Menu, X } from "lucide-react";
 import { motion } from "motion/react";
 
 import { navLinks } from "@/content/homepage";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { getDashboardLoginUrl } from "@/lib/site-url";
+import { cn } from "@/lib/utils";
 
 const productItems = [
   "Live possession tracking",
@@ -17,6 +19,7 @@ const productItems = [
 
 export function Navbar(): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
+  const dashboardLoginUrl = getDashboardLoginUrl();
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -36,11 +39,11 @@ export function Navbar(): JSX.Element {
       transition={{ duration: 0.5 }}
       className="sticky top-3 z-50 mx-auto w-[min(1200px,92vw)]"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[color:var(--panel-1)]/90 px-5 py-3 backdrop-blur-xl md:px-7">
-        <div className="absolute inset-0 bg-[radial-gradient(120%_150%_at_10%_0%,rgba(79,109,255,0.18),transparent_45%)]" />
+      <div className="relative rounded-2xl border border-[rgba(255,247,255,0.2)] bg-[rgba(69,54,138,0.82)] px-5 py-3 backdrop-blur-xl md:px-7">
+        <div className="absolute inset-0 bg-[radial-gradient(120%_150%_at_10%_0%,rgba(255,255,255,0.08),transparent_38%),linear-gradient(180deg,rgba(39,29,88,0.12),transparent)]" />
         <nav className="relative flex items-center justify-between gap-4">
           <Link href="#" className="flex items-center gap-2">
-            <span className="inline-grid size-8 place-items-center rounded-lg border border-[var(--border-soft)] bg-[var(--panel-2)] text-sm font-semibold text-[var(--accent-primary)]">
+            <span className="inline-grid size-8 place-items-center rounded-lg border border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.12)] text-sm font-semibold text-[var(--text-primary)]">
               BTA
             </span>
             <span className="font-medium tracking-wide text-[var(--text-primary)]">Courtside</span>
@@ -49,23 +52,23 @@ export function Navbar(): JSX.Element {
           <div className="hidden items-center gap-8 lg:flex">
             <div className="group relative">
               <button
-                className="flex items-center gap-1 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                className="flex items-center gap-1 text-sm text-[rgba(255,249,255,0.88)] transition-colors hover:text-[var(--text-primary)]"
                 aria-haspopup="menu"
                 aria-label="Open product menu"
               >
                 Product
                 <ChevronDown className="size-4" />
               </button>
-              <div className="pointer-events-none absolute left-1/2 top-full w-72 -translate-x-1/2 pt-4 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+              <div className="pointer-events-none absolute left-1/2 top-full z-30 w-72 -translate-x-1/2 pt-4 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                 <div
-                  className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-1)] p-3 shadow-[var(--shadow-lg)]"
+                  className="rounded-xl border border-[var(--border-strong)] bg-[rgba(110,92,198,0.9)] p-3 shadow-[var(--shadow-lg)] backdrop-blur-xl"
                   role="menu"
                   aria-label="Product features"
                 >
                   {productItems.map((item) => (
                     <div
                       key={item}
-                      className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--panel-2)] hover:text-[var(--text-primary)]"
+                      className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.14)] hover:text-[var(--text-primary)]"
                       role="menuitem"
                     >
                       {item}
@@ -78,7 +81,7 @@ export function Navbar(): JSX.Element {
               <Link
                 key={link.label}
                 href={link.href}
-                className="text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                className="text-sm text-[rgba(255,249,255,0.88)] transition-colors hover:text-[var(--text-primary)]"
               >
                 {link.label}
               </Link>
@@ -86,14 +89,23 @@ export function Navbar(): JSX.Element {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="ghost" className="hidden md:inline-flex">
+            <Link
+              href={dashboardLoginUrl}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "md" }),
+                "hidden border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.08)] md:inline-flex"
+              )}
+            >
+              Login
+            </Link>
+            <Button variant="ghost" className="hidden border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.08)] md:inline-flex">
               Watch Demo
             </Button>
             <Button>Book a Session</Button>
             <button
               type="button"
               onClick={() => setIsOpen((prev) => !prev)}
-              className="inline-grid size-10 place-items-center rounded-lg border border-[var(--border-soft)] bg-[var(--panel-2)] text-[var(--text-primary)] lg:hidden"
+              className="inline-grid size-10 place-items-center rounded-lg border border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.08)] text-[var(--text-primary)] lg:hidden"
               aria-label="Toggle menu"
               aria-expanded={isOpen}
             >
@@ -125,6 +137,13 @@ export function Navbar(): JSX.Element {
             </div>
             <div className="h-px bg-[var(--border-soft)]" />
             <div className="mt-2 grid gap-1">
+              <Link
+                href={dashboardLoginUrl}
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--panel-1)]"
+              >
+                Login
+              </Link>
               {navLinks.map((link) => (
                 <Link
                   key={link.label}

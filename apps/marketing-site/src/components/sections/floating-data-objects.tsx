@@ -15,11 +15,11 @@ export function FloatingDataObjects(): JSX.Element {
   const shouldReduceMotion = useReducedMotion();
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 hidden lg:block">
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-0 hidden h-[1200px] overflow-hidden xl:block" aria-hidden="true">
       {objects.map((item, idx) => (
         <motion.div
           key={item.label}
-          className="premium-outline absolute rounded-xl border border-[var(--border-soft)] bg-[var(--panel-4)]/88 px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] shadow-[var(--shadow-md)] backdrop-blur-md"
+          className="premium-outline absolute rounded-xl border border-[var(--border-soft)] bg-[var(--panel-4)]/70 px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] opacity-70 shadow-[var(--shadow-md)] backdrop-blur-md"
           style={{ left: item.x, top: item.y }}
           animate={
             shouldReduceMotion

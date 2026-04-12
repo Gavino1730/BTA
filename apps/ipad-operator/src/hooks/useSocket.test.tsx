@@ -67,7 +67,6 @@ const baseSetup: GameSetup = {
   schoolId: "school-test",
   opponent: "Rivals",
   vcSide: "home",
-  dashboardUrl: "http://localhost:5173",
 };
 
 const baseAppData: AppData = {
@@ -164,7 +163,7 @@ describe("useSocket", () => {
     );
   });
 
-  it("does not force post-game when already not live", () => {
+  it("moves to finished and shows notice when game is submitted from post-game", () => {
     const persistPhase = vi.fn();
     const showInlineNotice = vi.fn();
 
@@ -178,6 +177,11 @@ describe("useSocket", () => {
     socketMocks.trigger("game:submitted", { gameId: "game-1" });
 
     expect(persistPhase).not.toHaveBeenCalledWith("post-game");
-    expect(showInlineNotice).not.toHaveBeenCalled();
+    expect(persistPhase).toHaveBeenCalledWith("finished");
+    expect(showInlineNotice).toHaveBeenCalledWith(
+      "Game ended on another device. Switched to finished view.",
+      "info",
+      4500,
+    );
   });
 });

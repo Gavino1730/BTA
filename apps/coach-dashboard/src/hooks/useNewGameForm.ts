@@ -131,7 +131,6 @@ export function useNewGameForm({
             vcSide: newGameVcSide,
             homeTeamColor: homeColor,
             awayTeamColor: awayColor,
-            dashboardUrl: window.location.href,
             startingLineup: selectedStartingLineup,
           }),
         });

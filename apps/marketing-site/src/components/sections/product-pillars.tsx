@@ -8,6 +8,20 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 import { pillars } from "@/content/homepage";
 import { revealUp, staggerChildren } from "@/lib/motion";
 
+const pillarCardTints = [
+  "linear-gradient(160deg, rgba(96,82,180,0.42), rgba(80,112,173,0.22))",
+  "linear-gradient(160deg, rgba(93,80,177,0.42), rgba(70,150,133,0.2))",
+  "linear-gradient(160deg, rgba(93,80,177,0.42), rgba(153,116,74,0.2))",
+  "linear-gradient(160deg, rgba(96,82,180,0.44), rgba(114,90,165,0.22))",
+] as const;
+
+const outcomeTints = [
+  "rgba(195,221,255,0.16)",
+  "rgba(170,240,220,0.16)",
+  "rgba(245,203,152,0.16)",
+  "rgba(214,198,249,0.16)",
+] as const;
+
 export function ProductPillars(): JSX.Element {
   return (
     <section id="pillars" className="mx-auto w-[min(1200px,92vw)] space-y-10 py-20">
@@ -24,27 +38,31 @@ export function ProductPillars(): JSX.Element {
         viewport={{ once: true, amount: 0.2 }}
         className="grid gap-5 md:grid-cols-2"
       >
-        {pillars.map((pillar) => (
+        {pillars.map((pillar, index) => (
           <motion.div
             key={pillar.title}
             variants={revealUp}
             whileHover={{ y: -6, transition: { duration: 0.18 } }}
           >
-            <GlassPanel className="h-full p-6">
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <h3 className="font-display text-3xl leading-tight text-[var(--text-primary)]">{pillar.title}</h3>
-                <DataChip label="Outcome" value={pillar.stat} className="shrink-0" />
-              </div>
-              <p className="mb-5 text-[var(--text-secondary)]">{pillar.summary}</p>
-              <div className="space-y-2">
-                {pillar.outcomes.map((outcome) => (
-                  <p
-                    key={outcome}
-                    className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-2)] px-3 py-2 text-sm text-[var(--text-secondary)]"
-                  >
-                    {outcome}
-                  </p>
-                ))}
+            <GlassPanel className="h-full p-6" >
+              <div className="absolute inset-0" style={{ background: pillarCardTints[index % pillarCardTints.length] }} />
+              <div className="relative">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <h3 className="font-display text-3xl leading-tight text-[var(--text-primary)]">{pillar.title}</h3>
+                  <DataChip label="Outcome" value={pillar.stat} className="shrink-0" />
+                </div>
+                <p className="mb-5 text-[var(--text-secondary)]">{pillar.summary}</p>
+                <div className="space-y-2">
+                  {pillar.outcomes.map((outcome) => (
+                    <p
+                      key={outcome}
+                      className="rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                      style={{ background: outcomeTints[index % outcomeTints.length] }}
+                    >
+                      {outcome}
+                    </p>
+                  ))}
+                </div>
               </div>
             </GlassPanel>
           </motion.div>

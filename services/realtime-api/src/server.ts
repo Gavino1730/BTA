@@ -2255,7 +2255,6 @@ function shouldSuppressMissingTenantTelemetry(req: Request): boolean {
     || req.path === "/games/active/setup"
     || req.path === "/season-stats"
     || req.path === "/leaderboards"
-    || req.path === "/games"
     || req.path === "/advanced/team"
     || req.path === "/advanced/patterns"
     || req.path === "/advanced/volatility";
@@ -2715,7 +2714,6 @@ interface OperatorLinkSetup {
   vcSide: "home" | "away";
   homeTeamColor?: string;
   awayTeamColor?: string;
-  dashboardUrl?: string;
   startingLineup?: string[];
   updatedAtIso: string;
   operatorToken?: string;
@@ -2937,36 +2935,16 @@ async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Pr
 
 // Serve the built coach-dashboard SPA from the same origin.
 const COACH_DIST = path.join(__dirname, "..", "..", "..", "apps", "coach-dashboard", "dist");
-const LEGACY_COACH_ROUTE_REDIRECTS: Record<string, string> = {
-  "/games": "/stats/games",
-  "/players": "/stats/players",
-  "/trends": "/stats/trends",
-  "/ai-insights": "/stats/insights",
-  "/analysis": "/stats/insights",
-  "/settings": "/stats/settings",
-};
-
-function resolveCoachRedirectOrigin(req: Request): string {
-  const configured = process.env.COACH_DASHBOARD_ORIGIN?.trim();
-  if (configured) {
-    return configured.replace(/\/$/, "");
-  }
-  if ((process.env.NODE_ENV ?? "development") === "production") {
-    return `${req.protocol}://${req.get("host") ?? ""}`.replace(/\/$/, "");
-  }
-  return "http://localhost:5173";
-}
+const REMOVED_LEGACY_COACH_ROUTES = new Set([
+  "/games",
+  "/players",
+  "/trends",
+  "/ai-insights",
+  "/analysis",
+  "/settings",
+]);
 
 app.use(express.static(COACH_DIST, { index: false }));
-app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
-  const targetPath = LEGACY_COACH_ROUTE_REDIRECTS[req.path];
-  if (!targetPath) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-
-  res.redirect(302, `${resolveCoachRedirectOrigin(req)}${targetPath}`);
-});
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -4772,39 +4750,7 @@ app.post("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) 
   res.status(201).json({ message: "Player saved successfully", player: builtPlayer });
 });
 
-app.delete("/api/roster/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const record = findPlayerRecord(teams, req.params.playerName);
-  if (!record) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  const nextTeams = teams.map((team, index) => index === record.teamIndex
-    ? { ...team, players: team.players.filter((_, playerIndex) => playerIndex !== record.playerIndex) }
-    : team);
-  persistSchoolTeams(schoolId, nextTeams);
-  res.json({ message: "Player deleted successfully", player: record.player.name });
-});
-
 app.delete("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const record = findPlayerRecord(teams, req.params.playerName);
-  if (!record) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  const nextTeams = teams.map((team, index) => index === record.teamIndex
-    ? { ...team, players: team.players.filter((_, playerIndex) => playerIndex !== record.playerIndex) }
-    : team);
-  persistSchoolTeams(schoolId, nextTeams);
-  res.json({ message: "Player deleted successfully", player: record.player.name });
-});
-
-app.post("/api/player/:playerName/delete", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const teams = getRosterTeamsByScope({ schoolId });
   const record = findPlayerRecord(teams, req.params.playerName);
@@ -5452,7 +5398,6 @@ app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (r
     awayTeamColor: hasField("awayTeamColor")
       ? normalizeTeamColor(payload.awayTeamColor)
       : existing?.awayTeamColor,
-    dashboardUrl: mergeSanitizedTextField("dashboardUrl", 320, existing?.dashboardUrl),
     startingLineup: hasField("startingLineup") && Array.isArray(payload.startingLineup)
       ? (payload.startingLineup as unknown[]).filter((id): id is string => typeof id === "string" && id.trim().length > 0).slice(0, 10)
       : existing?.startingLineup,
@@ -5686,7 +5631,7 @@ app.delete("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, 
   res.json({ playerId: deleted.id });
 });
 
-app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/games", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const {
     gameId,
@@ -6338,7 +6283,12 @@ if (process.env.BTA_AUTH_TEST_MODE === "1") {
 app.use(requestErrorHandler);
 
 // SPA fallback: serve index.html for any non-API route not matched above.
-app.get("*", (_req, res) => {
+app.get("*", (req, res) => {
+  if (REMOVED_LEGACY_COACH_ROUTES.has(req.path)) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   res.sendFile(path.join(COACH_DIST, "index.html"), (err) => {
     if (err) {
       res.status(404).json({ error: "Not found" });

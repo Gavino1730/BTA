@@ -14,7 +14,6 @@ const DEFAULT_DATA: AppData = {
     schoolId: DEFAULT_SCHOOL_ID,
     opponent: "",
     vcSide: "home",
-    dashboardUrl: "",
     clockVisible: true,
     clockEnabled: true,
     trackClock: true,
@@ -98,7 +97,6 @@ export function loadAppData(): AppData {
 
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
   if (qp.get("schoolId"))    urlSetup.schoolId    = qp.get("schoolId")!;
-  if (qp.get("dashboardUrl")) urlSetup.dashboardUrl = qp.get("dashboardUrl")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
   if (qp.get("connectionId")) urlSetup.connectionId = normalizeConnectionId(qp.get("connectionId"));
   if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;

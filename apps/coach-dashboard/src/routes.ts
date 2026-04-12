@@ -1,17 +1,4 @@
 export type AppRoute =
-  | "marketing"
-  | "product"
-  | "how-it-works"
-  | "pricing"
-  | "compare"
-  | "features"
-  | "about"
-  | "status"
-  | "testimonials"
-  | "demo-booking"
-  | "onboarding-wizard"
-  | "changelog"
-  | "roadmap"
   | "login"
   | "invite-accept"
   | "email-verify"
@@ -54,43 +41,7 @@ export function canonicalizeCoachPath(pathname: string): string {
 export function resolveCoachRoute(pathname: string): AppRoute {
   const canonical = canonicalizeCoachPath(pathname);
   if (canonical === "/") {
-    return "marketing";
-  }
-  if (canonical === "/product") {
-    return "product";
-  }
-  if (canonical === "/how-it-works") {
-    return "how-it-works";
-  }
-  if (canonical === "/pricing") {
-    return "pricing";
-  }
-  if (canonical === "/compare") {
-    return "compare";
-  }
-  if (canonical === "/features") {
-    return "features";
-  }
-  if (canonical === "/about") {
-    return "about";
-  }
-  if (canonical === "/status") {
-    return "status";
-  }
-  if (canonical === "/testimonials") {
-    return "testimonials";
-  }
-  if (canonical === "/book-demo" || canonical === "/demo-booking") {
-    return "demo-booking";
-  }
-  if (canonical === "/onboarding-wizard") {
-    return "onboarding-wizard";
-  }
-  if (canonical === "/changelog") {
-    return "changelog";
-  }
-  if (canonical === "/roadmap") {
-    return "roadmap";
+    return "login";
   }
   if (canonical === "/login") {
     return "login";
@@ -124,27 +75,6 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/session-expired") {
     return "session-expired";
-  }
-  if (canonical === "/help") {
-    return "help";
-  }
-  if (canonical === "/docs") {
-    return "docs";
-  }
-  if (canonical === "/terms") {
-    return "terms";
-  }
-  if (canonical === "/privacy") {
-    return "privacy";
-  }
-  if (canonical === "/data-deletion") {
-    return "data-deletion";
-  }
-  if (canonical === "/support") {
-    return "support";
-  }
-  if (canonical === "/contact") {
-    return "contact";
   }
   if (canonical === "/checkout/success") {
     return "checkout-success";

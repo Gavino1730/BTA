@@ -458,7 +458,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
                 </form>
               ) : (
                 <div style={{ marginTop: "1rem" }}>
-                  <button type="button" className="shell-nav-link" onClick={() => onNavigate("/contact")}>Request Admin Access</button>
+                  <button type="button" className="shell-nav-link" onClick={() => onNavigate("/account")}>Request Admin Access</button>
                 </div>
               )}
             </section>

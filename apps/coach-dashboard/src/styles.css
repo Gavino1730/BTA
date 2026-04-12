@@ -4942,7 +4942,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
     padding: 0.5rem 1rem;
   }
 
-  /* Keep this selector for compatibility, email is removed in markup */
+  /* Preserve the selector so stale DOM references stay inert if they reappear. */
   .coach-nav-email-pill {
     display: none;
   }

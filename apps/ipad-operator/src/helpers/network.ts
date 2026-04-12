@@ -172,7 +172,6 @@ export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkR
       myTeamId: nextTeamId,
       opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
       vcSide: nextSide,
-      dashboardUrl: snapshot.setup?.dashboardUrl?.trim() || current.gameSetup.dashboardUrl,
       homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor) ?? current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR,
       awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor) ?? current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR,
       startingLineup: safeStartingLineup,

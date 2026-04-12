@@ -1,18 +1,11 @@
 "use client";
 
-import { Activity, ArrowRight, ArrowRightLeft, BrainCircuit, Film, Radar, ShieldCheck, Timer } from "lucide-react";
+import { Activity, ArrowRight, Radar, ShieldCheck, Timer } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import { DataChip } from "@/components/ui/data-chip";
 import { GlassPanel } from "@/components/ui/glass-panel";
-
-const floatingItems = [
-  { label: "Q3 Possession", value: "+4 swing", icon: Activity, x: "8%", y: "14%" },
-  { label: "Film Cue", value: "02:18", icon: Film, x: "78%", y: "18%" },
-  { label: "Lineup Delta", value: "+11 net", icon: ArrowRightLeft, x: "71%", y: "70%" },
-  { label: "AI Alert", value: "Switch high", icon: BrainCircuit, x: "10%", y: "75%" },
-] as const;
 
 export function Hero(): JSX.Element {
   const shouldReduceMotion = useReducedMotion();
@@ -25,7 +18,7 @@ export function Hero(): JSX.Element {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.5 }}
           transition={{ duration: 0.6 }}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[var(--panel-2)] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]"
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.14)] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]"
         >
           <span className="size-2 rounded-full bg-[var(--accent-primary)] shadow-[0_0_12px_var(--accent-glow)]" />
           Live Basketball Intelligence
@@ -36,10 +29,10 @@ export function Hero(): JSX.Element {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.35 }}
           transition={{ duration: 0.7, delay: 0.05 }}
-          className="font-display text-5xl leading-[0.96] text-[var(--text-primary)] md:text-7xl"
+          className="font-display text-6xl leading-[0.92] text-[var(--text-primary)] md:text-[5.4rem]"
         >
           Run stats, film, and coaching decisions
-          <span className="block bg-[linear-gradient(120deg,#f4f7ff_0%,#9eb1ff_58%,#56e5d8_100%)] bg-clip-text text-transparent">
+          <span className="block bg-[linear-gradient(120deg,#fffaff_0%,#f6ecff_32%,#cffff2_72%,#ffe0b8_100%)] bg-clip-text text-transparent">
             from one live system.
           </span>
         </motion.h1>
@@ -49,7 +42,7 @@ export function Hero(): JSX.Element {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.35 }}
           transition={{ duration: 0.65, delay: 0.1 }}
-          className="max-w-xl text-base leading-7 text-[var(--text-secondary)] md:text-lg"
+          className="max-w-xl text-lg leading-8 text-[var(--text-secondary)] md:text-[1.35rem]"
         >
           BTA Courtside gives coaches and operators precise control on game day, synchronized
           postgame review, and AI guidance grounded in real possessions.
@@ -89,11 +82,11 @@ export function Hero(): JSX.Element {
             transition={shouldReduceMotion ? undefined : { duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
             style={{
               background:
-                "radial-gradient(92% 80% at 50% 0%, rgba(79,109,255,0.3), transparent 60%), radial-gradient(70% 80% at 84% 72%, rgba(37,210,197,0.16), transparent 70%)",
+                "radial-gradient(92% 80% at 50% 0%, rgba(255,248,255,0.24), transparent 60%), radial-gradient(70% 80% at 84% 72%, rgba(143,241,223,0.18), transparent 70%), radial-gradient(60% 70% at 8% 82%, rgba(255,211,156,0.18), transparent 72%)",
             }}
           />
           <div className="relative flex h-full flex-col gap-4">
-            <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-4)] p-4">
+            <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(112,93,201,0.24)] p-4 backdrop-blur-md">
               <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
                 <span className="inline-flex items-center gap-2">
                   <span className="size-1.5 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_8px_rgba(37,210,197,0.7)]" />
@@ -102,7 +95,7 @@ export function Hero(): JSX.Element {
                 <span>Q3 05:12</span>
               </div>
               <div className="grid gap-3 md:grid-cols-[1.05fr_0.95fr]">
-                <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
+                <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Score Widget</p>
                     <ShieldCheck className="size-4 text-[var(--accent-secondary)]" />
@@ -115,7 +108,7 @@ export function Hero(): JSX.Element {
                   <p className="mt-2 text-xs text-[var(--text-secondary)]">Home run: 11-4 over last 7 possessions</p>
                 </div>
 
-                <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
+                <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Possession Arrow</p>
                     <Activity className="size-4 text-[var(--accent-primary)]" />
@@ -146,7 +139,7 @@ export function Hero(): JSX.Element {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.65, delay: 0.08 }}
-                className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4"
+                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4"
               >
                 <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
                   <span>Shot Dot Layer</span>
@@ -187,7 +180,7 @@ export function Hero(): JSX.Element {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.65, delay: 0.12 }}
-                className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4"
+                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4"
               >
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-xs text-[var(--text-tertiary)]">AI Timeline Markers</p>
@@ -204,7 +197,7 @@ export function Hero(): JSX.Element {
                   ].map((item) => (
                     <p
                       key={item}
-                      className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-1)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                      className="rounded-lg border border-[var(--border-soft)] bg-[rgba(255,255,255,0.12)] px-3 py-2 text-sm text-[var(--text-secondary)]"
                     >
                       {item}
                     </p>
@@ -214,25 +207,6 @@ export function Hero(): JSX.Element {
             </div>
           </div>
         </GlassPanel>
-
-        {floatingItems.map((item, idx) => {
-          const Icon = item.icon;
-          return (
-            <motion.div
-              key={item.label}
-              className="absolute hidden rounded-xl border border-[var(--border-soft)] bg-[var(--panel-1)]/90 px-3 py-2 text-xs text-[var(--text-secondary)] shadow-[var(--shadow-md)] lg:block"
-              style={{ left: item.x, top: item.y }}
-              animate={{ y: [0, idx % 2 === 0 ? -10 : 8, 0] }}
-              transition={{ duration: 4 + idx, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
-            >
-              <p className="mb-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
-                <Icon className="size-3.5 text-[var(--accent-secondary)]" />
-                {item.label}
-              </p>
-              <p className="text-[var(--text-primary)]">{item.value}</p>
-            </motion.div>
-          );
-        })}
       </div>
     </section>
   );

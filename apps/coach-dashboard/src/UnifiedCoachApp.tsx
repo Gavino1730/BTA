@@ -7,17 +7,11 @@ import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
 import { ForbiddenPage, NotFoundPage, OfflinePage, ServerErrorPage, SessionExpiredPage, UnauthorizedPage } from "./ErrorStatePages.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
-import { MarketingPage } from "./MarketingPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { ComparePage } from "./ComparePage.js";
-import { HowItWorksPage } from "./HowItWorksPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { PricingPage } from "./PricingPage.js";
-import { ProductPage } from "./ProductPage.js";
-import { AboutPage, AdminPage, BillingPage, ChangelogPage, CheckoutCancelPage, CheckoutSuccessPage, DataDeletionPage, DemoBookingPage, DocsCenterPage, EmailVerificationPage, FeaturesPage, HelpCenterPage, InviteAcceptancePage, OnboardingWizardPage, PrivacyPage, RoadmapPage, StatusPage, TermsPage, TestimonialsPage, UserSettingsPage } from "./RouteShellPages.js";
+import { AdminPage, BillingPage, CheckoutCancelPage, CheckoutSuccessPage, EmailVerificationPage, InviteAcceptancePage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
-import { ContactHubPage, SupportHubPage } from "./SupportContactPages.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { seoForRoute } from "./seo.js";
 import { SetupPage } from "./SetupPage.js";
@@ -42,21 +36,8 @@ function isPlayerRole(role: string | null | undefined): boolean {
 const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
 
 const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
-  "marketing",
-  "product",
-  "how-it-works",
-  "pricing",
-  "compare",
-  "features",
-  "about",
-  "status",
-  "testimonials",
-  "demo-booking",
-  "onboarding-wizard",
   "invite-accept",
   "email-verify",
-  "changelog",
-  "roadmap",
   "login",
   "forgot-password",
   "reset-password",
@@ -66,13 +47,6 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "server-error",
   "offline",
   "session-expired",
-  "help",
-  "docs",
-  "terms",
-  "privacy",
-  "data-deletion",
-  "support",
-  "contact",
   "checkout-success",
   "checkout-cancel",
 ]);
@@ -103,22 +77,15 @@ function AppFooter({ onNavigate }: AppFooterProps) {
       <div className="coach-app-footer-inner">
         <span className="coach-app-footer-brand">BTA Courtside</span>
         <nav className="coach-app-footer-links" aria-label="App footer links">
-          <button type="button" onClick={() => onNavigate("/product")}>Product</button>
-          <button type="button" onClick={() => onNavigate("/pricing")}>Pricing</button>
-          <button type="button" onClick={() => onNavigate("/features")}>Features</button>
-          <button type="button" onClick={() => onNavigate("/about")}>About</button>
-          <button type="button" onClick={() => onNavigate("/status")}>Status</button>
-          <button type="button" onClick={() => onNavigate("/changelog")}>Changelog</button>
-          <button type="button" onClick={() => onNavigate("/roadmap")}>Roadmap</button>
-          <button type="button" onClick={() => onNavigate("/help")}>Help</button>
-          <button type="button" onClick={() => onNavigate("/docs")}>Docs</button>
-          <button type="button" onClick={() => onNavigate("/support")}>Support</button>
-          <button type="button" onClick={() => onNavigate("/contact")}>Contact</button>
+          <button type="button" onClick={() => onNavigate("/live")}>Live</button>
+          <button type="button" onClick={() => onNavigate("/stats")}>Overview</button>
+          <button type="button" onClick={() => onNavigate("/stats/games")}>Games</button>
+          <button type="button" onClick={() => onNavigate("/stats/players")}>Players</button>
+          <button type="button" onClick={() => onNavigate("/notifications")}>Notifications</button>
+          <button type="button" onClick={() => onNavigate("/account")}>Account</button>
+          <button type="button" onClick={() => onNavigate("/settings")}>Settings</button>
           <button type="button" onClick={() => onNavigate("/billing")}>Billing</button>
           <button type="button" onClick={() => onNavigate("/admin")}>Admin</button>
-          <button type="button" onClick={() => onNavigate("/terms")}>Terms</button>
-          <button type="button" onClick={() => onNavigate("/privacy")}>Privacy</button>
-          <button type="button" onClick={() => onNavigate("/data-deletion")}>Data Deletion</button>
         </nav>
         <span className="coach-app-footer-meta">© {currentYear} BTA Courtside · Preproduction</span>
       </div>
@@ -389,7 +356,7 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    if (route !== "marketing" && route !== "login" && route !== "forgot-password" && route !== "reset-password") {
+    if (route !== "login" && route !== "forgot-password" && route !== "reset-password") {
       return;
     }
 
@@ -483,21 +450,8 @@ export function UnifiedCoachApp() {
   function navigate(nextPath: string) {
     const publicPaths = new Set([
       "/",
-      "/product",
-      "/how-it-works",
-      "/pricing",
-      "/compare",
-      "/features",
-      "/about",
-      "/status",
-      "/testimonials",
-      "/book-demo",
-      "/demo-booking",
-      "/onboarding-wizard",
       "/invite/accept",
       "/verify-email",
-      "/changelog",
-      "/roadmap",
       "/login",
       "/forgot-password",
       "/reset-password",
@@ -507,13 +461,6 @@ export function UnifiedCoachApp() {
       "/500",
       "/offline",
       "/session-expired",
-      "/help",
-      "/docs",
-      "/terms",
-      "/privacy",
-      "/data-deletion",
-      "/support",
-      "/contact",
       "/checkout/success",
       "/checkout/cancel",
     ]);
@@ -537,61 +484,6 @@ export function UnifiedCoachApp() {
     window.history.pushState({}, "", nextPath);
     setRoute(resolveCoachRoute(nextPath));
   }
-
-
-
-  if (route === "marketing") {
-    return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
-  }
-
-  if (route === "product") {
-    return <ProductPage onNavigate={navigate} />;
-  }
-
-  if (route === "how-it-works") {
-    return <HowItWorksPage onNavigate={navigate} />;
-  }
-
-  if (route === "pricing") {
-    return <PricingPage onNavigate={navigate} />;
-  }
-
-  if (route === "compare") {
-    return <ComparePage onNavigate={navigate} />;
-  }
-
-  if (route === "features") {
-    return <FeaturesPage onNavigate={navigate} />;
-  }
-
-  if (route === "about") {
-    return <AboutPage onNavigate={navigate} />;
-  }
-
-  if (route === "status") {
-    return <StatusPage onNavigate={navigate} />;
-  }
-
-  if (route === "testimonials") {
-    return <TestimonialsPage onNavigate={navigate} />;
-  }
-
-  if (route === "demo-booking") {
-    return <DemoBookingPage onNavigate={navigate} />;
-  }
-
-  if (route === "onboarding-wizard") {
-    return <OnboardingWizardPage onNavigate={navigate} />;
-  }
-
-  if (route === "changelog") {
-    return <ChangelogPage onNavigate={navigate} />;
-  }
-
-  if (route === "roadmap") {
-    return <RoadmapPage onNavigate={navigate} />;
-  }
-
   if (route === "login") {
     return (
       <LoginPage
@@ -655,34 +547,6 @@ export function UnifiedCoachApp() {
 
   if (route === "session-expired") {
     return <SessionExpiredPage onNavigate={navigate} />;
-  }
-
-  if (route === "terms") {
-    return <TermsPage onNavigate={navigate} />;
-  }
-
-  if (route === "help") {
-    return <HelpCenterPage onNavigate={navigate} />;
-  }
-
-  if (route === "docs") {
-    return <DocsCenterPage onNavigate={navigate} />;
-  }
-
-  if (route === "privacy") {
-    return <PrivacyPage onNavigate={navigate} />;
-  }
-
-  if (route === "data-deletion") {
-    return <DataDeletionPage onNavigate={navigate} />;
-  }
-
-  if (route === "support") {
-    return <SupportHubPage onNavigate={navigate} />;
-  }
-
-  if (route === "contact") {
-    return <ContactHubPage onNavigate={navigate} />;
   }
 
   if (route === "checkout-success") {

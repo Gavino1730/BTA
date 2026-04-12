@@ -442,7 +442,6 @@ describe("coach code sync snapshot", () => {
       myTeamId: string;
       opponent: string;
       vcSide: "home" | "away";
-      dashboardUrl: string;
       startingLineup?: string[];
       homeTeamColor?: string;
       awayTeamColor?: string;
@@ -457,7 +456,7 @@ describe("coach code sync snapshot", () => {
     current: SyncState,
     snapshot: {
       connectionId: string;
-      setup?: { gameId?: string; myTeamId?: string; opponentName?: string; vcSide?: "home" | "away"; homeTeamColor?: string; awayTeamColor?: string; dashboardUrl?: string };
+      setup?: { gameId?: string; myTeamId?: string; opponentName?: string; vcSide?: "home" | "away"; homeTeamColor?: string; awayTeamColor?: string };
       teams?: SyncTeam[];
     },
   ): SyncState {
@@ -477,7 +476,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: nextTeamId,
         opponent: snapshot.setup?.opponentName ?? current.gameSetup.opponent,
         vcSide: snapshot.setup?.vcSide ?? current.gameSetup.vcSide,
-        dashboardUrl: snapshot.setup?.dashboardUrl ?? current.gameSetup.dashboardUrl,
         homeTeamColor: snapshot.setup?.homeTeamColor ?? current.gameSetup.homeTeamColor,
         awayTeamColor: snapshot.setup?.awayTeamColor ?? current.gameSetup.awayTeamColor,
         startingLineup,
@@ -499,7 +497,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "",
         opponent: "",
         vcSide: "home",
-        dashboardUrl: "http://localhost:4000",
         startingLineup: ["p1"],
       },
     };
@@ -511,7 +508,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "vc-varsity",
         opponentName: "Opponent Team",
         vcSide: "away",
-        dashboardUrl: "http://localhost:5173/live",
       },
       teams: [
         {
@@ -552,7 +548,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "vc-varsity",
         opponent: "Opponent Team",
         vcSide: "home",
-        dashboardUrl: "http://localhost:4000",
         startingLineup: ["p1", "p2", "missing-player"],
       },
     };
@@ -583,7 +578,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "vc-varsity",
         opponent: "Opponent Team",
         vcSide: "home",
-        dashboardUrl: "http://localhost:4000",
       },
     };
 

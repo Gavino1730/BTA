@@ -16,13 +16,14 @@ const ambientNodes = [
 export function FinalCta(): JSX.Element {
   return (
     <section className="mx-auto w-[min(1200px,92vw)] py-20">
-      <div className="relative overflow-hidden rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,rgba(10,14,25,0.94),rgba(16,24,44,0.92))] px-7 py-16 text-center shadow-[var(--shadow-xl)] md:px-10">
-        <div className="absolute inset-0 bg-[radial-gradient(60%_85%_at_50%_0%,rgba(79,109,255,0.32),transparent_68%)]" />
+      <div className="premium-outline relative overflow-hidden rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,rgba(255,248,255,0.18),rgba(242,232,255,0.12))] px-7 py-16 text-center shadow-[var(--shadow-xl)] backdrop-blur-xl md:px-10">
+        <div className="absolute inset-0 bg-[radial-gradient(60%_85%_at_50%_0%,rgba(255,255,255,0.18),transparent_68%),radial-gradient(70%_90%_at_85%_65%,rgba(143,241,223,0.14),transparent_66%),radial-gradient(50%_80%_at_12%_70%,rgba(255,211,156,0.16),transparent_66%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent_35%,rgba(94,71,178,0.08)_100%)]" />
 
         {ambientNodes.map((node, idx) => (
           <motion.span
             key={`${node.left}-${node.top}`}
-            className="absolute size-2 rounded-full bg-[var(--accent-secondary)]/60"
+            className="absolute size-2 rounded-full bg-[var(--accent-secondary)]/70 shadow-[0_0_14px_rgba(143,241,223,0.55)]"
             style={{ left: node.left, top: node.top }}
             animate={{ y: [0, idx % 2 === 0 ? -18 : 14, 0], opacity: [0.4, 1, 0.4] }}
             transition={{ duration: 4 + idx * 0.35, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
@@ -36,13 +37,13 @@ export function FinalCta(): JSX.Element {
           transition={{ duration: 0.6 }}
           className="relative mx-auto max-w-2xl"
         >
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
+          <p className="mb-3 text-[13px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
             Build under pressure, with control
           </p>
-          <h2 className="font-display text-4xl leading-tight text-[var(--text-primary)] md:text-6xl">
+          <h2 className="font-display text-5xl leading-[0.98] text-[var(--text-primary)] md:text-6xl">
             Bring your stats, film, and coaching intelligence into one live command center.
           </h2>
-          <p className="mx-auto mt-5 max-w-xl text-[var(--text-secondary)]">
+          <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-[var(--text-secondary)]">
             Schedule a product session and see how BTA Courtside runs from game entry to review in a single workflow.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

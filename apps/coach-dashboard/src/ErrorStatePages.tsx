@@ -45,8 +45,8 @@ export function NotFoundPage({ onNavigate }: { onNavigate: (path: string) => voi
       subtitle="We could not find the page you requested. Check the URL or head back to the dashboard."
       onPrimary={() => onNavigate("/live")}
       primaryLabel="Go to Live Dashboard"
-      onSecondary={() => onNavigate("/")}
-      secondaryLabel="Go to Home"
+      onSecondary={() => onNavigate("/stats")}
+      secondaryLabel="Open Overview"
     />
   );
 }
@@ -71,8 +71,8 @@ export function UnauthorizedPage({ onNavigate }: { onNavigate: (path: string) =>
       subtitle="You are signed in, but this route requires additional permissions or organization scope." 
       onPrimary={() => onNavigate("/account")}
       primaryLabel="Review Account"
-      onSecondary={() => onNavigate("/support")}
-      secondaryLabel="Request Access"
+      onSecondary={() => onNavigate("/stats")}
+      secondaryLabel="Open Overview"
     />
   );
 }
@@ -84,8 +84,8 @@ export function ServerErrorPage({ onNavigate }: { onNavigate: (path: string) => 
       subtitle="Something went wrong while loading this page. Please retry or return to the dashboard."
       onPrimary={() => onNavigate("/live")}
       primaryLabel="Retry Dashboard"
-      onSecondary={() => onNavigate("/support")}
-      secondaryLabel="Contact Support"
+      onSecondary={() => onNavigate("/stats")}
+      secondaryLabel="Open Overview"
     />
   );
 }
@@ -97,8 +97,8 @@ export function OfflinePage({ onNavigate }: { onNavigate: (path: string) => void
       subtitle="Network connectivity is unavailable. Reconnect and try again."
       onPrimary={() => onNavigate("/live")}
       primaryLabel="Retry Live"
-      onSecondary={() => onNavigate("/support")}
-      secondaryLabel="Offline Help"
+      onSecondary={() => onNavigate("/stats")}
+      secondaryLabel="Open Overview"
     />
   );
 }
@@ -110,8 +110,8 @@ export function SessionExpiredPage({ onNavigate }: { onNavigate: (path: string) 
       subtitle="Your authentication session expired. Sign in again to continue."
       onPrimary={() => onNavigate("/login")}
       primaryLabel="Sign In"
-      onSecondary={() => onNavigate("/")}
-      secondaryLabel="Back to Home"
+      onSecondary={() => onNavigate("/forgot-password")}
+      secondaryLabel="Reset Password"
     />
   );
 }
