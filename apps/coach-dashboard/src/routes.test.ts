@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiBase, generateConnectionCode, normalizeConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultSchoolId, resolveRuntimeBase } from "./platform.js";
+import { apiBase, generateConnectionCode, marketingBase, normalizeConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultMarketingBase, resolveDefaultSchoolId, resolveRuntimeBase } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
@@ -21,9 +21,12 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/settings")).toBe("settings");
     expect(resolveCoachRoute("/admin")).toBe("admin");
     expect(resolveCoachRoute("/live")).toBe("live");
+    expect(resolveCoachRoute("/support")).toBe("support");
+    expect(resolveCoachRoute("/contact")).toBe("contact");
+    expect(resolveCoachRoute("/book-demo")).toBe("book-demo");
+    expect(resolveCoachRoute("/data-deletion")).toBe("data-deletion");
     expect(resolveCoachRoute("/product")).toBe("not-found");
     expect(resolveCoachRoute("/pricing")).toBe("not-found");
-    expect(resolveCoachRoute("/support")).toBe("not-found");
     expect(resolveCoachRoute("/players")).toBe("not-found");
     expect(resolveCoachRoute("/activity")).toBe("not-found");
     expect(resolveCoachRoute("/signin")).toBe("not-found");
@@ -38,6 +41,13 @@ describe("coach route helpers", () => {
   it("keeps deployed dashboard links on the current secure origin when env vars are unset", () => {
     expect(resolveDefaultApiBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app")).toBe("https://bta-demo.up.railway.app");
     expect(resolveDefaultAppBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app", 5174)).toBe("https://bta-demo.up.railway.app");
+  });
+
+  it("keeps public auth navigation pointed at the marketing site", () => {
+    expect(marketingBase.length).toBeGreaterThan(0);
+    expect(resolveDefaultMarketingBase("localhost")).toBe("http://localhost:3000");
+    expect(resolveDefaultMarketingBase("192.168.1.25")).toBe("http://localhost:3000");
+    expect(resolveDefaultMarketingBase("dashboard.btaintel.com")).toBe("https://btaintel.com");
   });
 
   it("upgrades misconfigured public http bases on secure pages to avoid mixed-content", () => {

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { footerGroups } from "@/content/homepage";
 
 export function Footer(): JSX.Element {
@@ -18,9 +20,13 @@ export function Footer(): JSX.Element {
               </p>
               <div className="space-y-2 text-sm text-[var(--text-secondary)]">
                 {group.links.map((link) => (
-                  <p key={link} className="transition-colors hover:text-[var(--text-primary)]">
-                    {link}
-                  </p>
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    className="block transition-colors hover:text-[var(--text-primary)]"
+                  >
+                    {link.label}
+                  </Link>
                 ))}
               </div>
             </div>

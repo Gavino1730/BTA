@@ -15,6 +15,14 @@ export function resolveDefaultApiBase(hostname: string, origin: string): string 
   return resolveDefaultAppBase(hostname, origin, 4000);
 }
 
+export function resolveDefaultMarketingBase(hostname: string): string {
+  if (isLocalNetworkHost(hostname) || hostname === "localhost") {
+    return "http://localhost:3000";
+  }
+
+  return "https://btaintel.com";
+}
+
 export function resolveDefaultSchoolId(hostname: string): string {
   void hostname;
   return "";
@@ -193,8 +201,15 @@ export const operatorBase = resolveRuntimeBase(
   defaultHost,
   pageProtocol,
 );
+export const marketingBase = resolveRuntimeBase(
+  import.meta.env.VITE_MARKETING_SITE ?? resolveDefaultMarketingBase(defaultHost),
+  defaultHost,
+  pageProtocol,
+);
 export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 export const AUTH_SESSION_KEY = "bta.coach.authSession";
+
+export type AuthSessionPersistence = "local" | "session";
 
 const AUTH_COOKIE_NAME = "bta_coach_auth";
 const AUTH_COOKIE_DAYS = 90;
@@ -234,6 +249,79 @@ export interface StoredAuthSession {
   lastLoginAtIso?: string | null;
 }
 
+interface StoreAuthSessionOptions {
+  persistence?: AuthSessionPersistence;
+}
+
+function getLocalStorageHandle(): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getSessionStorageHandle(): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function parseStoredAuthSession(raw: string | null): StoredAuthSession | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredAuthSession;
+    if (typeof parsed?.token !== "string" || !parsed.token.trim()) {
+      return null;
+    }
+
+    return {
+      ...parsed,
+      token: parsed.token.trim(),
+      schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readStoredAuthSessionFromStorage(storage: Storage | null): StoredAuthSession | null {
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    return parseStoredAuthSession(storage.getItem(AUTH_SESSION_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function detectStoredAuthSessionPersistence(): AuthSessionPersistence | null {
+  if (readStoredAuthSessionFromStorage(getSessionStorageHandle())) {
+    return "session";
+  }
+
+  if (readStoredAuthSessionFromStorage(getLocalStorageHandle())) {
+    return "local";
+  }
+
+  return null;
+}
+
 export function generateConnectionCode(): string {
   return String(Math.floor(100000 + (Math.random() * 900000)));
 }
@@ -248,54 +336,57 @@ export function readStoredAuthSession(): StoredAuthSession | null {
     return null;
   }
 
-  // Primary: try localStorage first
-  try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as StoredAuthSession;
-      if (typeof parsed?.token === "string" && parsed.token.trim()) {
-        return {
-          ...parsed,
-          token: parsed.token.trim(),
-          schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
-        };
-      }
-    }
-  } catch {
-    // fall through to cookie fallback
+  const sessionScoped = readStoredAuthSessionFromStorage(getSessionStorageHandle());
+  if (sessionScoped) {
+    return sessionScoped;
   }
 
-  // Fallback: try cookie. iOS WebKit can clear localStorage for home screen
-  // web apps during suspend/eviction; cookies with explicit expiry survive longer.
-  try {
-    const raw = readAuthCookieRaw();
-    if (raw) {
-      const parsed = JSON.parse(raw) as StoredAuthSession;
-      if (typeof parsed?.token === "string" && parsed.token.trim()) {
-        // Restore localStorage from the cookie so subsequent reads are fast.
-        try { window.localStorage.setItem(AUTH_SESSION_KEY, raw); } catch { /* ignore */ }
-        return {
-          ...parsed,
-          token: parsed.token.trim(),
-          schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
-        };
+  const remembered = readStoredAuthSessionFromStorage(getLocalStorageHandle());
+  if (remembered) {
+    return remembered;
+  }
+
+  const cookieSession = parseStoredAuthSession(readAuthCookieRaw());
+  if (cookieSession) {
+    const localStorageHandle = getLocalStorageHandle();
+    if (localStorageHandle) {
+      try {
+        localStorageHandle.setItem(AUTH_SESSION_KEY, JSON.stringify(cookieSession));
+      } catch {
+        // ignore storage write failures and still return the recovered session
       }
     }
-  } catch {
-    // cookie unreadable
+
+    return cookieSession;
   }
 
   return null;
 }
 
-export function storeAuthSession(session: StoredAuthSession | null): void {
+export function storeAuthSession(session: StoredAuthSession | null, options: StoreAuthSessionOptions = {}): void {
   if (typeof window === "undefined") {
     return;
   }
 
+  const persistence = options.persistence ?? detectStoredAuthSessionPersistence() ?? "local";
+  const localStorageHandle = getLocalStorageHandle();
+  const sessionStorageHandle = getSessionStorageHandle();
+
+  try {
+    localStorageHandle?.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
+  try {
+    sessionStorageHandle?.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
+  clearAuthCookie();
+
   if (!session?.token?.trim()) {
-    window.localStorage.removeItem(AUTH_SESSION_KEY);
-    clearAuthCookie();
     return;
   }
 
@@ -305,7 +396,26 @@ export function storeAuthSession(session: StoredAuthSession | null): void {
     schoolId: normalizeSchoolId(session.schoolId) || undefined,
   });
 
-  window.localStorage.setItem(AUTH_SESSION_KEY, serialized);
+  if (persistence === "session") {
+    try {
+      sessionStorageHandle?.setItem(AUTH_SESSION_KEY, serialized);
+    } catch {
+      // fall back to remembered storage if sessionStorage is unavailable
+      try {
+        localStorageHandle?.setItem(AUTH_SESSION_KEY, serialized);
+        writeAuthCookie(serialized);
+      } catch {
+        // ignore hard storage failures
+      }
+    }
+    return;
+  }
+
+  try {
+    localStorageHandle?.setItem(AUTH_SESSION_KEY, serialized);
+  } catch {
+    // ignore storage write failures and still attempt cookie fallback
+  }
   writeAuthCookie(serialized);
 }
 
@@ -313,7 +423,19 @@ export function clearAuthSession(): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.removeItem(AUTH_SESSION_KEY);
+
+  try {
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
+  try {
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
   clearAuthCookie();
 }
 

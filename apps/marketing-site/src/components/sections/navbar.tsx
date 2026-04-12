@@ -6,7 +6,7 @@ import { ChevronDown, Menu, X } from "lucide-react";
 import { motion } from "motion/react";
 
 import { navLinks } from "@/content/homepage";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { getDashboardLoginUrl } from "@/lib/site-url";
 import { cn } from "@/lib/utils";
 
@@ -98,10 +98,18 @@ export function Navbar(): JSX.Element {
             >
               Login
             </Link>
-            <Button variant="ghost" className="hidden border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.08)] md:inline-flex">
+            <Link
+              href="/demo-signup"
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "md" }),
+                "hidden border-[rgba(255,247,255,0.22)] bg-[rgba(255,255,255,0.08)] md:inline-flex"
+              )}
+            >
               Watch Demo
-            </Button>
-            <Button>Book a Session</Button>
+            </Link>
+            <Link href="/contact" className={buttonVariants({ size: "md" })}>
+              Book a Session
+            </Link>
             <button
               type="button"
               onClick={() => setIsOpen((prev) => !prev)}

@@ -15,6 +15,7 @@ export type AppRoute =
   | "terms"
   | "privacy"
   | "data-deletion"
+  | "book-demo"
   | "support"
   | "contact"
   | "checkout-success"
@@ -57,6 +58,30 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/reset-password") {
     return "reset-password";
+  }
+  if (canonical === "/help") {
+    return "help";
+  }
+  if (canonical === "/docs") {
+    return "docs";
+  }
+  if (canonical === "/terms") {
+    return "terms";
+  }
+  if (canonical === "/privacy") {
+    return "privacy";
+  }
+  if (canonical === "/support") {
+    return "support";
+  }
+  if (canonical === "/contact") {
+    return "contact";
+  }
+  if (canonical === "/book-demo") {
+    return "book-demo";
+  }
+  if (canonical === "/data-deletion") {
+    return "data-deletion";
   }
   if (canonical === "/404") {
     return "not-found";

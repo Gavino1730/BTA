@@ -16,19 +16,19 @@ export function WhyDifferent(): JSX.Element {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <GlassPanel className="p-6">
-          <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(153,116,74,0.3),rgba(93,80,177,0.2))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(120,82,45,0.34),rgba(72,58,150,0.24))]" />
           <div className="relative">
             <h3 className="font-display text-4xl text-[var(--text-primary)]">Disconnected Workflow</h3>
             <ul className="mt-4 space-y-2 text-sm text-[var(--text-secondary)]">
-              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(153,116,74,0.2)] px-3 py-2 text-base">Stats captured in one tool, film clipped in another</li>
-              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(153,116,74,0.2)] px-3 py-2 text-base">Manual exports delay review and halftime decisions</li>
-              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(153,116,74,0.2)] px-3 py-2 text-base">Insights arrive too late to change the game</li>
+              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base">Stats captured in one tool, film clipped in another</li>
+              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base">Manual exports delay review and halftime decisions</li>
+              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base">Insights arrive too late to change the game</li>
             </ul>
           </div>
         </GlassPanel>
 
         <GlassPanel className="relative overflow-hidden p-6">
-          <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(70,150,133,0.26),rgba(80,112,173,0.18))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(42,118,103,0.3),rgba(52,86,146,0.24))]" />
           <h3 className="relative font-display text-4xl text-[var(--text-primary)]">BTA Courtside System</h3>
           <motion.ul
             initial="hidden"
@@ -52,7 +52,7 @@ export function WhyDifferent(): JSX.Element {
               <motion.li
                 key={item}
                 variants={{ hidden: { opacity: 0, x: -10 }, visible: { opacity: 1, x: 0 } }}
-                className="rounded-lg border border-[var(--border-soft)] bg-[rgba(70,150,133,0.2)] px-3 py-2"
+                className="rounded-lg border border-[var(--border-soft)] bg-[rgba(26,86,74,0.42)] px-3 py-2"
               >
                 {item}
               </motion.li>

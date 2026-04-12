@@ -1,8 +1,8 @@
 export const navLinks = [
-  { label: "Platform", href: "#pillars" },
-  { label: "Showcase", href: "#showcase" },
-  { label: "Use Cases", href: "#use-cases" },
-  { label: "Results", href: "#results" },
+  { label: "Features", href: "/features" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "About", href: "/about" },
+  { label: "Support", href: "/support" },
 ] as const;
 
 export const trustItems = [
@@ -84,18 +84,38 @@ export const proofCards = [
 export const footerGroups = [
   {
     title: "Platform",
-    links: ["Live Operations", "Coach Dashboard", "Film Sync", "AI Insights"],
-  },
-  {
-    title: "Solutions",
-    links: ["Varsity Teams", "Club Programs", "Training Staff", "Operations"],
-  },
-  {
-    title: "Resources",
-    links: ["Product Tour", "How It Works", "Security", "Support"],
+    links: [
+      { label: "Features", href: "/features" },
+      { label: "Pricing", href: "/pricing" },
+      { label: "Demo Signup", href: "/demo-signup" },
+      { label: "About", href: "/about" },
+    ],
   },
   {
     title: "Company",
-    links: ["About", "Contact", "Careers", "Status"],
+    links: [
+      { label: "Contact", href: "/contact" },
+      { label: "Support", href: "/support" },
+      { label: "Security", href: "/security" },
+      { label: "Acceptable Use", href: "/acceptable-use" },
+    ],
+  },
+  {
+    title: "Policies",
+    links: [
+      { label: "Terms", href: "/terms" },
+      { label: "Privacy", href: "/privacy" },
+      { label: "Cookie Policy", href: "/cookie-policy" },
+      { label: "Data Deletion", href: "/data-deletion" },
+    ],
+  },
+  {
+    title: "Access",
+    links: [
+      { label: "Coach Login", href: "https://dashboard.btaintel.com/login" },
+      { label: "Book Demo", href: "/demo-signup" },
+      { label: "Contact Team", href: "/contact" },
+      { label: "Support", href: "/support" },
+    ],
   },
 ] as const;

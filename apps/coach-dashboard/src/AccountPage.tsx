@@ -14,9 +14,21 @@ interface AuthMePayload {
     schoolId?: string;
     lastLoginAtIso?: string | null;
     profilePhotoDataUrl?: string | null;
+    scheduledDeletionAtIso?: string | null;
   } | null;
   token?: string | null;
   error?: string;
+}
+
+function formatScheduledDeletion(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+  const whenMs = Date.parse(value);
+  if (!Number.isFinite(whenMs)) {
+    return value;
+  }
+  return new Date(whenMs).toLocaleString();
 }
 
 export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPageProps) {
@@ -24,6 +36,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
   const [profilePhotoDataUrl, setProfilePhotoDataUrl] = useState<string | null>(null);
+  const [scheduledDeletionAtIso, setScheduledDeletionAtIso] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
@@ -49,6 +62,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
           setEmail(payload.user.email ?? "");
           setRole(payload.user.role ?? "");
           setProfilePhotoDataUrl(payload.user.profilePhotoDataUrl ?? null);
+          setScheduledDeletionAtIso(payload.user.scheduledDeletionAtIso ?? null);
           setStatus("Account loaded.");
           onSessionUpdated(payload.user.role ?? null);
         }
@@ -91,6 +105,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
           schoolId?: string;
           lastLoginAtIso?: string | null;
           profilePhotoDataUrl?: string | null;
+          scheduledDeletionAtIso?: string | null;
         } | null;
         token?: string | null;
         error?: string;
@@ -113,6 +128,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
 
       setRole(payload.user.role ?? role);
       setProfilePhotoDataUrl(payload.user.profilePhotoDataUrl ?? null);
+      setScheduledDeletionAtIso(payload.user.scheduledDeletionAtIso ?? null);
       setCurrentPassword("");
       setNewPassword("");
       setStatus("Account updated.");
@@ -198,13 +214,13 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
       return;
     }
 
-    const shouldDelete = window.confirm("Delete this account permanently? This cannot be undone.");
+    const shouldDelete = window.confirm("Schedule this account for deletion? You can cancel during the grace period.");
     if (!shouldDelete) {
       return;
     }
 
     setProcessingDelete(true);
-    setStatus("Deleting account...");
+    setStatus("Scheduling account deletion...");
     try {
       const response = await fetch(`${apiBase}/api/auth/me`, {
         method: "DELETE",
@@ -217,13 +233,46 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(payload.error || "Could not delete account");
+        throw new Error(payload.error || "Could not schedule account deletion");
       }
 
-      clearAuthSession();
-      onSignOutRequested();
+      const payload = await response.json().catch(() => ({})) as {
+        scheduledDeletionAtIso?: string;
+        graceDays?: number;
+      };
+      setScheduledDeletionAtIso(payload.scheduledDeletionAtIso ?? null);
+      setDeletePassword("");
+      setDeleteConfirmation("");
+      setStatus(`Account deletion scheduled. You can cancel before ${formatScheduledDeletion(payload.scheduledDeletionAtIso ?? null)}.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not delete account");
+      setStatus(error instanceof Error ? error.message : "Could not schedule account deletion");
+    } finally {
+      setProcessingDelete(false);
+    }
+  }
+
+  async function handleCancelScheduledDeletion() {
+    setProcessingDelete(true);
+    setStatus("Canceling scheduled deletion...");
+    try {
+      const response = await fetch(`${apiBase}/api/auth/me/cancel-deletion`, {
+        method: "POST",
+        headers: apiKeyHeader(),
+      });
+
+      const payload = await response.json().catch(() => ({})) as {
+        error?: string;
+        user?: { scheduledDeletionAtIso?: string | null };
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not cancel scheduled deletion");
+      }
+
+      setScheduledDeletionAtIso(payload.user?.scheduledDeletionAtIso ?? null);
+      setStatus("Scheduled deletion canceled.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not cancel scheduled deletion");
     } finally {
       setProcessingDelete(false);
     }
@@ -331,9 +380,14 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
         <div className="stats-page-card-head">
           <div>
             <h3>Danger Zone</h3>
-            <p className="settings-section-desc">Delete your account by confirming with your current password.</p>
+            <p className="settings-section-desc">Schedule account deletion with a grace period and cancel before deadline if needed.</p>
           </div>
         </div>
+        {scheduledDeletionAtIso && (
+          <p className="stats-page-subcopy" style={{ marginTop: "0.5rem" }}>
+            Deletion is scheduled for {formatScheduledDeletion(scheduledDeletionAtIso)}.
+          </p>
+        )}
         <div className="setup-grid" style={{ marginTop: "0.75rem" }}>
           <label className="stats-filter-field">
             <span>Type DELETE to confirm</span>
@@ -354,13 +408,23 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
           </label>
         </div>
         <div className="account-action-row">
+          {scheduledDeletionAtIso && (
+            <button
+              type="button"
+              className="shell-nav-link"
+              onClick={() => void handleCancelScheduledDeletion()}
+              disabled={processingDelete || saving || processingSessionAction}
+            >
+              Cancel Scheduled Deletion
+            </button>
+          )}
           <button
             type="button"
             className="shell-nav-link account-danger-btn"
             onClick={() => void handleDeleteAccount()}
             disabled={processingDelete || saving || processingSessionAction}
           >
-            {processingDelete ? "Deleting..." : "Delete Account"}
+            {processingDelete ? "Processing..." : scheduledDeletionAtIso ? "Reschedule Deletion" : "Schedule Deletion"}
           </button>
         </div>
       </section>

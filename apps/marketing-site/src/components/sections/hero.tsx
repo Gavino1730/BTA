@@ -55,8 +55,8 @@ export function Hero(): JSX.Element {
           transition={{ duration: 0.65, delay: 0.15 }}
           className="flex flex-wrap items-center gap-3"
         >
-          <Button size="lg">Request a Live Walkthrough</Button>
-          <Button size="lg" variant="ghost">
+          <Button size="lg" onClick={() => window.location.assign("/demo-signup")}>Request a Live Walkthrough</Button>
+          <Button size="lg" variant="ghost" onClick={() => window.location.assign("/features")}>
             View Product Tour
           </Button>
         </motion.div>

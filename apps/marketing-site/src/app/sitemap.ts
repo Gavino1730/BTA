@@ -4,13 +4,26 @@ import { getSiteUrl } from "@/lib/site-url";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const siteUrl = getSiteUrl();
+  const routes = [
+    "/",
+    "/features",
+    "/pricing",
+    "/about",
+    "/demo-signup",
+    "/contact",
+    "/support",
+    "/security",
+    "/terms",
+    "/privacy",
+    "/cookie-policy",
+    "/acceptable-use",
+    "/data-deletion",
+  ] as const;
 
-  return [
-    {
-      url: siteUrl,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 1,
-    },
-  ];
+  return routes.map((route) => ({
+    url: route === "/" ? siteUrl : `${siteUrl}${route}`,
+    lastModified: new Date(),
+    changeFrequency: route === "/" ? "weekly" : "monthly",
+    priority: route === "/" ? 1 : 0.7,
+  }));
 }

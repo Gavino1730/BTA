@@ -1,11 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, storeAuthSession, type AuthSessionPersistence } from "./platform.js";
 
 interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
   onBackHome: () => void;
   onCreateAccount: () => void;
-  onForgotPassword: () => void;
+  onForgotPassword: (email?: string) => void;
   onAcceptInvite: () => void;
   onVerifyEmail: () => void;
 }
@@ -35,6 +35,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     : (new URLSearchParams(window.location.search).get("email") ?? "").trim().toLowerCase();
   const [coachEmail, setCoachEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
   const [busy, setBusy] = useState(false);
 
@@ -90,6 +91,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     setStatus("Signing in...");
 
     try {
+      const persistence: AuthSessionPersistence = rememberMe ? "local" : "session";
       const response = await fetch(`${apiBase}/api/auth/login`, {
         method: "POST",
         headers: apiKeyHeader(true),
@@ -111,7 +113,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
         role: payload.user.role,
         schoolId: payload.user.schoolId,
         lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
-      });
+      }, { persistence });
 
       setPassword("");
       setStatus(
@@ -127,49 +129,119 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     }
   }
 
+  function handleForgotPassword() {
+    const normalizedEmail = coachEmail.trim().toLowerCase();
+    onForgotPassword(normalizedEmail || undefined);
+  }
+
   return (
-    <div className="marketing-page">
-      <header className="marketing-header marketing-header-tight">
-        <button type="button" className="shell-nav-link" onClick={onBackHome}>← Back Home</button>
-        <span className="marketing-coming-pill">Invite Only</span>
+    <div className="auth-page">
+      <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
+      <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
+
+      <header className="auth-topbar">
+        <button type="button" className="auth-topbar-link" onClick={onBackHome}>Back Home</button>
+        <div className="auth-brand-lockup" aria-label="BTA Courtside">
+          <span className="auth-brand-badge">BTA</span>
+          <div>
+            <p className="auth-brand-name">Courtside</p>
+            <p className="auth-brand-subtitle">Live Basketball Intelligence</p>
+          </div>
+        </div>
+        <span className="auth-topbar-pill">Coach Access</span>
       </header>
 
-      <main className="marketing-login-shell">
-        <section className="marketing-login-card stats-page-card">
-          <p className="stats-page-eyebrow">Coach access</p>
-          <h1>Sign in to your dashboard</h1>
-          <p className="stats-page-subtitle">
-            Sign in below, or use the temporary create-account flow to unlock your dashboard.
+      <main className="auth-shell auth-shell-wide">
+        <section className="auth-hero-panel">
+          <span className="auth-kicker">Unified Game-Day Workflow</span>
+          <h1 className="auth-display-title">
+            Run the bench-side dashboard
+            <span>with the same polish as the marketing site.</span>
+          </h1>
+          <p className="auth-hero-copy">
+            Sign in to the live coach workspace for synced stats, film context, secure account controls, and production-grade session handling.
           </p>
 
-          <div className="marketing-login-note">
-            <strong>Temporary access enabled</strong>
-            <p>If you do not have a coach login yet, create one first and then finish setup.</p>
-            <button type="button" className="shell-nav-link" onClick={onCreateAccount}>Create Account</button>
+          <div className="auth-metric-grid" aria-label="Product highlights">
+            <article className="auth-metric-card">
+              <span>Live Feed</span>
+              <strong>Realtime dashboard sync</strong>
+            </article>
+            <article className="auth-metric-card">
+              <span>Session Security</span>
+              <strong>Remembered or browser-session sign-in</strong>
+            </article>
+            <article className="auth-metric-card">
+              <span>Recovery</span>
+              <strong>Email-based password reset flow</strong>
+            </article>
           </div>
 
-          <form className="marketing-login-form" onSubmit={handleSubmit}>
-            <label className="stats-filter-field">
+          <div className="auth-side-note">
+            <strong>New to BTA Courtside?</strong>
+            <p>Create your coach account first, finish setup once, and then return directly to live operations on future sign-ins.</p>
+            <button type="button" className="auth-secondary-button" onClick={onCreateAccount}>Create Account</button>
+          </div>
+        </section>
+
+        <section className="auth-card" aria-labelledby="coach-login-title">
+          <div className="auth-card-head">
+            <p className="auth-kicker">Coach Login</p>
+            <h2 id="coach-login-title">Sign in to your dashboard</h2>
+            <p>
+              Use the same coach email tied to your organization. Keep this device signed in only if it is trusted.
+            </p>
+          </div>
+
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <label className="auth-field">
               <span>Coach Email</span>
-              <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Password</span>
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
+              <input
+                type="email"
+                value={coachEmail}
+                onChange={(event) => setCoachEmail(event.target.value)}
+                placeholder="coach@program.org"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+              />
             </label>
 
-            <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={busy}>
+            <label className="auth-field">
+              <span>Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Your password"
+                autoComplete="current-password"
+              />
+            </label>
+
+            <div className="auth-inline-row">
+              <label className="auth-checkbox">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                />
+                <span>Remember me on this device</span>
+              </label>
+
+              <button type="button" className="auth-text-link" onClick={handleForgotPassword}>Forgot password?</button>
+            </div>
+
+            <button type="submit" className="auth-primary-button" disabled={busy}>
               {busy ? "Signing In..." : "Sign In"}
             </button>
           </form>
 
-          <div style={{ marginTop: "0.65rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button type="button" className="shell-nav-link" onClick={onForgotPassword}>Forgot password?</button>
-            <button type="button" className="shell-nav-link" onClick={onAcceptInvite}>Accept team invite</button>
-            <button type="button" className="shell-nav-link" onClick={onVerifyEmail}>Verify email</button>
-          </div>
+          <p className="auth-status" aria-live="polite">{status}</p>
 
-          <p className="stats-page-status">{status}</p>
+          <div className="auth-link-row">
+            <button type="button" className="auth-secondary-button" onClick={onAcceptInvite}>Accept Team Invite</button>
+            <button type="button" className="auth-secondary-button" onClick={onVerifyEmail}>Verify Email</button>
+          </div>
         </section>
       </main>
     </div>

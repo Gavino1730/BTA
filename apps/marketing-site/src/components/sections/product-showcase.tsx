@@ -45,7 +45,7 @@ export function ProductShowcase(): JSX.Element {
                 className="rounded-full border border-[var(--border-soft)] px-3 py-1 text-xs"
                 style={{
                   color: idx === 0 ? "var(--text-primary)" : "var(--text-secondary)",
-                  background: idx === 0 ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.12)",
+                  background: idx === 0 ? "rgba(57,47,121,0.7)" : "rgba(36,30,88,0.52)",
                   boxShadow: idx === 0 ? "0 0 0 1px rgba(255,255,255,0.22)" : "none",
                 }}
               >
@@ -62,7 +62,7 @@ export function ProductShowcase(): JSX.Element {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.55, delay: idx * 0.08 }}
-                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4"
+                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(37,30,92,0.56)] p-4"
               >
                 <p className="text-xs text-[var(--text-tertiary)]">{label}</p>
                 <p className="mt-3 font-display text-3xl text-[var(--text-primary)]">
@@ -82,10 +82,10 @@ export function ProductShowcase(): JSX.Element {
             ))}
           </div>
 
-          <div className="mt-4 rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4">
+          <div className="mt-4 rounded-xl border border-[var(--border-soft)] bg-[rgba(37,30,92,0.56)] p-4">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm text-[var(--text-secondary)]">Possession Timeline</p>
-              <button className="inline-flex items-center gap-1 rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.14)] px-3 py-1 text-xs text-[var(--text-secondary)]">
+              <button className="inline-flex items-center gap-1 rounded-full border border-[var(--border-soft)] bg-[rgba(34,29,88,0.62)] px-3 py-1 text-xs text-[var(--text-secondary)]">
                 <Play className="size-3" />
                 Open Synced Film
               </button>
@@ -99,7 +99,7 @@ export function ProductShowcase(): JSX.Element {
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.45, delay: idx * 0.07 }}
-                  className="grid grid-cols-[70px_1fr_56px] items-center gap-3 rounded-lg border border-[var(--border-soft)] bg-[rgba(255,255,255,0.12)] px-3 py-2"
+                  className="grid grid-cols-[70px_1fr_56px] items-center gap-3 rounded-lg border border-[var(--border-soft)] bg-[rgba(30,25,79,0.58)] px-3 py-2"
                 >
                   <span className="text-xs text-[var(--text-tertiary)]">{item.time}</span>
                   <span className="text-sm text-[var(--text-secondary)]">{item.event}</span>
@@ -128,11 +128,11 @@ export function ProductShowcase(): JSX.Element {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.45, delay: idx * 0.06 }}
-                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.16)] p-4"
+                className="rounded-xl border border-[var(--border-soft)] bg-[rgba(37,30,92,0.56)] p-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold text-[var(--text-primary)]">{name}</p>
-                  <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(255,255,255,0.18)] px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[var(--accent-secondary)]">
+                  <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(34,29,88,0.62)] px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-[var(--accent-secondary)]">
                     {badge}
                   </span>
                 </div>

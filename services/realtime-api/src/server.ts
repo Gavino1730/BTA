@@ -20,6 +20,7 @@ import {
   sendSecurityAlertEmail,
   sendSupportIntakeConfirmationEmail,
 } from "./email.js";
+import { buildPasswordResetRequestResponse } from "./auth-response.js";
 import {
   normalizeTeamColor,
   sanitizePromptText,
@@ -2039,6 +2040,21 @@ function scheduleMetricsPush(): void {
   }, interval);
 }
 
+function normalizeMissingTenantScopePath(rawPath: string): string {
+  const path = rawPath.trim().toLowerCase();
+  if (!path) {
+    return "unknown";
+  }
+
+  // Collapse common scanner probes (/.env, /v2/.env, /.env.production) so
+  // burst suppression applies to the whole probe family instead of each variant.
+  if (/(^|\/)\.env([./-]|$)/.test(path)) {
+    return "/.env*";
+  }
+
+  return path;
+}
+
 function shouldLogSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): boolean {
   // High-volume path scans can flood logs; keep counters intact and sample repetitive
   // missing-tenant-scope warnings per source/path window.
@@ -2047,10 +2063,11 @@ function shouldLogSecurityEvent(event: SecurityMetricKey, details: Record<string
   }
 
   const path = typeof details.path === "string" ? details.path : "unknown";
+  const normalizedPath = normalizeMissingTenantScopePath(path);
   const method = typeof details.method === "string" ? details.method : "unknown";
   const ip = typeof details.ip === "string" ? details.ip : "unknown";
   const transport = typeof details.transport === "string" ? details.transport : "http";
-  const key = `${event}:${transport}:${ip}:${method}:${path}`;
+  const key = `${event}:${transport}:${ip}:${method}:${normalizedPath}`;
   const now = Date.now();
   const window = securityLogWindows.get(key);
 
@@ -2068,6 +2085,7 @@ function shouldLogSecurityEvent(event: SecurityMetricKey, details: Record<string
     logger.info("security.event_log_suppressed", {
       event,
       path,
+      normalizedPath,
       method,
       ip,
       transport,
@@ -3440,12 +3458,13 @@ app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, asy
     expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
   });
 
-  res.json({
+  res.json(buildPasswordResetRequestResponse({
     message: "If this email exists for your organization, reset instructions have been prepared.",
     expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
     resetPath,
-    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { resetToken: token } : {}),
-  });
+    resetToken: token,
+    exposeResetMaterials: EXPOSE_PASSWORD_RESET_TOKEN,
+  }));
 });
 
 app.post("/api/auth/password-reset/confirm", authRateLimiter, requireApiKey, (req, res) => {

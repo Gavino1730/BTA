@@ -8,10 +8,10 @@ import { useCases } from "@/content/homepage";
 import { revealUp, staggerChildren } from "@/lib/motion";
 
 const useCaseTints = [
-  "linear-gradient(160deg, rgba(70,150,133,0.24), rgba(93,80,177,0.2))",
-  "linear-gradient(160deg, rgba(80,112,173,0.24), rgba(93,80,177,0.2))",
-  "linear-gradient(160deg, rgba(153,116,74,0.24), rgba(93,80,177,0.2))",
-  "linear-gradient(160deg, rgba(114,90,165,0.24), rgba(93,80,177,0.22))",
+  "linear-gradient(160deg, rgba(42,118,103,0.3), rgba(72,58,150,0.24))",
+  "linear-gradient(160deg, rgba(52,86,146,0.3), rgba(72,58,150,0.24))",
+  "linear-gradient(160deg, rgba(120,82,45,0.3), rgba(72,58,150,0.24))",
+  "linear-gradient(160deg, rgba(89,63,145,0.32), rgba(66,53,140,0.26))",
 ] as const;
 
 export function UseCases(): JSX.Element {

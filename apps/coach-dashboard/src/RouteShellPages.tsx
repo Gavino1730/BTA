@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { apiBase, apiKeyHeader } from "./platform.js";
 
 interface RoutedPageProps {
@@ -461,5 +461,249 @@ export function UserSettingsPage({ onNavigate }: RoutedPageProps) {
       onSecondary={() => onNavigate("/stats/settings")}
       secondaryLabel="Open Team Settings"
     />
+  );
+}
+
+export function SupportPage({ onNavigate }: RoutedPageProps) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [topic, setTopic] = useState("help");
+  const [severity, setSeverity] = useState("medium");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState("Use this form to submit support incidents and get an email confirmation.");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!email.trim() || !message.trim()) {
+      setStatus("Email and message are required.");
+      return;
+    }
+
+    setSubmitting(true);
+    setStatus("Submitting support intake...");
+    try {
+      const response = await fetch(`${apiBase}/api/intake/support`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ fullName, email, topic, severity, message }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus(typeof payload.error === "string" ? payload.error : "Could not submit support intake.");
+        return;
+      }
+      setStatus("Support request submitted. Check your email for confirmation.");
+      setMessage("");
+    } catch {
+      setStatus("Could not reach the API. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="stats-page">
+      <section className="stats-page-card policy-page-hero">
+        <p className="stats-page-eyebrow">Support</p>
+        <h1>Support Intake</h1>
+        <p className="stats-page-subtitle">Send game-day issues, bugs, and help requests.</p>
+      </section>
+      <form className="stats-page-card policy-page-section" onSubmit={handleSubmit}>
+        <div className="setup-grid">
+          <label className="stats-filter-field"><span>Name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" /></label>
+          <label className="stats-filter-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@school.org" /></label>
+          <label className="stats-filter-field"><span>Type</span><select value={topic} onChange={(event) => setTopic(event.target.value)}><option value="help">Help</option><option value="bug">Bug</option><option value="feature">Feature</option></select></label>
+          <label className="stats-filter-field"><span>Severity</span><select value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+          <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}><span>Details</span><textarea rows={5} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Describe what happened and when." /></label>
+        </div>
+        <p className="stats-page-status">{status}</p>
+        <div className="policy-page-actions">
+          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={submitting}>{submitting ? "Submitting..." : "Submit Support"}</button>
+          <button type="button" className="shell-nav-link" onClick={() => onNavigate("/contact")}>Open Contact</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export function ContactPage({ onNavigate }: RoutedPageProps) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [category, setCategory] = useState("support");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState("Contact us for support, onboarding, billing, or security questions.");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!name.trim() || !email.trim() || !message.trim()) {
+      setStatus("Name, email, and message are required.");
+      return;
+    }
+
+    setSubmitting(true);
+    setStatus("Submitting contact request...");
+    try {
+      const response = await fetch(`${apiBase}/api/intake/contact`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ name, email, organization, category, message }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus(typeof payload.error === "string" ? payload.error : "Could not submit contact request.");
+        return;
+      }
+      setStatus("Contact request submitted. Check your email for confirmation.");
+      setMessage("");
+    } catch {
+      setStatus("Could not reach the API. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="stats-page">
+      <section className="stats-page-card policy-page-hero">
+        <p className="stats-page-eyebrow">Contact</p>
+        <h1>Contact BTA</h1>
+        <p className="stats-page-subtitle">General and operational requests.</p>
+      </section>
+      <form className="stats-page-card policy-page-section" onSubmit={handleSubmit}>
+        <div className="setup-grid">
+          <label className="stats-filter-field"><span>Name</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label className="stats-filter-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label className="stats-filter-field"><span>Organization</span><input value={organization} onChange={(event) => setOrganization(event.target.value)} /></label>
+          <label className="stats-filter-field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="support">Support</option><option value="pilot">Pilot</option><option value="billing">Billing</option><option value="security">Security</option></select></label>
+          <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}><span>Message</span><textarea rows={5} value={message} onChange={(event) => setMessage(event.target.value)} /></label>
+        </div>
+        <p className="stats-page-status">{status}</p>
+        <div className="policy-page-actions">
+          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={submitting}>{submitting ? "Submitting..." : "Send"}</button>
+          <button type="button" className="shell-nav-link" onClick={() => onNavigate("/book-demo")}>Book Demo</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export function DemoBookingPage({ onNavigate }: RoutedPageProps) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [details, setDetails] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState("Request a demo and we will follow up with scheduling details.");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!fullName.trim() || !email.trim()) {
+      setStatus("Name and email are required.");
+      return;
+    }
+    setSubmitting(true);
+    setStatus("Submitting demo request...");
+    try {
+      const response = await fetch(`${apiBase}/api/intake/demo`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ fullName, email, organization, details }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus(typeof payload.error === "string" ? payload.error : "Could not submit demo request.");
+        return;
+      }
+      setStatus("Demo request submitted. Check your email for confirmation.");
+      setDetails("");
+    } catch {
+      setStatus("Could not reach the API. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="stats-page">
+      <section className="stats-page-card policy-page-hero">
+        <p className="stats-page-eyebrow">Demo</p>
+        <h1>Book A Demo</h1>
+        <p className="stats-page-subtitle">Tell us about your team and timeline.</p>
+      </section>
+      <form className="stats-page-card policy-page-section" onSubmit={handleSubmit}>
+        <div className="setup-grid">
+          <label className="stats-filter-field"><span>Name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+          <label className="stats-filter-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label className="stats-filter-field"><span>Organization</span><input value={organization} onChange={(event) => setOrganization(event.target.value)} /></label>
+          <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}><span>Details</span><textarea rows={5} value={details} onChange={(event) => setDetails(event.target.value)} /></label>
+        </div>
+        <p className="stats-page-status">{status}</p>
+        <div className="policy-page-actions">
+          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={submitting}>{submitting ? "Submitting..." : "Request Demo"}</button>
+          <button type="button" className="shell-nav-link" onClick={() => onNavigate("/contact")}>Back to Contact</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export function DataDeletionPage({ onNavigate }: RoutedPageProps) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [details, setDetails] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState("Submit a data deletion request and we will confirm via email.");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!fullName.trim() || !email.trim()) {
+      setStatus("Name and email are required.");
+      return;
+    }
+    setSubmitting(true);
+    setStatus("Submitting request...");
+    try {
+      const response = await fetch(`${apiBase}/api/intake/data-deletion`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ fullName, email, details }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus(typeof payload.error === "string" ? payload.error : "Could not submit data deletion request.");
+        return;
+      }
+      setStatus("Data deletion request submitted. Check your email for confirmation.");
+      setDetails("");
+    } catch {
+      setStatus("Could not reach the API. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="stats-page">
+      <section className="stats-page-card policy-page-hero">
+        <p className="stats-page-eyebrow">Data Request</p>
+        <h1>Data Deletion Request</h1>
+        <p className="stats-page-subtitle">Submit compliance and account data deletion requests.</p>
+      </section>
+      <form className="stats-page-card policy-page-section" onSubmit={handleSubmit}>
+        <div className="setup-grid">
+          <label className="stats-filter-field"><span>Name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+          <label className="stats-filter-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}><span>Scope / Notes</span><textarea rows={5} value={details} onChange={(event) => setDetails(event.target.value)} /></label>
+        </div>
+        <p className="stats-page-status">{status}</p>
+        <div className="policy-page-actions">
+          <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={submitting}>{submitting ? "Submitting..." : "Submit Request"}</button>
+          <button type="button" className="shell-nav-link" onClick={() => onNavigate("/contact")}>Contact</button>
+        </div>
+      </form>
+    </div>
   );
 }

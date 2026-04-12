@@ -9,8 +9,8 @@ import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { NotificationsPage } from "./NotificationsPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
-import { AdminPage, BillingPage, CheckoutCancelPage, CheckoutSuccessPage, EmailVerificationPage, InviteAcceptancePage, UserSettingsPage } from "./RouteShellPages.js";
+import { apiBase, apiKeyHeader, clearAuthSession, decodeTokenExpiryMs, generateConnectionCode, marketingBase, normalizeConnectionCode, readStoredAuthSession, storeAuthSession } from "./platform.js";
+import { AdminPage, BillingPage, CheckoutCancelPage, CheckoutSuccessPage, ContactPage, DataDeletionPage, DemoBookingPage, EmailVerificationPage, InviteAcceptancePage, SupportPage, UserSettingsPage } from "./RouteShellPages.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { seoForRoute } from "./seo.js";
@@ -41,6 +41,10 @@ const PUBLIC_ROUTES: ReadonlySet<AppRoute> = new Set([
   "login",
   "forgot-password",
   "reset-password",
+  "support",
+  "contact",
+  "book-demo",
+  "data-deletion",
   "not-found",
   "forbidden",
   "unauthorized",
@@ -63,6 +67,16 @@ function upsertMeta(selector: string, attrs: Record<string, string>, content: st
     document.head.appendChild(element);
   }
   element.setAttribute("content", content);
+}
+
+function buildAuthPath(path: "/login" | "/forgot-password", email?: string): string {
+  const normalizedEmail = (email ?? "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return path;
+  }
+
+  const params = new URLSearchParams({ email: normalizedEmail });
+  return `${path}?${params.toString()}`;
 }
 
 interface AppFooterProps {
@@ -450,6 +464,10 @@ export function UnifiedCoachApp() {
   function navigate(nextPath: string) {
     const publicPaths = new Set([
       "/",
+      "/support",
+      "/contact",
+      "/book-demo",
+      "/data-deletion",
       "/invite/accept",
       "/verify-email",
       "/login",
@@ -464,32 +482,39 @@ export function UnifiedCoachApp() {
       "/checkout/success",
       "/checkout/cancel",
     ]);
-    const isPublicPath = publicPaths.has(nextPath);
+    const targetUrl = new URL(nextPath, window.location.origin);
+    const targetPathname = canonicalizeCoachPath(targetUrl.pathname);
+    const normalizedNextPath = `${targetPathname}${targetUrl.search}`;
+    const isPublicPath = publicPaths.has(targetPathname);
 
-    if (requiresSetup && !isAuthenticated && !isPublicPath && nextPath !== "/setup") {
+    if (requiresSetup && !isAuthenticated && !isPublicPath && targetPathname !== "/setup") {
       nextPath = "/login";
+    } else {
+      nextPath = normalizedNextPath;
     }
 
-    if (requiresSetup && isAuthenticated && !isPublicPath && nextPath !== "/setup") {
+    if (requiresSetup && isAuthenticated && !isPublicPath && targetPathname !== "/setup") {
       nextPath = "/setup";
     }
 
-    if (isAuthenticated && !requiresSetup && isPlayerRole(currentRole) && (nextPath === "/live" || nextPath === "/stats/settings" || nextPath === "/org/settings" || nextPath === "/setup")) {
+    if (isAuthenticated && !requiresSetup && isPlayerRole(currentRole) && (targetPathname === "/live" || targetPathname === "/stats/settings" || targetPathname === "/org/settings" || targetPathname === "/setup")) {
       nextPath = "/stats";
     }
 
-    if (window.location.pathname === nextPath) {
+    const currentLocation = `${window.location.pathname}${window.location.search}`;
+    if (currentLocation === nextPath) {
       return;
     }
+
     window.history.pushState({}, "", nextPath);
-    setRoute(resolveCoachRoute(nextPath));
+    setRoute(resolveCoachRoute(new URL(nextPath, window.location.origin).pathname));
   }
   if (route === "login") {
     return (
       <LoginPage
-        onBackHome={() => navigate("/")}
+        onBackHome={() => { window.location.assign(marketingBase); }}
         onCreateAccount={() => navigate("/setup")}
-        onForgotPassword={() => navigate("/forgot-password")}
+        onForgotPassword={(email) => navigate(buildAuthPath("/forgot-password", email))}
         onAcceptInvite={() => navigate("/invite/accept")}
         onVerifyEmail={() => navigate("/verify-email")}
         onSuccess={handleAuthSuccess}
@@ -508,8 +533,8 @@ export function UnifiedCoachApp() {
   if (route === "forgot-password") {
     return (
       <ForgotPasswordPage
-        onBackHome={() => navigate("/")}
-        onBackLogin={() => navigate("/login")}
+        onBackHome={() => { window.location.assign(marketingBase); }}
+        onBackLogin={(email) => navigate(buildAuthPath("/login", email))}
         onAcceptInvite={() => navigate("/invite/accept")}
         onVerifyEmail={() => navigate("/verify-email")}
       />
@@ -555,6 +580,22 @@ export function UnifiedCoachApp() {
 
   if (route === "checkout-cancel") {
     return <CheckoutCancelPage onNavigate={navigate} />;
+  }
+
+  if (route === "support") {
+    return <SupportPage onNavigate={navigate} />;
+  }
+
+  if (route === "contact") {
+    return <ContactPage onNavigate={navigate} />;
+  }
+
+  if (route === "book-demo") {
+    return <DemoBookingPage onNavigate={navigate} />;
+  }
+
+  if (route === "data-deletion") {
+    return <DataDeletionPage onNavigate={navigate} />;
   }
 
   if (requiresSetup === null) {

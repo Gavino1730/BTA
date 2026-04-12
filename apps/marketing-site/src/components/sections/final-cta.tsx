@@ -16,9 +16,9 @@ const ambientNodes = [
 export function FinalCta(): JSX.Element {
   return (
     <section className="mx-auto w-[min(1200px,92vw)] py-20">
-      <div className="premium-outline relative overflow-hidden rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,rgba(255,248,255,0.18),rgba(242,232,255,0.12))] px-7 py-16 text-center shadow-[var(--shadow-xl)] backdrop-blur-xl md:px-10">
-        <div className="absolute inset-0 bg-[radial-gradient(60%_85%_at_50%_0%,rgba(255,255,255,0.18),transparent_68%),radial-gradient(70%_90%_at_85%_65%,rgba(143,241,223,0.14),transparent_66%),radial-gradient(50%_80%_at_12%_70%,rgba(255,211,156,0.16),transparent_66%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent_35%,rgba(94,71,178,0.08)_100%)]" />
+      <div className="premium-outline relative overflow-hidden rounded-3xl border border-[var(--border-soft)] bg-[linear-gradient(160deg,rgba(54,43,123,0.9),rgba(40,32,96,0.9))] px-7 py-16 text-center shadow-[var(--shadow-xl)] backdrop-blur-xl md:px-10">
+        <div className="absolute inset-0 bg-[radial-gradient(60%_85%_at_50%_0%,rgba(255,255,255,0.12),transparent_68%),radial-gradient(70%_90%_at_85%_65%,rgba(143,241,223,0.1),transparent_66%),radial-gradient(50%_80%_at_12%_70%,rgba(255,211,156,0.1),transparent_66%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_35%,rgba(25,20,68,0.18)_100%)]" />
 
         {ambientNodes.map((node, idx) => (
           <motion.span
@@ -47,8 +47,8 @@ export function FinalCta(): JSX.Element {
             Schedule a product session and see how BTA Courtside runs from game entry to review in a single workflow.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Button size="lg">Book a Product Session</Button>
-            <Button size="lg" variant="ghost">
+            <Button size="lg" onClick={() => window.location.assign("/demo-signup")}>Book a Product Session</Button>
+            <Button size="lg" variant="ghost" onClick={() => window.location.assign("/pricing")}>
               Download Overview
             </Button>
           </div>
