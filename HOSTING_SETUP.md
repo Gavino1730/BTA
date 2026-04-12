@@ -68,7 +68,7 @@ Then add env vars from:
 
 Minimum operator Vercel env vars:
 - `VITE_API=https://api.btaintel.com`
-- `VITE_COACH_DASHBOARD=https://www.btaintel.com`
+- `VITE_COACH_DASHBOARD=https://dashboard.btaintel.com`
 - `VITE_STATS_DASHBOARD=https://api.btaintel.com`
 - `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
@@ -82,7 +82,8 @@ The included `vercel.json` already handles:
 
 Recommended:
 - `api.btaintel.com` -> Railway
-- `www.btaintel.com` -> Vercel coach app
+- `btaintel.com` -> Vercel marketing site
+- `dashboard.btaintel.com` -> Vercel coach app
 - `operator.btaintel.com` -> Vercel operator app
 
 ## 6. Final validation

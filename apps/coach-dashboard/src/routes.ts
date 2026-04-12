@@ -47,28 +47,8 @@ export type AppRoute =
   | "stats-settings"
   | "org-settings";
 
-const LEGACY_ROUTE_ALIASES: Record<string, string> = {
-  "/dashboard": "/live",
-  "/games": "/stats/games",
-  "/players": "/stats/players",
-  "/trends": "/stats/trends",
-  "/ai-insights": "/stats/insights",
-  "/analysis": "/stats/insights",
-  "/activity": "/notifications",
-  "/organization": "/org/settings",
-  "/org": "/org/settings",
-  "/team-settings": "/stats/settings",
-  "/profile": "/account",
-  "/onboarding": "/setup",
-  "/signin": "/login",
-  "/sign-in": "/login",
-  "/demo": "/",
-  "/home": "/",
-};
-
 export function canonicalizeCoachPath(pathname: string): string {
-  const normalized = pathname.replace(/\/+$/, "") || "/";
-  return LEGACY_ROUTE_ALIASES[normalized] ?? normalized;
+  return pathname.replace(/\/+$/, "") || "/";
 }
 
 export function resolveCoachRoute(pathname: string): AppRoute {

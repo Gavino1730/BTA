@@ -42,12 +42,6 @@ export const DEFAULT_COACH_DASHBOARD = resolveRuntimeBase(
   defaultHost,
   pageProtocol,
 );
-export const DEFAULT_STATS_DASHBOARD = resolveRuntimeBase(
-  import.meta.env.VITE_STATS_DASHBOARD
-    ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : ""),
-  defaultHost,
-  pageProtocol,
-);
 export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "").toString().trim();
 
 export const STORE = "operator-console";

@@ -4,7 +4,6 @@ import {
   DEFAULT_API,
   DEFAULT_HOME_TEAM_COLOR,
   DEFAULT_AWAY_TEAM_COLOR,
-  DEFAULT_STATS_DASHBOARD,
 } from "./constants.js";
 import type {
   AppData,
@@ -39,12 +38,15 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
   const [gsApiKey, setGsApiKey] = useState(appData.gameSetup.apiKey ?? "");
   const [gsOpponent, setGsOpponent] = useState(appData.gameSetup.opponent ?? "");
   const [gsVcSide, setGsVcSide] = useState<"home" | "away">(appData.gameSetup.vcSide ?? "home");
-  const [gsDashboardUrl, setGsDashboardUrl] = useState(appData.gameSetup.dashboardUrl ?? DEFAULT_STATS_DASHBOARD);
   const [gsClockVisible, setGsClockVisible] = useState(appData.gameSetup.clockVisible ?? true);
   const [gsClockEnabled, setGsClockEnabled] = useState(appData.gameSetup.clockEnabled ?? true);
   const [gsTrackClock, setGsTrackClock] = useState(appData.gameSetup.trackClock ?? true);
   const [gsTrackPossession, setGsTrackPossession] = useState(appData.gameSetup.trackPossession ?? true);
   const [gsTrackTimeouts, setGsTrackTimeouts] = useState(appData.gameSetup.trackTimeouts ?? true);
+  const [gsSoundEnabled, setGsSoundEnabled] = useState(appData.gameSetup.soundEnabled ?? true);
+  const [gsSoundProfile, setGsSoundProfile] = useState(appData.gameSetup.soundProfile ?? "click");
+  const [gsSoundVolume, setGsSoundVolume] = useState(appData.gameSetup.soundVolume ?? 70);
+  const [gsHapticsEnabled, setGsHapticsEnabled] = useState(appData.gameSetup.hapticsEnabled ?? true);
   const [gsOpponentTrackStats, setGsOpponentTrackStats] = useState<OpponentTrackStat[]>(
     normalizeOpponentTrackStats(appData.gameSetup.opponentTrackStats)
   );
@@ -105,12 +107,16 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
           schoolId: appData.gameSetup.schoolId,
           opponent: gsOpponent.trim(),
           vcSide: gsVcSide,
-          dashboardUrl: gsDashboardUrl.trim(),
+          dashboardUrl: appData.gameSetup.dashboardUrl,
           clockVisible: gsClockVisible,
           clockEnabled: gsClockEnabled,
           trackClock: gsTrackClock,
           trackPossession: gsTrackPossession,
           trackTimeouts: gsTrackTimeouts,
+          soundEnabled: gsSoundEnabled,
+          soundProfile: gsSoundProfile,
+          soundVolume: Math.max(0, Math.min(100, Math.round(gsSoundVolume))),
+          hapticsEnabled: gsHapticsEnabled,
           opponentTrackStats: normalizeOpponentTrackStats(gsOpponentTrackStats),
           homeTeamColor: normalizeTeamColor(gsHomeTeamColor) ?? DEFAULT_HOME_TEAM_COLOR,
           awayTeamColor: normalizeTeamColor(gsAwayTeamColor) ?? DEFAULT_AWAY_TEAM_COLOR,
@@ -311,27 +317,15 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
           </section>
         </div>
 
-        <div className="settings-grid-2">
-          <section className="settings-section">
-            <h3>Realtime API URL</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Use the laptop's local IP on game day (example: http://192.168.1.5:4000).</p>
-            <input
-              placeholder={DEFAULT_API}
-              value={gsApiUrl}
-              onChange={e => setGsApiUrl(e.target.value)}
-            />
-          </section>
-
-          <section className="settings-section">
-            <h3>Legacy Stats Export URL</h3>
-            <p className="dim-text" style={{ marginBottom: 8 }}>Optional separate post-game export endpoint. If you only use the coach dashboard, leave this on the same host as the Realtime API.</p>
-            <input
-              placeholder="http://localhost:4000"
-              value={gsDashboardUrl}
-              onChange={e => setGsDashboardUrl(e.target.value)}
-            />
-          </section>
-        </div>
+        <section className="settings-section">
+          <h3>Realtime API URL</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Use the laptop's local IP on game day (example: http://192.168.1.5:4000).</p>
+          <input
+            placeholder={DEFAULT_API}
+            value={gsApiUrl}
+            onChange={e => setGsApiUrl(e.target.value)}
+          />
+        </section>
 
         <section className="settings-section">
           <h3>API Key</h3>
@@ -368,6 +362,73 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
     );
   }
 
+  if (settingsView === "sound") {
+    return (
+      <div className="settings-page">
+        <header className="settings-header">
+          <button className="back-btn" onClick={() => onNav("menu")}>{"<- Back"}</button>
+          <h2>Sound & Haptics</h2>
+          <button className="save-btn" onClick={() => { saveGameSetup(); onNav("menu"); }}>Save</button>
+        </header>
+
+        <section className="settings-section settings-hero-section">
+          <div className="settings-overview">
+            <div className="settings-overview-copy">
+              <h3>Operator touch feedback</h3>
+              <div className="settings-overview-title">Click-style controls</div>
+              <p className="dim-text">Set sound profile, level, and haptics for all buttons and popups.</p>
+            </div>
+            <div className="settings-overview-meta">
+              <span className="settings-badge">Sound {gsSoundEnabled ? "On" : "Off"}</span>
+              <span className="settings-badge">{gsSoundProfile} • {Math.round(gsSoundVolume)}%</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Sound</h3>
+          <div className="team-toggle" style={{ marginBottom: 12 }}>
+            <button className={`tt-btn${gsSoundEnabled ? " tt-teal" : ""}`} onClick={() => setGsSoundEnabled((v) => !v)}>
+              {gsSoundEnabled ? "Sound On" : "Sound Off"}
+            </button>
+          </div>
+          <label className="dim-text" htmlFor="sound-volume" style={{ display: "block", marginBottom: 8 }}>
+            Volume: {Math.round(gsSoundVolume)}%
+          </label>
+          <input
+            id="sound-volume"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={gsSoundVolume}
+            onChange={(event) => setGsSoundVolume(Number(event.target.value))}
+            disabled={!gsSoundEnabled}
+          />
+        </section>
+
+        <section className="settings-section">
+          <h3>Click Profile</h3>
+          <p className="dim-text" style={{ marginBottom: 8 }}>Choose how tap feedback sounds across buttons and popups.</p>
+          <div className="team-toggle">
+            <button className={`tt-btn${gsSoundProfile === "soft" ? " tt-teal" : ""}`} onClick={() => setGsSoundProfile("soft")} disabled={!gsSoundEnabled}>Soft Click</button>
+            <button className={`tt-btn${gsSoundProfile === "click" ? " tt-teal" : ""}`} onClick={() => setGsSoundProfile("click")} disabled={!gsSoundEnabled}>Click</button>
+            <button className={`tt-btn${gsSoundProfile === "sharp" ? " tt-teal" : ""}`} onClick={() => setGsSoundProfile("sharp")} disabled={!gsSoundEnabled}>Sharp Click</button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Haptics</h3>
+          <div className="team-toggle">
+            <button className={`tt-btn${gsHapticsEnabled ? " tt-teal" : ""}`} onClick={() => setGsHapticsEnabled((v) => !v)}>
+              {gsHapticsEnabled ? "Vibration On" : "Vibration Off"}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   // ================================================================
   //  RENDER: Settings menu (default)
   // ================================================================
@@ -400,6 +461,13 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
 
       <section className="settings-section">
         <h3>Device Setup</h3>
+        <div className="menu-card" onClick={() => onNav("sound")}>
+          <div className="menu-card-info">
+            <span className="menu-card-title">Sound &amp; Haptics</span>
+            <span className="menu-card-sub">{appData.gameSetup.soundEnabled ?? true ? "On" : "Off"} • {(appData.gameSetup.soundProfile ?? "click")} • {Math.round(appData.gameSetup.soundVolume ?? 70)}%</span>
+          </div>
+          <span className="menu-chev">&gt;</span>
+        </div>
         <div className="menu-card" onClick={() => onNav("ipad-tips")}>
           <div className="menu-card-info">
             <span className="menu-card-title">iPad Setup Tips</span>

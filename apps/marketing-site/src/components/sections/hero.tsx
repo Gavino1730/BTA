@@ -1,7 +1,7 @@
 "use client";
 
-import { Activity, ArrowRightLeft, BrainCircuit, Film, Radar, Timer } from "lucide-react";
-import { motion } from "motion/react";
+import { Activity, ArrowRight, ArrowRightLeft, BrainCircuit, Film, Radar, ShieldCheck, Timer } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import { DataChip } from "@/components/ui/data-chip";
@@ -15,6 +15,8 @@ const floatingItems = [
 ] as const;
 
 export function Hero(): JSX.Element {
+  const shouldReduceMotion = useReducedMotion();
+
   return (
     <section className="relative mx-auto mt-10 grid w-[min(1200px,92vw)] gap-10 pb-20 pt-12 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
       <div className="space-y-8">
@@ -79,103 +81,137 @@ export function Hero(): JSX.Element {
         </motion.div>
       </div>
 
-      <div className="relative min-h-[460px]">
-        <GlassPanel className="relative h-full min-h-[460px] overflow-hidden p-5 md:p-6">
-          <div className="absolute inset-0 bg-[radial-gradient(100%_80%_at_50%_0%,rgba(79,109,255,0.28),transparent_60%)]" />
-          <div className="relative grid h-full gap-4 md:grid-cols-2">
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.65 }}
-              className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4"
-            >
+      <div className="relative min-h-[500px]">
+        <GlassPanel className="relative h-full min-h-[500px] overflow-hidden p-5 md:p-6">
+          <motion.div
+            className="absolute inset-0"
+            animate={shouldReduceMotion ? undefined : { opacity: [0.9, 1, 0.9] }}
+            transition={shouldReduceMotion ? undefined : { duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+            style={{
+              background:
+                "radial-gradient(92% 80% at 50% 0%, rgba(79,109,255,0.3), transparent 60%), radial-gradient(70% 80% at 84% 72%, rgba(37,210,197,0.16), transparent 70%)",
+            }}
+          />
+          <div className="relative flex h-full flex-col gap-4">
+            <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-4)] p-4">
               <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
-                <span>Live Possession Rail</span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_8px_rgba(37,210,197,0.7)]" />
+                  Command Center Feed
+                </span>
                 <span>Q3 05:12</span>
               </div>
-              <div className="space-y-3">
-                {[72, 44, 86, 60].map((w, idx) => (
-                  <div key={w} className="space-y-1">
-                    <p className="text-[11px] text-[var(--text-tertiary)]">Sequence {idx + 1}</p>
-                    <div className="h-2 rounded-full bg-[var(--panel-3)]">
-                      <motion.div
-                        className="h-full rounded-full bg-[var(--accent-primary)]"
-                        initial={{ width: 0 }}
-                        whileInView={{ width: `${w}%` }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 1, delay: idx * 0.12 }}
-                      />
-                    </div>
+              <div className="grid gap-3 md:grid-cols-[1.05fr_0.95fr]">
+                <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Score Widget</p>
+                    <ShieldCheck className="size-4 text-[var(--accent-secondary)]" />
                   </div>
-                ))}
-              </div>
-            </motion.div>
+                  <div className="flex items-end justify-between">
+                    <p className="font-display text-4xl text-[var(--text-primary)]">62</p>
+                    <ArrowRight className="mb-2 size-4 text-[var(--text-tertiary)]" />
+                    <p className="font-display text-4xl text-[var(--text-primary)]">55</p>
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--text-secondary)]">Home run: 11-4 over last 7 possessions</p>
+                </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.65, delay: 0.1 }}
-              className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4"
-            >
-              <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
-                <span>Shot Quality Matrix</span>
-                <Radar className="size-4 text-[var(--accent-secondary)]" />
+                <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Possession Arrow</p>
+                    <Activity className="size-4 text-[var(--accent-primary)]" />
+                  </div>
+                  <div className="space-y-2">
+                    {[72, 44, 86].map((w, idx) => (
+                      <div key={w} className="space-y-1">
+                        <p className="text-[10px] text-[var(--text-tertiary)]">Sequence {idx + 1}</p>
+                        <div className="h-2 rounded-full bg-[var(--panel-3)]">
+                          <motion.div
+                            className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent-primary),var(--accent-secondary))]"
+                            initial={{ width: 0 }}
+                            whileInView={{ width: `${w}%` }}
+                            viewport={{ once: true }}
+                            transition={{ duration: 1, delay: idx * 0.12 }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-6 gap-1.5">
-                {Array.from({ length: 42 }).map((_, idx) => (
-                  <motion.span
-                    key={idx}
-                    className="aspect-square rounded-full"
-                    style={{
-                      background:
-                        idx % 7 === 0
-                          ? "var(--accent-primary)"
-                          : idx % 5 === 0
-                            ? "var(--accent-secondary)"
-                            : "var(--panel-3)",
-                    }}
-                    animate={{ y: [0, idx % 2 === 0 ? -3 : 2, 0] }}
-                    transition={{
-                      duration: 3.4 + (idx % 4) * 0.4,
-                      repeat: Number.POSITIVE_INFINITY,
-                      ease: "easeInOut",
-                    }}
-                  />
-                ))}
-              </div>
-            </motion.div>
+            </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.65, delay: 0.12 }}
-              className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4 md:col-span-2"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs text-[var(--text-tertiary)]">AI Coaching Stream</p>
-                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-soft)] px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
-                  <Timer className="size-3" />
-                  Live
-                </span>
-              </div>
-              <div className="space-y-2.5">
-                {[
-                  "Switch to 2-3 zone on sideline out-of-bounds.",
-                  "Lineup 2 has +18 paint touches in 6 possessions.",
-                  "Tag weakside rotation clip for halftime review.",
-                ].map((item) => (
-                  <p
-                    key={item}
-                    className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-1)] px-3 py-2 text-sm text-[var(--text-secondary)]"
-                  >
-                    {item}
-                  </p>
-                ))}
-              </div>
-            </motion.div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.65, delay: 0.08 }}
+                className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4"
+              >
+                <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                  <span>Shot Dot Layer</span>
+                  <Radar className="size-4 text-[var(--accent-secondary)]" />
+                </div>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {Array.from({ length: 49 }).map((_, idx) => (
+                    <motion.span
+                      key={idx}
+                      className="aspect-square rounded-full"
+                      style={{
+                        background:
+                          idx % 9 === 0
+                            ? "var(--accent-signal)"
+                            : idx % 7 === 0
+                              ? "var(--accent-primary)"
+                              : idx % 5 === 0
+                                ? "var(--accent-secondary)"
+                                : "var(--panel-3)",
+                      }}
+                      animate={shouldReduceMotion ? undefined : { y: [0, idx % 2 === 0 ? -3 : 2, 0], scale: [1, 1.06, 1] }}
+                      transition={
+                        shouldReduceMotion
+                          ? undefined
+                          : {
+                              duration: 3.5 + (idx % 4) * 0.4,
+                              repeat: Number.POSITIVE_INFINITY,
+                              ease: "easeInOut",
+                            }
+                      }
+                    />
+                  ))}
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.65, delay: 0.12 }}
+                className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-4"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs text-[var(--text-tertiary)]">AI Timeline Markers</p>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-soft)] px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                    <Timer className="size-3" />
+                    Live
+                  </span>
+                </div>
+                <div className="space-y-2.5">
+                  {[
+                    "04:50  High tag available after weakside drift.",
+                    "04:21  #12 mismatch detected at nail coverage.",
+                    "03:58  Clip marker saved for halftime sequence.",
+                  ].map((item) => (
+                    <p
+                      key={item}
+                      className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-1)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                    >
+                      {item}
+                    </p>
+                  ))}
+                </div>
+              </motion.div>
+            </div>
           </div>
         </GlassPanel>
 

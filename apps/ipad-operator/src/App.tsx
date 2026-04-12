@@ -25,6 +25,7 @@ import {
 import type {
   AppData,
   ChainPrompt,
+  FeedbackTone,
   Modal,
   OperatorAlert,
   Team,
@@ -58,8 +59,8 @@ function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsV
   const h = hash.replace(/^#\/?/, "");
   if (h === "settings/game-setup") return { view: "settings", settingsView: "game-setup" };
   if (h === "settings/ipad-tips") return { view: "settings", settingsView: "ipad-tips" };
-  if (h.startsWith("settings")) return { view: "settings", settingsView: "menu" };
   if (h === "settings/sound") return { view: "settings", settingsView: "sound" };
+  if (h.startsWith("settings")) return { view: "settings", settingsView: "menu" };
   return { view: "game", settingsView: "menu" };
 }
 
@@ -110,9 +111,6 @@ function inferFeedbackToneFromTarget(target: HTMLElement): FeedbackTone {
 }
 
 export function App() {
-  const { triggerFeedback, unlockFeedbackAudio } = useFeedback();
-  const operatorId = useMemo(() => getOrCreateOperatorId(), []);
-
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
   const { triggerFeedback, unlockFeedbackAudio } = useFeedback({
@@ -121,6 +119,7 @@ export function App() {
     volume: appData.gameSetup.soundVolume ?? 70,
     hapticsEnabled: appData.gameSetup.hapticsEnabled ?? true,
   });
+  const operatorId = useMemo(() => getOrCreateOperatorId(), []);
   const [accessBlockedMessage, setAccessBlockedMessage] = useState<string | null>(null);
 
   function persistData(next: AppData) {
@@ -174,7 +173,7 @@ export function App() {
   // ---- Navigation state ----
   const [view, setView] = useState<"game" | "settings">(() => parseViewFromHash(window.location.hash).view);
   const [settingsView, setSettingsView] = useState<SettingsView>(() => parseViewFromHash(window.location.hash).settingsView);
-  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips"]);
+  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips", "sound"]);
 
   if (accessBlockedMessage) {
     return (
@@ -226,7 +225,6 @@ export function App() {
       document.removeEventListener("click", handleGlobalUiClick, true);
     };
   }, [triggerFeedback]);
-  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips", "sound"]);
 
   // ---- Game session state ----
   const gameId = appData.gameSetup.gameId;
@@ -352,8 +350,6 @@ export function App() {
   const [showClockAdmin, setShowClockAdmin] = useState(false);
 
   // Ref for auto-save interval - always holds the latest values without re-registering the interval
-  const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
-
 
 
   // ---- Team identities ----
@@ -454,15 +450,6 @@ export function App() {
     void reconnectAndResubmit();
   }
 
-  // Keep the ref current so the interval always has the latest values
-  useEffect(() => {
-    autoSaveCtx.current.run = () => {
-      if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim() && navigator.onLine) {
-        void submitToDashboard();
-      }
-    };
-  });
-
   useEffect(() => {
     if (gamePhase !== "post-game" && gamePhase !== "finished") return;
     setPostGameNameInput(appData.gameSetup.gameId || "");
@@ -474,7 +461,7 @@ export function App() {
 
   const {
     startGame, endAndResetGame, endGame, handleNewGame,
-    submitToDashboard, applyPostGameEdits, resetGameStateFor,
+    applyPostGameEdits, resetGameStateFor,
     resetFromPostGame, discardFromPostGame, submitGameToRealtimeApi,
   } = useGameFlow({
     appData, setAppData, gameId, gameDate, setGameDate,
@@ -661,7 +648,6 @@ export function App() {
         onSetSubmitMessage={setSubmitMessage}
         onApplyPostGameEdits={applyPostGameEdits}
         onSubmitGameToRealtimeApi={submitGameToRealtimeApi}
-        onSubmitToDashboard={submitToDashboard}
         onRequestConfirm={requestConfirm}
         onResetFromPostGame={resetFromPostGame}
         onDiscardFromPostGame={discardFromPostGame}

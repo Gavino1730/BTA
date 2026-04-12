@@ -3,15 +3,13 @@ import { apiBase, generateConnectionCode, normalizeConnectionCode, resolveDefaul
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
-  it("canonicalizes legacy stats URLs into unified coach workspace routes", () => {
-    expect(canonicalizeCoachPath("/games")).toBe("/stats/games");
-    expect(canonicalizeCoachPath("/ai-insights")).toBe("/stats/insights");
-    expect(canonicalizeCoachPath("/activity")).toBe("/notifications");
-    expect(canonicalizeCoachPath("/onboarding")).toBe("/setup");
-    expect(canonicalizeCoachPath("/dashboard")).toBe("/live");
+  it("normalizes trailing slashes without preserving legacy aliases", () => {
+    expect(canonicalizeCoachPath("/stats/players/")).toBe("/stats/players");
+    expect(canonicalizeCoachPath("/players")).toBe("/players");
+    expect(canonicalizeCoachPath("/")).toBe("/");
   });
 
-  it("resolves public, canonical, and aliased routes to the same coach views", () => {
+  it("resolves canonical routes and rejects removed legacy aliases", () => {
     expect(resolveCoachRoute("/")).toBe("marketing");
     expect(resolveCoachRoute("/product")).toBe("product");
     expect(resolveCoachRoute("/how-it-works")).toBe("how-it-works");
@@ -33,13 +31,13 @@ describe("coach route helpers", () => {
     expect(resolveCoachRoute("/checkout/success")).toBe("checkout-success");
     expect(resolveCoachRoute("/checkout/cancel")).toBe("checkout-cancel");
     expect(resolveCoachRoute("/notifications")).toBe("stats-notifications");
-    expect(resolveCoachRoute("/activity")).toBe("stats-notifications");
-    expect(resolveCoachRoute("/signin")).toBe("login");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
-    expect(resolveCoachRoute("/players")).toBe("stats-players");
     expect(resolveCoachRoute("/settings")).toBe("settings");
     expect(resolveCoachRoute("/admin")).toBe("admin");
     expect(resolveCoachRoute("/live")).toBe("live");
+    expect(resolveCoachRoute("/players")).toBe("not-found");
+    expect(resolveCoachRoute("/activity")).toBe("not-found");
+    expect(resolveCoachRoute("/signin")).toBe("not-found");
   });
 
   it("defaults the coach API base to the realtime API port for local development", () => {

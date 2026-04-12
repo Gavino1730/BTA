@@ -3,12 +3,12 @@
 import { motion, useReducedMotion } from "motion/react";
 
 const objects = [
-  { label: "Shot Dot Cluster", value: "L-Wing 62%", x: "8%", y: "30%" },
-  { label: "Player Tag", value: "#3 Pike", x: "83%", y: "28%" },
-  { label: "Timeline Marker", value: "Q3 04:51", x: "17%", y: "62%" },
-  { label: "Substitution", value: "#12 IN", x: "74%", y: "64%" },
-  { label: "AI Insight Badge", value: "Switch Early", x: "46%", y: "17%" },
-  { label: "Coordinate Node", value: "x:14 y:22", x: "54%", y: "74%" },
+  { label: "Shot Dot Cluster", value: "L-Wing 62%", x: "7%", y: "27%", tone: "primary" },
+  { label: "Player Tag", value: "#3 Pike", x: "82%", y: "23%", tone: "teal" },
+  { label: "Timeline Marker", value: "Q3 04:51", x: "13%", y: "59%", tone: "signal" },
+  { label: "Possession Arrow", value: "Home Push", x: "71%", y: "64%", tone: "primary" },
+  { label: "AI Badge", value: "Switch Early", x: "46%", y: "16%", tone: "teal" },
+  { label: "Score Widget", value: "62 - 55", x: "53%", y: "75%", tone: "signal" },
 ] as const;
 
 export function FloatingDataObjects(): JSX.Element {
@@ -19,7 +19,7 @@ export function FloatingDataObjects(): JSX.Element {
       {objects.map((item, idx) => (
         <motion.div
           key={item.label}
-          className="absolute rounded-xl border border-[var(--border-soft)] bg-[var(--panel-1)]/80 px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] shadow-[var(--shadow-md)] backdrop-blur-md"
+          className="premium-outline absolute rounded-xl border border-[var(--border-soft)] bg-[var(--panel-4)]/88 px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] shadow-[var(--shadow-md)] backdrop-blur-md"
           style={{ left: item.x, top: item.y }}
           animate={
             shouldReduceMotion
@@ -27,7 +27,8 @@ export function FloatingDataObjects(): JSX.Element {
               : {
                   y: [0, idx % 2 === 0 ? -16 : 12, 0],
                   x: [0, idx % 3 === 0 ? 6 : -4, 0],
-                  opacity: [0.6, 1, 0.7],
+                  opacity: [0.56, 1, 0.7],
+                  scale: [1, 1.02, 1],
                 }
           }
           transition={
@@ -40,6 +41,23 @@ export function FloatingDataObjects(): JSX.Element {
                 }
           }
         >
+          <span
+            className="absolute -left-1.5 top-1/2 size-2.5 -translate-y-1/2 rounded-full"
+            style={{
+              backgroundColor:
+                item.tone === "primary"
+                  ? "var(--accent-primary)"
+                  : item.tone === "teal"
+                    ? "var(--accent-secondary)"
+                    : "var(--accent-signal)",
+              boxShadow:
+                item.tone === "primary"
+                  ? "0 0 14px rgba(79,109,255,0.65)"
+                  : item.tone === "teal"
+                    ? "0 0 14px rgba(37,210,197,0.65)"
+                    : "0 0 14px rgba(247,159,82,0.65)",
+            }}
+          />
           <p>{item.label}</p>
           <p className="mt-1 text-[11px] normal-case tracking-normal text-[var(--text-primary)]">
             {item.value}

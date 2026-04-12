@@ -22,12 +22,24 @@ export default function Home(): JSX.Element {
         <Hero />
         <TrustStrip />
         <DataStream />
-        <ProductPillars />
-        <ProductShowcase />
-        <UseCases />
-        <WhyDifferent />
-        <SocialProof />
-        <FinalCta />
+        <div className="section-shell" data-tone="alpha">
+          <ProductPillars />
+        </div>
+        <div className="section-shell" data-tone="beta">
+          <ProductShowcase />
+        </div>
+        <div className="section-shell" data-tone="gamma">
+          <UseCases />
+        </div>
+        <div className="section-shell" data-tone="alpha">
+          <WhyDifferent />
+        </div>
+        <div className="section-shell" data-tone="beta">
+          <SocialProof />
+        </div>
+        <div className="section-shell" data-tone="gamma">
+          <FinalCta />
+        </div>
       </main>
       <Footer />
     </>

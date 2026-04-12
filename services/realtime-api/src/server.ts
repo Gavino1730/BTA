@@ -298,7 +298,9 @@ const INVITE_ACCEPT_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ACCOUNT_DELETION_GRACE_DAYS = Math.max(1, Number.parseInt(String(process.env.BTA_ACCOUNT_DELETION_GRACE_DAYS ?? "7"), 10) || 7);
 const SUPPORT_INBOX = sanitizeTextField(process.env.BTA_SUPPORT_INBOX, 160).toLowerCase();
 const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
-const DEFAULT_COACH_APP_URL = "http://localhost:5173";
+const DEFAULT_COACH_APP_URL = (process.env.NODE_ENV ?? "development") === "production"
+  ? "https://dashboard.btaintel.com"
+  : "http://localhost:5173";
 
 interface PasswordResetTokenRecord {
   token: string;

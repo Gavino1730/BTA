@@ -5,11 +5,9 @@ import {
   fetchOperatorLinkSnapshot,
   generateGameId,
   isConnectionReadyForStart,
-  isLegacyStatsExportConfigured,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
 } from "../helpers/network.js";
-import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
 import type { AppData, GameSetup, OperatorLinkResponse, Team, TeamSide } from "../types.js";
 
@@ -285,16 +283,6 @@ export function useGameFlow({
 
   async function endAndResetGame() {
     const latest = loadAppData();
-    if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
-      const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
-      if (!saved) {
-        showInlineNotice(
-          "Legacy stats export was unavailable. Continuing to a fresh game using realtime data.",
-          "warning",
-          6000,
-        );
-      }
-    }
     const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
     await startGame(newId);
     return true;
@@ -327,122 +315,6 @@ export function useGameFlow({
     setSubmitStatus("idle");
     setSubmitMessage("Ready to publish final stats.");
     persistPhase("pre-game");
-  }
-
-  async function submitToDashboard(overrides?: { opponent?: string; date?: string; homeScore?: number; awayScore?: number }) {
-    const vcSide = appData.gameSetup.vcSide ?? "home";
-    const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
-    const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "";
-
-    if (!opponent) {
-      const message = "Enter the opponent name in Game Setup before submitting.";
-      setSubmitMessage(message);
-      showInlineNotice("Enter the opponent name in Game Setup (Settings > Game Setup) before submitting.", "warning");
-      return false;
-    }
-
-    const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
-    if (!vcTeam) {
-      const message = "Tracked team is not configured. Check Game Setup in Settings.";
-      setSubmitMessage(message);
-      showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
-      return false;
-    }
-
-    if (!isLegacyStatsExportConfigured(appData.gameSetup)) {
-      setSubmitStatus("success");
-      setSubmitMessage("Live stats are already available in the coach dashboard.");
-      setTimeout(() => {
-        setSubmitStatus("idle");
-        setSubmitMessage("Ready to publish final stats.");
-      }, 4000);
-      return true;
-    }
-
-    setSubmitStatus("pending");
-    setSubmitMessage(`Saving final stats to ${dashboardUrl}...`);
-
-    const effectiveDate = overrides?.date || gameDate;
-    const dateParts = new Date(effectiveDate + "T12:00:00").toLocaleDateString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
-    });
-
-    const computedVcScore = scores[vcSide];
-    const computedOppScore = scores[oppSide];
-    const vcScore = vcSide === "home"
-      ? (overrides?.homeScore ?? computedVcScore)
-      : (overrides?.awayScore ?? computedVcScore);
-    const oppScore = vcSide === "home"
-      ? (overrides?.awayScore ?? computedOppScore)
-      : (overrides?.homeScore ?? computedOppScore);
-    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
-    const teamStats = computeTeamStats(allEventObjs, vcTeamId);
-
-    const rosterPayload = vcTeam.players.map(p => ({
-      number: parseInt(p.number, 10) || 0,
-      name: p.name,
-      position: p.position || undefined,
-      height: p.height || undefined,
-      grade: p.grade || undefined,
-    }));
-
-    const payload: Record<string, unknown> = {
-      date: dateParts,
-      opponent,
-      location: vcSide,
-      vc_score: vcScore,
-      opp_score: oppScore,
-      team_stats: teamStats,
-      player_stats: playerStats,
-      roster: rosterPayload,
-    };
-    if (appData.gameSetup.statsGameId != null) {
-      payload.gameId = appData.gameSetup.statsGameId;
-    }
-
-    try {
-      const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json().catch(() => ({})) as { message?: string; gameId?: number; error?: string };
-      if (res.ok) {
-        if (result.gameId != null && result.gameId !== appData.gameSetup.statsGameId) {
-          persistData({
-            ...appData,
-            gameSetup: { ...appData.gameSetup, statsGameId: result.gameId },
-          });
-        }
-        setSubmitStatus("success");
-        setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
-        setTimeout(() => {
-          setSubmitStatus("idle");
-          setSubmitMessage("Ready to publish final stats.");
-        }, 4000);
-        return true;
-      } else {
-        const errorMessage = result.error || result.message || `Request failed with status ${res.status}.`;
-        console.error("Dashboard ingest error:", errorMessage);
-        setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
-        showInlineNotice(
-          `Could not save final stats to the legacy stats export endpoint. ${errorMessage} Check Settings > Game Setup > Legacy Stats Export URL and make sure that service is running.`,
-          "error"
-        );
-        setSubmitStatus("error");
-        return false;
-      }
-    } catch (err) {
-      console.error("Could not reach Stats dashboard:", err);
-      setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
-      showInlineNotice(
-        `Could not reach the legacy stats export endpoint at ${dashboardUrl}. Start that service or update Settings > Game Setup > Legacy Stats Export URL, then retry.`,
-        "error"
-      );
-      setSubmitStatus("error");
-      return false;
-    }
   }
 
   // ---- Post-game helpers ----
@@ -513,17 +385,6 @@ export function useGameFlow({
       } catch { /* keep discarding locally */ }
     }
 
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim();
-    const savedStatsGameId = appData.gameSetup.statsGameId;
-    if (dashboardUrl && savedStatsGameId != null) {
-      try {
-        await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
-          method: "DELETE",
-          headers: apiKeyHeader(appData.gameSetup),
-        });
-      } catch { /* keep discarding locally */ }
-    }
-
     const edits = applyPostGameEdits();
     const freshId = generateGameId(edits.opponent, new Date().toISOString().slice(0, 10));
     persistData({
@@ -561,7 +422,6 @@ export function useGameFlow({
     endAndResetGame,
     endGame,
     handleNewGame,
-    submitToDashboard,
     applyPostGameEdits,
     resetGameStateFor,
     resetFromPostGame,

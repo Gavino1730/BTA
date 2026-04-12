@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
+import { getSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const bodyFont = Manrope({
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
   title: "BTA Courtside Intelligence | Live Basketball Operations Platform",
   description:
     "BTA Courtside Intelligence is premium basketball operations software for live stat keeping, game workflows, synced film review, and AI coaching insights.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(getSiteUrl()),
   alternates: {
     canonical: "/",
   },

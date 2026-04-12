@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { motion } from "motion/react";
@@ -17,6 +17,17 @@ const productItems = [
 
 export function Navbar(): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, []);
 
   return (
     <motion.header
@@ -37,14 +48,26 @@ export function Navbar(): JSX.Element {
 
           <div className="hidden items-center gap-8 lg:flex">
             <div className="group relative">
-              <button className="flex items-center gap-1 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">
+              <button
+                className="flex items-center gap-1 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                aria-haspopup="menu"
+                aria-label="Open product menu"
+              >
                 Product
                 <ChevronDown className="size-4" />
               </button>
-              <div className="pointer-events-none absolute left-1/2 top-full w-72 -translate-x-1/2 pt-4 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
-                <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-1)] p-3 shadow-[var(--shadow-lg)]">
+              <div className="pointer-events-none absolute left-1/2 top-full w-72 -translate-x-1/2 pt-4 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                <div
+                  className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-1)] p-3 shadow-[var(--shadow-lg)]"
+                  role="menu"
+                  aria-label="Product features"
+                >
                   {productItems.map((item) => (
-                    <div key={item} className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--panel-2)] hover:text-[var(--text-primary)]">
+                    <div
+                      key={item}
+                      className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--panel-2)] hover:text-[var(--text-primary)]"
+                      role="menuitem"
+                    >
                       {item}
                     </div>
                   ))}

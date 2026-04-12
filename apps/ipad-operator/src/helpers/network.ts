@@ -88,30 +88,6 @@ export function isConnectionReadyForStart(setup: { connectionId?: string; synced
   return Boolean(connectionId) && connectionId === syncedConnectionId;
 }
 
-export function isLegacyExportTargetReachableFromCurrentHost(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const appIsLocal = isLocalNetworkHost(window.location.hostname);
-    if (window.location.protocol === "https:" && parsed.protocol !== "https:") {
-      return false;
-    }
-    if (!appIsLocal && isLocalNetworkHost(parsed.hostname)) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
-  const apiBase = normalizeUrlBase(setup.apiUrl);
-  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
-  if (!dashboardBase) return false;
-  if (dashboardBase === apiBase) return false;
-  return isLegacyExportTargetReachableFromCurrentHost(dashboardBase);
-}
-
 export function buildCoachViewUrl(
   gameId: string,
   setup: {

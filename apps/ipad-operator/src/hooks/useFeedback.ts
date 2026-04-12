@@ -21,7 +21,6 @@ function summarizeError(error: unknown): string {
  * Automatically unlocks the AudioContext on the first user gesture (required by
  * Safari) and cleans up on unmount.
  */
-export function useFeedback() {
 export function useFeedback(options: FeedbackOptions = {}) {
   const audioRef = useRef<AudioContext | null>(null);
   const unlockedRef = useRef(false);

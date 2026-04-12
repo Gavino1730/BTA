@@ -21,7 +21,6 @@ export interface PostGameScreenProps {
   onSetSubmitMessage: (v: string) => void;
   onApplyPostGameEdits: () => { gameId: string; opponent: string; date: string; homeScore: number; awayScore: number };
   onSubmitGameToRealtimeApi: () => Promise<boolean>;
-  onSubmitToDashboard: (overrides: { opponent: string; date: string; homeScore: number; awayScore: number }) => Promise<boolean>;
   onRequestConfirm: (opts: { title: string; message: string; confirmLabel: string; tone?: "danger" }) => Promise<boolean>;
   onResetFromPostGame: () => void;
   onDiscardFromPostGame: () => void;
@@ -58,7 +57,6 @@ export function PostGameScreen({
   onSetSubmitMessage,
   onApplyPostGameEdits,
   onSubmitGameToRealtimeApi,
-  onSubmitToDashboard,
   onRequestConfirm,
   onResetFromPostGame,
   onDiscardFromPostGame,
@@ -148,23 +146,13 @@ export function PostGameScreen({
         <button
           className="postgame-retry-btn"
           onClick={async () => {
-            const edits = onApplyPostGameEdits();
+            onApplyPostGameEdits();
             onSetSubmitStatus("pending");
             onSetSubmitMessage("Submitting game...");
             const apiOk = await onSubmitGameToRealtimeApi();
-            const legacyOk = await onSubmitToDashboard({
-              opponent: edits.opponent,
-              date: edits.date,
-              homeScore: editedHomeScore,
-              awayScore: editedAwayScore,
-            });
-            if (apiOk && legacyOk) {
+            if (apiOk) {
               onSetSubmitStatus("success");
               onSetSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
-              onMarkGameFinished();
-            } else if (apiOk && !legacyOk) {
-              onSetSubmitStatus("success");
-              onSetSubmitMessage("Game submitted to realtime API. Legacy stats export is currently unavailable.");
               onMarkGameFinished();
             } else {
               onSetSubmitStatus("error");

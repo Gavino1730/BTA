@@ -6,6 +6,7 @@
   --panel-1: rgba(16, 24, 39, 0.72);
   --panel-2: rgba(18, 28, 46, 0.78);
   --panel-3: rgba(38, 54, 84, 0.5);
+  --panel-4: rgba(10, 16, 31, 0.88);
 
   --text-primary: #f4f7ff;
   --text-secondary: rgba(229, 236, 255, 0.76);
@@ -13,6 +14,7 @@
 
   --accent-primary: #4f6dff;
   --accent-secondary: #25d2c5;
+  --accent-signal: #f79f52;
   --accent-on: #f6f8ff;
   --accent-glow: rgba(79, 109, 255, 0.55);
 
@@ -41,7 +43,10 @@
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(140% 120% at 8% -10%, rgba(79, 109, 255, 0.2), transparent 52%),
+    radial-gradient(100% 90% at 90% 0%, rgba(37, 210, 197, 0.1), transparent 56%),
+    var(--background);
   color: var(--foreground);
   font-family: var(--font-body), "Segoe UI", sans-serif;
   min-height: 100%;
@@ -62,6 +67,38 @@ html {
     linear-gradient(to bottom, rgba(140, 162, 220, 0.11) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+}
+
+.section-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.section-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.section-shell[data-tone="alpha"]::before {
+  background: radial-gradient(120% 120% at 50% -10%, rgba(79, 109, 255, 0.14), transparent 64%);
+}
+
+.section-shell[data-tone="beta"]::before {
+  background: radial-gradient(140% 110% at 80% 0%, rgba(37, 210, 197, 0.12), transparent 60%);
+}
+
+.section-shell[data-tone="gamma"]::before {
+  background: radial-gradient(120% 130% at 12% 4%, rgba(247, 159, 82, 0.11), transparent 58%);
+}
+
+.premium-outline {
+  box-shadow:
+    inset 0 1px 0 rgba(230, 238, 255, 0.14),
+    0 0 0 1px rgba(160, 187, 248, 0.1);
 }
 
 ::selection {
