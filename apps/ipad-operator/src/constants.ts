@@ -10,10 +10,44 @@ function resolveDefaultAppBase(hostname: string, origin: string, port: number): 
   return origin.replace(/\/+$/, "") || `https://${hostname}`;
 }
 
-export const DEFAULT_API = import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000);
-export const DEFAULT_COACH_DASHBOARD = import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173);
-export const DEFAULT_STATS_DASHBOARD = import.meta.env.VITE_STATS_DASHBOARD
-  ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : "");
+function resolveRuntimeBase(base: string, pageHostname: string, pageProtocol: string): string {
+  const trimmed = base.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (pageProtocol === "https:" && parsed.protocol === "http:" && !isLocalNetworkHost(parsed.hostname)) {
+      parsed.protocol = "https:";
+    }
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    if (pageProtocol === "https:" && trimmed.startsWith("http://") && !isLocalNetworkHost(pageHostname)) {
+      return trimmed.replace(/^http:\/\//, "https://");
+    }
+    return trimmed;
+  }
+}
+
+const pageProtocol = window.location.protocol;
+
+export const DEFAULT_API = resolveRuntimeBase(
+  import.meta.env.VITE_API ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000),
+  defaultHost,
+  pageProtocol,
+);
+export const DEFAULT_COACH_DASHBOARD = resolveRuntimeBase(
+  import.meta.env.VITE_COACH_DASHBOARD ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5173),
+  defaultHost,
+  pageProtocol,
+);
+export const DEFAULT_STATS_DASHBOARD = resolveRuntimeBase(
+  import.meta.env.VITE_STATS_DASHBOARD
+    ?? (isLocalNetworkHost(defaultHost) ? resolveDefaultAppBase(defaultHost, defaultOrigin, 4000) : ""),
+  defaultHost,
+  pageProtocol,
+);
 export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "").toString().trim();
 
 export const STORE = "operator-console";

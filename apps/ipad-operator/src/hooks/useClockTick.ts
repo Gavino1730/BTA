@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { clockToSec, formatClockFromSeconds } from "../helpers/clock.js";
 
 /**
@@ -16,26 +16,58 @@ export function useClockTick(opts: {
   setClockRunning: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const { gamePhase, clockRunning, clockEnabled, trackClock, clockInput, setClockInput, setClockRunning } = opts;
+  const clockInputRef = useRef(clockInput);
+  const lastTickValueRef = useRef<string>(clockInput);
 
-  // Main countdown tick
+  useEffect(() => {
+    clockInputRef.current = clockInput;
+  }, [clockInput]);
+
+  // Main countdown tick (elapsed-time based to avoid interval drift)
   useEffect(() => {
     if (gamePhase !== "live" || !clockRunning || !clockEnabled || !trackClock) return;
-    const currentSeconds = clockToSec(clockInput);
-    const step = currentSeconds <= 60 ? 0.1 : 1;
-    const delayMs = step === 0.1 ? 100 : 1000;
-    const id = setTimeout(() => {
-      setClockInput((current) => {
-        const sec = clockToSec(current);
-        if (sec <= step) {
-          setClockRunning(false);
-          return formatClockFromSeconds(0);
+
+    let endAtMs = performance.now() + (clockToSec(clockInputRef.current) * 1000);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled) return;
+      const now = performance.now();
+      let remainingSec = Math.max(0, (endAtMs - now) / 1000);
+
+      // If the operator edits the clock while running, re-anchor to that value.
+      const observedClock = clockInputRef.current;
+      if (observedClock !== lastTickValueRef.current) {
+        const observedSec = Math.max(0, clockToSec(observedClock));
+        if (Math.abs(observedSec - remainingSec) > 0.11) {
+          endAtMs = now + (observedSec * 1000);
+          remainingSec = observedSec;
         }
-        const next = Math.max(0, Math.round((sec - step) * 10) / 10);
-        return formatClockFromSeconds(next);
-      });
-    }, delayMs);
-    return () => clearTimeout(id);
-  }, [clockRunning, gamePhase, clockEnabled, clockInput, trackClock, setClockInput, setClockRunning]);
+      }
+
+      if (remainingSec <= 0) {
+        const zero = formatClockFromSeconds(0);
+        lastTickValueRef.current = zero;
+        setClockInput(zero);
+        setClockRunning(false);
+        return;
+      }
+
+      const nextClock = formatClockFromSeconds(remainingSec);
+      lastTickValueRef.current = nextClock;
+      setClockInput((current) => (current === nextClock ? current : nextClock));
+
+      const delayMs = remainingSec <= 60 ? 50 : 200;
+      timeoutId = setTimeout(tick, delayMs);
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [clockRunning, gamePhase, clockEnabled, trackClock, setClockInput, setClockRunning]);
 
   // Stop clock if tracking is disabled mid-game
   useEffect(() => {

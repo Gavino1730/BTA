@@ -124,22 +124,31 @@ export function BoxScoreSection({
     <section className="card box-score-card">
       <div className="box-score-header">
         <h2>Box Score</h2>
-        <div className="box-score-filter-group" aria-label="Box score filter">
+        <div className="box-score-header-actions">
+          <div className="box-score-filter-group" aria-label="Box score filter">
+            <button
+              type="button"
+              className={`box-score-filter-chip${boxScoreFilter.length === 0 ? " box-score-filter-chip-active" : ""}`}
+              onClick={() => setBoxScoreFilter([])}
+            >Full Game</button>
+            {boxScorePeriods.map((period) => (
+              <button
+                key={period}
+                type="button"
+                className={`box-score-filter-chip${boxScoreFilter.includes(period) ? " box-score-filter-chip-active" : ""}`}
+                onClick={() => setBoxScoreFilter(prev =>
+                  prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
+                )}
+              >{period}</button>
+            ))}
+          </div>
           <button
             type="button"
-            className={`box-score-filter-chip${boxScoreFilter.length === 0 ? " box-score-filter-chip-active" : ""}`}
-            onClick={() => setBoxScoreFilter([])}
-          >Full Game</button>
-          {boxScorePeriods.map((period) => (
-            <button
-              key={period}
-              type="button"
-              className={`box-score-filter-chip${boxScoreFilter.includes(period) ? " box-score-filter-chip-active" : ""}`}
-              onClick={() => setBoxScoreFilter(prev =>
-                prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
-              )}
-            >{period}</button>
-          ))}
+            className="shell-nav-link box-score-print-btn"
+            onClick={() => window.print()}
+          >
+            Print / Save PDF
+          </button>
         </div>
       </div>
 

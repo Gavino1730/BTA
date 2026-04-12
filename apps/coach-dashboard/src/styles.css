@@ -2701,6 +2701,20 @@ body {
   gap: 0.45rem;
 }
 
+.box-score-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.box-score-print-btn {
+  min-height: 34px;
+  padding: 0.35rem 0.74rem;
+  font-size: 0.78rem;
+}
+
 .box-score-filter-chip {
   min-height: 34px;
   border-radius: 999px;
@@ -2880,6 +2894,62 @@ body {
 
   .box-score-corrections {
     max-height: min(40vh, 320px);
+  }
+}
+
+@media print {
+  .live-subnav,
+  .live-controls-card,
+  .card:not(.box-score-card),
+  .box-score-filter-group,
+  .box-score-print-btn,
+  .operators-online-indicator,
+  .help-fab {
+    display: none !important;
+  }
+
+  .page,
+  .box-score-card,
+  .box-score-team-section,
+  .box-score-table,
+  .box-score-table th,
+  .box-score-table td,
+  .box-score-correction-title,
+  .box-score-correction-meta {
+    color: #000 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .box-score-card {
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0.45rem;
+  }
+
+  .box-score-table-wrap,
+  .box-score-corrections {
+    border: 1px solid #d1d5db !important;
+    border-radius: 0;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .box-score-table {
+    min-width: 0;
+    font-size: 10.5pt;
+  }
+
+  .box-score-table th,
+  .box-score-table td {
+    border-color: #d1d5db !important;
+    padding: 0.24rem 0.3rem;
+    position: static !important;
+  }
+
+  .box-score-correction-row .shell-nav-link {
+    display: none !important;
   }
 }
 

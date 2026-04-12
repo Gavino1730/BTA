@@ -63,7 +63,7 @@ interface ConfirmDialogProps {
 export function ConfirmDialogOverlay({ dialog, onResolve }: ConfirmDialogProps) {
   if (!dialog) return null;
   return (
-    <div className="modal-overlay" onClick={() => onResolve(false)}>
+    <div className="modal-overlay confirm-dialog-overlay" onClick={() => onResolve(false)}>
       <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">{dialog.title}</span>

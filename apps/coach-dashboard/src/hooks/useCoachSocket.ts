@@ -39,7 +39,7 @@ export interface UseCoachSocketOptions {
   setupNames: { myTeamName: string; opponentName: string; vcSide: "home" | "away" };
   gameIdRef: MutableRefObject<string>;
   endedGameIdsRef: MutableRefObject<Set<string>>;
-  clearActiveGame: (statusMessage: string) => void;
+  clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
   setGameId: (updater: string | ((current: string) => string)) => void;
   setState: (updater: GameState | null | ((current: GameState | null) => GameState | null)) => void;
   setServerConnected: (connected: boolean) => void;
@@ -217,7 +217,14 @@ export function useCoachSocket({
       }
 
       endedGameIdsRef.current.add(submittedGameId);
-      if (gameIdRef.current === submittedGameId) {
+      const activeGameId = gameIdRef.current;
+      const stateGameId = latestStateRef.current?.gameId ?? "";
+      const operatorGameId = activeOperatorGameIdRef.current;
+      const shouldClearActive = activeGameId === submittedGameId
+        || stateGameId === submittedGameId
+        || operatorGameId === submittedGameId;
+
+      if (shouldClearActive) {
         const snapshot = latestStateRef.current;
         const homeScore = snapshot?.homeTeamId ? (snapshot.scoreByTeam[snapshot.homeTeamId] ?? 0) : 0;
         const awayScore = snapshot?.awayTeamId ? (snapshot.scoreByTeam[snapshot.awayTeamId] ?? 0) : 0;

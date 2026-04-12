@@ -316,6 +316,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
     const trackedSide: TeamSide = vcSideSetup;
     const apiUrl = gameSetup.apiUrl?.trim() || DEFAULT_API;
     const trackedTeamId = trackedSide === "home" ? homeTeamId : awayTeamId;
+    const trackedPlayerIds = new Set(trackedPlayers.map((player) => player.id));
     const totalScore = scores.home + scores.away;
     if (gamePhase !== "live" || (period === "Q1" && totalScore === 0 && allEventObjs.length < 5)) {
       setSummaryPlayerAiInsights(null);
@@ -332,12 +333,15 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
       if (!Array.isArray(insights) || insights.length === 0) { setSummaryPlayerAiInsights(null); return; }
       const playerLines = insights
         .filter((insight) => {
-          if (!insight.relatedTeamId || insight.relatedTeamId !== trackedTeamId) return false;
+          const matchesTrackedPlayer = Boolean(insight.relatedPlayerId && trackedPlayerIds.has(insight.relatedPlayerId));
+          const matchesTrackedTeam = !insight.relatedTeamId || insight.relatedTeamId === trackedTeamId;
+          if (!matchesTrackedPlayer && !matchesTrackedTeam) return false;
+
           return insight.type === "hot_hand"
             || insight.type === "foul_trouble"
             || insight.type === "foul_warning"
             || insight.type === "sub_suggestion"
-            || (insight.type === "ai_coaching" && Boolean(insight.relatedPlayerId));
+            || insight.type === "ai_coaching";
         })
         .slice(0, 7)
         .map((insight) => {

@@ -336,7 +336,10 @@ export function LivePage() {
           ) : (
             <div className="operators-list">
               {orderedOperators.map((operator, index) => (
-                <div key={`${operator.deviceId ?? "unknown"}-${operator.lastSeenIso ?? index}`} className="operator-row">
+                <div
+                  key={operator.deviceId ?? operator.connectedAtIso ?? `${operator.deviceName ?? "unknown"}-${index}`}
+                  className="operator-row"
+                >
                   <div>
                     <p className="operator-device">{operator.deviceName || operator.deviceId || "Unknown device"}</p>
                     <p className="operator-meta">Game: {operator.gameId || "n/a"}</p>

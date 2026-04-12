@@ -48,7 +48,7 @@ interface ActiveSetupResponse {
     gameId?: string;
     myTeamId?: string;
     myTeamName?: string;
-    opponentName?: string;
+    clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
@@ -250,7 +250,7 @@ export function useGameHydration({
               } else if (!active.gameId) {
                 endedGameIdsRef.current.add(gameId);
                 skipNextReconcileRef.current = true;
-                clearActiveGame("Cleared stale game session. Start a new game when ready.");
+                clearActiveGame("Cleared stale game session. Start a new game when ready.", { rotateConnectionCode: true });
                 return;
               }
             }

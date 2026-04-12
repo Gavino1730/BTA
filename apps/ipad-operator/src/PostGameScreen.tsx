@@ -162,6 +162,10 @@ export function PostGameScreen({
               onSetSubmitStatus("success");
               onSetSubmitMessage("Game submitted! Stats are now visible in the dashboard.");
               onMarkGameFinished();
+            } else if (apiOk && !legacyOk) {
+              onSetSubmitStatus("success");
+              onSetSubmitMessage("Game submitted to realtime API. Legacy stats export is currently unavailable.");
+              onMarkGameFinished();
             } else {
               onSetSubmitStatus("error");
               onSetSubmitMessage("Submit failed. Check your connection and try again.");

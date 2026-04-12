@@ -78,7 +78,7 @@ export interface GameSession {
 
   // Actions
   dismissFinishedGameSummary: () => void;
-  clearActiveGame: (statusMessage: string) => void;
+  clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
   deleteGameEvent: (eventId: string, expectedSequence: number) => Promise<void>;
   deletingGameEventId: string | null;
 
@@ -415,7 +415,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     }
   }, [connectionId, gameId]);
 
-  const clearActiveGame = useCallback((statusMessage: string): void => {
+  const clearActiveGame = useCallback((statusMessage: string, options?: { rotateConnectionCode?: boolean }): void => {
     if (gameId) {
       endedGameIdsRef.current.add(gameId);
       try {
@@ -423,6 +423,9 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
         const updated = Array.from(new Set([...prev, gameId])).slice(-20);
         localStorage.setItem("coach-ended-game-ids", JSON.stringify(updated));
       } catch { /* ignore */ }
+    }
+    if (options?.rotateConnectionCode) {
+      setConnectionId(generateConnectionCode());
     }
     setGameId("");
     setState(null);
@@ -532,6 +535,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     endGameFromDashboard,
   } = useEndGame({
     gameId, state, setupNames, endedGameIdsRef, clearActiveGame, setDashboardStatus,
+    setLastFinishedGameSummary,
   });
 
   // Derived game data

@@ -287,7 +287,13 @@ export function useGameFlow({
     const latest = loadAppData();
     if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
       const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
-      if (!saved) return false;
+      if (!saved) {
+        showInlineNotice(
+          "Legacy stats export was unavailable. Continuing to a fresh game using realtime data.",
+          "warning",
+          6000,
+        );
+      }
     }
     const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
     await startGame(newId);

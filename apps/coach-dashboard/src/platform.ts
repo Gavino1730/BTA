@@ -20,6 +20,26 @@ export function resolveDefaultSchoolId(hostname: string): string {
   return "";
 }
 
+export function resolveRuntimeBase(base: string, pageHostname: string, pageProtocol: string): string {
+  const trimmed = base.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (pageProtocol === "https:" && parsed.protocol === "http:" && !isLocalNetworkHost(parsed.hostname)) {
+      parsed.protocol = "https:";
+    }
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    if (pageProtocol === "https:" && trimmed.startsWith("http://") && !isLocalNetworkHost(pageHostname)) {
+      return trimmed.replace(/^http:\/\//, "https://");
+    }
+    return trimmed;
+  }
+}
+
 function normalizeSchoolId(value: unknown): string {
   if (typeof value !== "string") {
     return "";
@@ -161,8 +181,18 @@ export function resolveActiveSchoolId(locationSearch?: string): string {
   );
 }
 
-export const apiBase = (import.meta.env.VITE_API ?? resolveDefaultApiBase(defaultHost, defaultOrigin)).replace(/\/+$/, "");
-export const operatorBase = (import.meta.env.VITE_OPERATOR_CONSOLE ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5174)).replace(/\/+$/, "");
+const pageProtocol = typeof window !== "undefined" ? window.location.protocol : "http:";
+
+export const apiBase = resolveRuntimeBase(
+  import.meta.env.VITE_API ?? resolveDefaultApiBase(defaultHost, defaultOrigin),
+  defaultHost,
+  pageProtocol,
+);
+export const operatorBase = resolveRuntimeBase(
+  import.meta.env.VITE_OPERATOR_CONSOLE ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5174),
+  defaultHost,
+  pageProtocol,
+);
 export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 export const AUTH_SESSION_KEY = "bta.coach.authSession";
 

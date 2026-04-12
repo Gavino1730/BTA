@@ -172,6 +172,8 @@ export function LiveCenterPanel({
     </div>
   );
 
+  const visibleEvents = allEvents.filter(({ event }) => event.type !== "possession_start");
+
   return (
     <div className="panel center-panel">
       <div className="scoreboard">
@@ -210,14 +212,13 @@ export function LiveCenterPanel({
       </div>
 
       <div className="event-feed">
-        {allEvents.length === 0 && <p className="empty-feed">No events yet</p>}
-        {allEvents.map(({ event, pending }) => {
+        {visibleEvents.length === 0 && <p className="empty-feed">No events yet</p>}
+        {visibleEvents.map(({ event, pending }) => {
           const d = describeEvent(event, homeTeamName, awayTeamName, allPlayers, pTotals, homeTeamId, awayTeamId);
           const eventStamp = `${event.period} ${formatClockFromSeconds(event.clockSecondsRemaining)}`;
           const sectionLabel = getEventSectionLabel(event);
           const teamBucket = getEventTeamBucket(event, homeTeamId, awayTeamId);
           const teamColor = teamBucket === "home" ? homeTeamColor : teamBucket === "away" ? awayTeamColor : undefined;
-          const isLast = allEvents[allEvents.length - 1]?.event.id === event.id;
           return (
             <div key={event.id} className="feed-item-wrapper">
               <button

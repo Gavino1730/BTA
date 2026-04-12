@@ -418,6 +418,11 @@ export function App() {
     showInlineNotice, requestConfirm,
   });
 
+  function hardResetOperatorSession() {
+    clearOperatorLocalCache();
+    window.location.reload();
+  }
+
   // ---- Event builder ----
   function base(seq: number) {
     return {
@@ -487,12 +492,15 @@ export function App() {
     confirmSubIn,
     handlePlayerQuickShot,
     handlePlayerQuickStat,
+    recordTeamRebound,
   } = useGameActions({
     modal, setModal, setChainPrompt, vcSideSetup, opponentSide, sequence,
     possessionTeamId: possessionTeamId ?? "", setPossessionOverrideTeamId, base, resolveTeamId,
     postEvent, saveEditedEvent, isOpponentStatEnabled, setActiveRosterPlayerId,
     showInlineNotice, homeTeamName, awayTeamName, timeoutRemaining, inOvertimeNow,
   });
+
+  const opponentHasRoster = (opponentSide === "home" ? homePlayers : awayPlayers).length > 0;
 
   const { handleClockInput, adjustClock, resetClockForPeriod } = useClockControls({
     clockEnabled: appData.gameSetup.clockEnabled ?? true,
@@ -588,7 +596,7 @@ export function App() {
         onRequestConfirm={requestConfirm}
         onResetFromPostGame={resetFromPostGame}
         onDiscardFromPostGame={discardFromPostGame}
-        onHandleNewGame={handleNewGame}
+        onHandleNewGame={hardResetOperatorSession}
         onMarkGameFinished={() => {
           persistPhase("finished");
           setSubmitStatus("success");
@@ -611,7 +619,7 @@ export function App() {
         homeScore={scores.home}
         awayScore={scores.away}
         submitMessage={submitMessage || "Game has been submitted."}
-        onStartNewGame={handleNewGame}
+        onStartNewGame={hardResetOperatorSession}
         inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
         confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />
@@ -673,12 +681,14 @@ export function App() {
           chainPrompt={chainPrompt}
           vcSideSetup={vcSideSetup}
           opponentSide={opponentSide}
+          opponentHasRoster={opponentHasRoster}
           homeTeamName={homeTeamName}
           awayTeamName={awayTeamName}
           homeTeamColor={homeTeamColor}
           awayTeamColor={awayTeamColor}
           onDismiss={dismissChain}
           setModal={setModal}
+          recordTeamRebound={recordTeamRebound}
         />
       )}
       {showGameSummary && (

@@ -350,6 +350,18 @@ export function useGameActions({
     if (event) void postEvent(event);
   }
 
+  function recordTeamRebound(side: TeamSide, offensive: boolean) {
+    const teamId = resolveTeamId(side);
+    void postEvent({
+      ...base(sequence),
+      teamId,
+      type: "rebound",
+      playerId: teamId,
+      offensive,
+    } as GameEvent);
+    autoEmitPossession(teamId);
+  }
+
   return {
     autoEmitPossession,
     setPossession,
@@ -363,5 +375,6 @@ export function useGameActions({
     confirmSubIn,
     handlePlayerQuickShot,
     handlePlayerQuickStat,
+    recordTeamRebound,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiBase, generateConnectionCode, normalizeConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultSchoolId } from "./platform.js";
+import { apiBase, generateConnectionCode, normalizeConnectionCode, resolveDefaultApiBase, resolveDefaultAppBase, resolveDefaultSchoolId, resolveRuntimeBase } from "./platform.js";
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
@@ -51,6 +51,14 @@ describe("coach route helpers", () => {
   it("keeps deployed dashboard links on the current secure origin when env vars are unset", () => {
     expect(resolveDefaultApiBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app")).toBe("https://bta-demo.up.railway.app");
     expect(resolveDefaultAppBase("bta-demo.up.railway.app", "https://bta-demo.up.railway.app", 5174)).toBe("https://bta-demo.up.railway.app");
+  });
+
+  it("upgrades misconfigured public http bases on secure pages to avoid mixed-content", () => {
+    expect(resolveRuntimeBase("http://api.btaintel.com", "www.btaintel.com", "https:")).toBe("https://api.btaintel.com");
+  });
+
+  it("keeps local-network http bases unchanged", () => {
+    expect(resolveRuntimeBase("http://192.168.1.50:4000", "192.168.1.50", "https:")).toBe("http://192.168.1.50:4000");
   });
 
   it("avoids pinning public deployments to the shared default school", () => {

@@ -49,7 +49,7 @@ export function useSocket({
   showInlineNotice,
 }: SocketDeps): void {
   useEffect(() => {
-    if (gamePhase !== "live") {
+    if (gamePhase !== "live" && gamePhase !== "post-game") {
       setConnectedOperatorCount(0);
       return;
     }

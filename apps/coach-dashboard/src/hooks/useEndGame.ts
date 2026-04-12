@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameState } from "../helpers/game-state.js";
 import { apiBase, apiKeyHeader } from "../platform.js";
+import type { FinishedGameSummary } from "./useCoachSocket.js";
 
 interface SetupNames {
   opponentName: string;
@@ -12,8 +13,9 @@ interface UseEndGameParams {
   state: GameState | null;
   setupNames: SetupNames;
   endedGameIdsRef: React.MutableRefObject<Set<string>>;
-  clearActiveGame: (statusMessage: string) => void;
+  clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
   setDashboardStatus: (status: string) => void;
+  setLastFinishedGameSummary: (summary: FinishedGameSummary | null) => void;
 }
 
 interface UseEndGameReturn {
@@ -74,6 +76,7 @@ export function useEndGame({
   endedGameIdsRef,
   clearActiveGame,
   setDashboardStatus,
+  setLastFinishedGameSummary,
 }: UseEndGameParams): UseEndGameReturn {
   const [isEndingGame, setIsEndingGame] = useState(false);
   const [isSavingFinalizeDetails, setIsSavingFinalizeDetails] = useState(false);
@@ -136,7 +139,7 @@ export function useEndGame({
         const reason = payload.error ?? payload.message ?? `status ${response.status}`;
         if (response.status === 404) {
           endedGameIdsRef.current.add(gameId);
-          clearActiveGame("Server no longer has this game. Cleared local session.");
+          clearActiveGame("Server no longer has this game. Cleared local session.", { rotateConnectionCode: true });
           return false;
         }
         const message = `Could not save finalized details: ${reason}.`;
@@ -208,7 +211,7 @@ export function useEndGame({
     } catch {
       // ignore network errors — proceed with local clear
     }
-    clearActiveGame("Game closed without saving.");
+    clearActiveGame("Game closed without saving.", { rotateConnectionCode: true });
   }
 
   async function endGameFromDashboard(): Promise<void> {
@@ -239,7 +242,7 @@ export function useEndGame({
         const reason = payload.error ?? payload.message ?? `status ${response.status}`;
         if (response.status === 404) {
           endedGameIdsRef.current.add(endingGameId);
-          clearActiveGame("Server no longer has this game. Cleared local session.");
+          clearActiveGame("Server no longer has this game. Cleared local session.", { rotateConnectionCode: true });
           return;
         }
         const message = response.status === 403
@@ -253,7 +256,18 @@ export function useEndGame({
       }
 
       endedGameIdsRef.current.add(endingGameId);
-      clearActiveGame("Game ended. Start a new game when ready.");
+      const fallbackScores = getVcAndOpponentScores(state, setupNames.vcSide);
+      const vcScore = parseScoreInput(finalizeVcScore, fallbackScores.vcScore);
+      const oppScore = parseScoreInput(finalizeOppScore, fallbackScores.oppScore);
+      setLastFinishedGameSummary({
+        gameId: endingGameId,
+        finishedAtIso: new Date().toISOString(),
+        myTeamName: "Your Team",
+        opponentName: (finalizeOpponent.trim() || setupNames.opponentName || state?.opponentName || "Opponent").trim(),
+        myScore: vcScore,
+        oppScore,
+      });
+      clearActiveGame("Game ended. Start a new game when ready.", { rotateConnectionCode: true });
     } catch {
       const message = "Could not reach realtime API to end game.";
       setEndGameStatus(message);
