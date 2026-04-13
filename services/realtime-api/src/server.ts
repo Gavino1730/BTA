@@ -129,21 +129,50 @@ function normalizeOriginInput(value: string): string {
   }
 }
 
+function expandOriginAliases(origin: string): string[] {
+  if (origin.includes("*")) {
+    return [origin];
+  }
+
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return [origin];
+    }
+
+    if (hostname.startsWith("www.")) {
+      const apexHostname = hostname.slice(4);
+      if (apexHostname.split(".").length === 2) {
+        const apexUrl = new URL(parsed.toString());
+        apexUrl.hostname = apexHostname;
+        return [origin, apexUrl.toString()];
+      }
+      return [origin];
+    }
+
+    if (hostname.split(".").length === 2) {
+      const wwwUrl = new URL(parsed.toString());
+      wwwUrl.hostname = `www.${hostname}`;
+      return [origin, wwwUrl.toString()];
+    }
+  } catch {
+    return [origin];
+  }
+
+  return [origin];
+}
+
 const BASE_ALLOWED_ORIGINS = [
   "http://localhost:5173",      // iPad operator dev
   "http://localhost:5174",      // Coach dashboard dev
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
 ];
-const ALLOWED_ORIGINS = BASE_ALLOWED_ORIGINS.map(normalizeOriginInput).filter(Boolean);
-const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map(normalizeOriginInput)
-  .filter(Boolean);
-
-if (PROD_ORIGINS.length > 0) {
-  ALLOWED_ORIGINS.push(...PROD_ORIGINS);
-}
+const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
+const ALLOWED_ORIGINS = Array.from(
+  new Set([...BASE_ALLOWED_ORIGINS, ...PROD_ORIGINS].flatMap((origin) => expandOriginAliases(origin)))
+).map(normalizeOriginInput).filter(Boolean);
 
 export function isCorsOriginAllowed(origin: string, allowedOrigins: readonly string[] = ALLOWED_ORIGINS): boolean {
   const normalizedOrigin = normalizeOriginInput(origin);
