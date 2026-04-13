@@ -110,7 +110,7 @@ function createSession(overrides: Partial<StoredAuthSession> = {}): StoredAuthSe
     email: "coach@program.org",
     fullName: "Coach Example",
     role: "coach",
-    schoolId: "valley-catholic",
+    schoolId: "demo-school",
     lastLoginAtIso: null,
     ...overrides,
   };
@@ -119,7 +119,7 @@ function createSession(overrides: Partial<StoredAuthSession> = {}): StoredAuthSe
 describe("decodeTokenExpiryMs", () => {
   it("reads exp from local bta token payload", () => {
     const exp = 1_900_000_000;
-    const payload = toBase64Url(JSON.stringify({ exp, schoolId: "valley-catholic" }));
+    const payload = toBase64Url(JSON.stringify({ exp, schoolId: "demo-school" }));
     const token = `bta.${payload}.signature`;
     expect(decodeTokenExpiryMs(token)).toBe(exp * 1000);
   });

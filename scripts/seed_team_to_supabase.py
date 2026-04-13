@@ -28,7 +28,7 @@ from typing import Any
 import requests
 
 
-DEFAULT_INPUT = "valley-catholic-team.json"
+DEFAULT_INPUT = "team-data.json"
 DEFAULT_TABLE_BASE = "bta"
 
 
@@ -222,7 +222,7 @@ def create_or_update_auth_user(
 
 
 def build_seed_rows(team_payload: dict[str, Any], config: SeedConfig, source_name: str) -> dict[str, list[dict[str, Any]]]:
-    team_name = str(team_payload.get("name") or "Vancouver Bears").strip()
+    team_name = str(team_payload.get("name") or "Demo Team").strip()
     team_id = str(team_payload.get("id") or f"team-{slugify(team_name)}").strip()
     abbreviation = str(team_payload.get("abbreviation") or team_name[:4].upper()).strip() or "TEAM"
     season = str(team_payload.get("season") or "").strip() or None
@@ -477,14 +477,14 @@ def run_seed(team_payload: dict[str, Any], config: SeedConfig) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Seed Vancouver team data into your own Supabase project")
+    parser = argparse.ArgumentParser(description="Seed team data into your own Supabase project")
     parser.add_argument("--input", default=DEFAULT_INPUT, help="Path to team JSON file")
     parser.add_argument("--supabase-url", default="", help="Supabase project URL, e.g. https://<ref>.supabase.co")
     parser.add_argument("--service-role-key", default="", help="Supabase service_role key")
-    parser.add_argument("--owner-email", default="bears@demo.com", help="Owner account email to create/update")
+    parser.add_argument("--owner-email", default="owner@example.com", help="Owner account email to create/update")
     parser.add_argument("--owner-password", default="12345678", help="Owner account password to set (min 8 chars)")
     parser.add_argument("--owner-name", default="Team Owner", help="Owner full name")
-    parser.add_argument("--school-id", default="valley-catholic", help="Tenant school ID")
+    parser.add_argument("--school-id", default="demo-school", help="Tenant school ID")
     parser.add_argument("--table-base", default=DEFAULT_TABLE_BASE, help="Base table name used by realtime API")
     parser.add_argument(
         "--include-games",
@@ -518,7 +518,7 @@ def main(argv: list[str]) -> int:
             owner_email=required("--owner-email", args.owner_email).lower(),
             owner_password=required("--owner-password", args.owner_password),
             owner_name=args.owner_name.strip() or "Team Owner",
-            school_id=(args.school_id.strip() or "valley-catholic"),
+            school_id=(args.school_id.strip() or "demo-school"),
             table_base=args.table_base,
             source_name=Path(args.input).name,
             include_games=bool(args.include_games),

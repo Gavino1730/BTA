@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Push comprehensive game overrides with player-level stats for Vancouver Bears.
+// Push comprehensive game overrides with player-level stats for a demo team.
 // Usage: node scripts/push-bears-overrides.mjs
 
 const API = process.env.BTA_API_URL || "https://btarealtime-api-production.up.railway.app";
 const KEY = process.env.BTA_API_KEY || "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU";
-const SCHOOL = process.env.BTA_SCHOOL_ID || "vancouver-bears";
-const EMAIL = process.env.BTA_LOGIN_EMAIL || "bears@demo.com";
+const SCHOOL = process.env.BTA_SCHOOL_ID || "demo-school";
+const EMAIL = process.env.BTA_LOGIN_EMAIL || "owner@example.com";
 const PASSWORD = process.env.BTA_LOGIN_PASSWORD || "12345678";
 
 import { readFileSync } from "node:fs";
 
-const teamData = JSON.parse(readFileSync("vancouver-bears-team.json", "utf8"));
+const teamData = JSON.parse(readFileSync("team-data.json", "utf8"));
 const players = teamData.teams[0].players;
 const schedule = teamData.teams[0].schedule.filter((g) => g.status === "final");
 

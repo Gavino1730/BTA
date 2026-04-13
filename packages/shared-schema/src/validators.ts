@@ -6,7 +6,7 @@
 /**
  * Generate a canonical team ID slug from a team name.
  * Both operator and coach must produce identical IDs for the same name.
- * Format: "team-{lowercase-slug}" e.g. "team-evil", "team-central-catholic"
+ * Format: "team-{lowercase-slug}" e.g. "team-evil", "team-central-high"
  */
 export function canonicalTeamId(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "opponent";
