@@ -7,13 +7,13 @@ const STEPS = [
     icon: '🏀',
   },
   {
-    title: 'Pre-Game Setup',
-    body: 'Before tip-off, go to Settings → Game Setup to configure the home and away teams, set periods, and choose who\'s on the court.',
+    title: 'Pair With Coach Dashboard',
+    body: 'Before tip-off, open Settings and paste the 6-digit coach connection code. Team, lineup, and matchup setup are coach-controlled and sync down to iPad.',
     icon: '⚙️',
   },
   {
     title: 'Logging Stats',
-    body: 'Tap a player on the court to open their stat panel. Use the quick-tap buttons for 2-pt field goals, 3-pointers, assists, rebounds, and fouls.',
+    body: 'Tap players to log shots, assists, rebounds, fouls, and other events in a few taps. Every event feeds the live coach timeline.',
     icon: '📋',
   },
   {
@@ -28,7 +28,7 @@ const STEPS = [
   },
   {
     title: 'Offline Mode',
-    body: 'No Wi-Fi? No problem. All stats are saved locally first, then synced automatically when a connection is restored.',
+    body: 'No Wi-Fi? Events queue locally first, then sync automatically after reconnect. Keep entering stats and let the app catch up.',
     icon: '📡',
   },
 ];

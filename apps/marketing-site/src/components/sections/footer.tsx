@@ -7,7 +7,7 @@ export function Footer(): JSX.Element {
     <footer className="mx-auto w-[min(1200px,92vw)] border-t border-[var(--border-soft)] pb-10 pt-14">
       <div className="mb-10 flex flex-wrap items-start justify-between gap-8">
         <div className="max-w-sm space-y-3">
-          <img src="/brand-logo.png" alt="BTA Courtside" className="h-10 w-auto" />
+          <img src="/brand-icon.png" alt="BTA Courtside" className="h-10 w-auto" />
           <p className="text-sm text-[var(--text-secondary)]">
             Elite basketball operations software for live stats, game control, film review, and AI coaching insight.
           </p>

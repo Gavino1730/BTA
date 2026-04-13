@@ -27,7 +27,7 @@ export default function CopyrightPolicyPage(): JSX.Element {
             "Submitting knowingly false notices or counter notices may create legal liability. Parties should provide complete and accurate information.",
           ],
           bullets: [
-            "Copyright contact email: copyright@btaintel.com.",
+            "Copyright contact email: support@btaintel.com.",
             "Company: BTA Courtside Intelligence, doing business as Beyond the Arc.",
             "Website: btaintel.com.",
           ],
@@ -71,7 +71,7 @@ export default function CopyrightPolicyPage(): JSX.Element {
           bullets: [
             "Repeated valid complaints may trigger access restrictions.",
             "Attempts to evade enforcement controls may result in permanent termination.",
-            "Appeals may be directed to copyright@btaintel.com.",
+            "Appeals may be directed to support@btaintel.com.",
           ],
         },
         {

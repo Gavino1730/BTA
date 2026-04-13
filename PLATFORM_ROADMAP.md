@@ -106,8 +106,8 @@ Demo Page (`/demo`) - ✅ Done
 - ✅ Log in (`/login`)
 - ✅ Forgot password page (`/forgot-password`)
 - ✅ Reset password page (`/reset-password`)
-- 🔄 Email verification (`/verify-email`) now captures token/email context and supports login handoff; token confirmation and resend workflow pending
-- 🔄 Invite acceptance (`/invite/accept`) now captures token/email context and supports login handoff; token validation + completion flow pending
+- ✅ Email verification (`/verify-email`) captures token/email context, supports confirmation + resend, and hands off cleanly to login
+- ✅ Invite acceptance (`/invite/accept`) captures token/email context, validates tokens, and completes invite activation with login handoff
 - 🚧 Magic link / SSO (later)
 
 ## Section 6: In-App Dashboard Extras
@@ -186,7 +186,7 @@ Invite Teammates Flow UX - 🔄 Partial
 - ✅ Team Settings members tab now surfaces pending-invite counts and clearer invite guidance
 - ✅ Invite composer now supports one-click "Copy Invite Message" for coach/admin outreach
 - ✅ Members view now supports pending/active filtering plus "Copy Invite Again" and "Mark Active" quick actions for pending invites
-- 🚧 Remaining: invite acceptance token validation/completion flow
+- ✅ Invite acceptance token validation/completion flow shipped via `/invite/accept`
 
 ## Section 11: Route Map
 

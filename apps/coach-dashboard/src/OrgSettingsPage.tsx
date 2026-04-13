@@ -32,6 +32,19 @@ interface OrgMembersResponse {
   members?: OrganizationMember[];
 }
 
+type InviteEmailStatus = "sent" | "disabled" | "failed";
+
+interface InviteEmailDelivery {
+  status: InviteEmailStatus;
+  providerId?: string;
+}
+
+interface InviteMemberResponse {
+  members?: OrganizationMember[];
+  emailDelivery?: InviteEmailDelivery;
+  warning?: string;
+}
+
 interface OrgProfileState {
   organizationName: string;
   coachName: string;
@@ -67,6 +80,33 @@ function roleLabel(role: OrganizationMember["role"]): string {
 
 function canManageMembers(currentMember: OrganizationMember | null): boolean {
   return currentMember?.role === "owner";
+}
+
+function isValidEmail(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+}
+
+function buildInviteDeliveryStatus(email: string, emailDelivery?: InviteEmailDelivery, warning?: string): string {
+  if (warning?.trim()) {
+    return warning;
+  }
+
+  if (emailDelivery?.status === "sent") {
+    return `Invite email sent to ${email}.`;
+  }
+  if (emailDelivery?.status === "disabled") {
+    return `Member invited, but email delivery is disabled. Copy invite details for ${email}.`;
+  }
+  if (emailDelivery?.status === "failed") {
+    return `Member invited, but invite email failed for ${email}.`;
+  }
+
+  return "Member invitation sent.";
 }
 
 interface Props {
@@ -182,6 +222,10 @@ export function OrgSettingsPage({ onNavigate }: Props) {
       setStatus("Invite name and email are required.");
       return;
     }
+    if (!isValidEmail(inviteEmail)) {
+      setStatus("Enter a valid invite email address.");
+      return;
+    }
 
     setSaving(true);
     setStatus("Inviting member...");
@@ -201,12 +245,12 @@ export function OrgSettingsPage({ onNavigate }: Props) {
         throw new Error("Invite failed");
       }
 
-      const payload = await response.json() as { members?: OrganizationMember[] };
+      const payload = await response.json() as InviteMemberResponse;
       setMembers(Array.isArray(payload.members) ? payload.members : members);
       setInviteName("");
       setInviteEmail("");
       setInviteRole("coach");
-      setStatus("Member invitation sent.");
+      setStatus(buildInviteDeliveryStatus(inviteEmail.trim(), payload.emailDelivery, payload.warning));
     } catch {
       setStatus("Could not invite member.");
     } finally {
@@ -434,6 +478,9 @@ export function OrgSettingsPage({ onNavigate }: Props) {
               {managerView ? (
                 <form className="settings-invite-form" onSubmit={inviteMember}>
                   <h4 className="settings-sub-heading">Invite Member</h4>
+                  <p className="stats-page-subcopy" style={{ marginBottom: "0.75rem" }}>
+                    Invite emails are sent automatically when configured.
+                  </p>
                   <div className="setup-grid">
                     <label className="stats-filter-field">
                       <span>Full Name</span>

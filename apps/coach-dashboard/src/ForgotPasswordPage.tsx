@@ -90,7 +90,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
             <span>the production flow.</span>
           </h1>
           <p className="auth-hero-copy">
-            We only send reset instructions through email in production. Developer-only direct reset helpers stay hidden unless the API explicitly exposes them.
+            We only send reset instructions through email in production from no-reply@btaintel.com. If you do not receive the message, contact support@btaintel.com.
           </p>
         </section>
 
@@ -98,7 +98,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
           <div className="auth-card-head">
             <p className="auth-kicker">Forgot Password</p>
             <h2 id="forgot-password-title">Request reset instructions</h2>
-            <p>Use the coach email tied to your organization. If the account exists, we will send a secure reset email.</p>
+            <p>Use the coach email tied to your organization. If the account exists, we will send a secure reset email from no-reply@btaintel.com.</p>
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit}>

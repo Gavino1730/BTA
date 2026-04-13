@@ -42,10 +42,10 @@ export function PolicyPage({
             <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(21,26,48,0.94)] px-4 py-1.5 text-[var(--text-secondary)]">Effective: {effectiveDate}</span>
             <span className="rounded-full border border-[var(--border-soft)] bg-[rgba(21,26,48,0.94)] px-4 py-1.5 text-[var(--text-secondary)]">Updated: {lastUpdated}</span>
             <Link
-              href="mailto:legal@btaintel.com"
+              href="mailto:support@btaintel.com"
               className="rounded-full border border-[var(--accent-primary-dark)] bg-[var(--accent-primary)] px-4 py-1.5 font-semibold text-[var(--accent-on)]"
             >
-              Legal Contact
+              Support Contact
             </Link>
           </div>
         </section>

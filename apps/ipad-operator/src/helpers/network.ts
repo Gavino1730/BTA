@@ -4,6 +4,21 @@ import { DEFAULT_COACH_DASHBOARD, DEFAULT_HOME_TEAM_COLOR, DEFAULT_AWAY_TEAM_COL
 import type { AppData, GameSetup, OperatorLinkResponse, OpponentTrackStat } from "../types.js";
 import { OPPONENT_TRACK_STAT_OPTIONS, DEFAULT_OPPONENT_TRACK_STATS } from "../types.js";
 
+const COACH_DASHBOARD_OVERRIDE_KEY = "operator-console:coach-dashboard-url";
+
+function resolveCoachDashboardBaseUrl(): string {
+  try {
+    const overrideValue = localStorage.getItem(COACH_DASHBOARD_OVERRIDE_KEY)?.trim() ?? "";
+    if (overrideValue) {
+      return overrideValue.replace(/\/+$/, "");
+    }
+  } catch {
+    // Fallback to env/runtime default below.
+  }
+
+  return DEFAULT_COACH_DASHBOARD.replace(/\/+$/, "");
+}
+
 export function normalizeConnectionId(value: string | null | undefined): string {
   return (value ?? "")
     .trim()
@@ -101,7 +116,7 @@ export function buildCoachViewUrl(
     schoolId?: string;
   }
 ): string {
-  const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
+  const base = resolveCoachDashboardBaseUrl();
   const params = new URLSearchParams();
   const connId = normalizeConnectionId(setup.connectionId);
   const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;

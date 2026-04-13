@@ -83,6 +83,15 @@ function roleLabel(role: AppMemberRole): string {
   return "Coach";
 }
 
+function isValidEmail(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+}
+
 function buildInviteCopy(name: string, email: string, role: AppMemberRole, tempPassword: string): string {
   const greetingName = name.trim() || "teammate";
   const emailText = email.trim() || "[email]";
@@ -117,6 +126,37 @@ interface OrganizationMemberDto {
 interface OrganizationMembersResponse {
   currentMember?: { memberId: string; fullName: string; email: string; role: string; status: string } | null;
   members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
+}
+
+type InviteEmailStatus = "sent" | "disabled" | "failed";
+
+interface InviteEmailDelivery {
+  status: InviteEmailStatus;
+  providerId?: string;
+}
+
+interface InviteMutationResponse {
+  members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
+  emailDelivery?: InviteEmailDelivery;
+  warning?: string;
+}
+
+function buildInviteDeliveryStatus(email: string, emailDelivery?: InviteEmailDelivery, warning?: string): string {
+  if (warning?.trim()) {
+    return warning;
+  }
+
+  if (emailDelivery?.status === "sent") {
+    return `Invite email sent to ${email}.`;
+  }
+  if (emailDelivery?.status === "disabled") {
+    return `Member invited, but email delivery is disabled. Copy invite details for ${email}.`;
+  }
+  if (emailDelivery?.status === "failed") {
+    return `Member invited, but invite email failed for ${email}. Use Copy Invite Again and retry.`;
+  }
+
+  return "Organization member invited.";
 }
 
 function mapApiMembers(
@@ -477,6 +517,14 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
       setStatus("Invite name and email are required.");
       return;
     }
+    if (!isValidEmail(inviteEmail)) {
+      setStatus("Enter a valid invite email address.");
+      return;
+    }
+    if (inviteTempPassword.trim() && inviteTempPassword.trim().length < 8) {
+      setStatus("Temporary password must be at least 8 characters.");
+      return;
+    }
 
     setSaving(true);
     setStatus("Sending organization invite...");
@@ -508,15 +556,38 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
         throw new Error(payload.error || "Invite failed");
       }
 
-      const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
+      const payload = await response.json() as InviteMutationResponse;
       setMembers(mapApiMembers(payload.members));
       setInviteName("");
       setInviteEmail("");
       setInviteRole("coach");
       setInviteTempPassword("");
-      setStatus(inviteTempPassword.trim() ? "Coach account created." : "Organization member invited.");
+      setStatus(inviteTempPassword.trim() ? "Coach account created." : buildInviteDeliveryStatus(inviteEmail.trim(), payload.emailDelivery, payload.warning));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not invite organization member.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resendInvite(member: OrganizationMemberDto) {
+    setSaving(true);
+    setStatus(`Resending invite to ${member.fullName}...`);
+
+    try {
+      const response = await fetch(`${apiBase}/api/org/members/${encodeURIComponent(member.memberId)}/resend-invite`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+      });
+
+      const payload = await response.json().catch(() => ({})) as InviteMutationResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not resend invite.");
+      }
+
+      setStatus(buildInviteDeliveryStatus(member.email, payload.emailDelivery, payload.warning));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not resend invite.");
     } finally {
       setSaving(false);
     }
@@ -650,6 +721,14 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
       setStatus("Player name, school email, and temporary password are required.");
       return;
     }
+    if (!isValidEmail(email)) {
+      setStatus("Enter a valid player email address.");
+      return;
+    }
+    if (password.length < 8) {
+      setStatus("Temporary password must be at least 8 characters.");
+      return;
+    }
 
     setSaving(true);
     setStatus(`Configuring login for ${playerName}...`);
@@ -685,6 +764,14 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
     const password = row.tempPassword.trim();
     if (!playerName || !email || !password) {
       setStatus("Player name, school email, and temporary password are required.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setStatus("Enter a valid player email address.");
+      return;
+    }
+    if (password.length < 8) {
+      setStatus("Temporary password must be at least 8 characters.");
       return;
     }
 
@@ -1317,7 +1404,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
 
           <section className="stats-filter-bar" style={{ marginBottom: "0.85rem" }}>
             <p className="stats-page-subcopy" style={{ margin: 0 }}>
-              Invite flow: add member details, choose role, then send invite. Use temporary password when you want immediate account access without waiting for invite acceptance.
+              Invite flow: add member details, choose role, then send invite. When email delivery is configured, the invite email is sent automatically.
             </p>
           </section>
 
@@ -1366,6 +1453,18 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                     )}
                     {currentMember?.role === "admin" && (
                       <>
+                        {member.status === "invited" && (
+                          <button
+                            type="button"
+                            className="shell-nav-link"
+                            disabled={saving}
+                            onClick={() => {
+                              void resendInvite(member);
+                            }}
+                          >
+                            Resend Email Invite
+                          </button>
+                        )}
                         {member.status === "invited" && (
                           <button
                             type="button"
@@ -1438,7 +1537,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
               </label>
             </div>
             <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
-              Tip: copy a ready-to-send invite note for email or text before submitting.
+              Invite emails send automatically when configured. Use Copy Invite Message for fallback delivery by text or manual email.
             </p>
             <div className="settings-form-footer">
               <button

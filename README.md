@@ -4,6 +4,14 @@ BTA Courtside is a realtime basketball intelligence platform for high school pro
 
 BTA stands for Beyond the Arc.
 
+## Recent updates (unreleased)
+
+- Organization member invite APIs now report email delivery status and warning details for disabled/failed delivery states.
+- Coach dashboard member management now shows invite delivery outcomes and supports resend email for invited members.
+- iPad operator settings now focus on operator-managed configuration, with team/opponent setup owned by the coach dashboard.
+- Billing checkout session creation now uses a standardized professional checkout option set.
+- Marketing site branding now references `brand-icon.png` in top nav and footer.
+
 ## What this repo includes
 
 - `apps/coach-dashboard`: Coach UI for live game tracking, trends, and AI insights.

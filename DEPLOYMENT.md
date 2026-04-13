@@ -51,6 +51,17 @@ Choose at least one authentication path:
 - `DATABASE_URL` should be set for durable multi-instance persistence.
 - On Railway, prefer the Supabase **Session/Connection Pooler** / IPv4-compatible `DATABASE_URL`; direct IPv6-only database hosts can surface `ENETUNREACH` during startup.
 
+### Onboarding Email Delivery (Recommended)
+
+To ensure organization invites and onboarding account emails are actually delivered:
+
+- `RESEND_API_KEY`
+- `BTA_EMAIL_FROM` (recommended: `BTA Courtside <no-reply@btaintel.com>`)
+- Optional: `BTA_EMAIL_REPLY_TO` (recommended: `support@btaintel.com`)
+- Optional but recommended for invite links: `BTA_COACH_APP_URL`
+
+Without these values, invite/member onboarding still creates records, but transactional emails are reported as disabled.
+
 ### Data Retention
 
 - `BTA_DATA_RETENTION_DAYS` (default `180`)

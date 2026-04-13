@@ -548,6 +548,23 @@ function buildCoachAppPath(pathname: string, schoolId: string, extraQuery?: Reco
   return query ? `${pathname}?${query}` : pathname;
 }
 
+type EmailDeliveryStatus = "sent" | "disabled" | "failed";
+
+type EmailDeliveryResult = {
+  status: EmailDeliveryStatus;
+  providerId?: string;
+};
+
+function buildEmailDeliveryWarning(action: string, emailDelivery: EmailDeliveryResult): string {
+  if (emailDelivery.status === "sent") {
+    return "";
+  }
+  if (emailDelivery.status === "disabled") {
+    return `${action}, but email delivery is disabled in this environment`;
+  }
+  return `${action}, but email delivery failed`;
+}
+
 function createEmailVerificationToken(schoolId: string, accountId: string, email: string): string {
   pruneExpiredEmailVerificationTokens();
   for (const [token, record] of emailVerificationTokens.entries()) {
@@ -787,6 +804,25 @@ function readStripeEpochIso(rawValue: unknown): string | undefined {
     return undefined;
   }
   return new Date(numeric * 1000).toISOString();
+}
+
+function buildProfessionalCheckoutOptions(): Pick<
+  Stripe.Checkout.SessionCreateParams,
+  | "allow_promotion_codes"
+  | "automatic_tax"
+  | "billing_address_collection"
+  | "phone_number_collection"
+  | "payment_method_collection"
+  | "tax_id_collection"
+> {
+  return {
+    allow_promotion_codes: true,
+    automatic_tax: { enabled: true },
+    billing_address_collection: "auto",
+    phone_number_collection: { enabled: true },
+    payment_method_collection: "always",
+    tax_id_collection: { enabled: true },
+  };
 }
 
 function readAuthClaim(authContext: AuthContext | undefined, path: string): unknown {
@@ -3259,6 +3295,7 @@ app.post("/api/billing/bootstrap-checkout-session", async (req, res) => {
       success_url: `${resolveCoachAppBaseUrl(req)}${successPath}`,
       cancel_url: `${resolveCoachAppBaseUrl(req)}${cancelPath}`,
       customer_email: email,
+      ...buildProfessionalCheckoutOptions(),
       metadata: {
         schoolId,
         coachEmail: email,
@@ -3332,6 +3369,7 @@ app.post("/api/billing/checkout-session", requireApiKey, async (req, res) => {
       success_url: `${coachBase}${successPath}`,
       cancel_url: `${coachBase}${cancelPath}`,
       customer_email: customerEmail || undefined,
+      ...buildProfessionalCheckoutOptions(),
       subscription_data: {
         metadata: {
           schoolId,
@@ -3558,15 +3596,20 @@ app.post("/api/auth/register", authRateLimiter, async (req, res) => {
 
   const verifyToken = createEmailVerificationToken(schoolId, account.accountId, account.email);
   const verifyPath = buildCoachAppPath("/verify-email", schoolId, { token: verifyToken, email: account.email });
-  await sendEmailVerificationEmail({
+  const emailDelivery = await sendEmailVerificationEmail({
     to: account.email,
     fullName: account.fullName,
     organizationName: resolveOrganizationName(schoolId),
     verifyUrl: `${resolveCoachAppBaseUrl(req)}${verifyPath}`,
     expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
   });
+  const warning = buildEmailDeliveryWarning("Verification instructions prepared", emailDelivery);
 
-  res.status(201).json(buildAuthSessionResponse(schoolId, account, currentMember, token));
+  res.status(201).json({
+    ...buildAuthSessionResponse(schoolId, account, currentMember, token),
+    emailDelivery,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 app.post("/api/auth/login", authRateLimiter, (req, res) => {
@@ -3753,17 +3796,20 @@ app.post("/api/auth/email-verify/resend", authRateLimiter, requireApiKey, async 
 
   const verifyToken = createEmailVerificationToken(schoolId, account.accountId, account.email);
   const verifyPath = buildCoachAppPath("/verify-email", schoolId, { token: verifyToken, email: account.email });
-  await sendEmailVerificationEmail({
+  const emailDelivery = await sendEmailVerificationEmail({
     to: account.email,
     fullName: account.fullName,
     organizationName: resolveOrganizationName(schoolId),
     verifyUrl: `${resolveCoachAppBaseUrl(req)}${verifyPath}`,
     expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
   });
+  const warning = buildEmailDeliveryWarning("Verification instructions sent", emailDelivery);
 
   res.json({
     message: "If this email exists, verification instructions have been sent.",
     expiresInHours: Math.floor(EMAIL_VERIFICATION_TOKEN_TTL_MS / (60 * 60 * 1000)),
+    emailDelivery,
+    ...(warning ? { warning } : {}),
     verifyPath,
     ...(EXPOSE_PASSWORD_RESET_TOKEN ? { verifyToken } : {}),
   });
@@ -3820,17 +3866,20 @@ app.post("/api/auth/email-verify/confirm", authRateLimiter, requireApiKey, async
   emailVerificationTokens.delete(token);
 
   const primaryTeam = getPrimaryTeam(record.schoolId).team?.name ?? "your team";
-  await sendOnboardingWelcomeEmail({
+  const emailDelivery = await sendOnboardingWelcomeEmail({
     to: updatedAccount.email,
     fullName: updatedAccount.fullName,
     organizationName: resolveOrganizationName(record.schoolId),
     teamName: sanitizeTextField(primaryTeam, 120) || "your team",
     loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", record.schoolId)}`,
   });
+  const warning = buildEmailDeliveryWarning("Email verified", emailDelivery);
 
   res.json({
     verified: true,
     user: buildAuthUserView(updatedAccount, activatedMember),
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -3877,21 +3926,26 @@ app.post("/api/auth/password-reset/request", authRateLimiter, requireApiKey, asy
   });
 
   const resetUrl = `${resolveCoachAppBaseUrl(req)}${resetPath}`;
-  await sendPasswordResetEmail({
+  const emailDelivery = await sendPasswordResetEmail({
     to: account.email,
     fullName: account.fullName,
     organizationName: resolveOrganizationName(schoolId),
     resetUrl,
     expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
   });
+  const warning = buildEmailDeliveryWarning("Reset instructions prepared", emailDelivery);
 
-  res.json(buildPasswordResetRequestResponse({
-    message: "If this email exists for your organization, reset instructions have been prepared.",
-    expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
-    resetPath,
-    resetToken: token,
-    exposeResetMaterials: EXPOSE_PASSWORD_RESET_TOKEN,
-  }));
+  res.json({
+    ...buildPasswordResetRequestResponse({
+      message: "If this email exists for your organization, reset instructions have been prepared.",
+      expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
+      resetPath,
+      resetToken: token,
+      exposeResetMaterials: EXPOSE_PASSWORD_RESET_TOKEN,
+    }),
+    emailDelivery,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 app.post("/api/auth/password-reset/confirm", authRateLimiter, requireApiKey, (req, res) => {
@@ -4143,18 +4197,21 @@ app.delete("/api/auth/me", requireApiKey, async (req, res) => {
     scheduledDeletionAtIso,
   }, { schoolId });
 
-  await sendAccountDeletionScheduledEmail({
+  const emailDelivery = await sendAccountDeletionScheduledEmail({
     to: account.email,
     fullName: account.fullName,
     organizationName: resolveOrganizationName(schoolId),
     scheduledAtIso: scheduledDeletionAtIso,
     cancelUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/account", schoolId)}`,
   });
+  const warning = buildEmailDeliveryWarning("Account deletion scheduled", emailDelivery);
 
   res.status(202).json({
     message: "Account deletion scheduled",
     scheduledDeletionAtIso,
     graceDays: ACCOUNT_DELETION_GRACE_DAYS,
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -4186,16 +4243,19 @@ app.post("/api/auth/me/cancel-deletion", requireApiKey, async (req, res) => {
     scheduledDeletionAtIso: "",
   }, { schoolId });
 
-  await sendAccountDeletionCanceledEmail({
+  const emailDelivery = await sendAccountDeletionCanceledEmail({
     to: updatedAccount.email,
     fullName: updatedAccount.fullName,
     organizationName: resolveOrganizationName(schoolId),
     loginUrl: `${resolveCoachAppBaseUrl(req)}${buildCoachAppPath("/login", schoolId)}`,
   });
+  const warning = buildEmailDeliveryWarning("Scheduled deletion canceled", emailDelivery);
 
   res.json({
     message: "Scheduled deletion canceled",
     user: buildAuthUserView(updatedAccount, ensureAuthenticatedOrganizationMember(req, schoolId)),
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -4216,20 +4276,26 @@ app.post("/api/intake/support", requireApiKey, async (req, res) => {
   }
 
   const requestId = `sup-${randomBytes(6).toString("hex")}`;
-  await sendSupportIntakeConfirmationEmail({
+  const emailDelivery = await sendSupportIntakeConfirmationEmail({
     to: email,
     fullName,
     title: "We received your BTA support request",
     summary: `Request ${requestId} was recorded for ${resolveOrganizationName(schoolId)} (${topic}, ${severity} severity).`,
     nextStep: "Our team will follow up according to severity. For live game blockers, include updates with timestamps and game ID.",
   });
+  const warning = buildEmailDeliveryWarning("Support intake received", emailDelivery);
 
   await sendSupportRoutingCopy(
     `New support intake ${requestId}`,
     `School: ${schoolId || "unknown"}; Topic: ${topic}; Severity: ${severity}; Email: ${email}; Game: ${gameId || "n/a"}; Device: ${device || "n/a"}; Message: ${message}`,
   );
 
-  res.status(202).json({ message: "Support intake received", requestId });
+  res.status(202).json({
+    message: "Support intake received",
+    requestId,
+    emailDelivery,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 app.post("/api/intake/contact", requireApiKey, async (req, res) => {
@@ -4247,20 +4313,26 @@ app.post("/api/intake/contact", requireApiKey, async (req, res) => {
   }
 
   const requestId = `cnt-${randomBytes(6).toString("hex")}`;
-  await sendContactIntakeConfirmationEmail({
+  const emailDelivery = await sendContactIntakeConfirmationEmail({
     to: email,
     fullName,
     title: "We received your BTA contact request",
     summary: `Request ${requestId} was recorded${organization ? ` for ${organization}` : ""} (${category}).`,
     nextStep: "We will route this to the right team and follow up as soon as possible.",
   });
+  const warning = buildEmailDeliveryWarning("Contact intake received", emailDelivery);
 
   await sendSupportRoutingCopy(
     `New contact intake ${requestId}`,
     `School: ${schoolId || "unknown"}; Category: ${category}; Name: ${fullName}; Email: ${email}; Organization: ${organization || "n/a"}; Message: ${message}`,
   );
 
-  res.status(202).json({ message: "Contact intake received", requestId });
+  res.status(202).json({
+    message: "Contact intake received",
+    requestId,
+    emailDelivery,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 app.post("/api/intake/demo", requireApiKey, async (req, res) => {
@@ -4277,20 +4349,26 @@ app.post("/api/intake/demo", requireApiKey, async (req, res) => {
   }
 
   const requestId = `dem-${randomBytes(6).toString("hex")}`;
-  await sendDemoRequestConfirmationEmail({
+  const emailDelivery = await sendDemoRequestConfirmationEmail({
     to: email,
     fullName,
     title: "We received your BTA demo request",
     summary: `Request ${requestId} is in queue${organization ? ` for ${organization}` : ""}.`,
     nextStep: "Our team will reach out with scheduling options and onboarding prep details.",
   });
+  const warning = buildEmailDeliveryWarning("Demo request received", emailDelivery);
 
   await sendSupportRoutingCopy(
     `New demo request ${requestId}`,
     `School: ${schoolId || "unknown"}; Name: ${fullName}; Email: ${email}; Organization: ${organization || "n/a"}; Details: ${details || "n/a"}`,
   );
 
-  res.status(202).json({ message: "Demo request received", requestId });
+  res.status(202).json({
+    message: "Demo request received",
+    requestId,
+    emailDelivery,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 app.post("/api/intake/data-deletion", requireApiKey, async (req, res) => {
@@ -4306,20 +4384,26 @@ app.post("/api/intake/data-deletion", requireApiKey, async (req, res) => {
   }
 
   const requestId = `ddr-${randomBytes(6).toString("hex")}`;
-  await sendDataDeletionRequestConfirmationEmail({
+  const emailDelivery = await sendDataDeletionRequestConfirmationEmail({
     to: email,
     fullName,
     title: "We received your BTA data deletion request",
     summary: `Request ${requestId} has been logged and queued for review.`,
     nextStep: "A team member may contact you to verify scope before processing.",
   });
+  const warning = buildEmailDeliveryWarning("Data deletion request received", emailDelivery);
 
   await sendSupportRoutingCopy(
     `New data deletion request ${requestId}`,
     `School: ${schoolId || "unknown"}; Name: ${fullName}; Email: ${email}; Details: ${details || "n/a"}`,
   );
 
-  res.status(202).json({ message: "Data deletion request received", requestId });
+  res.status(202).json({
+    message: "Data deletion request received",
+    requestId,
+    emailDelivery,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 function normalizeStaffRole(value: unknown, fallback: LocalAuthAccount["role"] = "coach"): LocalAuthAccount["role"] {
@@ -4413,13 +4497,14 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, async (req,
     joinedAtIso: existingMember?.joinedAtIso ?? nowIso,
   }, { schoolId });
 
-  await sendAccountNoticeEmail({
+  const emailDelivery = await sendAccountNoticeEmail({
     to: account.email,
     fullName: account.fullName,
     organizationName: resolveOrganizationName(schoolId),
     actionLabel: "Your BTA staff account has been created",
     loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(account.email)}`,
   });
+  const warning = buildEmailDeliveryWarning("Coach account created", emailDelivery);
 
   res.status(201).json({
     message: "Coach account created",
@@ -4432,6 +4517,8 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, async (req,
     },
     member,
     members: getOrganizationMembersByScope({ schoolId }),
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -4480,13 +4567,14 @@ app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRo
     lastLoginAtIso: account.lastLoginAtIso,
   }, { schoolId });
 
-  await sendAccountNoticeEmail({
+  const emailDelivery = await sendAccountNoticeEmail({
     to: savedAccount.email,
     fullName: savedAccount.fullName,
     organizationName: resolveOrganizationName(schoolId),
     actionLabel: "Your BTA password was reset by an organization manager",
     loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(savedAccount.email)}`,
   });
+  const warning = buildEmailDeliveryWarning("Coach password reset", emailDelivery);
 
   res.json({
     message: "Coach password reset",
@@ -4497,6 +4585,8 @@ app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRo
       role: savedAccount.role,
       status: savedAccount.status,
     },
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -4572,13 +4662,14 @@ app.post("/api/auth/player-account", requireApiKey, requireWriteRole, async (req
     persistSchoolTeams(schoolId, nextTeams);
   }
 
-  await sendAccountNoticeEmail({
+  const emailDelivery = await sendAccountNoticeEmail({
     to: account.email,
     fullName: account.fullName,
     organizationName: resolveOrganizationName(schoolId),
     actionLabel: "Your BTA player account has been created",
     loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(account.email)}`,
   });
+  const warning = buildEmailDeliveryWarning("Player account created", emailDelivery);
 
   res.status(201).json({
     message: "Player account created",
@@ -4590,6 +4681,8 @@ app.post("/api/auth/player-account", requireApiKey, requireWriteRole, async (req
       status: account.status,
     },
     member,
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -4633,13 +4726,14 @@ app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteR
     lastLoginAtIso: account.lastLoginAtIso,
   }, { schoolId });
 
-  await sendAccountNoticeEmail({
+  const emailDelivery = await sendAccountNoticeEmail({
     to: savedAccount.email,
     fullName: savedAccount.fullName,
     organizationName: resolveOrganizationName(schoolId),
     actionLabel: "Your BTA player password was reset by an organization manager",
     loginUrl: `${resolveCoachAppBaseUrl(req)}/login?email=${encodeURIComponent(savedAccount.email)}`,
   });
+  const warning = buildEmailDeliveryWarning("Player password reset", emailDelivery);
 
   res.json({
     message: "Player password reset",
@@ -4650,6 +4744,8 @@ app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteR
       role: savedAccount.role,
       status: savedAccount.status,
     },
+    emailDelivery,
+    ...(warning ? { warning } : {}),
   });
 });
 
@@ -4837,7 +4933,7 @@ app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) =
   const inviteToken = createInviteAcceptToken(schoolId, member.memberId, member.email);
   const invitePath = buildCoachAppPath("/invite/accept", schoolId, { token: inviteToken, email: member.email });
   const inviteUrl = `${resolveCoachAppBaseUrl(req)}${invitePath}`;
-  await sendOrganizationInviteEmail({
+  const inviteEmail = await sendOrganizationInviteEmail({
     to: member.email,
     fullName: member.fullName,
     organizationName: resolveOrganizationName(schoolId),
@@ -4845,10 +4941,13 @@ app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) =
     roleLabel: buildMemberRoleLabel(member.role),
     inviteUrl,
   });
+  const inviteWarning = buildEmailDeliveryWarning("Invite created", inviteEmail);
 
   res.status(201).json({
     member,
     members: getOrganizationMembersByScope({ schoolId }),
+    emailDelivery: inviteEmail,
+    ...(inviteWarning ? { warning: inviteWarning } : {}),
     invitePath,
     ...(EXPOSE_PASSWORD_RESET_TOKEN ? { inviteToken } : {}),
   });
@@ -4872,7 +4971,7 @@ app.post("/api/org/members/:memberId/resend-invite", requireApiKey, requireWrite
   const invitePath = buildCoachAppPath("/invite/accept", schoolId, { token: inviteToken, email: member.email });
   const inviteUrl = `${resolveCoachAppBaseUrl(req)}${invitePath}`;
 
-  await sendOrganizationInviteEmail({
+  const inviteEmail = await sendOrganizationInviteEmail({
     to: member.email,
     fullName: member.fullName,
     organizationName: resolveOrganizationName(schoolId),
@@ -4880,10 +4979,13 @@ app.post("/api/org/members/:memberId/resend-invite", requireApiKey, requireWrite
     roleLabel: buildMemberRoleLabel(member.role),
     inviteUrl,
   });
+  const inviteWarning = buildEmailDeliveryWarning("Invite resent", inviteEmail);
 
   res.json({
     message: "Invite resent",
     member,
+    emailDelivery: inviteEmail,
+    ...(inviteWarning ? { warning: inviteWarning } : {}),
     invitePath,
     ...(EXPOSE_PASSWORD_RESET_TOKEN ? { inviteToken } : {}),
   });

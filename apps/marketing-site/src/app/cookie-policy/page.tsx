@@ -69,7 +69,7 @@ export default function CookiePolicyPage(): JSX.Element {
           bullets: [
             "Browser-level settings can clear existing cookies and block new ones.",
             "Blocking essential cookies may impact login, navigation, and account features.",
-            "For privacy questions, contact privacy@btaintel.com.",
+            "For privacy questions, contact support@btaintel.com.",
           ],
         },
         {
@@ -80,9 +80,9 @@ export default function CookiePolicyPage(): JSX.Element {
             "For more detail on personal information processing, review our Privacy Policy or contact our privacy team directly.",
           ],
           bullets: [
-            "Privacy inquiries: privacy@btaintel.com",
+            "Privacy inquiries: support@btaintel.com",
             "Support inquiries: support@btaintel.com",
-            "Legal inquiries: legal@btaintel.com",
+            "Legal inquiries: support@btaintel.com",
           ],
         },
       ]}

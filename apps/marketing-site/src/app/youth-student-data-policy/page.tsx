@@ -62,11 +62,11 @@ export default function YouthStudentDataPolicyPage(): JSX.Element {
           id: "guardian-requests",
           title: "Parent and Guardian Requests",
           paragraphs: [
-            "Parents and guardians may contact privacy@btaintel.com regarding access, correction, or deletion requests related to minor data where BTA Courtside is the appropriate responding party.",
+            "Parents and guardians may contact support@btaintel.com regarding access, correction, or deletion requests related to minor data where BTA Courtside is the appropriate responding party.",
             "In many cases, requests must be directed first to the school, team, or organization that controls the relevant workspace and account.",
           ],
           bullets: [
-            "Privacy contact: privacy@btaintel.com.",
+            "Privacy contact: support@btaintel.com.",
             "Requests may require identity and authority verification.",
             "Controller organizations may manage request outcomes for their workspaces.",
           ],

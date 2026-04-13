@@ -222,7 +222,7 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
       topbarSubtitle="Invitation Confirmation"
       title="Accept a staff invite and"
       titleAccent="join the coach workspace."
-      subtitle="Use the invited email and invite token from your organization email. Once accepted, you can continue directly into login with the same address."
+      subtitle="Use the invited email and invite token from your organization email sent by no-reply@btaintel.com. Once accepted, you can continue directly into login with the same address."
       primaryAction={<button type="button" className="auth-topbar-link" onClick={() => onNavigate(nextLoginPath)}>Back to Login</button>}
       secondaryAction={<span className="auth-topbar-pill">Invite Access</span>}
     >
@@ -230,7 +230,7 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
         <div className="auth-card-head">
           <p className="auth-kicker">Team Invite</p>
           <h2 id="invite-accept-title">Confirm invite details</h2>
-          <p>Paste the invite token exactly as sent. If the email is already filled from the link, you only need to review and submit.</p>
+          <p>Paste the invite token exactly as sent. If the email is already filled from the link, you only need to review and submit. If the invite is missing, contact support@btaintel.com.</p>
         </div>
 
         <div className="auth-form">
@@ -342,7 +342,7 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
       topbarSubtitle="Email Confirmation"
       title="Verify your email and"
       titleAccent="unlock coach access."
-      subtitle="Confirm the verification token from your inbox. After verification, you can continue to login without leaving the same auth flow."
+      subtitle="Confirm the verification token from your inbox message sent by no-reply@btaintel.com. After verification, you can continue to login without leaving the same auth flow."
       primaryAction={<button type="button" className="auth-topbar-link" onClick={() => onNavigate(nextLoginPath)}>Back to Login</button>}
       secondaryAction={<span className="auth-topbar-pill">Email Verification</span>}
     >
@@ -350,7 +350,7 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
         <div className="auth-card-head">
           <p className="auth-kicker">Verification</p>
           <h2 id="email-verify-title">Confirm your verification details</h2>
-          <p>Use the same email and token that were sent in the verification message. If you opened the link directly, the token should already be present.</p>
+          <p>Use the same email and token that were sent in the verification message. If you opened the link directly, the token should already be present. If the message did not arrive, contact support@btaintel.com.</p>
         </div>
 
         <div className="auth-form">

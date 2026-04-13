@@ -29,6 +29,13 @@ Authentication path:
 - JWT (recommended): `BTA_JWT_ISSUER`, `BTA_JWT_AUDIENCE`, `BTA_JWT_JWKS_URI`
 - Or API key fallback: `BTA_API_KEY`
 
+Transactional onboarding/invite email (recommended):
+
+- `RESEND_API_KEY`
+- `BTA_EMAIL_FROM` (recommended: `BTA Courtside <no-reply@btaintel.com>`)
+- Optional: `BTA_EMAIL_REPLY_TO` (recommended: `support@btaintel.com`)
+- Optional but recommended for invite links: `BTA_COACH_APP_URL`
+
 AI controls and alerting (optional but recommended):
 
 - `BTA_OPENAI_MAX_TOKENS_PER_GAME`
@@ -50,7 +57,12 @@ After deployment, verify in this order:
    - Simulate AI outage or remove `OPENAI_API_KEY` in staging.
    - Confirm rules-based insights remain available.
    - Confirm coach receives explicit AI error states.
-8. Persistence survives restart with expected game/session data.
+8. Organization invite flow works end-to-end:
+   - `POST /api/org/members` returns `emailDelivery.status`.
+   - When delivery is not `sent`, API returns a user-facing `warning`.
+   - `POST /api/org/members/:memberId/resend-invite` succeeds for invited members.
+9. Billing checkout session flow opens with tax and billing collection enabled.
+10. Persistence survives restart with expected game/session data.
 
 ## 4. AI Degradation Rollback Matrix
 

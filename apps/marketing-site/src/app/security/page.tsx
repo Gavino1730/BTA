@@ -16,14 +16,14 @@ export default function SecurityPage(): JSX.Element {
       eyebrow="Security"
       title="Security principles for game-day reliability"
       summary="Security for BTA Courtside is tightly coupled with reliability. Controls are designed to protect data integrity, access boundaries, and operational continuity under real season workloads."
-      primaryCta={{ label: "Report Security Issue", href: "mailto:security@btaintel.com" }}
+      primaryCta={{ label: "Report Security Issue", href: "mailto:support@btaintel.com" }}
       secondaryCta={{ label: "Support", href: "/support" }}
       variant="pulse"
       sectionLayout="split"
       keyMetrics={[
         { label: "Access Control", value: "Role Based", detail: "Scoped permissions across staff roles" },
         { label: "Transport", value: "Encrypted", detail: "Secure in-transit communication paths" },
-        { label: "Disclosure Channel", value: "Direct", detail: "security@btaintel.com" },
+        { label: "Disclosure Channel", value: "Direct", detail: "support@btaintel.com" },
       ]}
       sections={[
         {
@@ -40,7 +40,7 @@ export default function SecurityPage(): JSX.Element {
           title: "Responsible Disclosure",
           intro: "We welcome responsible reporting and coordinate remediation quickly.",
           points: [
-            "Send vulnerability reports to security@btaintel.com.",
+            "Send vulnerability reports to support@btaintel.com.",
             "Include reproduction steps, environment details, and impact assessment where possible.",
             "We acknowledge receipt, triage severity, and provide remediation follow-up communication.",
           ],
@@ -54,7 +54,7 @@ export default function SecurityPage(): JSX.Element {
             "Post-incident reviews document root causes and hardening actions for future prevention.",
             "Security considerations are integrated into release validation and environment configuration guidance.",
           ],
-          note: "For contractual security requirements, contact legal@btaintel.com.",
+          note: "For contractual security requirements, contact support@btaintel.com.",
         },
       ]}
     />

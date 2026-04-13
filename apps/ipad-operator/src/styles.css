@@ -16,10 +16,15 @@ button, .circle, .icon-btn, [role="button"] {
   background: var(--bg, #0c101a);
   color: var(--text, #f4f6fb);
   --live-bottom-nav-h: 82px;
-  --accent-blue: var(--brand-primary, #c1121f);
-  --accent-blue-soft: rgba(193,18,31,0.16);
-  --accent-gold: var(--brand-accent, #ffd166);
-  --accent-gold-soft: rgba(255,209,102,0.2);
+  --accent-primary: var(--brand-primary, #6e5bff);
+  --accent-primary-strong: var(--brand-primary-strong, #7a69ff);
+  --accent-secondary: var(--brand-accent, #46d7ff);
+  --accent-danger: var(--color-danger, #ff5d73);
+  --accent-warning: var(--color-warning, #ffb84d);
+  --accent-blue: var(--accent-primary);
+  --accent-blue-soft: rgba(110, 91, 255, 0.16);
+  --accent-gold: var(--accent-warning);
+  --accent-gold-soft: rgba(255, 184, 77, 0.2);
   --result-make-bg: rgba(16,185,129,0.26);
   --result-make-bg-strong: rgba(16,185,129,0.38);
   --result-make-bg-soft: rgba(16,185,129,0.1);
@@ -44,12 +49,40 @@ html, body {
   overflow: auto;
 }
 
+/* Always-on brand marker so every screen retains visible identity. */
+.global-brand-badge {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 0.5rem);
+  left: calc(env(safe-area-inset-left) + 0.55rem);
+  z-index: 9999;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(8,12,24,0.62);
+  backdrop-filter: blur(8px);
+  color: rgba(232,234,240,0.66);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.global-brand-badge img {
+  height: 0.76rem;
+  width: auto;
+  display: block;
+}
+
 /* ================================================================
    GAME LAYOUT  (3-column)
    ================================================================ */
 .game-layout {
-  --team-home-color: var(--brand-primary-strong, #e5383b);
-  --team-away-color: #5ea8ff;
+  --team-home-color: var(--accent-primary-strong);
+  --team-away-color: var(--accent-secondary);
   display: grid;
   grid-template-columns: 1fr 1.35fr 1fr;
   height: 100dvh;
@@ -5701,5 +5734,76 @@ html, body {
     width: 100%;
     justify-content: flex-end;
   }
+}
+
+/* Marketing theme alignment for operator controls and accents. */
+.add-btn,
+.start-btn,
+.save-btn,
+.submit-btn,
+.pregame-start-btn,
+.coach-connect-btn,
+.pregame-device-copy-btn,
+.pregame-lineup-btn,
+.lineup-save-btn,
+.postgame-apply-btn,
+.confirm-btn-primary,
+.summary-ai-refresh-btn,
+.toggle-btn.active {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-secondary) 58%, var(--accent-primary));
+  color: color-mix(in srgb, var(--accent-secondary) 66%, #f7f8fc);
+}
+
+.add-btn:hover,
+.start-btn:hover,
+.save-btn:hover,
+.submit-btn:hover:not(:disabled),
+.pregame-start-btn:hover:not(:disabled),
+.coach-connect-btn:hover,
+.pregame-device-copy-btn:hover,
+.pregame-lineup-btn:hover,
+.lineup-save-btn:hover,
+.postgame-apply-btn:hover,
+.summary-ai-refresh-btn:hover {
+  background: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+  border-color: var(--accent-secondary);
+}
+
+.team-abbr-badge,
+.r-num,
+.pregame-lineup-count,
+.pregame-lineup-number,
+.lineup-player-num,
+.lineup-player-badge,
+.pregame-eyebrow,
+.pregame-lineup-title,
+.settings-badge {
+  color: var(--accent-secondary);
+}
+
+.lineup-player-badge {
+  background: var(--accent-primary);
+}
+
+.live-nav-btn {
+  border-color: rgba(74, 88, 143, 0.8);
+  background: rgba(21, 26, 48, 0.88);
+}
+
+.live-nav-btn:hover {
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+  background: color-mix(in srgb, var(--accent-primary) 22%, rgba(21, 26, 48, 0.88));
+}
+
+.period-btn.period-on,
+.modal-subtype-btn.active,
+.bonus-chip,
+.center-toggle-btn.open,
+.pregame-lineup-btn.lineup-required {
+  border-color: color-mix(in srgb, var(--accent-warning) 70%, var(--accent-secondary));
+  color: color-mix(in srgb, var(--accent-warning) 88%, #f7f8fc);
+  background: color-mix(in srgb, var(--accent-warning) 16%, transparent);
 }
 

@@ -66,7 +66,7 @@ export default function BillingRefundPolicyPage(): JSX.Element {
             "You are responsible for applicable taxes, duties, or governmental charges except taxes based on BTA Courtside net income.",
           ],
           bullets: [
-            "Billing support: billing@btaintel.com.",
+            "Billing support: support@btaintel.com.",
             "Payment processor disputes should also be reported to BTA support for coordinated resolution.",
             "Tax treatment may vary by jurisdiction and customer type.",
           ],
@@ -101,7 +101,7 @@ export default function BillingRefundPolicyPage(): JSX.Element {
           id: "chargebacks-enterprise",
           title: "Chargebacks and Enterprise Terms",
           paragraphs: [
-            "If you believe a charge is incorrect, contact billing@btaintel.com before initiating a chargeback. We will investigate and respond with transaction details and next steps.",
+            "If you believe a charge is incorrect, contact support@btaintel.com before initiating a chargeback. We will investigate and respond with transaction details and next steps.",
             "For customers under signed school, team, or enterprise agreements, those written agreements control in the event of a conflict with this page.",
           ],
           bullets: [

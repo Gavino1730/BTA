@@ -82,8 +82,8 @@ interface IntakeConfirmationEmailInput {
 }
 
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY ?? "").trim();
-const EMAIL_FROM = String(process.env.BTA_EMAIL_FROM ?? "BTA Courtside <onboarding@resend.dev>").trim();
-const EMAIL_REPLY_TO = String(process.env.BTA_EMAIL_REPLY_TO ?? "").trim();
+const EMAIL_FROM = String(process.env.BTA_EMAIL_FROM ?? "BTA Courtside <no-reply@btaintel.com>").trim();
+const EMAIL_REPLY_TO = String(process.env.BTA_EMAIL_REPLY_TO ?? "support@btaintel.com").trim();
 
 const resendClient = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 let hasLoggedDisabledState = false;

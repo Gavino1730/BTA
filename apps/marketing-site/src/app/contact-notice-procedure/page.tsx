@@ -30,11 +30,11 @@ export default function ContactNoticeProcedurePage(): JSX.Element {
           ],
           bullets: [
             "General Support: support@btaintel.com",
-            "Privacy: privacy@btaintel.com",
-            "Billing: billing@btaintel.com",
-            "Copyright: copyright@btaintel.com",
-            "Legal: legal@btaintel.com",
-            "Security: security@btaintel.com",
+            "Privacy: support@btaintel.com",
+            "Billing: support@btaintel.com",
+            "Copyright: support@btaintel.com",
+            "Legal: support@btaintel.com",
+            "Security: support@btaintel.com",
           ],
         },
         {

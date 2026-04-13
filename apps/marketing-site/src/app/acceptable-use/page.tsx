@@ -54,7 +54,7 @@ export default function AcceptableUsePage(): JSX.Element {
             "Security findings should be reported through designated channels with sufficient technical detail for triage.",
           ],
           bullets: [
-            "Submit vulnerability reports to security@btaintel.com.",
+            "Submit vulnerability reports to support@btaintel.com.",
             "Do not perform denial-of-service, destructive, or intrusive tests on production systems.",
             "Use non-sensitive proof-of-concept data when possible.",
           ],
@@ -82,7 +82,7 @@ export default function AcceptableUsePage(): JSX.Element {
           bullets: [
             "Critical threats may trigger immediate containment actions.",
             "Organizations may be required to remediate repeated policy violations.",
-            "Appeals or clarification requests may be sent to legal@btaintel.com.",
+            "Appeals or clarification requests may be sent to support@btaintel.com.",
           ],
         },
       ]}

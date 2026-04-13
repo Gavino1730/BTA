@@ -120,7 +120,7 @@ export default function TermsPage(): JSX.Element {
           ],
           bullets: [
             "Mailing address: Portland, Oregon, USA 97229.",
-            "Legal questions: legal@btaintel.com.",
+            "Legal questions: support@btaintel.com.",
             "We may update Terms and post updated effective dates on this website.",
           ],
         },

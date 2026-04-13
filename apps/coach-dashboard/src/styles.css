@@ -166,23 +166,24 @@ button, [role="button"], .shell-nav-link {
 }
 
 :root {
-  --brand-primary: #13b67a;
-  --brand-primary-strong: #2ad39a;
-  --brand-primary-deep: #0c7f55;
-  --bg: #0c101a;
-  --surface: #141b2b;
+  --brand-primary: #6e5bff;
+  --brand-primary-strong: #7a69ff;
+  --brand-primary-deep: #4636c9;
+  --brand-accent: #46d7ff;
+  --bg: #0d1020;
+  --surface: #151a30;
   --surface-2: rgba(255,255,255,0.045);
-  --border: rgba(255,255,255,0.1);
-  --border-hi: rgba(255,255,255,0.2);
-  --text: #f4f6fb;
-  --text-muted: rgba(244,246,251,0.68);
-  --text-dim: rgba(244,246,251,0.45);
-  --teal: var(--brand-primary, #13b67a);
-  --teal-soft: rgba(19,182,122,0.16);
-  --gold: var(--brand-accent, #ffd166);
-  --gold-soft: rgba(255,209,102,0.2);
-  --red: var(--color-danger, #f25f5c);
-  --red-soft: rgba(242,95,92,0.16);
+  --border: rgba(43,51,90,0.92);
+  --border-hi: rgba(74,88,143,0.92);
+  --text: #f7f8fc;
+  --text-muted: rgba(216,221,240,0.84);
+  --text-dim: rgba(165,173,208,0.72);
+  --teal: var(--brand-accent, #46d7ff);
+  --teal-soft: rgba(70,215,255,0.16);
+  --gold: var(--color-warning, #ffb84d);
+  --gold-soft: rgba(255,184,77,0.2);
+  --red: var(--color-danger, #ff5d73);
+  --red-soft: rgba(255,93,115,0.16);
   font-family: var(--font-ui, "Bahnschrift", "Segoe UI", "Helvetica Neue", Arial, sans-serif);
   background: var(--bg);
   color: var(--text);
@@ -459,7 +460,45 @@ body {
   }
 }
 
+/* Always-on brand marker so every route keeps visible identity. */
+.global-brand-badge {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 0.55rem);
+  left: calc(env(safe-area-inset-left) + 0.75rem);
+  z-index: 9999;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 14, 28, 0.64);
+  backdrop-filter: blur(8px);
+  color: rgba(232, 234, 240, 0.68);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.global-brand-badge img {
+  height: 0.9rem;
+  width: auto;
+  display: block;
+}
+
 @media (max-width: 900px) {
+  .global-brand-badge {
+    font-size: 0.56rem;
+    padding: 0.24rem 0.45rem;
+    gap: 0.3rem;
+  }
+
+  .global-brand-badge img {
+    height: 0.8rem;
+  }
+
   .stats-metric-grid-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

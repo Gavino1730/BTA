@@ -1,40 +1,40 @@
 :root {
   /* Brand and accent */
-  --brand-primary: #c1121f;
-  --brand-primary-strong: #e5383b;
-  --brand-primary-deep: #8c1019;
-  --brand-accent: #ffd166;
-  --brand-accent-strong: #ffb703;
+  --brand-primary: #6e5bff;
+  --brand-primary-strong: #7a69ff;
+  --brand-primary-deep: #4636c9;
+  --brand-accent: #46d7ff;
+  --brand-accent-strong: #6de2ff;
 
   /* Core background stack */
-  --bg: #0c101a;
-  --bg-elevated: #141b2b;
-  --bg-layer-1: #1a2336;
-  --bg-layer-2: #202b42;
+  --bg: #0d1020;
+  --bg-elevated: #151a30;
+  --bg-layer-1: #1c2340;
+  --bg-layer-2: #2b335a;
   --surface: var(--bg-elevated);
   --surface-2: rgba(255, 255, 255, 0.045);
   --surface-3: rgba(255, 255, 255, 0.075);
 
   /* Text and structure */
-  --text: #f4f6fb;
-  --text-muted: rgba(244, 246, 251, 0.68);
-  --text-dim: rgba(244, 246, 251, 0.45);
-  --border: rgba(255, 255, 255, 0.1);
-  --border-hi: rgba(255, 255, 255, 0.2);
+  --text: #f7f8fc;
+  --text-muted: rgba(216, 221, 240, 0.84);
+  --text-dim: rgba(165, 173, 208, 0.72);
+  --border: rgba(43, 51, 90, 0.92);
+  --border-hi: rgba(74, 88, 143, 0.92);
 
   /* Status and semantic */
-  --color-success: #38d996;
-  --color-warning: #ffd166;
-  --color-danger: #f25f5c;
-  --color-info: #5ea8ff;
+  --color-success: #38e39f;
+  --color-warning: #ffb84d;
+  --color-danger: #ff5d73;
+  --color-info: #46d7ff;
 
   /* Legacy aliases to reduce churn while migrating */
-  --teal: var(--brand-primary);
-  --teal-soft: rgba(193, 18, 31, 0.16);
+  --teal: var(--brand-accent);
+  --teal-soft: rgba(70, 215, 255, 0.16);
   --gold: var(--brand-accent);
-  --gold-soft: rgba(255, 209, 102, 0.2);
+  --gold-soft: rgba(255, 184, 77, 0.2);
   --red: var(--color-danger);
-  --red-soft: rgba(242, 95, 92, 0.16);
+  --red-soft: rgba(255, 93, 115, 0.16);
 
   /* Motion and shape */
   --radius-sm: 6px;
@@ -61,11 +61,11 @@ body {
   --control-bg: rgba(255, 255, 255, 0.05);
   --control-bg-hover: rgba(255, 255, 255, 0.08);
   --control-bg-active: rgba(255, 255, 255, 0.11);
-  --control-border: rgba(255, 255, 255, 0.14);
-  --control-border-hover: rgba(255, 255, 255, 0.24);
-  --control-ring: rgba(79, 140, 255, 0.5);
+  --control-border: rgba(74, 88, 143, 0.58);
+  --control-border-hover: rgba(70, 215, 255, 0.54);
+  --control-ring: rgba(70, 215, 255, 0.56);
   --control-text: var(--text);
-  --control-placeholder: rgba(244, 246, 251, 0.42);
+  --control-placeholder: rgba(165, 173, 208, 0.72);
   --control-disabled: 0.55;
 }
 

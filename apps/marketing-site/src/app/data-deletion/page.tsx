@@ -49,12 +49,12 @@ export default function DataDeletionPage(): JSX.Element {
           id: "deletion-requests",
           title: "Deletion Request Process",
           paragraphs: [
-            "Authorized users may request deletion by contacting privacy@btaintel.com. Requests should include sufficient detail to identify the account, organization context, and scope of data to be reviewed.",
+            "Authorized users may request deletion by contacting support@btaintel.com. Requests should include sufficient detail to identify the account, organization context, and scope of data to be reviewed.",
             "Before acting, we may verify identity and authority, and where relevant coordinate with organization administrators controlling the applicable workspace.",
           ],
           bullets: [
-            "Privacy requests: privacy@btaintel.com.",
-            "Legal escalation: legal@btaintel.com.",
+            "Privacy requests: support@btaintel.com.",
+            "Legal escalation: support@btaintel.com.",
             "Support intake: support@btaintel.com.",
           ],
         },

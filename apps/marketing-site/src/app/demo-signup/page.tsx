@@ -16,7 +16,7 @@ export default function DemoSignupPage(): JSX.Element {
       eyebrow="Demo"
       title="Schedule a live product session"
       summary="Tell us how your staff currently captures, reviews, and coaches, and we will run a practical session mapped to your reality. The goal is to show exactly how BTA Courtside supports your team under real game pressure, not a generic software walkthrough."
-      primaryCta={{ label: "Email Demo Team", href: "mailto:demo@btaintel.com" }}
+      primaryCta={{ label: "Email Support", href: "mailto:support@btaintel.com" }}
       secondaryCta={{ label: "Contact Sales", href: "/contact" }}
       variant="sprint"
       sectionLayout="timeline"

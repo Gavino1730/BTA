@@ -59,6 +59,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${bodyFont.variable} ${displayFont.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        <div className="pointer-events-none fixed right-3 top-3 z-[140] inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(10,14,28,0.64)] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)] backdrop-blur-lg">
+          <img src="/brand-icon.png" alt="" className="h-4 w-4 rounded-sm" />
+          <span>BTA Courtside</span>
+        </div>
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[120] focus:rounded-md focus:bg-[var(--panel-1)] focus:px-3 focus:py-2 focus:text-sm"

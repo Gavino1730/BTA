@@ -29,7 +29,7 @@ export default function PrivacyPage(): JSX.Element {
           bullets: [
             "Controller context: website inquiries, commercial contacts, and account relationship management.",
             "Processor context: event, roster, and workflow data submitted by customer organizations.",
-            "Questions about role-specific processing should be directed to privacy@btaintel.com.",
+            "Questions about role-specific processing should be directed to support@btaintel.com.",
           ],
         },
         {
@@ -83,7 +83,7 @@ export default function PrivacyPage(): JSX.Element {
           bullets: [
             "Active account data is retained while services are provisioned.",
             "Support and audit records may be retained for security and dispute resolution purposes.",
-            "Deletion requests can be submitted via privacy@btaintel.com or the Data Deletion page.",
+            "Deletion requests can be submitted via support@btaintel.com or the Data Deletion page.",
           ],
         },
         {
@@ -94,7 +94,7 @@ export default function PrivacyPage(): JSX.Element {
             "Where we process data on behalf of customer organizations, requests may need to be directed to the organization that controls the relevant account and workflow data.",
           ],
           bullets: [
-            "Submit rights requests to privacy@btaintel.com with sufficient identity and context details.",
+            "Submit rights requests to support@btaintel.com with sufficient identity and context details.",
             "Organization administrators can manage role access and user permissions directly.",
             "Users may update selected profile fields within account settings where available.",
           ],
@@ -117,12 +117,12 @@ export default function PrivacyPage(): JSX.Element {
           title: "Policy Updates and Contact",
           paragraphs: [
             "We may update this Privacy Policy from time to time to reflect legal, operational, or product changes. Material updates will be reflected by the updated date and, where required, additional notice.",
-            "For privacy questions, requests, or complaints, contact privacy@btaintel.com. For contractual terms, contact legal@btaintel.com.",
+            "For privacy questions, requests, or complaints, contact support@btaintel.com. For contractual terms, contact support@btaintel.com.",
           ],
           bullets: [
-            "Privacy inquiries: privacy@btaintel.com",
-            "Legal inquiries: legal@btaintel.com",
-            "Security disclosures: security@btaintel.com",
+            "Privacy inquiries: support@btaintel.com",
+            "Legal inquiries: support@btaintel.com",
+            "Security disclosures: support@btaintel.com",
           ],
         },
       ]}

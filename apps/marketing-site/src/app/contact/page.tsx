@@ -30,7 +30,7 @@ export default function ContactPage(): JSX.Element {
           title: "Sales and Pilots",
           intro: "For program evaluations, procurement, and rollout planning.",
           points: [
-            "Email: sales@btaintel.com",
+            "Email: support@btaintel.com",
             "Share program size, number of teams, and timing goals so we can scope the right package.",
             "Include current tool stack and key pain points to accelerate discovery.",
           ],
@@ -50,9 +50,9 @@ export default function ContactPage(): JSX.Element {
           title: "Legal and Security",
           intro: "For contracts, policy requests, and responsible disclosure communications.",
           points: [
-            "Legal: legal@btaintel.com",
-            "Privacy: privacy@btaintel.com",
-            "Security: security@btaintel.com",
+            "Legal: support@btaintel.com",
+            "Privacy: support@btaintel.com",
+            "Security: support@btaintel.com",
           ],
           note: "Do not send sensitive credentials in email; use redaction whenever possible.",
         },
