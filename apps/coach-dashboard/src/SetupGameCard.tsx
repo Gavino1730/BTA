@@ -192,17 +192,17 @@ export function SetupGameCard({
               {JERSEY_COLORS.map(({ label, value }) => {
                 const isSelected = newGameOppColor.toLowerCase() === value.toLowerCase();
                 return (
-                  <button
-                    key={value}
-                    type="button"
-                    className="setup-game-color-swatch setup-jersey-swatch"
-                    aria-pressed={isSelected}
-                    onClick={() => setNewGameOppColor(value)}
-                    style={{ background: value, borderColor: isSelected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.22)" }}
-                    title={label}
-                  >
+                  <div key={value} className="setup-jersey-option">
+                    <button
+                      type="button"
+                      className="setup-game-color-swatch setup-jersey-swatch"
+                      aria-pressed={isSelected}
+                      onClick={() => setNewGameOppColor(value)}
+                      style={{ background: value, borderColor: isSelected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.22)" }}
+                      title={label}
+                    />
                     <span className="setup-jersey-swatch-label">{label}</span>
-                  </button>
+                  </div>
                 );
               })}
               <label className="setup-jersey-custom" title="Custom jersey color">
