@@ -154,56 +154,19 @@ const ALLOWED_ORIGINS = Array.from(
   new Set([...BASE_ALLOWED_ORIGINS, ...PROD_ORIGINS].flatMap((origin) => expandOriginAliases(origin)))
 );
 
-function normalizeOriginValue(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-
-  if (trimmed.includes("*")) {
-    return trimmed.replace(/\/+$/, "").toLowerCase();
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    const protocol = parsed.protocol.toLowerCase();
-    const hostname = parsed.hostname.toLowerCase();
-    const isHttpsDefaultPort = protocol === "https:" && (!parsed.port || parsed.port === "443");
-    const isHttpDefaultPort = protocol === "http:" && (!parsed.port || parsed.port === "80");
-    const port = isHttpsDefaultPort || isHttpDefaultPort ? "" : `:${parsed.port}`;
-    return `${protocol}//${hostname}${port}`;
-  } catch {
-    return trimmed.replace(/\/+$/, "").toLowerCase();
-  }
-}
-
-export function isCorsOriginAllowed(origin: string, allowlist: readonly string[]): boolean {
-  const normalizedOrigin = normalizeOriginValue(origin);
-
-  for (const allowedOrigin of allowlist) {
-    const normalizedPattern = normalizeOriginValue(allowedOrigin);
-
-    if (!normalizedPattern.includes("*")) {
-      if (normalizedOrigin === normalizedPattern) {
-        return true;
-      }
-      continue;
-    }
-
-    // Convert glob-style allowlist entries (single * wildcard) to regex.
-    const re = new RegExp(
-      "^" + normalizedPattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".+") + "$"
-    );
-    if (re.test(normalizedOrigin)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function originAllowed(origin: string): boolean {
-  return isCorsOriginAllowed(origin, ALLOWED_ORIGINS);
+  for (const pattern of ALLOWED_ORIGINS) {
+    if (!pattern.includes("*")) {
+      if (origin === pattern) return true;
+    } else {
+      // Convert glob-style pattern (single * = any chars) to regex
+      const re = new RegExp(
+        "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".+") + "$"
+      );
+      if (re.test(origin)) return true;
+    }
+  }
+  return false;
 }
 
 app.use(cors({

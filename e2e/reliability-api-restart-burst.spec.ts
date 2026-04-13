@@ -41,7 +41,7 @@ async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedRe
       email: coachEmail,
       password,
       schoolName: "E2E High School",
-      teamName: "E2E Team",
+      teamName: "Test Team",
     },
   });
   expect(registerRes.ok()).toBeTruthy();
@@ -65,7 +65,7 @@ async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedRe
       teams: [
         {
           id: "e2e-team",
-          name: "E2E Team",
+          name: "Test Team",
           abbreviation: "E2E",
           teamColor: "#1d4ed8",
           players,
@@ -86,7 +86,7 @@ async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedRe
       schoolName: "E2E High School",
       coachName: "API Restart Coach",
       coachEmail,
-      teamName: "E2E Team",
+      teamName: "Test Team",
       abbreviation: "E2E",
       season: "2026",
       teamColor: "#1d4ed8",
@@ -108,7 +108,7 @@ async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedRe
     coachEmail,
     team: {
       id: "e2e-team",
-      name: "E2E Team",
+      name: "Test Team",
       abbreviation: "E2E",
       teamColor: "#1d4ed8",
       players,

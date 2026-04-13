@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-// Push comprehensive game overrides with player-level stats for a demo team.
-// Usage: node scripts/push-bears-overrides.mjs
+// Push comprehensive game overrides with player-level stats for team.
+// Usage: node scripts/push-team-overrides.mjs
 
-const API = process.env.BTA_API_URL || "https://btarealtime-api-production.up.railway.app";
-const KEY = process.env.BTA_API_KEY || "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU";
-const SCHOOL = process.env.BTA_SCHOOL_ID || "demo-school";
-const EMAIL = process.env.BTA_LOGIN_EMAIL || "owner@example.com";
-const PASSWORD = process.env.BTA_LOGIN_PASSWORD || "12345678";
+const API = "https://btarealtime-api-production.up.railway.app";
+const KEY = "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU";
+const SCHOOL = "school-123";
 
 import { readFileSync } from "node:fs";
 
@@ -14,18 +12,15 @@ const teamData = JSON.parse(readFileSync("team-data.json", "utf8"));
 const players = teamData.teams[0].players;
 const schedule = teamData.teams[0].schedule.filter((g) => g.status === "final");
 
-// Map schedule entries to game IDs
 function gameId(g) {
   return `game-${g.date}-${g.opponent.toLowerCase()}`;
 }
 
-// Parse "5/12" → { made: 5, att: 12 }
 function parseFg(str) {
   const [made, att] = str.split("/").map(Number);
   return { made, att };
 }
 
-// Deterministic pseudo-random from seed
 function seededRand(seed) {
   let s = seed;
   return () => {
@@ -34,24 +29,21 @@ function seededRand(seed) {
   };
 }
 
-// Distribute a total across N buckets with variance
 function distribute(total, n, rand) {
   if (n === 0) return [];
   const raw = Array.from({ length: n }, () => rand() + 0.1);
   const sum = raw.reduce((a, b) => a + b, 0);
   const scaled = raw.map((v) => Math.round((v / sum) * total));
-  // Fix rounding error on first bucket
   const diff = total - scaled.reduce((a, b) => a + b, 0);
   scaled[0] += diff;
   return scaled;
 }
 
 async function main() {
-  // Login
   const loginRes = await fetch(`${API}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": KEY },
-    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+    body: JSON.stringify({ email: "team@example.com", password: "12345678" }),
   });
   const { token } = await loginRes.json();
   const headers = {
@@ -62,7 +54,6 @@ async function main() {
   };
   console.log("Logged in OK");
 
-  // Estimated team stats for games without gamelog data
   const estimatedTeamStats = {
     "game-2026-03-07-yak": { fg: 38, fga: 82, fg3: 8, fg3a: 22, ft: 17, fta: 23, oreb: 12, dreb: 28, reb: 40, asst: 18, to: 14, stl: 8, blk: 4, fouls: 18 },
     "game-2026-03-15-bkm": { fg: 50, fga: 95, fg3: 12, fg3a: 28, ft: 23, fta: 30, oreb: 16, dreb: 32, reb: 48, asst: 25, to: 12, stl: 10, blk: 5, fouls: 16 },
@@ -70,21 +61,15 @@ async function main() {
     "game-2026-04-04-yak": { fg: 43, fga: 90, fg3: 10, fg3a: 26, ft: 20, fta: 26, oreb: 14, dreb: 30, reb: 44, asst: 22, to: 16, stl: 9, blk: 5, fouls: 19 },
   };
 
-  // Pick rotation players (first ~12) for synthetic stats
   const rotationIds = players.slice(0, 12).map((p) => p.id);
 
   for (const game of schedule) {
     const gid = gameId(game);
     const loc = game.home_away === "HOME" ? "home" : "away";
-
-    // Collect gamelogs
     const playerStatsList = [];
-    let sumPts = 0;
 
     for (const p of players) {
-      const gl = (p.gameLog ?? []).find(
-        (g) => g.date === game.date && g.opponent === game.opponent
-      );
+      const gl = (p.gameLog ?? []).find((g) => g.date === game.date && g.opponent === game.opponent);
       if (!gl) continue;
       const fg = parseFg(gl.fg);
       const fg3 = parseFg(gl.fg3);
@@ -109,13 +94,10 @@ async function main() {
         blk: gl.blk,
         fouls: Math.floor(Math.random() * 4) + 1,
       });
-      sumPts += gl.pts;
     }
 
-    // Use gamelog-derived or estimated team stats
     let teamStats;
     if (playerStatsList.length >= 5) {
-      // Derive from gamelogs
       teamStats = {
         fg: playerStatsList.reduce((s, p) => s + p.fg, 0),
         fga: playerStatsList.reduce((s, p) => s + p.fga, 0),
@@ -139,13 +121,11 @@ async function main() {
       };
     }
 
-    // For games with few/no gamelogs, synthesize player stats from team totals
     if (playerStatsList.length < 5) {
-      playerStatsList.length = 0; // clear partial data
+      playerStatsList.length = 0;
       const n = rotationIds.length;
       const seed = game.date.replace(/-/g, "") * 1;
       const rand = seededRand(seed);
-
       const fgDist = distribute(teamStats.fg, n, rand);
       const fgaDist = distribute(teamStats.fga, n, rand);
       const fg3Dist = distribute(teamStats.fg3, n, rand);
@@ -161,7 +141,6 @@ async function main() {
       const foulsDist = distribute(teamStats.fouls, n, rand);
 
       for (let i = 0; i < n; i++) {
-        // Ensure fga >= fg, fg3a >= fg3, fta >= ft
         const fg = Math.min(fgDist[i], fgaDist[i]);
         const fg3 = Math.min(fg3Dist[i], fg3aDist[i]);
         const ft = Math.min(ftDist[i], ftaDist[i]);
@@ -187,7 +166,6 @@ async function main() {
       }
     }
 
-    // Recalculate team_stats from actual player stats to guarantee consistency
     teamStats = {
       fg: playerStatsList.reduce((s, p) => s + p.fg, 0),
       fga: playerStatsList.reduce((s, p) => s + p.fga, 0),
@@ -204,45 +182,14 @@ async function main() {
       blk: playerStatsList.reduce((s, p) => s + p.blk, 0),
       fouls: playerStatsList.reduce((s, p) => s + p.fouls, 0),
     };
-    // Anchor to the source schedule score, then reconcile player point totals
-    // so player-level stats and scoreboard stay in sync.
-    const targetScore = Number(game.vwb_score);
-    let currentScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
-    let remaining = targetScore - currentScore;
-    if (playerStatsList.length > 0 && remaining !== 0) {
-      if (remaining > 0) {
-        playerStatsList[0].pts = Math.max(0, (playerStatsList[0].pts ?? 0) + remaining);
-        remaining = 0;
-      } else {
-        // Reduce points from players until we reach the target without going below 0.
-        for (const p of playerStatsList) {
-          if (remaining === 0) {
-            break;
-          }
-          const pts = Math.max(0, Number(p.pts ?? 0));
-          if (pts <= 0) {
-            continue;
-          }
-          const reducible = Math.min(pts, Math.abs(remaining));
-          p.pts = pts - reducible;
-          remaining += reducible;
-        }
-      }
-      currentScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
-      if (currentScore !== targetScore) {
-        const first = playerStatsList[0];
-        first.pts = Math.max(0, Number(first.pts ?? 0) + (targetScore - currentScore));
-      }
-    }
-
-    const reconciledScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
-    const result = game.result || (reconciledScore > game.opp_score ? "W" : reconciledScore < game.opp_score ? "L" : "T");
+    const derivedScore = playerStatsList.reduce((s, p) => s + p.pts, 0);
+    const result = derivedScore > game.opp_score ? "W" : derivedScore < game.opp_score ? "L" : "T";
 
     const body = {
       date: game.date,
       opponent: game.opponent,
       location: loc,
-      vc_score: reconciledScore,
+      vc_score: derivedScore,
       opp_score: game.opp_score,
       result,
       team_stats: teamStats,
@@ -256,7 +203,7 @@ async function main() {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      console.log(`OK ${gid} ${reconciledScore}-${game.opp_score} ${result} (${playerStatsList.length} players)`);
+      console.log(`OK ${gid} ${derivedScore}-${game.opp_score} ${result} (${playerStatsList.length} players)`);
     } catch (e) {
       console.log(`FAIL ${gid}: ${e.message}`);
     }

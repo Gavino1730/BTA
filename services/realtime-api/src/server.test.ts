@@ -1353,7 +1353,7 @@ describe("unified stats endpoints", () => {
         gameId: "301",
         homeTeamId: "vc",
         awayTeamId: "opp",
-        opponentName: "Central Catholic",
+        opponentName: "Central High",
         opponentTeamId: "opp"
       })
     });
@@ -1405,7 +1405,7 @@ describe("unified stats endpoints", () => {
 
     expect(teamSummaryBody.summary.length).toBeGreaterThan(10);
     expect(playerInsightsBody.insights).toContain("Eli Carter");
-    expect(gameAnalysisBody.analysis).toContain("Central Catholic");
+    expect(gameAnalysisBody.analysis).toContain("Central High");
     expect(chatBody.reply.length).toBeGreaterThan(10);
   });
 });
