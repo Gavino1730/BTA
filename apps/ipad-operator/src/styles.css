@@ -904,7 +904,7 @@ html, body {
 }
 
 .feed-item {
-  --feed-team-color: #64748b;
+  --feed-team-color: var(--bta-text-muted);
   appearance: none;
   width: 100%;
   border: 1px solid rgba(255,255,255,0.08);
@@ -1747,7 +1747,7 @@ html, body {
 .modal-confirm {
   max-width: min(460px, 92vw);
   border-radius: 14px;
-  background: #1f2358;
+  background: var(--bta-bg-panel);
 }
 
 .confirm-message {
@@ -1841,7 +1841,7 @@ html, body {
 }
 
 .modal {
-  background: #302f68;
+  background: var(--bta-bg-panel-2);
   border: 2px solid rgba(232,234,240,0.18);
   border-radius: 18px;
   width: 100%;
@@ -2281,7 +2281,7 @@ html, body {
 
 .summary-team-score.leading,
 .summary-team-tag.leading {
-  color: #f7fdff;
+  color: var(--bta-text-primary);
   text-shadow: 0 0 16px rgba(111, 175, 255, 0.45);
 }
 
@@ -2309,7 +2309,7 @@ html, body {
 
 .summary-top-clock:hover,
 .summary-top-clock:focus {
-  color: #ffffff;
+  color: var(--bta-accent-on);
   outline: none;
 }
 
@@ -2429,11 +2429,11 @@ html, body {
 }
 
 .summary-compare-value.good {
-  color: #77e0a7;
+  color: var(--bta-make-text);
 }
 
 .summary-compare-value.bad {
-  color: #ff8f8f;
+  color: var(--bta-miss-text);
 }
 
 .summary-compare-value.neutral {
@@ -2584,14 +2584,14 @@ html, body {
 }
 
 .summary-tab-btn.active {
-  color: #cbe0ff;
-  border-bottom-color: #69abff;
+  color: var(--bta-text-secondary);
+  border-bottom-color: var(--bta-accent-violet);
   background: linear-gradient(180deg, rgba(105, 171, 255, 0.12), rgba(105, 171, 255, 0));
 }
 
 .summary-tab-btn.active::before {
-  border-color: #69abff;
-  background: #69abff;
+  border-color: var(--bta-accent-violet);
+  background: var(--bta-accent-violet);
 }
 
 @media (max-width: 760px) {
@@ -2634,7 +2634,7 @@ html, body {
 .summary-period-pill.active {
   background: linear-gradient(180deg, rgba(99,164,255,0.32), rgba(59,117,211,0.3));
   border-color: rgba(79,140,255,0.72);
-  color: #e7f2ff;
+  color: var(--bta-text-secondary);
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(79,140,255,0.22);
 }
@@ -2767,14 +2767,14 @@ html, body {
 }
 .spr-badge-hot {
   background: rgba(255,154,86,0.2);
-  color: #ffbe82;
+  color: var(--bta-warning);
 }
 .spr-badge-active {
-  color: #6ce7a6;
+  color: var(--bta-make-text);
   background: rgba(108,231,166,0.14);
 }
 .spr-badge-warn {
-  color: #ffb5b5;
+  color: var(--bta-miss-text);
   background: rgba(255,130,130,0.12);
 }
 .spr-badge-out {
@@ -2791,7 +2791,7 @@ html, body {
   text-align: center;
   font-weight: 900;
   font-size: 1.06rem;
-  color: #dff0ff;
+  color: var(--bta-text-secondary);
 }
 .spr-stat.stat-zero {
   opacity: 0.32;
@@ -3072,7 +3072,7 @@ html, body {
 .modal-subtype-btn.active {
   background: rgba(242,194,75,0.19);
   border-color: rgba(242,194,75,0.65);
-  color: #f7d67c;
+  color: var(--bta-warning);
 }
 
 /* Player list */
@@ -3106,7 +3106,7 @@ html, body {
   background: rgba(35, 31, 120, 0.64);
   border: 2px solid rgba(232,234,240,0.35);
   border-radius: 14px;
-  color: #f2f4ff;
+  color: var(--bta-text-primary);
   padding: 0.7rem 0.85rem;
   cursor: pointer;
   min-height: 118px;
@@ -3375,7 +3375,7 @@ html, body {
 .settings-overview-title {
   font-size: 1.12rem;
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--bta-text-primary);
 }
 
 .settings-overview-meta {
@@ -4080,7 +4080,7 @@ html, body {
 .submit-banner-pending {
   border-color: rgba(79,140,255,0.42);
   background: rgba(79,140,255,0.1);
-  color: #99f6e4;
+  color: var(--bta-make-text-soft);
 }
 
 .submit-banner-success {
@@ -4678,7 +4678,7 @@ html, body {
 
 .pregame-lineup-btn.lineup-is-set:hover {
   background: rgba(16,185,129,0.18);
-  border-color: #10b981;
+  border-color: var(--bta-success);
 }
 
 .pregame-lineup-btn.lineup-required {

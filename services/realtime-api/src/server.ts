@@ -2209,6 +2209,130 @@ const securityTelemetry: Record<SecurityMetricKey, number> = {
 };
 
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
+// Phase 2: Unified checkout handler consolidates coach-billing and marketing-bootstrap flows
+async function handleUnifiedCheckout(options: {
+  req: Request;
+  res: Response;
+  flow: "coach-billing" | "marketing-bootstrap";
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  const { req, res, flow, payload } = options;
+
+  if (!PAYWALL_ENABLED) {
+    res.status(400).json({ error: "Billing is not enabled" });
+    return;
+  }
+
+  if (!hasStripeCheckoutConfig()) {
+    res.status(503).json({ error: "Stripe checkout is not configured" });
+    return;
+  }
+
+  // Flow-specific: resolve schoolId and prepare payload
+  let schoolId: string | undefined;
+  let fullName: string | undefined;
+  let email: string | undefined;
+  let schoolName: string | undefined;
+  let teamName: string | undefined;
+
+  if (flow === "coach-billing") {
+    // Coach flow: authenticated, uses request context for schoolId
+    schoolId = getSchoolIdFromRequest(req);
+  } else {
+    // Bootstrap flow: public, extracts schoolId from payload or creates new school
+    fullName = sanitizeTextField(payload.fullName, 120);
+    email = sanitizeTextField(payload.email, 160).toLowerCase();
+    schoolName = sanitizeTextField(payload.schoolName, 160);
+    teamName = sanitizeTextField(payload.teamName, 120);
+
+    if (!fullName || !isValidEmail(email)) {
+      res.status(400).json({ error: "A valid full name and email are required" });
+      return;
+    }
+
+    const schoolResolution = resolveBillingBootstrapSchoolId(req, payload, email);
+    if (!schoolResolution.schoolId) {
+      res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
+      return;
+    }
+    schoolId = schoolResolution.schoolId;
+  }
+
+  // Validate plan cycle (common validation)
+  const planCycle = resolveCheckoutPlanCycle(payload.planCycle);
+  if (!planCycle.planCycle) {
+    res.status(400).json({ error: planCycle.error ?? "Invalid plan cycle" });
+    return;
+  }
+
+  // Flow-specific: profile handling
+  if (flow === "marketing-bootstrap" && schoolName) {
+    const existingProfile = getOrganizationProfileByScope({ schoolId });
+    if (!existingProfile?.organizationName) {
+      saveOrganizationProfile({
+        organizationName: schoolName,
+        teamName: teamName || schoolName,
+        coachName: fullName,
+        coachEmail: email,
+      }, { schoolId });
+    }
+  }
+
+  // Ensure trial state (common logic)
+  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
+  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
+
+  // Ensure billing customer (common logic)
+  const profile = getOrganizationProfileByScope({ schoolId });
+  const customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
+    email: flow === "coach-billing" ? profile?.coachEmail : email,
+    name: flow === "coach-billing" ? profile?.coachName : fullName,
+  });
+
+  if (customerId !== state.stripeCustomerId) {
+    saveBillingState({ stripeCustomerId: customerId }, { schoolId });
+  }
+
+  // Flow-specific: coupon handling (coach-billing only)
+  let discountPromotionCodeId: string | undefined;
+  if (flow === "coach-billing") {
+    const activeCouponCode = sanitizeTextField(state.couponCode, 80).toUpperCase();
+    if (activeCouponCode) {
+      const couponInfo = await resolveCouponInfoByCode(activeCouponCode);
+      if (couponInfo) {
+        discountPromotionCodeId = couponInfo.promotionCodeId;
+      }
+    }
+  }
+
+  // Create checkout session (common logic)
+  try {
+    const checkoutSession = await createSubscriptionCheckoutSession({
+      req,
+      schoolId,
+      customerId,
+      discountPromotionCodeId,
+      flow,
+      customerEmail: flow === "marketing-bootstrap" ? email : undefined,
+      metadata: flow === "marketing-bootstrap" ? {
+        fullName: fullName ?? "",
+        email: email ?? "",
+        schoolName: schoolName ?? "",
+        teamName: teamName ?? "",
+      } : undefined,
+      trialEndsAtIso: state.trialEndsAtIso,
+    });
+
+    if (flow === "marketing-bootstrap") {
+      res.json({ schoolId, ...checkoutSession });
+    } else {
+      res.json(checkoutSession);
+    }
+  } catch {
+    res.status(503).json({ error: "Stripe is not configured" });
+  }
+}
+
 
 function renderPrometheusSecurityMetrics(): string {
   return [
@@ -4206,58 +4330,7 @@ app.post("/api/billing/apply-coupon", requireApiKey, requireWriteRole, withAsync
 }));
 
 app.post("/api/billing/checkout-session", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
-  if (!PAYWALL_ENABLED) {
-    res.status(400).json({ error: "Billing is not enabled" });
-    return;
-  }
-
-  if (!hasStripeCheckoutConfig()) {
-    res.status(503).json({ error: "Stripe checkout is not configured" });
-    return;
-  }
-
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const planCycle = resolveCheckoutPlanCycle(payload.planCycle);
-  if (!planCycle.planCycle) {
-    res.status(400).json({ error: planCycle.error ?? "Invalid plan cycle" });
-    return;
-  }
-
-  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
-  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
-  const profile = getOrganizationProfileByScope({ schoolId });
-  const customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
-    email: profile?.coachEmail,
-    name: profile?.coachName,
-  });
-
-  if (customerId !== state.stripeCustomerId) {
-    saveBillingState({ stripeCustomerId: customerId }, { schoolId });
-  }
-
-  let discountPromotionCodeId: string | undefined;
-  const activeCouponCode = sanitizeTextField(state.couponCode, 80).toUpperCase();
-  if (activeCouponCode) {
-    const couponInfo = await resolveCouponInfoByCode(activeCouponCode);
-    if (couponInfo) {
-      discountPromotionCodeId = couponInfo.promotionCodeId;
-    }
-  }
-
-  try {
-    const checkoutSession = await createSubscriptionCheckoutSession({
-      req,
-      schoolId,
-      customerId,
-      discountPromotionCodeId,
-      flow: "coach-billing",
-      trialEndsAtIso: state.trialEndsAtIso,
-    });
-    res.json(checkoutSession);
-  } catch {
-    res.status(503).json({ error: "Stripe is not configured" });
-  }
+  await handleUnifiedCheckout({ req, res, flow: "coach-billing", payload: (req.body ?? {}) as Record<string, unknown> });
 }));
 
 app.get("/api/billing/portal-session", requireApiKey, withAsyncRoute(async (req, res) => {
@@ -4294,82 +4367,7 @@ app.get("/api/billing/portal-session", requireApiKey, withAsyncRoute(async (req,
 }));
 
 app.post("/api/billing/bootstrap-checkout-session", withAsyncRoute(async (req, res) => {
-  if (!PAYWALL_ENABLED) {
-    res.status(400).json({ error: "Billing is not enabled" });
-    return;
-  }
-
-  if (!hasStripeCheckoutConfig()) {
-    res.status(503).json({ error: "Stripe checkout is not configured" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const fullName = sanitizeTextField(payload.fullName, 120);
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const schoolName = sanitizeTextField(payload.schoolName, 160);
-  const teamName = sanitizeTextField(payload.teamName, 120);
-  const planCycle = resolveCheckoutPlanCycle(payload.planCycle);
-
-  if (!fullName || !isValidEmail(email)) {
-    res.status(400).json({ error: "A valid full name and email are required" });
-    return;
-  }
-
-  if (!planCycle.planCycle) {
-    res.status(400).json({ error: planCycle.error ?? "Invalid plan cycle" });
-    return;
-  }
-
-  const schoolResolution = resolveBillingBootstrapSchoolId(req, payload, email);
-  if (!schoolResolution.schoolId) {
-    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
-    return;
-  }
-
-  const schoolId = schoolResolution.schoolId;
-
-  const existingProfile = getOrganizationProfileByScope({ schoolId });
-  if (!existingProfile?.organizationName && schoolName) {
-    saveOrganizationProfile({
-      organizationName: schoolName,
-      teamName: teamName || schoolName,
-      coachName: fullName,
-      coachEmail: email,
-    }, { schoolId });
-  }
-
-  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
-  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
-  const customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
-    email,
-    name: fullName,
-  });
-
-  if (customerId !== state.stripeCustomerId) {
-    saveBillingState({ stripeCustomerId: customerId }, { schoolId });
-  }
-
-  try {
-    const checkoutSession = await createSubscriptionCheckoutSession({
-      req,
-      schoolId,
-      customerId,
-      flow: "marketing-bootstrap",
-      customerEmail: email,
-      metadata: {
-        fullName,
-        email,
-        schoolName,
-        teamName,
-      },
-      trialEndsAtIso: state.trialEndsAtIso,
-    });
-
-    res.json({ schoolId, ...checkoutSession });
-  } catch {
-    res.status(503).json({ error: "Stripe is not configured" });
-  }
+  await handleUnifiedCheckout({ req, res, flow: "marketing-bootstrap", payload: (req.body ?? {}) as Record<string, unknown> });
 }));
 
 app.get("/api/teams", (req, res) => {

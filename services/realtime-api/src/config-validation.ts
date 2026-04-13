@@ -1,4 +1,15 @@
 import { logger } from "./logger.js";
+import { PHASE_1_VALID_PLAN_CYCLES, initializeStripeMode } from "./billing-constants.js";
+
+/**
+ * Phase 1 Billing Scope (locked):
+ * - Hosted Stripe Checkout (monthly subscription only)
+ * - No free trial
+ * - No yearly pricing
+ * - Hybrid account model (checkout before account finalization)
+ *
+ * See billing-constants.ts for full scope definition and state machine.
+ */
 
 export interface RuntimeConfig {
   nodeEnv: string;
@@ -91,6 +102,24 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
     errors.push("Paywall is enabled but BTA_STRIPE_WEBHOOK_SECRET is missing.");
   }
 
+    // Phase 1: Enforce monthly-only plan cycle
+    if (config.paywallEnabled) {
+      const stripePriceIdMonthly = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim();
+      const stripePriceIdYearly = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim();
+    
+      if (!stripePriceIdMonthly) {
+        errors.push(
+          "Phase 1 requires BTA_STRIPE_PRICE_ID_MONTHLY (yearly pricing not supported in Phase 1)."
+        );
+      }
+    
+      if (stripePriceIdYearly) {
+        warnings.push(
+          "BTA_STRIPE_PRICE_ID_YEARLY is configured but unused in Phase 1. " +
+          "Yearly subscriptions are reserved for Phase 5+."
+        );
+      }
+    }
   return { errors, warnings };
 }
 

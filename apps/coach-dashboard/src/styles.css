@@ -139,6 +139,7 @@
 .team-comparison-table .tc-lead {
   color: var(--bta-success);
   font-weight: 700;
+}
 
 /* ---- Replay Scrubber ---- */
 .replay-scrubber {
@@ -210,7 +211,6 @@
 @keyframes scrubber-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.7); }
-}
 }
 /* ---- Reset ---- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -6454,7 +6454,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   gap: 1.25rem;
 }
 .mkt-feature-card {
-  background: #0d1b3b;
+  background: var(--bta-bg-panel);
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 16px;
   padding: 1.75rem;
@@ -7726,14 +7726,14 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .mkt-btn-primary {
-  background: #12b375;
+  background: var(--bta-success);
   border: 1px solid rgba(18,179,117,0.78);
   box-shadow: none;
 }
 
 .mkt-btn-primary:hover {
   box-shadow: none;
-  background: #16c986;
+  background: var(--bta-success);
 }
 
 .mkt-btn,
@@ -7755,7 +7755,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 .mkt-hero-moment strong {
-  color: #f7cb6a;
+  color: var(--bta-warning);
 }
 
 .mkt-proof-strip {
@@ -7783,7 +7783,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   display: block;
   font-size: 1.25rem;
   letter-spacing: -0.02em;
-  color: #f4f6fb;
+  color: var(--bta-text-primary);
 }
 
 .mkt-proof-item span {
@@ -7838,7 +7838,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #9fb8ff;
+  color: var(--bta-accent-cyan);
 }
 
 .mkt-moment-card h3,
@@ -7857,7 +7857,7 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 
 .mkt-moment-call {
   margin-top: 0.65rem;
-  color: #9fe8c6;
+  color: var(--bta-make-text);
   font-weight: 600;
 }
 
