@@ -2,92 +2,122 @@
 
 ## Purpose
 Use this as the source of truth for premium marketing styling decisions for the BTA Courtside web presence.
+The canonical design tokens live in `apps/shared-ui/courtside-theme.css` (used by coach-dashboard + ipad-operator)
+and are mirrored in `apps/marketing-site/src/app/globals.css`.
 
 ## Core Direction
 - Mood: composed, fast, intelligent, premium.
 - Visual tone: dark, structured, interface-led, high-contrast.
 - Avoid: generic SaaS sections, cartoon sports motifs, neon overload, betting-app look, fitness-brand look.
 
+## Design Token Naming Convention
+All canonical tokens use the `--bta-*` prefix (e.g. `--bta-accent-violet`).
+Each app may define local aliases (e.g. `--accent-primary`) that point to `--bta-*` values.
+Migrate callsites to `--bta-*` names over time.
+
 ## Color Tokens
-Apply these tokens through CSS variables in the marketing app global stylesheet.
 
-Brand Primaries:
-- --accent-primary: #6E5BFF (Courtside Violet)
-- --accent-primary-dark: #4636C9 (Deep Violet)
-- --hero-tone: #2B235C (Night Indigo)
+### Backgrounds
+| Token | Value | Usage |
+|---|---|---|
+| `--bta-bg-base` | `#0d1020` | Page/app background |
+| `--bta-bg-elevated` | `#151a30` | Cards, panels |
+| `--bta-bg-panel` | `#1c2340` | Raised surfaces |
+| `--bta-bg-panel-2` | `#2b335a` | Borders, depth layer |
 
-Background System:
-- --bg-base: #0D1020
-- --bg-elevated: #151A30
-- --panel-1: #151A30
-- --panel-2: #1C2340
-- --panel-3: #2B335A
-- --border-soft: #2B335A
-- --border-strong: #3B4678
+### Text
+| Token | Value | Usage |
+|---|---|---|
+| `--bta-text-primary` | `#f7f8fc` | Headings, body |
+| `--bta-text-secondary` | `#d8ddf0` | Supporting copy |
+| `--bta-text-tertiary` | `#a5add0` | Captions, metadata |
+| `--bta-text-muted` | `#666c8f` | Disabled, placeholder |
 
-Text System:
-- --text-primary: #F7F8FC
-- --text-secondary: #C9CDE3
-- --text-tertiary: #8E95B8
-- --text-disabled: #666C8F
+### Brand Accents
+| Token | Value | Name |
+|---|---|---|
+| `--bta-accent-violet` | `#6e5bff` | Courtside Violet (primary CTA) |
+| `--bta-accent-violet-dark` | `#4636c9` | Deep Violet (hover state) |
+| `--bta-accent-cyan` | `#46d7ff` | Signal Cyan (secondary highlight) |
+| `--bta-accent-glow` | `rgba(70,215,255,0.4)` | Ambient glow |
 
-Accent Colors:
-- --accent-secondary: #46D7FF (Signal Cyan)
-- --accent-success: #38E39F (Victory Green)
-- --accent-signal: #FFB84D (Alert Amber)
-- --accent-danger: #FF5D73 (Competitive Red)
-- --accent-ivory: #F5EDE2 (Soft Ivory, headings emphasis only)
+### Semantic States
+| Token | Value |
+|---|---|
+| `--bta-success` | `#38e39f` |
+| `--bta-warning` | `#ffb84d` |
+| `--bta-danger` | `#ff5d73` |
+| `--bta-info` | `#46d7ff` |
 
-Interaction:
-- --accent-on: #FFFFFF
-- --accent-glow: rgba(70, 215, 255, 0.4)
-- --ring: rgba(70, 215, 255, 0.5)
+### Borders & Rings
+| Token | Value |
+|---|---|
+| `--bta-border-soft` | `#2b335a` |
+| `--bta-border-strong` | `#4a588f` |
+| `--bta-ring` | `rgba(70,215,255,0.5)` |
+
+## Typography
+| Token | Value | Usage |
+|---|---|---|
+| `--bta-font-body` | `"Inter", system-ui, sans-serif` | All body text |
+| `--bta-font-display` | `"Syne", "Inter", system-ui, sans-serif` | Headlines |
+| `--bta-font-mono` | `"JetBrains Mono", ui-monospace, monospace` | Stat numbers, timecodes |
+
+**Marketing site** loads Inter + Syne + JetBrains Mono via `next/font/google` in `layout.tsx`.
+**Vite apps** load the same fonts via `<link>` in each app's `index.html`.
 
 ## Typography Rules
-- Display font: Instrument Serif.
-- Body/UI font: Inter.
+- Display font: Syne 700/800 — geometric, confident, tight letter-spacing.
+- Body/UI font: Inter — clean, neutral, legible at all sizes.
+- Stats/numbers: JetBrains Mono — tabular figures, consistent spacing.
 - Headline behavior: high contrast, large, tight line-height.
 - Body copy behavior: concise, neutral, utility-focused.
 - Avoid long paragraphs and buzzword copy.
 
 ## Gradient System
-- Hero gradient: linear-gradient(135deg, #2B235C 0%, #4636C9 45%, #6E5BFF 100%)
-- CTA gradient: linear-gradient(135deg, #6E5BFF 0%, #46D7FF 100%)
-- Subtle background wash: radial-gradient(circle at top right, rgba(110,91,255,.22), transparent 45%)
+- Hero gradient: `linear-gradient(135deg, #2B235C 0%, #4636C9 45%, #6E5BFF 100%)`
+- CTA gradient: `linear-gradient(135deg, #6E5BFF 0%, #46D7FF 100%)`
+- Subtle background wash: `radial-gradient(circle at top right, rgba(110,91,255,.22), transparent 45%)`
 
 ## Exact UI Usage
-- Navbar:
-  - Background: rgba(13,16,32,.72) blur
-  - Border: #2B335A
-- Hero card:
-  - Background: #151A30
-- Primary button:
-  - Background: #6E5BFF
-  - Text: white
-  - Hover: #7C6BFF
-- Secondary button:
-  - Background: transparent
-  - Border: #2B335A
-- Cards:
-  - Background: #151A30 or #1C2340
-- Charts/stats:
-  - Primary: #6E5BFF
-  - Secondary: #46D7FF
-  - Positive: #38E39F
-  - Warning: #FFB84D
-  - Negative: #FF5D73
+
+### Navbar
+- Background: `rgba(13,16,32,.72)` with `backdrop-filter: blur`
+- Border: `var(--bta-border-soft)` (`#2b335a`)
+
+### Primary Button
+- Background: `var(--bta-accent-violet)` (`#6e5bff`)
+- Text: white
+- Hover: `#7c6bff`
+- Border-radius: `var(--bta-radius-full)` (pill)
+
+### Secondary Button
+- Background: transparent
+- Border: `var(--bta-border-soft)`
+
+### Cards / Panels
+- Background: `var(--bta-bg-elevated)` or `var(--bta-bg-panel)`
+- Border: 1px `var(--bta-border-soft)`
+- Inset top shine: `inset 0 1px 0 rgba(201,205,227,0.07)`
+
+### Charts / Stats
+- Primary: `var(--bta-accent-violet)`
+- Secondary: `var(--bta-accent-cyan)`
+- Positive: `var(--bta-success)`
+- Warning: `var(--bta-warning)`
+- Negative: `var(--bta-danger)`
 
 ## Color Ratio Rule
-- 70% dark neutrals
+- 70% dark neutrals (`--bta-bg-*`)
 - 20% violet tones
-- 10% accents
+- 10% accent colors (cyan, success, warning, danger)
 
 ## Elevation and Surface Rules
 - Glass panels require: translucent dark panel, soft border, large blur, deep shadow.
 - Shadows:
-  - --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.32)
-  - --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.42)
-  - --shadow-xl: 0 34px 90px rgba(0, 0, 0, 0.55)
+  - `--bta-shadow-md`: `0 14px 34px rgba(5,8,22,0.44)`
+  - `--bta-shadow-lg`: `0 28px 64px rgba(5,8,22,0.52)`
+  - `--bta-shadow-xl`: `0 38px 96px rgba(4,6,16,0.62)`
 - Borders should remain subtle and never pure white.
 
 ## Structured Background System
@@ -106,30 +136,19 @@ Use Motion for React for all non-trivial animations.
   - Hover lift and card transitions.
 - Motion quality:
   - Controlled and smooth, not chaotic.
-  - Prefer transform and opacity over layout-triggering animation.
-  - Respect reduced-motion preferences.
+  - Prefer `transform` and `opacity` over layout-triggering animation.
+  - Respect `prefers-reduced-motion` — use `--bta-motion-*` tokens which collapse to `0.001ms` when reduced motion is enabled.
 
 ## Data Object Language
 Floating elements should represent product reality.
 
-Allowed motifs:
-- Shot chart dots
-- Player tags
-- Timeline markers
-- Score widgets
-- Possession arrows
-- Substitution indicators
-- Live status chips
-- AI insight badges
-- Court coordinate nodes
-- Stat cards
-- Play sequence fragments
-- Film cue markers
+**Allowed motifs:**
+shot chart dots, player tags, timeline markers, score widgets, possession arrows,
+substitution indicators, live status chips, AI insight badges, court coordinate nodes,
+stat cards, play sequence fragments, film cue markers.
 
-Disallowed motifs:
-- Decorative confetti not mapped to basketball data semantics.
-- Cartoon sports graphics.
-- Generic futuristic HUD clutter with no product meaning.
+**Disallowed motifs:**
+Decorative confetti, cartoon sports graphics, generic futuristic HUD clutter.
 
 ## Section Architecture Requirements
 Homepage sections must remain in this sequence:
@@ -145,7 +164,7 @@ Homepage sections must remain in this sequence:
 10. Footer
 
 ## Component Styling Rules
-- Buttons: rounded full, confident contrast, subtle glow for primary only.
+- Buttons: `border-radius: var(--bta-radius-full)`, confident contrast, subtle glow on primary only.
 - Cards: dark glass style, layered depth, calm hover transform.
 - Chips: dense, data-like, compact uppercase metadata where appropriate.
 - Dropdowns: custom polished panels, never browser-default menus.
@@ -155,8 +174,9 @@ Homepage sections must remain in this sequence:
 - Focus areas: live stat keeping, game operations, film review, AI coaching insights.
 - Avoid: exaggerated claims, corporate filler, and generic AI language.
 
-## Mapping Guide
-- CSS variables live in global stylesheet and drive Tailwind utility values.
-- shadcn/ui base components should be customized with token-driven class variants.
+## Implementation Notes
+- CSS variables live in their respective global stylesheets and drive Tailwind utility values in the marketing site.
+- `shadcn/ui` base components should be customized with token-driven class variants.
 - Section content should be centralized in a content config for fast iteration.
 - This file is the reusable AI reference for future design edits in this repo.
+- **When adding new tokens**: add to `apps/shared-ui/courtside-theme.css` first (Vite apps), then mirror in `apps/marketing-site/src/app/globals.css`.

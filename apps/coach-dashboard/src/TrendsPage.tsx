@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak } from "./stats-page-utils.js";
 
 interface TrendsPayload {
@@ -228,7 +228,7 @@ function PlayerTrendChart({ rows, playerName }: { rows: PlayerTrendRow[]; player
           return (
             <div key={row.id} style={{ display: "grid", gap: "0.3rem", justifyItems: "center" }}>
               <strong style={{ fontSize: "0.82rem" }}>{row.pts}</strong>
-              <div style={{ width: "100%", maxWidth: 42, height, borderRadius: 10, background: "linear-gradient(180deg, #4f8cff, #295ecf)" }} />
+              <div style={{ width: "100%", maxWidth: 42, height, borderRadius: 10, background: "linear-gradient(180deg, var(--bta-accent-violet), var(--bta-accent-violet-dark))" }} />
               <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>{row.opponent}</span>
             </div>
           );
@@ -315,6 +315,11 @@ export function TrendsPage() {
       }
 
       if (teamResult.status !== "fulfilled" || !teamResult.value.ok) {
+        if (teamResult.status === "fulfilled") {
+          if (await redirectToBillingIfRequired(teamResult.value)) {
+            return;
+          }
+        }
         setLoadError("Could not load trends from the realtime API.");
         setStatus("Could not load trends from the realtime API.");
         setIsLoading(false);
@@ -372,6 +377,9 @@ export function TrendsPage() {
       try {
         const response = await fetch(`${apiBase}/api/player-trends/${encodeURIComponent(selectedPlayer)}`, { headers: apiKeyHeader() });
         if (!response.ok) {
+          if (await redirectToBillingIfRequired(response)) {
+            return;
+          }
           throw new Error("Player trends request failed.");
         }
 
@@ -436,6 +444,9 @@ export function TrendsPage() {
         params.append("players", comparePlayer);
         const response = await fetch(`${apiBase}/api/player-comparison?${params.toString()}`, { headers: apiKeyHeader() });
         if (!response.ok) {
+          if (await redirectToBillingIfRequired(response)) {
+            return;
+          }
           throw new Error("Player comparison request failed.");
         }
 

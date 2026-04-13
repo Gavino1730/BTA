@@ -21,6 +21,28 @@ Priority keys:
 - P1 = should complete before first full season rollout
 - P2 = post-launch improvements
 
+## Criticality Discipline (Prevents P0/P1 Inflation)
+
+Rules:
+- P0 only if all are true: live-game data loss/corruption risk, security/tenant isolation gap, or production outage path with no safe fallback.
+- P1 only if it materially reduces pre-season operational or reliability risk and has a clear owner/date.
+- Every P0/P1 must include: owner, due date, and explicit exit criteria.
+
+WIP limits:
+- Max 5 open P0 items at once.
+- Max 12 open P1 items at once.
+- If limits are exceeded, run a triage pass before adding any new critical items.
+
+Age/SLA:
+- P0 target: close or downgrade within 7 days.
+- P1 target: close or downgrade within 21 days.
+- Any critical item past SLA must include a blocker note and next checkpoint date.
+
+Triage cadence:
+- Run a weekly 20-minute severity review.
+- Convert "important but not urgent" work to P2 unless it has a near-term production risk.
+- Merge duplicates and link dependent items instead of creating parallel critical tickets.
+
 ---
 
 ## P0 — Pre-Production Blockers
@@ -29,8 +51,14 @@ Priority keys:
 - [!] P0 Enforce explicit production origins and reject wildcard origin misuse.
   - Source: DEPLOYMENT.md, HOSTING_SETUP.md
   - Notes: Keep ALLOWED_ORIGINS explicit for coach/operator domains.
+  - Owner: Platform
+  - Due: 2026-04-15
+  - Exit criteria: Production env has explicit coach/operator origins set; startup rejects wildcard/missing origins; deploy checklist evidence attached.
 - [!] P0 Ensure BTA_REQUIRE_TENANT=1 and BTA_JWT_WRITE_REQUIRED=1 in production.
   - Source: DEPLOYMENT.md
+  - Owner: Platform
+  - Due: 2026-04-15
+  - Exit criteria: Railway production variables set to 1 and verified by startup logs plus tenant-write auth integration smoke check.
 - [x] P0 Harden AI output safety before rendering on coach UI.
   - Source: existing backlog + current AI paths
   - Current gap: length guards and control-char stripping are minimal.
@@ -41,13 +69,22 @@ Priority keys:
   - Source: DEPLOYMENT.md, HOSTING_SETUP.md
   - Notes: file-backed persistence is dev-only.
   - April 8, 2026 note: database was rebuilt; re-verify connection string, migration state, and persistence after restart before marking complete.
-- [ ] P0 Complete and sign off roster sync checklist end-to-end.
+  - Owner: Platform
+  - Due: 2026-04-16
+  - Exit criteria: Production points to Supabase Postgres, migrations current, and restart test confirms persisted events remain available.
+- [ ] P1 Complete and sign off roster sync checklist end-to-end.
   - Source: existing backlog
   - Current gap: no formal full-flow verification for coach<->operator sync.
+  - Owner: QA
+  - Due: 2026-04-18
+  - Exit criteria: Checklist completed with evidence for create/link/start/live-update/reload paths and sign-off logged in release checklist.
 - [!] P0 Guarantee acknowledged-write durability for live event ingest.
   - Why: avoid acknowledged-event loss if API process crashes after in-memory mutate but before durable write.
   - Change: require durable event persistence (transactional DB write and/or append-only event journal) before returning 201 from ingest.
   - Validation: crash-injection integration test proves zero loss for acknowledged events.
+  - Owner: Realtime API
+  - Due: 2026-04-19
+  - Exit criteria: Ingest only acks after durable write and crash-injection test demonstrates zero acknowledged-event loss.
 - [x] P0 Add correction concurrency guardrails for event update/delete paths.
   - Why: prevent two-device correction races from producing non-deterministic final state.
   - Change: require expected version/hash precondition on `PUT/DELETE /api/games/:gameId/events/:eventId`; return 409 with current server payload on mismatch.
@@ -60,14 +97,20 @@ Priority keys:
   - April 10, 2026 progress: operator reconnect path now performs server-vs-local queue reconciliation before flush, auto-removes already-synced duplicates, and surfaces conflict warnings while continuing safe non-conflicting event resubmits.
   - April 11, 2026 progress: reconciliation conflicts are now quarantined out of pending queue into local conflict records to prevent repeated auto-sync retries from stalling uploads.
   - Validation: scripted outage drill from Q1 through post-game with successful reconciliation and no duplicate/missing events.
+  - Owner: Operator Client
+  - Due: 2026-04-19
+  - Exit criteria: Outage runbook published and validated by full-game outage drill with no missing/duplicate events and explicit operator/coach recovery confirmation.
 
 ### Operational Readiness
-- [!] P0 Validate environment before deploy.
+- [!] P1 Validate environment before deploy.
   - Source: DEPLOYMENT.md
   - Required commands:
     - npm run validate:env
     - npm run test -w @bta/realtime-api
     - npm run build
+  - Owner: Release
+  - Due: 2026-04-15
+  - Exit criteria: Release pipeline runs the required commands as blocking checks and stores passing evidence for production promotion.
 - [x] P0 Implement production structured logging baseline in realtime-api.
   - Why: incident triage is slow with mixed free-form `console.*` output.
   - Change: adopt a structured JSON logger with level control, stable field schema, and environment-based verbosity.
@@ -181,6 +224,9 @@ Priority keys:
   - April 10, 2026 progress: removed remaining empty promise catches in `AiInsightsPage`, `useFeedback`, and `useWakeLock`; current guard baseline reports zero empty catches.
   - April 10, 2026 progress: added focused hook regression tests in `apps/ipad-operator/src/hooks/useWakeLock.test.tsx` and `apps/ipad-operator/src/hooks/useFeedback.test.tsx` to assert cleanup failure diagnostics are logged.
   - Validation: targeted app tests pass after hook updates; extend with focused hook-level tests for error-path assertions.
+  - Owner: Frontend
+  - Due: 2026-05-03
+  - Exit criteria: No empty catches in app code, consistent user-visible fallback messaging on critical flows, and regression tests cover expected diagnostics.
 - [x] P1 Add observability regression tests for error-path diagnostics.
   - Why: telemetry can silently regress even while feature tests pass.
   - Change: add tests for structured error logs, 4xx/5xx request logging, and security metric increments on auth/tenant denials.

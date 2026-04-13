@@ -593,8 +593,8 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
           <section className="stats-page-card policy-page-section">
             <h3 className="policy-section-heading">Have a Promo Code?</h3>
             <p className="stats-page-subcopy policy-section-body">Enter your coupon code to get a discount on your first plan.</p>
-            <form onSubmit={(e) => void validateAndApplyCoupon(e)} style={{ marginTop: "1rem" }}>
-              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+        <form onSubmit={(e) => void validateAndApplyCoupon(e)} className="coupon-form">
+              <div className="coupon-form-row">
                 <input
                   type="text"
                   value={couponCode}
@@ -606,34 +606,18 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                   autoComplete="off"
                   spellCheck={false}
                   disabled={validatingCoupon}
-                  style={{
-                    flex: 1,
-                    padding: "0.5rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid rgba(232, 234, 240, 0.2)",
-                    backgroundColor: "rgba(17, 24, 39, 0.5)",
-                    color: "rgba(232, 234, 240, 0.9)",
-                    fontSize: "0.875rem",
-                  }}
+                  className="coupon-input"
                 />
                 <button
                   type="submit"
                   disabled={validatingCoupon || !couponCode.trim()}
-                  style={{
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    backgroundColor: validatingCoupon || !couponCode.trim() ? "rgba(107, 114, 128, 0.5)" : "rgba(59, 130, 246, 0.8)",
-                    color: "white",
-                    fontSize: "0.875rem",
-                    cursor: validatingCoupon || !couponCode.trim() ? "not-allowed" : "pointer",
-                    border: "none",
-                  }}
+                  className="bta-btn bta-btn-primary bta-btn-sm"
                 >
                   {validatingCoupon ? "Validating..." : "Apply"}
                 </button>
               </div>
-              {couponStatus && <p style={{ color: "rgba(74, 222, 128, 0.8)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{couponStatus}</p>}
-              {couponError && <p style={{ color: "rgba(248, 113, 113, 0.8)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{couponError}</p>}
+              {couponStatus && <p className="bta-status bta-status-success">{couponStatus}</p>}
+              {couponError && <p className="bta-status bta-status-error">{couponError}</p>}
             </form>
           </section>
 

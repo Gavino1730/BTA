@@ -458,6 +458,31 @@ export function apiKeyHeader(json = false): Record<string, string> {
   return headers;
 }
 
+export async function redirectToBillingIfRequired(response: Response): Promise<boolean> {
+  if (response.status !== 402) {
+    return false;
+  }
+
+  let code = "";
+  try {
+    const payload = await response.clone().json() as { code?: unknown };
+    code = typeof payload.code === "string" ? payload.code : "";
+  } catch {
+    return false;
+  }
+
+  if (code !== "billing_required") {
+    return false;
+  }
+
+  if (typeof window !== "undefined") {
+    window.history.replaceState({}, "", "/billing");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+
+  return true;
+}
+
 export interface BillingEntitlement {
   paywallEnabled: boolean;
   accessActive: boolean;

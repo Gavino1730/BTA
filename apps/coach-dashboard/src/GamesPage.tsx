@@ -503,29 +503,29 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
             <h2 style={{ margin: "0.2rem 0 0" }}>{location === "away" ? "@" : "vs"} {opponent}</h2>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "var(--text-muted)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
+            <button type="button" onClick={onClose} className="bta-btn bta-btn-ghost bta-btn-sm">Close</button>
             {!isEditing && (
-              <button type="button" onClick={() => void handleCopyBoxScore()} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer", fontWeight: 600 }}>
+              <button type="button" onClick={() => void handleCopyBoxScore()} className="bta-btn bta-btn-secondary bta-btn-sm">
                 Copy Box Score
               </button>
             )}
             {!isEditing && (
-              <button type="button" onClick={() => setMode("edit")} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1rem", cursor: "pointer", fontWeight: 600 }}>
+              <button type="button" onClick={() => setMode("edit")} className="bta-btn bta-btn-primary bta-btn-sm">
                 Edit
               </button>
             )}
             {!isEditing && (
-              <button type="button" onClick={() => void handleDelete()} disabled={deleting} style={{ background: "transparent", border: "1px solid rgba(248,113,113,0.25)", color: "rgba(248,113,113,0.95)", borderRadius: 8, padding: "0.45rem 1rem", cursor: deleting ? "default" : "pointer", fontWeight: 600, opacity: deleting ? 0.75 : 1 }}>
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="bta-btn bta-btn-danger bta-btn-sm">
                 {deleting ? "Deleting..." : "Delete Game"}
               </button>
             )}
             {isEditing && (
-              <button type="button" onClick={() => setMode("view")} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>
+              <button type="button" onClick={() => setMode("view")} className="bta-btn bta-btn-secondary bta-btn-sm">
                 Back to View
               </button>
             )}
             {isEditing && (
-              <button type="button" onClick={() => void handleSave()} disabled={saving} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1.1rem", cursor: saving ? "default" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+              <button type="button" onClick={() => void handleSave()} disabled={saving} className="bta-btn bta-btn-primary bta-btn-sm">
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             )}
@@ -533,9 +533,9 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
         </div>
 
         <div style={{ padding: "1.1rem 1.4rem" }}>
-          {copyStatus && <p style={{ color: copyStatus.startsWith("Could not") ? "var(--red)" : "var(--teal)", marginBottom: "0.75rem" }}>{copyStatus}</p>}
-          {saveError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{saveError}</p>}
-          {deleteError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{deleteError}</p>}
+          {copyStatus && <p className={copyStatus.startsWith("Could not") ? "bta-status bta-status-error" : "bta-status bta-status-success"} style={{ marginBottom: "0.75rem" }}>{copyStatus}</p>}
+          {saveError && <p className="bta-status bta-status-error" style={{ marginBottom: "0.75rem" }}>{saveError}</p>}
+          {deleteError && <p className="bta-status bta-status-error" style={{ marginBottom: "0.75rem" }}>{deleteError}</p>}
 
           {isEditing ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
@@ -713,12 +713,12 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
             <div style={{ display: "flex", gap: "0.45rem" }}>
               {!isEditing && (
                 <>
-                  <button type="button" onClick={() => setBoxMode("basic")} style={{ background: boxMode === "basic" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Basic Stats</button>
-                  <button type="button" onClick={() => setBoxMode("advanced")} style={{ background: boxMode === "advanced" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Advanced Stats</button>
+                  <button type="button" onClick={() => setBoxMode("basic")} className={`bta-btn bta-btn-sm ${boxMode === "basic" ? "bta-btn-primary" : "bta-btn-ghost"}`}>Basic Stats</button>
+                  <button type="button" onClick={() => setBoxMode("advanced")} className={`bta-btn bta-btn-sm ${boxMode === "advanced" ? "bta-btn-primary" : "bta-btn-ghost"}`}>Advanced Stats</button>
                 </>
               )}
               {isEditing && (
-                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
+                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} className="bta-btn bta-btn-primary bta-btn-sm">+ Add Row</button>
               )}
             </div>
           </div>

@@ -2,7 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@bta/ui": ["../../shared-ui/components/index.ts"],
+      "@bta/ui/*": ["../../shared-ui/components/*"]
+    }
   },
   "include": ["src/**/*"]
 }

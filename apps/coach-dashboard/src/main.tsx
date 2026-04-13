@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { UnifiedCoachApp } from "./UnifiedCoachApp.js";
 import "../../shared-ui/courtside-theme.css";
+import "../../shared-ui/components.css";
 import "./styles.css";
 
 if ("serviceWorker" in navigator) {

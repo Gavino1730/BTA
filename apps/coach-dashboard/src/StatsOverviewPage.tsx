@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak, formatRecord } from "./stats-page-utils.js";
 
 interface SeasonStats {
@@ -172,6 +172,12 @@ export function StatsOverviewPage() {
         ]);
 
         if (!seasonRes.ok || !advancedRes.ok || !leadersRes.ok || !gamesRes.ok || !patternsRes.ok || !volatilityRes.ok) {
+          const responses = [seasonRes, advancedRes, leadersRes, gamesRes, patternsRes, volatilityRes];
+          for (const response of responses) {
+            if (await redirectToBillingIfRequired(response)) {
+              return;
+            }
+          }
           throw new Error("Stats API request failed.");
         }
 

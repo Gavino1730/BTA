@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
+import { apiBase, apiKeyHeader, redirectToBillingIfRequired, resolveActiveSchoolId } from "../platform.js";
 import {
   type CoachAiSettings,
   type CoachInsightFocus,
@@ -222,6 +222,9 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
         headers: apiKeyHeader(),
       });
       if (!response.ok) {
+        if (await redirectToBillingIfRequired(response)) {
+          return;
+        }
         setPromptPreview(null);
         setPromptPreviewStatus(`Prompt preview unavailable (${response.status}).`);
         return;
@@ -282,6 +285,9 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
       });
 
       if (!response.ok) {
+        if (await redirectToBillingIfRequired(response)) {
+          return;
+        }
         const apiMessage = await readErrorMessage(response);
         const fallback = apiMessage
           ? `AI chat unavailable: ${apiMessage}`
@@ -336,7 +342,12 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
   async function fetchAiHealthMessage(): Promise<void> {
     try {
       const resp = await fetch(`${apiBase}/api/games/${gameId}/ai-status`, { headers: apiKeyHeader() });
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        if (await redirectToBillingIfRequired(resp)) {
+          return;
+        }
+        return;
+      }
       const status = (await resp.json()) as GameAiStatus;
       if (status.healthy) { setAiHealthMessage(""); return; }
       const msg = (status.lastErrorCode ? AI_ERROR_MESSAGES[status.lastErrorCode] : null)

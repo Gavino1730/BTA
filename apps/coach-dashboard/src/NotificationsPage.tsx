@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
+import { apiBase, apiKeyHeader, redirectToBillingIfRequired, resolveActiveSchoolId } from "./platform.js";
 
 interface GameSummary {
   gameId: string | number;
@@ -246,6 +246,11 @@ export function NotificationsPage({ onNavigate }: Props) {
       }
 
       if (gamesResult.status !== "fulfilled" || !gamesResult.value.ok) {
+        if (gamesResult.status === "fulfilled") {
+          if (await redirectToBillingIfRequired(gamesResult.value)) {
+            return;
+          }
+        }
         setLoadError("Could not load notifications from the realtime API.");
         setStatus("Could not load notifications from the realtime API.");
         setIsLoading(false);
@@ -259,6 +264,11 @@ export function NotificationsPage({ onNavigate }: Props) {
         const livePayload = await liveResult.value.json() as LiveContextPayload;
         setLiveContext(livePayload ?? null);
       } else {
+        if (liveResult.status === "fulfilled") {
+          if (await redirectToBillingIfRequired(liveResult.value)) {
+            return;
+          }
+        }
         setLiveContext(null);
       }
 
@@ -266,6 +276,11 @@ export function NotificationsPage({ onNavigate }: Props) {
         const notificationsPayload = await notificationsResult.value.json() as { notifications?: ApiNotificationItem[] };
         setApiNotificationItems(Array.isArray(notificationsPayload.notifications) ? notificationsPayload.notifications : []);
       } else {
+        if (notificationsResult.status === "fulfilled") {
+          if (await redirectToBillingIfRequired(notificationsResult.value)) {
+            return;
+          }
+        }
         setApiNotificationItems([]);
       }
 

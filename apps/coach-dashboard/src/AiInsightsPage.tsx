@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
 
 function summarizeError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
@@ -239,7 +239,25 @@ export function AiInsightsPage() {
         ]);
 
         if (!insightsRes.ok || !seasonRes.ok || !playersRes.ok) {
+          const responses = [insightsRes, seasonRes, playersRes];
+          for (const response of responses) {
+            if (await redirectToBillingIfRequired(response)) {
+              return;
+            }
+          }
           throw new Error("Insights request failed");
+        }
+
+        if (teamSummaryRes && !teamSummaryRes.ok) {
+          if (await redirectToBillingIfRequired(teamSummaryRes)) {
+            return;
+          }
+        }
+
+        if (liveRes && !liveRes.ok) {
+          if (await redirectToBillingIfRequired(liveRes)) {
+            return;
+          }
         }
 
         const [insightsPayload, seasonPayload, playersPayload] = await Promise.all([
@@ -314,7 +332,12 @@ export function AiInsightsPage() {
         const response = await fetch(`${apiBase}/api/ai/player-insights/${encodeURIComponent(nameForApi)}`, {
           headers: apiKeyHeader(),
         });
-        if (!response.ok) throw new Error("Player insight request failed");
+        if (!response.ok) {
+          if (await redirectToBillingIfRequired(response)) {
+            return;
+          }
+          throw new Error("Player insight request failed");
+        }
         const payload = await response.json() as { insights?: string };
         if (!cancelled) {
           setPlayerInsight(sanitizeText(payload.insights) || "No player-specific insight available yet.");
@@ -351,7 +374,12 @@ export function AiInsightsPage() {
         }),
       });
 
-      if (!response.ok) throw new Error("AI chat failed");
+      if (!response.ok) {
+        if (await redirectToBillingIfRequired(response)) {
+          return;
+        }
+        throw new Error("AI chat failed");
+      }
 
       const payload = await response.json() as { reply?: string; suggestions?: string[] };
       const reply = sanitizeText(payload.reply) || "No answer available.";
@@ -375,7 +403,12 @@ export function AiInsightsPage() {
     setStatus("Refreshing season analysis...");
     try {
       const response = await fetch(`${apiBase}/api/season-analysis?force=true`, { headers: apiKeyHeader() });
-      if (!response.ok) throw new Error("Refresh failed");
+      if (!response.ok) {
+        if (await redirectToBillingIfRequired(response)) {
+          return;
+        }
+        throw new Error("Refresh failed");
+      }
       const payload = await response.json() as SeasonAnalysis;
       setAnalysis(sanitizeSeasonAnalysis(payload));
       setStatus("Season analysis refreshed.");

@@ -265,6 +265,11 @@ app.post("/api/billing/webhook", express.raw({ type: "application/json" }), with
       event = stripeClient.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);
     }
 
+    if (!event || typeof event.id !== "string" || !event.id.trim() || typeof event.type !== "string" || !event.type.trim()) {
+      res.status(400).json({ error: "Invalid Stripe event envelope" });
+      return;
+    }
+
     if (hasProcessedStripeWebhookEvent(event.id)) {
       res.status(200).json({ received: true, duplicate: true });
       return;
@@ -2688,6 +2693,14 @@ function requireActiveBillingEntitlement(req: Request, res: Response, next: Next
     next();
     return;
   }
+
+  logger.warn("billing.paywall_denied", {
+    schoolId,
+    path: req.path,
+    method: req.method,
+    entitlementStatus: entitlement.status,
+    entitlementReason: entitlement.reason,
+  });
 
   res.status(402).json({
     error: "Active subscription required",

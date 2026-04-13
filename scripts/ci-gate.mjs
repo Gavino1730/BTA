@@ -42,6 +42,13 @@ try {
   process.exit(1);
 }
 
+try {
+  run("npm run check:critical-backlog");
+} catch {
+  console.error("[ci-gate] Critical backlog metadata check failed.");
+  process.exit(1);
+}
+
 if (shouldRunE2EGate()) {
   try {
     run("npm run smoke-test");

@@ -1,50 +1,174 @@
 @import "tailwindcss";
 
+/* ============================================================
+   BTA Marketing Site — Design Tokens
+   Values are kept in sync with apps/shared-ui/courtside-theme.css.
+   The --bta-* canonical names are defined here too so components
+   can reference them directly without importing the shared file.
+   ============================================================ */
 :root {
-  --bg-base: #0d1020;
-  --bg-elevated: #151a30;
-  --panel-1: #151a30;
-  --panel-2: #1c2340;
-  --panel-3: #2b335a;
-  --panel-4: rgba(43, 51, 90, 0.76);
+  /* ── Canonical --bta-* tokens (aligned with courtside-theme.css) ── */
+  --bta-bg-base:      #0d1020;
+  --bta-bg-elevated:  #151a30;
+  --bta-bg-panel:     #1c2340;
+  --bta-bg-panel-2:   #2b335a;
+  --bta-bg-overlay:   rgba(28, 35, 64, 0.84);
 
-  --text-primary: #f7f8fc;
-  --text-secondary: #d8ddf0;
-  --text-tertiary: #a5add0;
-  --text-disabled: #666c8f;
+  --bta-text-primary:   #f7f8fc;
+  --bta-text-secondary: #d8ddf0;
+  --bta-text-tertiary:  #a5add0;
+  --bta-text-muted:     #666c8f;
 
-  --accent-primary: #6e5bff;
-  --accent-primary-dark: #4636c9;
-  --accent-secondary: #46d7ff;
-  --accent-success: #38e39f;
-  --accent-signal: #ffb84d;
-  --accent-danger: #ff5d73;
-  --accent-ivory: #f5ede2;
-  --accent-on: #ffffff;
-  --accent-glow: rgba(70, 215, 255, 0.4);
+  --bta-accent-violet:       #6e5bff;
+  --bta-accent-violet-dark:  #4636c9;
+  --bta-accent-cyan:         #46d7ff;
+  --bta-accent-glow:         rgba(70, 215, 255, 0.4);
+  --bta-accent-on:           #ffffff;
+  --bta-success:             #38e39f;
+  --bta-warning:             #ffb84d;
+  --bta-danger:              #ff5d73;
 
-  --border-soft: #2b335a;
-  --border-strong: #4a588f;
-  --ring: rgba(70, 215, 255, 0.5);
+  --bta-border-soft:   #2b335a;
+  --bta-border-strong: #4a588f;
+  --bta-ring:          rgba(70, 215, 255, 0.5);
 
-  --shadow-md: 0 14px 34px rgba(5, 8, 22, 0.44);
-  --shadow-lg: 0 28px 64px rgba(5, 8, 22, 0.52);
-  --shadow-xl: 0 38px 96px rgba(4, 6, 16, 0.62);
+  --bta-shadow-md: 0 14px 34px rgba(5, 8, 22, 0.44);
+  --bta-shadow-lg: 0 28px 64px rgba(5, 8, 22, 0.52);
+  --bta-shadow-xl: 0 38px 96px rgba(4, 6, 16, 0.62);
 
-  --radius-sm: 0.5rem;
-  --radius-md: 0.8rem;
-  --radius-lg: 1.1rem;
-  --radius-xl: 1.5rem;
+  --bta-radius-sm:   0.5rem;
+  --bta-radius-md:   0.8rem;
+  --bta-radius-lg:   1.1rem;
+  --bta-radius-xl:   1.5rem;
 
-  --background: var(--bg-base);
-  --foreground: var(--text-primary);
+  --bta-font-body:    "Inter", "Segoe UI", system-ui, sans-serif;
+  --bta-font-display: "Syne", "Inter", system-ui, sans-serif;
+  --bta-font-mono:    "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  /* ── Marketing-site local aliases (component callsites use these) ── */
+  --bg-base:      var(--bta-bg-base);
+  --bg-elevated:  var(--bta-bg-elevated);
+  --panel-1:      var(--bta-bg-elevated);
+  --panel-2:      var(--bta-bg-panel);
+  --panel-3:      var(--bta-bg-panel-2);
+  --panel-4:      rgba(43, 51, 90, 0.76);
+
+  --text-primary:   var(--bta-text-primary);
+  --text-secondary: var(--bta-text-secondary);
+  --text-tertiary:  var(--bta-text-tertiary);
+  --text-disabled:  var(--bta-text-muted);
+
+  --accent-primary:      var(--bta-accent-violet);
+  --accent-primary-dark: var(--bta-accent-violet-dark);
+  --accent-secondary:    var(--bta-accent-cyan);
+  --accent-success:      var(--bta-success);
+  --accent-signal:       var(--bta-warning);
+  --accent-danger:       var(--bta-danger);
+  --accent-ivory:        #f5ede2;
+  --accent-on:           var(--bta-accent-on);
+  --accent-glow:         var(--bta-accent-glow);
+
+  --border-soft:   var(--bta-border-soft);
+  --border-strong: var(--bta-border-strong);
+  --ring:          var(--bta-ring);
+
+  --shadow-md: var(--bta-shadow-md);
+  --shadow-lg: var(--bta-shadow-lg);
+  --shadow-xl: var(--bta-shadow-xl);
+
+  --radius-sm: var(--bta-radius-sm);
+  --radius-md: var(--bta-radius-md);
+  --radius-lg: var(--bta-radius-lg);
+  --radius-xl: var(--bta-radius-xl);
+
+  --background: var(--bta-bg-base);
+  --foreground: var(--bta-text-primary);
+}
+
+/* ── shadcn-compatible semantic layer ── */
+/* Maps shadcn's expected CSS variable names onto --bta-* tokens.         */
+/* Any installed shadcn component will automatically use BTA brand colors. */
+:root {
+  --primary:             var(--bta-accent-violet);
+  --primary-foreground:  var(--bta-accent-on);
+
+  --secondary:           var(--bta-bg-panel);
+  --secondary-foreground:var(--bta-text-secondary);
+
+  --muted:               var(--bta-bg-elevated);
+  --muted-foreground:    var(--bta-text-tertiary);
+
+  --accent:              var(--bta-bg-panel-2);
+  --accent-foreground:   var(--bta-text-primary);
+
+  --destructive:         var(--bta-danger);
+  --destructive-foreground: var(--bta-accent-on);
+
+  --card:                var(--bta-bg-elevated);
+  --card-foreground:     var(--bta-text-primary);
+
+  --popover:             var(--bta-bg-panel);
+  --popover-foreground:  var(--bta-text-primary);
+
+  --border:              var(--bta-border-soft);
+  --input:               var(--bta-bg-panel);
+  --ring:                var(--bta-ring);
+
+  --radius: var(--bta-radius-md);
+
+  /* Sidebar (if shadcn sidebar is added) */
+  --sidebar:             var(--bta-bg-elevated);
+  --sidebar-foreground:  var(--bta-text-primary);
+  --sidebar-primary:     var(--bta-accent-violet);
+  --sidebar-primary-foreground: var(--bta-accent-on);
+  --sidebar-accent:      var(--bta-bg-panel);
+  --sidebar-accent-foreground: var(--bta-text-secondary);
+  --sidebar-border:      var(--bta-border-soft);
+  --sidebar-ring:        var(--bta-ring);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-body);
+
+  /* shadcn semantic colors exposed as Tailwind utilities */
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-foreground);
+  --color-secondary:            var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:                var(--muted);
+  --color-muted-foreground:     var(--muted-foreground);
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
+  --color-destructive:          var(--destructive);
+  --color-card:                 var(--card);
+  --color-card-foreground:      var(--card-foreground);
+  --color-popover:              var(--popover);
+  --color-popover-foreground:   var(--popover-foreground);
+  --color-border:               var(--border);
+  --color-input:                var(--input);
+  --color-ring:                 var(--ring);
+
+  /* BTA brand colors as Tailwind utilities */
+  --color-bta-violet:   var(--bta-accent-violet);
+  --color-bta-cyan:     var(--bta-accent-cyan);
+  --color-bta-success:  var(--bta-success);
+  --color-bta-warning:  var(--bta-warning);
+  --color-bta-danger:   var(--bta-danger);
+
+  --font-sans:    var(--font-body);
   --font-display: var(--font-display);
+  --font-mono:    var(--font-mono);
+
+  --radius-sm: var(--bta-radius-sm);
+  --radius-md: var(--bta-radius-md);
+  --radius-lg: var(--bta-radius-lg);
+  --radius-xl: var(--bta-radius-xl);
+}
+
+/* Wire Next.js font variables into --bta-* mono token */
+:root {
+  --bta-font-mono: var(--font-mono, "JetBrains Mono", "Fira Code", ui-monospace, monospace);
 }
 
 body {

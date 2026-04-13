@@ -112,6 +112,7 @@ describe("device name persistence", () => {
         schoolId: "school-1",
         opponent: "Rivals",
         vcSide: "home",
+        dashboardUrl: "http://localhost:5173",
       },
     });
 
@@ -136,6 +137,7 @@ describe("device name persistence", () => {
         schoolId: "school-1",
         opponent: "Rivals",
         vcSide: "home",
+        dashboardUrl: "http://localhost:5173",
         deviceName: "Scorer iPad",
       },
     });

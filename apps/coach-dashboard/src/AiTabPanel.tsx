@@ -168,7 +168,7 @@ export function AiTabPanel({
             <h2>Historical Context</h2>
             <p className="text-muted">{promptPreviewStatus}</p>
             {historicalPromptContext && historicalPromptContext.toLowerCase().includes("unavailable") && (
-              <p className="text-muted" style={{ color: "var(--color-warning, #d97706)", marginBottom: "0.5rem", fontSize: "0.85rem" }}>
+              <p className="bta-status bta-status-warning" style={{ marginBottom: "0.5rem" }}>
                 ⚠ Season stats unavailable — AI insights rely on live game data only.
               </p>
             )}

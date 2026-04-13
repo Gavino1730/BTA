@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
 import {
   buildPlayerGameHistory,
   type GamePlayerStat,
@@ -200,6 +200,9 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
         });
 
         if (!response.ok) {
+          if (await redirectToBillingIfRequired(response)) {
+            return;
+          }
           throw new Error("Advanced player request failed.");
         }
 
@@ -381,7 +384,7 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
               </div>
               <div>
                 <span>Trend Delta</span>
-                <strong style={{ color: trendDelta >= 0 ? "#4ade80" : "#f87171" }}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
+                <strong style={{ color: trendDelta >= 0 ? "var(--bta-success)" : "var(--bta-danger)" }}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
               </div>
               <div>
                 <span>20+ Streak</span>

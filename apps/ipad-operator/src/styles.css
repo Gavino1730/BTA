@@ -1,4 +1,11 @@
-﻿/* ---- Reset ---- */
+/* ── CSS Cascade Layer Declaration ──────────────────────────────────────────
+   Defines the cascade order for future @layer migration.
+   Unlayered styles (existing rules below) remain highest priority.
+   New component styles should be wrapped in @layer components { }.
+   ─────────────────────────────────────────────────────────────────────────── */
+@layer base, layout, components, utilities;
+
+/* ---- Reset ---- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ---- iPad / Touch globals ---- */
@@ -11,32 +18,39 @@ button, .circle, .icon-btn, [role="button"] {
   -webkit-user-select: none;
 }
 
+/* ── iPad Operator token overrides (layered on top of courtside-theme.css) ── */
 :root {
-  font-family: var(--font-ui, "Bahnschrift", "Segoe UI", "Helvetica Neue", Arial, sans-serif);
-  background: var(--bg, #0c101a);
-  color: var(--text, #f4f6fb);
+  font-family: var(--bta-font-body);
+  background: var(--bta-bg-base);
+  color: var(--bta-text-primary);
+
+  /* Operator-specific layout tokens */
   --live-bottom-nav-h: 82px;
-  --accent-primary: var(--brand-primary, #6e5bff);
-  --accent-primary-strong: var(--brand-primary-strong, #7a69ff);
-  --accent-secondary: var(--brand-accent, #46d7ff);
-  --accent-danger: var(--color-danger, #ff5d73);
-  --accent-warning: var(--color-warning, #ffb84d);
-  --accent-blue: var(--accent-primary);
-  --accent-blue-soft: rgba(110, 91, 255, 0.16);
-  --accent-gold: var(--accent-warning);
-  --accent-gold-soft: rgba(255, 184, 77, 0.2);
-  --result-make-bg: rgba(16,185,129,0.26);
-  --result-make-bg-strong: rgba(16,185,129,0.38);
-  --result-make-bg-soft: rgba(16,185,129,0.1);
-  --result-make-border: rgba(16,185,129,0.55);
-  --result-make-text: #6ee7b7;
-  --result-make-text-soft: #a7f3d0;
-  --result-miss-bg: rgba(239,68,68,0.22);
-  --result-miss-bg-strong: rgba(239,68,68,0.34);
-  --result-miss-bg-soft: rgba(239,68,68,0.08);
-  --result-miss-border: rgba(239,68,68,0.5);
-  --result-miss-text: #fca5a5;
-  --result-miss-text-soft: #fecaca;
+
+  /* Local aliases pointing to --bta-* canonical tokens */
+  --accent-primary:        var(--bta-accent-violet);
+  --accent-primary-strong: var(--bta-accent-violet-strong, #7a69ff);
+  --accent-secondary:      var(--bta-accent-cyan);
+  --accent-danger:         var(--bta-danger);
+  --accent-warning:        var(--bta-warning);
+  --accent-blue:           var(--bta-accent-violet);
+  --accent-blue-soft:      var(--bta-accent-violet-soft);
+  --accent-gold:           var(--bta-warning);
+  --accent-gold-soft:      var(--bta-warning-soft);
+
+  /* Basketball game-state tokens from --bta-* */
+  --result-make-bg:        var(--bta-make-bg);
+  --result-make-bg-strong: var(--bta-make-bg-strong);
+  --result-make-bg-soft:   var(--bta-make-bg-soft);
+  --result-make-border:    var(--bta-make-border);
+  --result-make-text:      var(--bta-make-text);
+  --result-make-text-soft: var(--bta-make-text-soft);
+  --result-miss-bg:        var(--bta-miss-bg);
+  --result-miss-bg-strong: var(--bta-miss-bg-strong);
+  --result-miss-bg-soft:   var(--bta-miss-bg-soft);
+  --result-miss-border:    var(--bta-miss-border);
+  --result-miss-text:      var(--bta-miss-text);
+  --result-miss-text-soft: var(--bta-miss-text-soft);
 }
 
 html, body {
@@ -202,14 +216,14 @@ html, body {
 .to-pill:disabled { opacity: 0.25; cursor: not-allowed; }
 
 .to-pill-short {
-  background: rgba(16,185,129,0.12);
-  border-color: rgba(16,185,129,0.45);
-  color: #6ee7b7;
+  background: var(--bta-make-bg-soft);
+  border-color: var(--bta-make-border);
+  color: var(--bta-make-text);
 }
 .to-pill-full {
-  background: rgba(79,140,255,0.12);
-  border-color: rgba(79,140,255,0.45);
-  color: #93c5fd;
+  background: var(--bta-accent-violet-soft);
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 45%, transparent);
+  color: var(--bta-accent-cyan);
 }
 
 .classic-score-grid {
@@ -420,16 +434,16 @@ html, body {
 .circle.teal:hover  { background: rgba(255,255,255,0.09); }
 .circle.red       { border-color: var(--team-away-color); color: var(--team-away-color); }
 .circle.red:hover   { background: rgba(255,255,255,0.09); }
-.circle.white     { border-color: rgba(232,234,240,0.65); color: #e8eaf0; }
+.circle.white     { border-color: rgba(232,234,240,0.65); color: var(--bta-text-primary); }
 .circle.white:hover { background: rgba(232,234,240,0.07); }
-.circle.red-out   { border-color: #f87171; color: #f87171; }
-.circle.red-out:hover { background: rgba(248,113,113,0.12); }
+.circle.red-out   { border-color: var(--bta-danger); color: var(--bta-danger); }
+.circle.red-out:hover { background: var(--bta-danger-soft); }
 /* Foul = amber — visually distinct, high priority */
-.circle.stat-foul { border-color: #f59e0b; color: #fcd34d; border-width: 2.5px; }
-.circle.stat-foul:hover { background: rgba(245,158,11,0.12); }
+.circle.stat-foul { border-color: var(--bta-warning); color: color-mix(in srgb, var(--bta-warning) 85%, white); border-width: 2.5px; }
+.circle.stat-foul:hover { background: var(--bta-warning-soft); }
 /* Turnover = orange-red */
-.circle.stat-to   { border-color: #ef4444; color: #fca5a5; }
-.circle.stat-to:hover { background: rgba(239,68,68,0.1); }
+.circle.stat-to   { border-color: var(--bta-danger); color: var(--bta-miss-text); }
+.circle.stat-to:hover { background: var(--bta-miss-bg-soft); }
 
 .sub-lbl {
   font-size: 0.6rem;
@@ -448,18 +462,19 @@ html, body {
 .icon-btn {
   background: transparent;
   border: none;
-  color: rgba(232,234,240,0.5);
+  color: var(--bta-text-tertiary);
   font-size: 1.35rem;
   cursor: pointer;
   padding: 0.5rem;
   min-height: 44px;
   min-width: 44px;
-  border-radius: 8px;
+  border-radius: var(--bta-radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background var(--bta-motion-fast), color var(--bta-motion-fast);
 }
-.icon-btn:hover { background: rgba(255,255,255,0.08); color: #e8eaf0; }
+.icon-btn:hover { background: var(--bta-surface-1); color: var(--bta-text-primary); }
 
 /* ================================================================
   CENTER PANEL - Feed
@@ -480,28 +495,29 @@ html, body {
 .center-toggle-btn {
   width: 100%;
   min-height: 44px;
-  border-radius: 9px;
-  border: 1px solid rgba(79,140,255,0.42);
-  background: rgba(79,140,255,0.14);
-  color: rgba(191,219,254,0.95);
+  border-radius: var(--bta-radius-md);
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 42%, transparent);
+  background: var(--bta-accent-violet-soft);
+  color: var(--bta-text-secondary);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
+  transition: background var(--bta-motion-fast), border-color var(--bta-motion-fast);
 }
 
 .center-toggle-btn.open {
-  border-color: rgba(242,194,75,0.58);
-  background: rgba(242,194,75,0.14);
-  color: #f2c24b;
+  border-color: color-mix(in srgb, var(--bta-warning) 58%, transparent);
+  background: var(--bta-warning-soft);
+  color: var(--bta-warning);
 }
 
 /* Scoreboard */
 .scoreboard {
   width: 100%;
   padding: 0.75rem 1rem 0.45rem;
-  border-bottom: 1px solid rgba(242,194,75,0.25);
+  border-bottom: 1px solid color-mix(in srgb, var(--bta-warning) 28%, transparent);
 }
 
 .scoreboard-team-grid {
@@ -550,10 +566,12 @@ html, body {
 
 .live-summary-card {
   background: linear-gradient(180deg, rgba(26,30,68,0.95), rgba(22,26,58,0.92));
-  border: 1px solid rgba(79,140,255,0.32);
-  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 32%, transparent);
+  border-radius: var(--bta-radius-lg);
   padding: 0.8rem 0.95rem;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(242,194,75,0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 color-mix(in srgb, var(--bta-warning) 35%, transparent);
 }
 
 .live-summary-meta {
@@ -602,9 +620,9 @@ html, body {
   min-height: 1.15rem;
   padding: 0 0.45rem;
   border-radius: 999px;
-  border: 1px solid rgba(34,197,94,0.5);
-  background: rgba(34,197,94,0.13);
-  color: #86efac;
+  border: 1px solid var(--bta-make-border);
+  background: var(--bta-make-bg-soft);
+  color: var(--bta-make-text);
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -614,10 +632,10 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  border: 1px solid rgba(79,140,255,0.4);
-  background: rgba(20, 22, 43, 0.86);
-  color: rgba(232,234,240,0.92);
+  border-radius: var(--bta-radius-full);
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 42%, transparent);
+  background: var(--bta-bg-overlay);
+  color: var(--bta-text-secondary);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -627,33 +645,34 @@ html, body {
 }
 
 .game-state-live {
-  border-color: rgba(16,185,129,0.5);
-  color: #6ee7b7;
-  background: rgba(20, 22, 43, 0.86);
+  border-color: var(--bta-make-border);
+  color: var(--bta-make-text);
+  background: var(--bta-bg-overlay);
 }
 
 .game-state-break {
-  border-color: rgba(242,194,75,0.52);
-  color: #f2c24b;
-  background: rgba(20, 22, 43, 0.86);
+  border-color: color-mix(in srgb, var(--bta-warning) 52%, transparent);
+  color: var(--bta-warning);
+  background: var(--bta-bg-overlay);
 }
 
 .game-state-alert {
-  border-color: rgba(248,113,113,0.56);
-  color: #fca5a5;
-  background: rgba(20, 22, 43, 0.86);
+  border-color: color-mix(in srgb, var(--bta-danger) 56%, transparent);
+  color: var(--bta-miss-text);
+  background: var(--bta-bg-overlay);
 }
 
 .game-state-idle {
-  border-color: rgba(79,140,255,0.4);
-  color: rgba(232,234,240,0.92);
-  background: rgba(20, 22, 43, 0.86);
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 42%, transparent);
+  color: var(--bta-text-secondary);
+  background: var(--bta-bg-overlay);
 }
 
+/* game-state-done uses purple intentionally (distinct end-of-game signal) */
 .game-state-done {
-  border-color: rgba(168,85,247,0.52);
+  border-color: rgba(168, 85, 247, 0.52);
   color: #e9d5ff;
-  background: rgba(20, 22, 43, 0.86);
+  background: var(--bta-bg-overlay);
 }
 
 .device-id-corner {
@@ -695,11 +714,11 @@ html, body {
   font-weight: 600;
 }
 .score-meta.foul-count-warn {
-  color: #fbbf24;
+  color: var(--bta-warning);
   font-weight: 700;
 }
 .score-meta.foul-count-danger {
-  color: #f87171;
+  color: var(--bta-danger);
   font-weight: 800;
 }
 /* Tap-to-edit score correction */
@@ -754,9 +773,9 @@ html, body {
   letter-spacing: 0.04em;
 }
 .bonus-chip {
-  color: #f2c24b;
-  border: 1px solid rgba(242,194,75,0.45);
-  background: rgba(242,194,75,0.12);
+  color: var(--bta-warning);
+  border: 1px solid color-mix(in srgb, var(--bta-warning) 45%, transparent);
+  background: var(--bta-warning-soft);
 }
 .possession-chip {
   border-width: 1.25px;
@@ -923,8 +942,8 @@ html, body {
   display: inline-block;
   font-size: 0.6rem;
   font-weight: 600;
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.2);
+  color: var(--bta-warning);
+  background: var(--bta-warning-soft);
   padding: 2px 6px;
   border-radius: 3px;
   margin-right: 0.4rem;
@@ -995,7 +1014,7 @@ html, body {
 
 .ac-teal  { color: var(--team-home-color); }
 .ac-red   { color: var(--team-away-color); }
-.ac-white { color: #e8eaf0; }
+.ac-white { color: var(--bta-text-primary); }
 
 /* Feed item wrapper and undo button */
 .feed-item-wrapper {
@@ -1015,8 +1034,8 @@ html, body {
   padding: 0.3rem 0.2rem;
   border: 1px solid rgba(232,234,240,0.2);
   border-radius: 6px;
-  background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
+  background: var(--bta-miss-bg-soft);
+  color: var(--bta-danger);
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
@@ -1067,9 +1086,9 @@ html, body {
   transition: all 0.12s;
 }
 .period-btn.period-on {
-  background: rgba(242,194,75,0.15);
-  border-color: #f2c24b;
-  color: #f2c24b;
+  background: var(--bta-warning-soft);
+  border-color: var(--bta-warning);
+  color: var(--bta-warning);
 }
 
 .period-btn.period-ot {
@@ -1096,9 +1115,9 @@ html, body {
   min-width: 30px;
   min-height: 44px;
   border-radius: 8px;
-  border: 1px solid rgba(248,113,113,0.55);
-  background: rgba(248,113,113,0.14);
-  color: #f87171;
+  border: 1px solid color-mix(in srgb, var(--bta-danger) 55%, transparent);
+  background: var(--bta-miss-bg-soft);
+  color: var(--bta-danger);
   font-weight: 700;
   cursor: pointer;
 }
@@ -1128,12 +1147,13 @@ html, body {
 .clock-row { width: 100%; padding: 0.75rem 0.75rem 0.22rem; margin-top: 0.5rem; }
 .clock-inp {
   width: 100%;
-  background: rgba(255,255,255,0.05);
-  border: 1.5px solid rgba(79,140,255,0.45);
-  border-radius: 10px;
-  color: #e8eaf0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid color-mix(in srgb, var(--bta-accent-violet) 45%, transparent);
+  border-radius: var(--bta-radius-md);
+  color: var(--bta-text-primary);
   font-size: 1.2rem;
   font-weight: 700;
+  font-family: var(--bta-font-mono);
   text-align: center;
   padding: 0.45rem;
   min-height: 44px;
@@ -1143,9 +1163,9 @@ html, body {
   cursor: pointer;
   display: block;
 }
-.clock-inp-display:hover { border-color: #4f8cff; }
+.clock-inp-display:hover { border-color: var(--bta-accent-violet); }
 .clock-inp-disabled { opacity: 0.55; cursor: not-allowed; }
-.clock-inp:focus { outline: none; border-color: #4f8cff; }
+.clock-inp:focus { outline: none; border-color: var(--bta-accent-violet); }
 .clock-inp:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -1173,7 +1193,8 @@ html, body {
   font-size: 1.8rem;
   font-weight: 800;
   text-align: center;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
+  font-family: var(--bta-font-mono);
   letter-spacing: 0.06em;
   margin-bottom: 0.6rem;
 }
@@ -1185,12 +1206,13 @@ html, body {
 }
 .clock-numpad-key {
   min-height: 52px;
-  border-radius: 10px;
-  border: 1px solid rgba(79,140,255,0.3);
-  background: rgba(255,255,255,0.06);
-  color: #e8eaf0;
+  border-radius: var(--bta-radius-md);
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 30%, transparent);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--bta-text-primary);
   font-size: 1.25rem;
   font-weight: 700;
+  font-family: var(--bta-font-mono);
   cursor: pointer;
 }
 .clock-numpad-key:active { background: rgba(79,140,255,0.22); }
@@ -1211,10 +1233,10 @@ html, body {
 }
 .clock-numpad-set {
   min-height: 44px;
-  border-radius: 10px;
-  border: 1px solid rgba(79,140,255,0.6);
-  background: rgba(79,140,255,0.18);
-  color: #a5c8ff;
+  border-radius: var(--bta-radius-md);
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 60%, transparent);
+  background: var(--bta-accent-violet-soft);
+  color: var(--bta-accent-cyan);
   font-size: 0.9rem;
   font-weight: 800;
   cursor: pointer;
@@ -1245,9 +1267,9 @@ html, body {
   padding: 0.3rem 0.35rem;
 }
 .clock-tool-btn.active {
-  border-color: rgba(79,140,255,0.58);
-  background: rgba(79,140,255,0.16);
-  color: #bfdbfe;
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 58%, transparent);
+  background: var(--bta-accent-violet-soft);
+  color: var(--bta-accent-cyan);
 }
 .clock-tool-btn:disabled {
   opacity: 0.45;
@@ -1255,45 +1277,45 @@ html, body {
 }
 
 .clock-btn-visibility.active {
-  border-color: rgba(79,140,255,0.62);
-  background: rgba(79,140,255,0.18);
-  color: #bfdbfe;
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 62%, transparent);
+  background: var(--bta-accent-violet-soft);
+  color: var(--bta-accent-cyan);
 }
 
 .clock-btn-enabled.active {
-  border-color: rgba(34,197,94,0.64);
-  background: rgba(34,197,94,0.18);
-  color: #86efac;
+  border-color: var(--bta-make-border);
+  background: var(--bta-make-bg);
+  color: var(--bta-make-text);
 }
 
 .clock-btn-start {
-  border-color: rgba(34,197,94,0.64);
-  color: #86efac;
-  background: rgba(34,197,94,0.14);
+  border-color: var(--bta-make-border);
+  color: var(--bta-make-text);
+  background: var(--bta-make-bg-soft);
 }
 
 .clock-btn-stop {
-  border-color: rgba(239,68,68,0.68);
-  color: #fca5a5;
-  background: rgba(239,68,68,0.14);
+  border-color: var(--bta-miss-border);
+  color: var(--bta-miss-text);
+  background: var(--bta-miss-bg-soft);
 }
 
 .clock-btn-reset {
-  border-color: rgba(250,204,21,0.92);
-  color: #fef08a;
-  background: rgba(250,204,21,0.3);
-  box-shadow: inset 0 0 0 1px rgba(146,64,14,0.35);
+  border-color: color-mix(in srgb, var(--bta-warning) 92%, transparent);
+  color: var(--bta-warning);
+  background: var(--bta-warning-soft);
+  box-shadow: inset 0 0 0 1px rgba(146, 64, 14, 0.25);
 }
 
 .clock-btn-minus {
-  border-color: rgba(251,146,60,0.62);
-  color: #fdba74;
-  background: rgba(251,146,60,0.14);
+  border-color: rgba(251, 146, 60, 0.62);
+  color: #fdba74; /* intentional orange — distinct from warning amber */
+  background: rgba(251, 146, 60, 0.14);
 }
 
 .clock-btn-plus {
   border-color: rgba(79,140,255,0.62);
-  color: #93c5fd;
+  color: var(--bta-text-secondary);
   background: rgba(79,140,255,0.14);
 }
 .possession-row {
@@ -1408,9 +1430,9 @@ html, body {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1.5px solid rgba(232,234,240,0.45);
+  border: 1.5px solid rgba(232, 234, 240, 0.45);
   background: rgba(41, 43, 103, 0.82);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
@@ -1431,7 +1453,7 @@ html, body {
   border-radius: 999px;
   border: 1.5px solid rgba(232,234,240,0.65);
   background: rgba(41, 43, 103, 0.78);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.92rem;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -1447,19 +1469,19 @@ html, body {
 }
 
 .live-nav-btn:hover {
-  border-color: #4f8cff;
-  color: #4f8cff;
+  border-color: var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
   background: rgba(26, 46, 89, 0.86);
 }
 
 .live-nav-btn-end {
-  border-color: rgba(248,113,113,0.75);
-  color: #f87171;
+  border-color: color-mix(in srgb, var(--bta-danger) 75%, transparent);
+  color: var(--bta-danger);
 }
 
 .live-nav-btn-end:hover {
-  border-color: #f87171;
-  color: #fecaca;
+  border-color: var(--bta-danger);
+  color: var(--bta-miss-text);
   background: rgba(95, 26, 41, 0.7);
 }
 
@@ -1473,13 +1495,13 @@ html, body {
 
 /* Undo button — warm tint for quick muscle-memory */
 .live-nav-btn-undo {
-  border-color: rgba(245,158,11,0.75);
-  color: #fcd34d;
-  background: rgba(90,60,10,0.35);
+  border-color: color-mix(in srgb, var(--bta-warning) 75%, transparent);
+  color: var(--bta-warning);
+  background: rgba(90, 60, 10, 0.35);
 }
 .live-nav-btn-undo:hover {
-  border-color: #f59e0b;
-  color: #fef3c7;
+  border-color: var(--bta-warning);
+  color: color-mix(in srgb, var(--bta-warning) 80%, white);
   background: rgba(90, 60, 10, 0.6);
 }
 
@@ -1559,7 +1581,7 @@ html, body {
   border-radius: 12px;
   border: 1px solid rgba(232,234,240,0.24);
   background: rgba(19,22,55,0.97);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.72rem 0.82rem;
   display: flex;
   gap: 0.7rem;
@@ -1596,7 +1618,7 @@ html, body {
   border-radius: 8px;
   border: 1px solid rgba(232,234,240,0.3);
   background: rgba(255,255,255,0.08);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.76rem;
   font-weight: 700;
   padding: 0.28rem 0.62rem;
@@ -1660,13 +1682,13 @@ html, body {
 
 .operator-alert-badge-urgent {
   background: rgba(248,113,113,0.25);
-  color: #fca5a5;
+  color: var(--bta-miss-text);
   border: 1px solid rgba(248,113,113,0.45);
 }
 
 .operator-alert-badge-important {
   background: rgba(251,191,36,0.2);
-  color: #fde68a;
+  color: var(--bta-warning);
   border: 1px solid rgba(251,191,36,0.4);
 }
 
@@ -1763,13 +1785,13 @@ html, body {
 .confirm-btn-primary {
   border-color: rgba(79,140,255,0.52);
   background: rgba(79,140,255,0.22);
-  color: #bfdbfe;
+  color: var(--bta-text-secondary);
 }
 
 .confirm-btn-danger {
   border-color: rgba(248,113,113,0.58);
   background: rgba(248,113,113,0.22);
-  color: #fecaca;
+  color: var(--bta-miss-text-soft);
 }
 
 .confirm-btn:disabled {
@@ -1788,7 +1810,7 @@ html, body {
   border-radius: 9px;
   border: 1px solid rgba(248,113,113,0.58);
   background: rgba(248,113,113,0.16);
-  color: #fecaca;
+  color: var(--bta-miss-text-soft);
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.03em;
@@ -1810,7 +1832,7 @@ html, body {
   border-radius: 999px;
   border: 1px solid rgba(79,140,255,0.35);
   background: rgba(79,140,255,0.12);
-  color: #bfdbfe;
+  color: var(--bta-text-secondary);
   padding: 0.12rem 0.48rem;
   font-size: 0.7rem;
   font-weight: 800;
@@ -1958,19 +1980,19 @@ html, body {
 
 .summary-top-state-live {
   border-color: rgba(16,185,129,0.5);
-  color: #6ee7b7;
+  color: var(--bta-make-text);
   background: rgba(16,185,129,0.14);
 }
 
 .summary-top-state-break {
   border-color: rgba(242,194,75,0.52);
-  color: #f2c24b;
+  color: var(--bta-warning);
   background: rgba(242,194,75,0.14);
 }
 
 .summary-top-state-alert {
   border-color: rgba(248,113,113,0.56);
-  color: #fca5a5;
+  color: var(--bta-miss-text);
   background: rgba(248,113,113,0.14);
 }
 
@@ -2305,7 +2327,7 @@ html, body {
 }
 
 .summary-substat.warn {
-  color: #ff9b94;
+  color: var(--bta-miss-text);
 }
 
 .summary-sub-divider {
@@ -2712,7 +2734,7 @@ html, body {
   background: rgba(255,149,0,0.07);
 }
 .summary-player-row.top-scorer-row .spr-pts {
-  color: #8ff2b8;
+  color: var(--bta-make-text);
   font-weight: 900;
   text-shadow: 0 0 18px rgba(101,226,156,0.45);
 }
@@ -2756,7 +2778,7 @@ html, body {
   background: rgba(255,130,130,0.12);
 }
 .spr-badge-out {
-  background: #ff3b30;
+  background: var(--bta-danger);
   color: #fff;
   font-size: 0.6rem;
 }
@@ -2775,7 +2797,7 @@ html, body {
   opacity: 0.32;
 }
 .spr-stat.spr-to-warn {
-  color: #ff9500;
+  color: var(--bta-warning);
   font-weight: 700;
 }
 .spr-fouls {
@@ -2917,7 +2939,7 @@ html, body {
 .modal-close {
   background: rgba(255,255,255,0.1);
   border: none;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   border-radius: 50%;
   width: 30px;
   height: 30px;
@@ -3002,7 +3024,7 @@ html, body {
 .zone-btn.active {
   background: rgba(79,140,255,0.18);
   border-color: rgba(79,140,255,0.62);
-  color: #c7dbff;
+  color: var(--bta-text-secondary);
   box-shadow: 0 0 0 1px rgba(79,140,255,0.33);
 }
 
@@ -3104,7 +3126,7 @@ html, body {
   border-radius: 999px;
   border: 2px solid rgba(232,234,240,0.95);
   background: radial-gradient(circle at 30% 30%, #ffffff, #d6dbec);
-  color: #1b2146;
+  color: var(--bta-bg-panel);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3128,7 +3150,7 @@ html, body {
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 12px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.65rem 1rem;
   cursor: pointer;
   font-size: 0.92rem;
@@ -3250,7 +3272,7 @@ html, body {
    ================================================================ */
 .settings-page {
   min-height: 100vh;
-  background: #0b1226;
+  background: var(--bta-bg-base);
   overflow-y: auto;
   padding: 0 clamp(0.85rem, 2.4vw, 1.75rem) 2.5rem;
 }
@@ -3265,7 +3287,7 @@ html, body {
   border-bottom: 1px solid rgba(255,255,255,0.07);
   position: sticky;
   top: 0;
-  background: #0b1226;
+  background: var(--bta-bg-base);
   z-index: 10;
 }
 .settings-header h2 { font-size: 1.05rem; font-weight: 700; }
@@ -3274,7 +3296,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 10px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.45rem 0.9rem;
   cursor: pointer;
   font-size: 0.88rem;
@@ -3283,9 +3305,9 @@ html, body {
 }
 .save-btn {
   background: rgba(79,140,255,0.15);
-  border: 1.5px solid #4f8cff;
+  border: 1.5px solid var(--bta-accent-violet);
   border-radius: 10px;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
   padding: 0.45rem 1rem;
   cursor: pointer;
   font-size: 0.88rem;
@@ -3323,7 +3345,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 10px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.55rem 0.85rem;
   font-size: 1rem;
   min-height: 44px;
@@ -3485,12 +3507,12 @@ html, body {
   gap: 0.5rem;
 }
 .num-inp { width: 4rem !important; flex-shrink: 0; }
-.add-player-row input { flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; color: #e8eaf0; padding: 0.55rem 0.85rem; font-size: 1rem; min-height: 44px; }
+.add-player-row input { flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; color: var(--bta-text-primary); padding: 0.55rem 0.85rem; font-size: 1rem; min-height: 44px; }
 .add-btn {
   background: rgba(79,140,255,0.14);
-  border: 1px solid #4f8cff;
+  border: 1px solid var(--bta-accent-violet);
   border-radius: 10px;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
   padding: 0.55rem 1rem;
   cursor: pointer;
   font-weight: 700;
@@ -3503,7 +3525,7 @@ html, body {
   background: rgba(248,113,113,0.1);
   border: none;
   border-radius: 6px;
-  color: #f87171;
+  color: var(--bta-danger);
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   font-size: 0.82rem;
@@ -3512,9 +3534,9 @@ html, body {
 
 .start-btn {
   background: rgba(79,140,255,0.15);
-  border: 1.5px solid #4f8cff;
+  border: 1.5px solid var(--bta-accent-violet);
   border-radius: 12px;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
   padding: 0.7rem 1.4rem;
   cursor: pointer;
   font-size: 0.93rem;
@@ -3560,8 +3582,8 @@ html, body {
 }
 .settings-chip-active {
   background: rgba(79,140,255,0.18);
-  border-color: #4f8cff;
-  color: #4f8cff;
+  border-color: var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
 }
 .settings-chip-inactive {
   background: rgba(255,255,255,0.05);
@@ -3572,7 +3594,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 10px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.6rem 0.85rem;
   font-size: 0.9rem;
   width: 100%;
@@ -3601,8 +3623,8 @@ html, body {
 }
 .settings-chip-active {
   background: rgba(79,140,255,0.18);
-  border-color: #4f8cff;
-  color: #4f8cff;
+  border-color: var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
 }
 .settings-chip-inactive {
   background: rgba(255,255,255,0.05);
@@ -3613,7 +3635,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 10px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.6rem 0.85rem;
   font-size: 0.9rem;
   width: 100%;
@@ -3638,7 +3660,7 @@ html, body {
   background: rgba(79,140,255,0.15);
   border: 1px solid rgba(79,140,255,0.3);
   border-radius: 6px;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
   font-size: 0.72rem;
   font-weight: 800;
   padding: 0.15rem 0.45rem;
@@ -3660,7 +3682,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 7px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.22rem 0.55rem;
   cursor: pointer;
   font-size: 0.75rem;
@@ -3680,7 +3702,7 @@ html, body {
   font-size: 0.88rem;
 }
 .roster-info { display: flex; align-items: center; gap: 0.45rem; flex: 1; min-width: 0; }
-.r-num { color: #4f8cff; font-weight: 800; font-size: 0.88rem; min-width: 2rem; flex-shrink: 0; }
+.r-num { color: var(--bta-accent-violet); font-weight: 800; font-size: 0.88rem; min-width: 2rem; flex-shrink: 0; }
 .r-name { font-size: 0.86rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .r-pos { font-size: 0.68rem; color: rgba(232,234,240,0.45); background: rgba(255,255,255,0.07); padding: 0.08rem 0.35rem; border-radius: 4px; flex-shrink: 0; }
 .r-ht  { font-size: 0.68rem; color: rgba(232,234,240,0.35); flex-shrink: 0; }
@@ -3700,7 +3722,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 8px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.3rem 0.5rem;
   font-size: 1rem;
   min-height: 44px;
@@ -3711,7 +3733,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 8px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0 0.4rem;
   font-size: 1rem;
   min-height: 44px;
@@ -3742,7 +3764,7 @@ html, body {
   background: rgba(255,255,255,0.04);
   border: 1.5px solid rgba(255,255,255,0.09);
   border-radius: 12px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.7rem 1rem;
   cursor: pointer;
   text-align: left;
@@ -3785,7 +3807,7 @@ html, body {
   min-height: 44px;
   cursor: pointer;
 }
-.date-inp:focus { outline: none; border-color: rgba(79,140,255,0.4); color: #e8eaf0; }
+.date-inp:focus { outline: none; border-color: rgba(79,140,255,0.4); color: var(--bta-text-primary); }
 /* style the date picker chrome */
 .date-inp::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
 
@@ -3801,11 +3823,11 @@ html, body {
 }
 
 .connection-indicator.online {
-  color: #22c55e;
+  color: var(--bta-success);
 }
 
 .connection-indicator.offline {
-  color: #ef4444;
+  color: var(--bta-danger);
   animation: pulse-offline 1s infinite;
 }
 
@@ -3819,7 +3841,7 @@ html, body {
   top: 0.6rem;
   left: 50%;
   transform: translateX(-50%);
-  background: #f87171;
+  background: var(--bta-danger);
   color: #fff;
   font-size: 0.7rem;
   font-weight: 700;
@@ -3852,13 +3874,13 @@ html, body {
 .pfoul {
   font-size: 0.7rem;
   font-weight: 700;
-  color: #f87171;
+  color: var(--bta-danger);
   background: rgba(248,113,113,0.12);
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
 }
 .pfoul-warn {
-  color: #fbbf24;
+  color: var(--bta-warning);
   background: rgba(251,191,36,0.15);
 }
 .pfoul-out {
@@ -3885,12 +3907,12 @@ html, body {
 .foul-out-alert {
   background: rgba(248,113,113,0.18);
   border: 1px solid rgba(248,113,113,0.45);
-  color: #fca5a5;
+  color: var(--bta-miss-text);
 }
 .foul-warn-alert {
   background: rgba(251,191,36,0.1);
   border: 1px solid rgba(251,191,36,0.35);
-  color: #fde68a;
+  color: var(--bta-warning);
 }
 
 /* ---- Setup validation errors ---- */
@@ -3910,7 +3932,7 @@ html, body {
   border: 1px solid rgba(248,113,113,0.3);
   border-radius: 8px;
   font-size: 0.8rem;
-  color: #fca5a5;
+  color: var(--bta-miss-text);
 }
 
 /* ---- Start button disabled state ---- */
@@ -3929,7 +3951,7 @@ html, body {
   text-decoration: none;
   padding: 0.25rem;
 }
-.coach-link-btn:hover { color: #4f8cff; text-decoration: underline; }
+.coach-link-btn:hover { color: var(--bta-accent-violet); text-decoration: underline; }
 
 /* ---- Pending count badge ---- */
 .pending-badge {
@@ -3939,7 +3961,7 @@ html, body {
   background: rgba(248,113,113,0.15);
   border: 1px solid rgba(248,113,113,0.35);
   border-radius: 20px;
-  color: #f87171;
+  color: var(--bta-danger);
   font-size: 0.7rem;
   font-weight: 700;
   padding: 0.15rem 0.55rem;
@@ -3993,7 +4015,7 @@ html, body {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 8px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.78rem;
   padding: 0.35rem 0.6rem;
   min-height: 44px;
@@ -4024,19 +4046,19 @@ html, body {
   transition: background 0.15s, opacity 0.15s;
   background: rgba(79,140,255,0.15);
   border: 1px solid rgba(79,140,255,0.4);
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
 }
 .submit-btn:hover:not(:disabled) { background: rgba(79,140,255,0.25); }
 .submit-btn:disabled { opacity: 0.55; cursor: default; }
 .submit-btn.submit-success {
   background: rgba(79,140,255,0.2);
-  border-color: #4f8cff;
-  color: #4f8cff;
+  border-color: var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
 }
 .submit-btn.submit-error {
   background: rgba(248,113,113,0.15);
   border-color: rgba(248,113,113,0.5);
-  color: #f87171;
+  color: var(--bta-danger);
 }
 
 .submit-banner {
@@ -4064,13 +4086,13 @@ html, body {
 .submit-banner-success {
   border-color: rgba(79,140,255,0.45);
   background: rgba(79,140,255,0.12);
-  color: #ccfbf1;
+  color: var(--bta-make-text-soft);
 }
 
 .submit-banner-error {
   border-color: rgba(248,113,113,0.45);
   background: rgba(248,113,113,0.12);
-  color: #fecaca;
+  color: var(--bta-miss-text-soft);
 }
 
 @media (max-width: 820px) {
@@ -4105,7 +4127,7 @@ html, body {
   padding: 1.5rem;
   background:
     radial-gradient(circle at top center, rgba(79,140,255,0.18), transparent 0 42%),
-    linear-gradient(180deg, #081224 0%, #0b1226 100%);
+    linear-gradient(180deg, #081224 0%, var(--bta-bg-base) 100%);
 }
 
 .pregame-card {
@@ -4133,7 +4155,7 @@ html, body {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.22em;
-  color: #8fb7ff;
+  color: var(--bta-accent-cyan);
   text-transform: uppercase;
   margin-bottom: 0.15rem;
 }
@@ -4157,7 +4179,7 @@ html, body {
 }
 
 .pregame-team-pill {
-  --pregame-team-color: #4f8cff;
+  --pregame-team-color: var(--bta-accent-violet);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -4190,7 +4212,7 @@ html, body {
 }
 
 .pregame-team-name-empty {
-  color: color-mix(in srgb, var(--pregame-team-color) 66%, #fca5a5);
+  color: color-mix(in srgb, var(--pregame-team-color) 66%, var(--bta-miss-text));
   font-style: italic;
 }
 
@@ -4216,7 +4238,7 @@ html, body {
   background: rgba(255,255,255,0.07);
   border: 1.5px solid rgba(255,255,255,0.18);
   border-radius: 12px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.98rem;
   font-weight: 600;
   text-align: center;
@@ -4255,7 +4277,7 @@ html, body {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 8px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.88rem;
   padding: 0.45rem 0.65rem;
   resize: vertical;
@@ -4281,7 +4303,7 @@ html, body {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 8px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.88rem;
   padding: 0.3rem 0.6rem;
   min-height: 38px;
@@ -4298,7 +4320,7 @@ html, body {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 8px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.88rem;
   padding: 0.3rem 0.6rem;
   min-height: 38px;
@@ -4338,7 +4360,7 @@ html, body {
 .pregame-lineup-count {
   font-size: 0.72rem;
   font-weight: 800;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
 }
 
 .pregame-lineup-grid {
@@ -4351,7 +4373,7 @@ html, body {
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 10px;
   background: rgba(16,18,45,0.7);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   min-height: 50px;
   padding: 0.4rem 0.5rem;
   display: flex;
@@ -4370,14 +4392,14 @@ html, body {
 }
 
 .pregame-lineup-player.is-selected {
-  border-color: #4f8cff;
+  border-color: var(--bta-accent-violet);
   background: rgba(79,140,255,0.12);
 }
 
 .pregame-lineup-number {
   font-size: 0.76rem;
   font-weight: 800;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
 }
 
 .pregame-lineup-name {
@@ -4407,7 +4429,7 @@ html, body {
 
 .pregame-error {
   font-size: 0.82rem;
-  color: #fca5a5;
+  color: var(--bta-miss-text);
   background: rgba(248,113,113,0.1);
   border: 1px solid rgba(248,113,113,0.3);
   border-radius: 8px;
@@ -4425,8 +4447,8 @@ html, body {
   cursor: pointer;
   transition: all 0.15s;
   background: rgba(79,140,255,0.16);
-  border: 2px solid #4f8cff;
-  color: #4f8cff;
+  border: 2px solid var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
 }
 
 .pregame-start-btn:hover:not(:disabled) {
@@ -4455,7 +4477,7 @@ html, body {
   border-radius: 12px;
   border: 1px solid rgba(79,140,255,0.42);
   background: rgba(79,140,255,0.12);
-  color: #7ff3df;
+  color: var(--bta-make-text);
   font-size: 0.88rem;
   font-weight: 700;
   display: inline-flex;
@@ -4467,8 +4489,8 @@ html, body {
 
 .pregame-connect-btn:hover {
   background: rgba(79,140,255,0.2);
-  border-color: #4f8cff;
-  color: #ccfbf1;
+  border-color: var(--bta-accent-violet);
+  color: var(--bta-make-text-soft);
 }
 
 .pregame-settings-callout {
@@ -4539,7 +4561,7 @@ html, body {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 10px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.84rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -4556,7 +4578,7 @@ html, body {
   flex: 1;
   font-size: 0.82rem;
   font-weight: 700;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.25rem 0.25rem;
   letter-spacing: 0.03em;
 }
@@ -4567,7 +4589,7 @@ html, body {
   background: rgba(79,140,255,0.14);
   border: 1px solid rgba(79,140,255,0.35);
   border-radius: 10px;
-  color: #cfe6ff;
+  color: var(--bta-text-secondary);
   font-size: 0.78rem;
   font-weight: 800;
   cursor: pointer;
@@ -4612,7 +4634,7 @@ html, body {
   border-radius: 8px;
   border: 1px solid rgba(79,140,255,0.25);
   background: rgba(20,25,35,0.5);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 0.9rem;
   font-weight: 500;
   transition: border-color 0.12s, background 0.12s;
@@ -4639,19 +4661,19 @@ html, body {
   cursor: pointer;
   background: rgba(79,140,255,0.1);
   border: 1.5px solid rgba(79,140,255,0.35);
-  color: #7ff3df;
+  color: var(--bta-make-text);
   transition: all 0.12s;
 }
 
 .pregame-lineup-btn:hover {
   background: rgba(79,140,255,0.18);
-  border-color: #4f8cff;
+  border-color: var(--bta-accent-violet);
 }
 
 .pregame-lineup-btn.lineup-is-set {
   background: rgba(16,185,129,0.1);
   border-color: rgba(16,185,129,0.5);
-  color: #6ee7b7;
+  color: var(--bta-make-text);
 }
 
 .pregame-lineup-btn.lineup-is-set:hover {
@@ -4662,7 +4684,7 @@ html, body {
 .pregame-lineup-btn.lineup-required {
   background: rgba(242,194,75,0.08);
   border-color: rgba(242,194,75,0.55);
-  color: #f2c24b;
+  color: var(--bta-warning);
   animation: lineup-pulse 2.2s ease-in-out infinite;
 }
 
@@ -4707,7 +4729,7 @@ html, body {
   border-radius: 999px;
   background: rgba(79,140,255,0.12);
   border: 1px solid rgba(79,140,255,0.28);
-  color: #a8c8ff;
+  color: var(--bta-accent-cyan);
   font-size: 0.72rem;
   font-weight: 800;
 }
@@ -4745,7 +4767,7 @@ html, body {
   background: rgba(255,255,255,0.05);
   border: 1.5px solid rgba(255,255,255,0.12);
   border-radius: 10px;
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   cursor: pointer;
   min-height: 64px;
   transition: all 0.12s;
@@ -4759,13 +4781,13 @@ html, body {
 
 .lineup-player-btn.lineup-player-selected {
   background: rgba(79,140,255,0.12);
-  border-color: #4f8cff;
+  border-color: var(--bta-accent-violet);
 }
 
 .lineup-player-num {
   font-size: 0.85rem;
   font-weight: 800;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
 }
 
 .lineup-player-name {
@@ -4783,7 +4805,7 @@ html, body {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #4f8cff;
+  background: var(--bta-accent-violet);
   color: #fff;
   font-size: 0.65rem;
   display: flex;
@@ -4805,7 +4827,7 @@ html, body {
   background: rgba(248,113,113,0.1);
   border: 1px solid rgba(248,113,113,0.25);
   border-radius: 10px;
-  color: #f87171;
+  color: var(--bta-danger);
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
@@ -4822,7 +4844,7 @@ html, body {
   background: rgba(79,140,255,0.12);
   border: 1px solid rgba(79,140,255,0.35);
   border-radius: 10px;
-  color: #7ff3df;
+  color: var(--bta-make-text);
   font-size: 0.8rem;
   font-weight: 800;
   cursor: pointer;
@@ -4849,13 +4871,13 @@ html, body {
 
 .toggle-btn:hover {
   background: rgba(255,255,255,0.1);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
 }
 
 .toggle-btn.active {
   background: rgba(79,140,255,0.12);
   border-color: rgba(79,140,255,0.35);
-  color: #7ff3df;
+  color: var(--bta-make-text);
 }
 
 .roster-panel {
@@ -4922,7 +4944,7 @@ html, body {
 }
 .roster-reset-btn:hover {
   background: rgba(255,59,48,0.18);
-  color: #ff3b30;
+  color: var(--bta-danger);
   border-color: rgba(255,59,48,0.35);
 }
 
@@ -4964,7 +4986,7 @@ html, body {
 .roster-player-num {
   font-size: 0.82rem;
   font-weight: 900;
-  color: #4f8cff;
+  color: var(--bta-accent-violet);
   min-width: 28px;
   text-align: center;
 }
@@ -5002,7 +5024,7 @@ html, body {
   border-radius: 6px;
   background: rgba(248,113,113,0.1);
   border: 1px solid rgba(248,113,113,0.25);
-  color: #f87171;
+  color: var(--bta-danger);
   font-size: 0.75rem;
   font-weight: 800;
   cursor: pointer;
@@ -5049,12 +5071,12 @@ html, body {
 }
 .foul-badge-warn {
   border-color: rgba(251,191,36,0.55);
-  color: #fbbf24;
+  color: var(--bta-warning);
   background: rgba(251,191,36,0.1);
 }
 .foul-badge-out {
   border-color: rgba(248,113,113,0.55);
-  color: #f87171;
+  color: var(--bta-danger);
   background: rgba(248,113,113,0.1);
 }
 /* Inline quick-action strip that expands below a tapped player */
@@ -5086,14 +5108,14 @@ html, body {
 .pqa-miss.pqa-2pt { border-color: var(--result-miss-border); color: var(--result-miss-text); background: var(--result-miss-bg-soft); }
 .pqa-make.pqa-3pt { border-color: var(--result-make-border); color: var(--result-make-text); background: var(--result-make-bg-soft); }
 .pqa-miss.pqa-3pt { border-color: var(--result-miss-border); color: var(--result-miss-text); background: var(--result-miss-bg-soft); }
-.pqa-ft   { border-color: rgba(16,185,129,0.35);  color: #a7f3d0; }
-.pqa-reb  { border-color: rgba(79,140,255,0.5);   color: #93c5fd; }
-.pqa-foul { border-color: rgba(245,158,11,0.65);  color: #fcd34d; background: rgba(245,158,11,0.1); }
-.pqa-to   { border-color: rgba(239,68,68,0.5);    color: #fca5a5; background: rgba(239,68,68,0.08); }
-.pqa-stl  { border-color: rgba(34,197,94,0.55);   color: #86efac; }
+.pqa-ft   { border-color: rgba(16,185,129,0.35);  color: var(--bta-make-text-soft); }
+.pqa-reb  { border-color: rgba(79,140,255,0.5);   color: var(--bta-text-secondary); }
+.pqa-foul { border-color: rgba(245,158,11,0.65);  color: var(--bta-warning); background: rgba(245,158,11,0.1); }
+.pqa-to   { border-color: rgba(239,68,68,0.5);    color: var(--bta-miss-text); background: rgba(239,68,68,0.08); }
+.pqa-stl  { border-color: rgba(34,197,94,0.55);   color: var(--bta-make-text); }
 .pqa-asst { border-color: rgba(168,85,247,0.55);  color: #d8b4fe; }
 .pqa-blk  { border-color: rgba(251,146,60,0.55);  color: #fdba74; }
-.pqa-sub  { border-color: rgba(248,113,113,0.4);  color: #fca5a5; }
+.pqa-sub  { border-color: rgba(248,113,113,0.4);  color: var(--bta-miss-text); }
 
 /* Right panel Players/Stats toggle row */
 .right-panel-toggle-row {
@@ -5168,7 +5190,7 @@ html, body {
   cursor: pointer;
   background: rgba(248,113,113,0.12);
   border: 1.5px solid rgba(248,113,113,0.45);
-  color: #f87171;
+  color: var(--bta-danger);
   transition: all 0.12s;
 }
 
@@ -5183,7 +5205,7 @@ html, body {
   justify-content: center;
   min-height: 100vh;
   padding: 1.5rem;
-  background: #0b1226;
+  background: var(--bta-bg-base);
 }
 
 .postgame-card {
@@ -5205,7 +5227,7 @@ html, body {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.18em;
-  color: #f87171;
+  color: var(--bta-danger);
   text-transform: uppercase;
   margin-bottom: 0.35rem;
 }
@@ -5246,7 +5268,7 @@ html, body {
   border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.14);
   background: rgba(20,22,43,0.8);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   padding: 0.45rem 0.7rem;
   font-size: 0.92rem;
   outline: none;
@@ -5294,7 +5316,7 @@ html, body {
   border: 1px solid rgba(255,255,255,0.18);
   border-radius: 12px;
   background: rgba(20,22,43,0.82);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
   font-size: 2.2rem;
   font-weight: 900;
   line-height: 1;
@@ -5327,8 +5349,8 @@ html, body {
   cursor: pointer;
   transition: all 0.15s;
   background: rgba(79,140,255,0.16);
-  border: 2px solid #4f8cff;
-  color: #4f8cff;
+  border: 2px solid var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
   text-align: center;
   text-decoration: none;
 }
@@ -5352,7 +5374,7 @@ html, body {
   transition: all 0.12s;
 }
 
-.postgame-retry-btn:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: #e8eaf0; }
+.postgame-retry-btn:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: var(--bta-text-primary); }
 .postgame-retry-btn:disabled { opacity: 0.45; cursor: default; }
 
 .postgame-apply-btn {
@@ -5365,7 +5387,7 @@ html, body {
   cursor: pointer;
   background: rgba(79,140,255,0.12);
   border: 1px solid rgba(79,140,255,0.45);
-  color: #7ff3df;
+  color: var(--bta-make-text);
   transition: all 0.12s;
 }
 
@@ -5388,7 +5410,7 @@ html, body {
   padding: 0.5rem 1rem;
   background: rgba(251,191,36,0.12);
   border: 1px solid rgba(251,191,36,0.45);
-  color: #fcd34d;
+  color: var(--bta-warning);
 }
 
 .postgame-reset-btn:hover {
@@ -5399,7 +5421,7 @@ html, body {
   padding: 0.5rem 1rem;
   background: rgba(248,113,113,0.12);
   border: 1px solid rgba(248,113,113,0.45);
-  color: #fca5a5;
+  color: var(--bta-miss-text);
 }
 
 .postgame-discard-btn:hover {
@@ -5420,7 +5442,7 @@ html, body {
   transition: all 0.12s;
 }
 
-.postgame-new-btn:hover { background: rgba(255,255,255,0.1); color: #e8eaf0; }
+.postgame-new-btn:hover { background: rgba(255,255,255,0.1); color: var(--bta-text-primary); }
 
 .postgame-more-actions {
   border: 1px solid rgba(255,255,255,0.14);
@@ -5450,7 +5472,7 @@ html, body {
 
 .postgame-more-actions > summary:hover {
   background: rgba(255,255,255,0.06);
-  color: #e8eaf0;
+  color: var(--bta-text-primary);
 }
 
 .postgame-more-actions[open] > summary {
@@ -5663,7 +5685,7 @@ html, body {
 
 .chain-prompt-made {
   font-weight: 700;
-  color: #22c55e;
+  color: var(--bta-success);
 }
 
 .chain-prompt-actions {
