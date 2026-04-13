@@ -1,10 +1,10 @@
 param(
     [string]$Api = "https://btarealtime-api-production.up.railway.app",
     [string]$ApiKey = "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU",
-    [string]$Email = "owner@example.com",
+    [string]$Email = "team@example.com",
     [string]$LoginPw = "12345678",
-    [string]$SchoolId = "demo-school",
-    [string]$TeamJson = "$PSScriptRoot\..\demo-school-team.json"
+    [string]$SchoolId = "school-123",
+    [string]$TeamJson = "$PSScriptRoot\..\school-123-team.json"
 )
 
 $ErrorActionPreference = "Stop"

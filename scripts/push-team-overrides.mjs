@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Push comprehensive game overrides with player-level stats for demo team.
-// Usage: node scripts/push-bears-overrides.mjs
+// Push comprehensive game overrides with player-level stats for team.
+// Usage: node scripts/push-team-overrides.mjs
 
 const API = "https://btarealtime-api-production.up.railway.app";
 const KEY = "Q7mZ2xR9aV6pT3kLw8JfH1N5gC4sD0YvE2uB7cM9WqP3tK8Xr6LhS1dF4jA5oU";
-const SCHOOL = "demo-school";
+const SCHOOL = "school-123";
 
 import { readFileSync } from "node:fs";
 
-const teamData = JSON.parse(readFileSync("demo-school-team.json", "utf8"));
+const teamData = JSON.parse(readFileSync("team-data.json", "utf8"));
 const players = teamData.teams[0].players;
 const schedule = teamData.teams[0].schedule.filter((g) => g.status === "final");
 
@@ -49,7 +49,7 @@ async function main() {
   const loginRes = await fetch(`${API}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": KEY },
-    body: JSON.stringify({ email: "owner@example.com", password: "12345678" }),
+    body: JSON.stringify({ email: "team@example.com", password: "12345678" }),
   });
   const { token } = await loginRes.json();
   const headers = {

@@ -1,5 +1,5 @@
 """
-USBL demo team extractor.
+USBL team extractor.
 
 This script uses the same Supabase REST data source that usbl.com uses at
 runtime. It auto-discovers the Supabase URL and anon key from the USBL web
@@ -10,10 +10,10 @@ bundle, then exports a BTA-friendly team JSON with:
 - full schedule/results
 
 Usage:
-  python scripts/scrape_bears.py
-  python scripts/scrape_bears.py --out demo-school-team.json
-  python scripts/scrape_bears.py --no-dedupe
-  python scripts/scrape_bears.py --supabase-url ... --anon-key ...
+  python scripts/scrape_team.py
+  python scripts/scrape_team.py --out team-data.json
+  python scripts/scrape_team.py --no-dedupe
+  python scripts/scrape_team.py --supabase-url ... --anon-key ...
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ from urllib.parse import urljoin
 import requests
 
 USBL_BASE = "https://usbl.com"
-TEAM_SLUG = "demo-school"
-DEFAULT_OUT = "demo-school-team.json"
+TEAM_SLUG = "school-123"
+DEFAULT_OUT = "team-data.json"
 
 HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; BTA-DataExtractor/2.0)",
@@ -342,7 +342,7 @@ def season_label_from_year(season: dict[str, Any] | None) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Extract demo team data from USBL backend")
+    parser = argparse.ArgumentParser(description="Extract team data from USBL backend")
     parser.add_argument("--out", default=DEFAULT_OUT, help="Output path relative to repo root")
     parser.add_argument("--supabase-url", default="", help="Optional override for Supabase project URL")
     parser.add_argument("--anon-key", default="", help="Optional override for Supabase anon key")
@@ -648,18 +648,18 @@ def main() -> None:
     output = {
         "teams": [
             {
-                "id": "team-demo-school",
-                "name": as_ascii(str(team.get("full_name") or "demo team")),
-                "abbreviation": as_ascii(str(team.get("abbreviation") or "VWB")),
+                "id": "team-school-123",
+                "name": as_ascii(str(team.get("full_name") or "Team Name")),
+                "abbreviation": as_ascii(str(team.get("abbreviation") or "TEAM")),
                 "season": season_label,
                 "teamColor": as_ascii(str(team.get("primary_color") or "#000000")),
                 "record": record,
                 "conference": "Western",
-                "arena": "Hudson Bay High School, Vancouver WA",
+                "arena": "Home Arena",
                 "teamContext": (
                     "Semi-pro team in the USBL Western Conference. "
                     f"Season record {record}. "
-                    "Data imported from USBL backend for demo/testing."
+                    "Data imported from USBL backend for setup/testing."
                 ),
                 "coachStyle": "balanced",
                 "schedule": schedule_payload,
