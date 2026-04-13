@@ -456,7 +456,7 @@ export function CheckoutCancelPage({ onNavigate }: RoutedPageProps) {
 }
 
 export function BillingPage({ onNavigate }: RoutedPageProps) {
-  const [submittingCycle, setSubmittingCycle] = useState<"monthly" | "yearly" | null>(null);
+  const [submittingCycle, setSubmittingCycle] = useState<"monthly" | null>(null);
   const [submittingPortal, setSubmittingPortal] = useState(false);
   const [status, setStatus] = useState("Loading billing information...");
   const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
@@ -474,7 +474,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       if (entitlement?.accessActive) {
         setStatus("Your subscription is active. Use the button below to manage your plan through Stripe.");
       } else {
-        setStatus("Start a checkout session to activate monthly or yearly access. You can apply a promo code before checkout.");
+        setStatus("Start checkout to activate monthly access. You can apply a promo code before checkout.");
       }
       setLoading(false);
     };
@@ -520,7 +520,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
     }
   }
 
-  async function startCheckout(planCycle: "monthly" | "yearly") {
+  async function startCheckout(planCycle: "monthly") {
     setSubmittingCycle(planCycle);
     setStatus(`Starting ${planCycle} checkout...`);
     try {
@@ -641,7 +641,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             <h3 className="policy-section-heading">Start Subscription</h3>
             <p className="stats-page-subcopy policy-section-body">{status}</p>
             <ul className="policy-section-list">
-              <li>Monthly and yearly checkout are available in Stripe-hosted checkout.</li>
+              <li>Monthly checkout is available in Stripe-hosted checkout.</li>
               <li>After checkout, return to the dashboard and refresh if access does not update immediately.</li>
             </ul>
           </section>
@@ -652,9 +652,9 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         <h3 className="policy-section-heading">Current Rollout</h3>
         <p className="stats-page-subcopy policy-section-body">This phase includes core checkout and subscription management.</p>
         <ul className="policy-section-list">
-          <li>Hosted checkout for monthly and yearly plans</li>
+          <li>Hosted checkout for monthly plans</li>
           <li>Org-level entitlement and billing portal</li>
-          <li>Trial-to-paid enforcement</li>
+          <li>Subscription-based paywall enforcement</li>
           <li>Promo code support (beta)</li>
         </ul>
       </section>
@@ -675,14 +675,6 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                 disabled={submittingCycle !== null}
               >
                 {submittingCycle === "monthly" ? "Starting Monthly..." : "Start Monthly Plan"}
-              </button>
-              <button
-                type="button"
-                className="shell-nav-link"
-                onClick={() => void startCheckout("yearly")}
-                disabled={submittingCycle !== null}
-              >
-                {submittingCycle === "yearly" ? "Starting Yearly..." : "Start Yearly Plan"}
               </button>
             </>
           )}

@@ -72,8 +72,16 @@ describe("server billing integration", () => {
       entitlement?: { paywallEnabled?: boolean; accessActive?: boolean; reason?: string; status?: string };
     };
     expect(entitlementBefore.entitlement?.paywallEnabled).toBe(true);
-    expect(entitlementBefore.entitlement?.accessActive).toBe(true);
-    expect(entitlementBefore.entitlement?.reason).toBe("trial_active");
+    expect(entitlementBefore.entitlement?.accessActive).toBe(false);
+    expect(entitlementBefore.entitlement?.reason).toBe("inactive_subscription");
+
+    const premiumBlockedResponse = await fetch(`${API_BASE}/api/season-stats`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(premiumBlockedResponse.status).toBe(402);
 
     const validateCouponResponse = await fetch(`${API_BASE}/api/billing/validate-coupon`, {
       method: "POST",
@@ -150,6 +158,14 @@ describe("server billing integration", () => {
     expect(entitlementAfter.entitlement?.status).toBe("active");
     expect(entitlementAfter.entitlement?.reason).toBe("subscription_active");
 
+    const premiumAllowedResponse = await fetch(`${API_BASE}/api/season-stats`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(premiumAllowedResponse.status).toBe(200);
+
     const portalResponse = await fetch(`${API_BASE}/api/billing/portal-session`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -178,6 +194,37 @@ describe("server billing integration", () => {
     expect(duplicateWebhookResponse.status).toBe(200);
     const duplicatePayload = await duplicateWebhookResponse.json() as { duplicate?: boolean };
     expect(duplicatePayload.duplicate).toBe(true);
+
+    const paymentFailedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_invoice_failed_school_a",
+        type: "invoice.payment_failed",
+        data: {
+          object: {
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(paymentFailedResponse.status).toBe(200);
+
+    const entitlementPastDueResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(entitlementPastDueResponse.status).toBe(200);
+    const entitlementPastDue = await entitlementPastDueResponse.json() as {
+      entitlement?: { accessActive?: boolean; status?: string };
+    };
+    expect(entitlementPastDue.entitlement?.accessActive).toBe(false);
+    expect(entitlementPastDue.entitlement?.status).toBe("past_due");
   });
 
   it("creates bootstrap checkout sessions without pre-existing tenant scope", async () => {
@@ -191,7 +238,7 @@ describe("server billing integration", () => {
         email: "bootstrap@school.org",
         schoolName: "Bootstrap High",
         teamName: "Bootstrap Varsity",
-        planCycle: "yearly",
+        planCycle: "monthly",
       }),
     });
 
@@ -219,7 +266,7 @@ describe("server billing integration", () => {
     const entitlementPayload = await entitlementResponse.json() as {
       entitlement?: { reason?: string; accessActive?: boolean };
     };
-    expect(entitlementPayload.entitlement?.accessActive).toBe(true);
-    expect(entitlementPayload.entitlement?.reason).toBe("trial_active");
+    expect(entitlementPayload.entitlement?.accessActive).toBe(false);
+    expect(entitlementPayload.entitlement?.reason).toBe("inactive_subscription");
   });
 });

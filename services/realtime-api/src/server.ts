@@ -72,6 +72,9 @@ import {
   saveBillingState,
   findBillingStateByStripeCustomerId,
   findBillingStateByStripeSubscriptionId,
+  hasProcessedStripeWebhookEvent,
+  markProcessedStripeWebhookEvent,
+  trimProcessedStripeWebhookEvents,
 } from "./store.js";
 import {
   extractBearerToken,
@@ -89,6 +92,7 @@ import {
   resolveRequestTenant,
   resolveSocketTenant
 } from "./tenant-guards.js";
+import { logger } from "./logger.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -110,6 +114,15 @@ app.use((req, res, next) => {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
 
+  next();
+});
+
+app.use((req, res, next) => {
+  const inboundRequestId = readHeaderValue(req.headers["x-request-id"]);
+  const requestId = inboundRequestId && inboundRequestId.trim().length > 0
+    ? inboundRequestId.trim()
+    : randomBytes(8).toString("hex");
+  res.setHeader("x-request-id", requestId);
   next();
 });
 
@@ -217,14 +230,14 @@ app.use(cors({
     } else if (!origin || isCorsOriginAllowed(origin)) {
       callback(null, true);
     } else {
-      console.warn(`[realtime-api] CORS blocked origin: ${origin}`);
+      logger.warn("cors.blocked_origin", { origin });
       callback(new Error("CORS not allowed"));
     }
   },
   credentials: true
 }));
 
-app.post("/api/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/api/billing/webhook", express.raw({ type: "application/json" }), withAsyncRoute(async (req, res) => {
   try {
     if (!PAYWALL_ENABLED) {
       res.status(202).json({ received: true, ignored: true, reason: "paywall_disabled" });
@@ -252,15 +265,12 @@ app.post("/api/billing/webhook", express.raw({ type: "application/json" }), asyn
       event = stripeClient.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);
     }
 
-    if (processedStripeWebhookEvents.has(event.id)) {
+    if (hasProcessedStripeWebhookEvent(event.id)) {
       res.status(200).json({ received: true, duplicate: true });
       return;
     }
-
-    if (processedStripeWebhookEvents.size > 10_000) {
-      processedStripeWebhookEvents.clear();
-    }
-    processedStripeWebhookEvents.add(event.id);
+    trimProcessedStripeWebhookEvents(10_000);
+    markProcessedStripeWebhookEvent(event.id);
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -306,14 +316,42 @@ app.post("/api/billing/webhook", express.raw({ type: "application/json" }), asyn
       }
     }
 
+    if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId = typeof invoice.customer === "string" ? invoice.customer : "";
+      const invoiceSubscription = (invoice as unknown as { subscription?: unknown }).subscription;
+      const subscriptionId = typeof invoiceSubscription === "string" ? invoiceSubscription : "";
+
+      const stateFromCustomer = customerId ? findBillingStateByStripeCustomerId(customerId) : null;
+      const stateFromSubscription = subscriptionId ? findBillingStateByStripeSubscriptionId(subscriptionId) : null;
+      const schoolId = stateFromSubscription?.schoolId || stateFromCustomer?.schoolId || "";
+
+      if (schoolId) {
+        saveBillingState({
+          planId: "pro",
+          status: "past_due",
+          stripeCustomerId: customerId || stateFromCustomer?.stripeCustomerId,
+          stripeSubscriptionId: subscriptionId || stateFromSubscription?.stripeSubscriptionId,
+        }, { schoolId });
+      }
+    }
+
     res.status(200).json({ received: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid webhook payload";
     res.status(400).json({ error: message });
   }
-});
+}));
 
 app.use(express.json());
+
+type AsyncRouteHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+
+function withAsyncRoute(handler: AsyncRouteHandler) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    void handler(req, res, next).catch(next);
+  };
+}
 
 // Simple rate limiter: scoped per route family and IP.
 const rateLimitState = new Map<string, { count: number; resetAt: number }>();
@@ -1783,18 +1821,13 @@ const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
 const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
 const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
 const PAYWALL_ENABLED = process.env.BTA_PAYWALL_ENABLED === "1";
-const BILLING_TRIAL_DAYS = Number(process.env.BTA_BILLING_TRIAL_DAYS ?? 14);
+const BILLING_TRIAL_DAYS = Number(process.env.BTA_BILLING_TRIAL_DAYS ?? 0);
 const STRIPE_TEST_MODE = process.env.BTA_STRIPE_TEST_MODE === "1";
 const STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim();
 const STRIPE_WEBHOOK_SECRET = process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim();
 const STRIPE_PRICE_ID_MONTHLY = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim();
-const STRIPE_PRICE_ID_YEARLY = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim();
-const STRIPE_PRICES: Record<"monthly" | "yearly", string | undefined> = {
-  monthly: STRIPE_PRICE_ID_MONTHLY,
-  yearly: STRIPE_PRICE_ID_YEARLY,
-};
+const CHECKOUT_PLAN_CYCLE = "monthly" as const;
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
-const processedStripeWebhookEvents = new Set<string>();
 
 interface BillingEntitlementResponse {
   paywallEnabled: boolean;
@@ -1817,7 +1850,20 @@ interface ResolvedCouponInfo {
 }
 
 function hasStripeCheckoutConfig(): boolean {
-  return Boolean(stripeClient && STRIPE_PRICES.monthly && STRIPE_PRICES.yearly);
+  return Boolean(stripeClient && STRIPE_PRICE_ID_MONTHLY);
+}
+
+function resolveCheckoutPlanCycle(rawCycle: unknown): { planCycle: "monthly" | null; error?: string } {
+  const normalized = String(rawCycle ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "monthly") {
+    return { planCycle: "monthly" };
+  }
+
+  if (normalized === "yearly") {
+    return { planCycle: null, error: "Yearly plan is not available in this phase" };
+  }
+
+  return { planCycle: null, error: "Unsupported plan cycle" };
 }
 
 function resolveBillingReturnOrigin(req: Request): string {
@@ -1889,10 +1935,11 @@ function toIsoFromUnixSeconds(value: number | null | undefined): string | undefi
 }
 
 function buildBillingEntitlement(schoolId: string): BillingEntitlementResponse {
-  const state = ensureTrialBillingState({ schoolId }, Math.max(1, Math.floor(BILLING_TRIAL_DAYS)));
+  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
+  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
   const now = Date.now();
   const trialEndsAtMs = state.trialEndsAtIso ? Date.parse(state.trialEndsAtIso) : NaN;
-  const trialIsActive = Number.isFinite(trialEndsAtMs) && trialEndsAtMs > now;
+  const trialIsActive = normalizedTrialDays > 0 && Number.isFinite(trialEndsAtMs) && trialEndsAtMs > now;
 
   if (!PAYWALL_ENABLED) {
     return {
@@ -2036,6 +2083,10 @@ async function resolveCouponInfoByCode(couponCode: string): Promise<ResolvedCoup
 }
 
 function calculateRemainingTrialDays(trialEndsAtIso: string | undefined): number | undefined {
+  if (!Number.isFinite(BILLING_TRIAL_DAYS) || Math.floor(BILLING_TRIAL_DAYS) <= 0) {
+    return undefined;
+  }
+
   if (!trialEndsAtIso) {
     return undefined;
   }
@@ -2052,6 +2103,87 @@ function calculateRemainingTrialDays(trialEndsAtIso: string | undefined): number
 
   const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
   return Math.max(1, remainingDays);
+}
+
+function buildStripeCheckoutCustomerParams(options: {
+  customerId?: string;
+  customerEmail?: string;
+}): Pick<Stripe.Checkout.SessionCreateParams, "customer" | "customer_email"> {
+  const customerId = String(options.customerId ?? "").trim();
+  const customerEmail = String(options.customerEmail ?? "").trim();
+
+  if (customerId) {
+    if (customerEmail) {
+      logger.warn("billing.checkout_customer_email_ignored", {
+        reason: "customer_and_customer_email_are_mutually_exclusive",
+      });
+    }
+    return { customer: customerId };
+  }
+
+  if (customerEmail) {
+    return { customer_email: customerEmail };
+  }
+
+  throw new Error("Billing checkout requires a Stripe customer or customer email");
+}
+
+async function createSubscriptionCheckoutSession(options: {
+  req: Request;
+  schoolId: string;
+  customerId: string;
+  discountPromotionCodeId?: string;
+  flow: "coach-billing" | "marketing-bootstrap";
+  customerEmail?: string;
+  metadata?: Record<string, string>;
+  trialEndsAtIso?: string;
+}): Promise<{ id: string; url: string }> {
+  const { req, schoolId, customerId, discountPromotionCodeId, flow, customerEmail, metadata, trialEndsAtIso } = options;
+  const { successUrl, cancelUrl } = resolveCheckoutReturnUrls(req, schoolId);
+
+  if (STRIPE_TEST_MODE) {
+    const testFlow = flow === "marketing-bootstrap" ? "bootstrap" : flow;
+    return {
+      id: `cs_test_${testFlow}_${schoolId}_${CHECKOUT_PLAN_CYCLE}`,
+      url: `https://checkout.stripe.com/test/session/${testFlow}-${schoolId}-${CHECKOUT_PLAN_CYCLE}`,
+    };
+  }
+
+  if (!stripeClient || !STRIPE_PRICE_ID_MONTHLY) {
+    throw new Error("Stripe is not configured");
+  }
+
+  const remainingTrialDays = calculateRemainingTrialDays(trialEndsAtIso);
+  const checkoutSession = await stripeClient.checkout.sessions.create({
+    mode: "subscription",
+    ...buildStripeCheckoutCustomerParams({ customerId, customerEmail }),
+    line_items: [{ price: STRIPE_PRICE_ID_MONTHLY, quantity: 1 }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    client_reference_id: schoolId,
+    allow_promotion_codes: discountPromotionCodeId ? undefined : true,
+    discounts: discountPromotionCodeId ? [{ promotion_code: discountPromotionCodeId }] : undefined,
+    automatic_tax: { enabled: true },
+    billing_address_collection: "required",
+    phone_number_collection: { enabled: true },
+    tax_id_collection: { enabled: true },
+    metadata: {
+      schoolId,
+      flow,
+      planCycle: CHECKOUT_PLAN_CYCLE,
+      ...(metadata ?? {}),
+    },
+    subscription_data: {
+      metadata: { schoolId, flow, planCycle: CHECKOUT_PLAN_CYCLE },
+      trial_period_days: remainingTrialDays,
+    },
+  });
+
+  if (!checkoutSession.url) {
+    throw new Error("Stripe checkout session URL was not returned");
+  }
+
+  return { id: checkoutSession.id, url: checkoutSession.url };
 }
 
 type SecurityMetricKey =
@@ -2109,7 +2241,7 @@ async function pushSecurityMetrics(): Promise<void> {
       body: renderPrometheusSecurityMetrics()
     });
   } catch (error) {
-    console.warn("[realtime-api] Failed to push security metrics", error);
+    logger.warn("security.metrics_push_failed", { error });
   }
 }
 
@@ -2131,7 +2263,7 @@ function scheduleMetricsPush(): void {
 function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): void {
   securityTelemetry[event] += 1;
   scheduleMetricsPush();
-  console.warn("[realtime-api] security", {
+  logger.warn("security.event", {
     event,
     ...details
   });
@@ -2421,6 +2553,20 @@ function hasValidApiKeyRequest(req: Request): boolean {
   return Boolean(API_KEY && candidate === API_KEY);
 }
 
+function parseExpectedEventSequence(req: Request): number | null | undefined {
+  const rawHeader = readHeaderValue(req.headers["x-event-sequence"]);
+  if (rawHeader === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(rawHeader);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
 function isReadOnlyRequest(req: Request): boolean {
   return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
 }
@@ -2528,6 +2674,26 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
   }
 
   next();
+}
+
+function requireActiveBillingEntitlement(req: Request, res: Response, next: NextFunction): void {
+  if (!PAYWALL_ENABLED) {
+    next();
+    return;
+  }
+
+  const schoolId = getSchoolIdFromRequest(req);
+  const entitlement = buildBillingEntitlement(schoolId);
+  if (entitlement.accessActive) {
+    next();
+    return;
+  }
+
+  res.status(402).json({
+    error: "Active subscription required",
+    code: "billing_required",
+    entitlement,
+  });
 }
 
 const httpServer = createServer(app);
@@ -2837,35 +3003,18 @@ async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Pr
 
 // Serve the built coach-dashboard SPA from the same origin.
 const COACH_DIST = path.join(__dirname, "..", "..", "..", "apps", "coach-dashboard", "dist");
-const LEGACY_COACH_ROUTE_REDIRECTS: Record<string, string> = {
-  "/games": "/stats/games",
-  "/players": "/stats/players",
-  "/trends": "/stats/trends",
-  "/ai-insights": "/stats/insights",
-  "/analysis": "/stats/insights",
-  "/settings": "/stats/settings",
-};
-
-function resolveCoachRedirectOrigin(req: Request): string {
-  const configured = process.env.COACH_DASHBOARD_ORIGIN?.trim();
-  if (configured) {
-    return configured.replace(/\/$/, "");
-  }
-  if ((process.env.NODE_ENV ?? "development") === "production") {
-    return `${req.protocol}://${req.get("host") ?? ""}`.replace(/\/$/, "");
-  }
-  return "http://localhost:5173";
-}
+const REMOVED_LEGACY_COACH_ROUTES = [
+  "/games",
+  "/players",
+  "/trends",
+  "/ai-insights",
+  "/analysis",
+  "/settings",
+];
 
 app.use(express.static(COACH_DIST, { index: false }));
-app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
-  const targetPath = LEGACY_COACH_ROUTE_REDIRECTS[req.path];
-  if (!targetPath) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-
-  res.redirect(302, `${resolveCoachRedirectOrigin(req)}${targetPath}`);
+app.get(REMOVED_LEGACY_COACH_ROUTES, (_req, res) => {
+  res.status(404).json({ error: "Not found" });
 });
 
 app.get("/health", (_req, res) => {
@@ -3987,7 +4136,7 @@ app.get("/api/billing/entitlement", requireApiKey, (req, res) => {
   res.json({ entitlement });
 });
 
-app.post("/api/billing/validate-coupon", requireApiKey, async (req, res) => {
+app.post("/api/billing/validate-coupon", requireApiKey, withAsyncRoute(async (req, res) => {
   if (!PAYWALL_ENABLED) {
     res.status(400).json({ valid: false, error: "Billing is not enabled" });
     return;
@@ -4018,9 +4167,9 @@ app.post("/api/billing/validate-coupon", requireApiKey, async (req, res) => {
   } catch {
     res.status(500).json({ valid: false, error: "Could not validate coupon" });
   }
-});
+}));
 
-app.post("/api/billing/apply-coupon", requireApiKey, requireWriteRole, async (req, res) => {
+app.post("/api/billing/apply-coupon", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
   if (!PAYWALL_ENABLED) {
     res.status(400).json({ error: "Billing is not enabled" });
     return;
@@ -4041,9 +4190,9 @@ app.post("/api/billing/apply-coupon", requireApiKey, requireWriteRole, async (re
 
   saveBillingState({ couponCode }, { schoolId });
   res.json({ applied: true });
-});
+}));
 
-app.post("/api/billing/checkout-session", requireApiKey, requireWriteRole, async (req, res) => {
+app.post("/api/billing/checkout-session", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
   if (!PAYWALL_ENABLED) {
     res.status(400).json({ error: "Billing is not enabled" });
     return;
@@ -4056,14 +4205,14 @@ app.post("/api/billing/checkout-session", requireApiKey, requireWriteRole, async
 
   const schoolId = getSchoolIdFromRequest(req);
   const payload = (req.body ?? {}) as Record<string, unknown>;
-  const planCycle = payload.planCycle === "yearly" ? "yearly" : "monthly";
-  const priceId = STRIPE_PRICES[planCycle];
-  if (!priceId) {
-    res.status(500).json({ error: `Price ID for ${planCycle} plan is missing` });
+  const planCycle = resolveCheckoutPlanCycle(payload.planCycle);
+  if (!planCycle.planCycle) {
+    res.status(400).json({ error: planCycle.error ?? "Invalid plan cycle" });
     return;
   }
 
-  const state = ensureTrialBillingState({ schoolId }, Math.max(1, Math.floor(BILLING_TRIAL_DAYS)));
+  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
+  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
   const profile = getOrganizationProfileByScope({ schoolId });
   const customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
     email: profile?.coachEmail,
@@ -4083,53 +4232,30 @@ app.post("/api/billing/checkout-session", requireApiKey, requireWriteRole, async
     }
   }
 
-  const { successUrl, cancelUrl } = resolveCheckoutReturnUrls(req, schoolId);
-
-  if (STRIPE_TEST_MODE) {
-    res.json({
-      id: `cs_test_${schoolId}_${planCycle}`,
-      url: `https://checkout.stripe.com/test/session/${schoolId}-${planCycle}`,
+  try {
+    const checkoutSession = await createSubscriptionCheckoutSession({
+      req,
+      schoolId,
+      customerId,
+      discountPromotionCodeId,
+      flow: "coach-billing",
+      trialEndsAtIso: state.trialEndsAtIso,
     });
-    return;
-  }
-
-  if (!stripeClient) {
+    res.json(checkoutSession);
+  } catch {
     res.status(503).json({ error: "Stripe is not configured" });
-    return;
   }
+}));
 
-  const remainingTrialDays = calculateRemainingTrialDays(state.trialEndsAtIso);
-  const checkoutSession = await stripeClient.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    client_reference_id: schoolId,
-    allow_promotion_codes: discountPromotionCodeId ? undefined : true,
-    discounts: discountPromotionCodeId ? [{ promotion_code: discountPromotionCodeId }] : undefined,
-    automatic_tax: { enabled: true },
-    billing_address_collection: "required",
-    phone_number_collection: { enabled: true },
-    tax_id_collection: { enabled: true },
-    metadata: { schoolId, flow: "coach-billing" },
-    subscription_data: {
-      metadata: { schoolId },
-      trial_period_days: remainingTrialDays,
-    },
-  });
-
-  res.json({ id: checkoutSession.id, url: checkoutSession.url });
-});
-
-app.get("/api/billing/portal-session", requireApiKey, async (req, res) => {
+app.get("/api/billing/portal-session", requireApiKey, withAsyncRoute(async (req, res) => {
   if (!PAYWALL_ENABLED) {
     res.status(400).json({ error: "Billing is not enabled" });
     return;
   }
 
   const schoolId = getSchoolIdFromRequest(req);
-  const state = ensureTrialBillingState({ schoolId }, Math.max(1, Math.floor(BILLING_TRIAL_DAYS)));
+  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
+  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
   if (!state.stripeCustomerId) {
     res.status(400).json({ error: "No Stripe customer found for this school" });
     return;
@@ -4152,9 +4278,9 @@ app.get("/api/billing/portal-session", requireApiKey, async (req, res) => {
   });
 
   res.json({ url: portalSession.url });
-});
+}));
 
-app.post("/api/billing/bootstrap-checkout-session", async (req, res) => {
+app.post("/api/billing/bootstrap-checkout-session", withAsyncRoute(async (req, res) => {
   if (!PAYWALL_ENABLED) {
     res.status(400).json({ error: "Billing is not enabled" });
     return;
@@ -4170,16 +4296,15 @@ app.post("/api/billing/bootstrap-checkout-session", async (req, res) => {
   const email = sanitizeTextField(payload.email, 160).toLowerCase();
   const schoolName = sanitizeTextField(payload.schoolName, 160);
   const teamName = sanitizeTextField(payload.teamName, 120);
-  const planCycle = payload.planCycle === "yearly" ? "yearly" : "monthly";
-  const priceId = STRIPE_PRICES[planCycle];
+  const planCycle = resolveCheckoutPlanCycle(payload.planCycle);
 
   if (!fullName || !isValidEmail(email)) {
     res.status(400).json({ error: "A valid full name and email are required" });
     return;
   }
 
-  if (!priceId) {
-    res.status(500).json({ error: `Price ID for ${planCycle} plan is missing` });
+  if (!planCycle.planCycle) {
+    res.status(400).json({ error: planCycle.error ?? "Invalid plan cycle" });
     return;
   }
 
@@ -4201,7 +4326,8 @@ app.post("/api/billing/bootstrap-checkout-session", async (req, res) => {
     }, { schoolId });
   }
 
-  const state = ensureTrialBillingState({ schoolId }, Math.max(1, Math.floor(BILLING_TRIAL_DAYS)));
+  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
+  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
   const customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
     email,
     name: fullName,
@@ -4211,52 +4337,27 @@ app.post("/api/billing/bootstrap-checkout-session", async (req, res) => {
     saveBillingState({ stripeCustomerId: customerId }, { schoolId });
   }
 
-  const { successUrl, cancelUrl } = resolveCheckoutReturnUrls(req, schoolId);
-
-  if (STRIPE_TEST_MODE) {
-    res.json({
+  try {
+    const checkoutSession = await createSubscriptionCheckoutSession({
+      req,
       schoolId,
-      id: `cs_test_bootstrap_${schoolId}_${planCycle}`,
-      url: `https://checkout.stripe.com/test/session/bootstrap-${schoolId}-${planCycle}`,
-    });
-    return;
-  }
-
-  if (!stripeClient) {
-    res.status(503).json({ error: "Stripe is not configured" });
-    return;
-  }
-
-  const remainingTrialDays = calculateRemainingTrialDays(state.trialEndsAtIso);
-  const checkoutSession = await stripeClient.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    customer_email: email,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    client_reference_id: schoolId,
-    allow_promotion_codes: true,
-    automatic_tax: { enabled: true },
-    billing_address_collection: "required",
-    phone_number_collection: { enabled: true },
-    tax_id_collection: { enabled: true },
-    metadata: {
-      schoolId,
+      customerId,
       flow: "marketing-bootstrap",
-      fullName,
-      email,
-      schoolName,
-      teamName,
-    },
-    subscription_data: {
-      metadata: { schoolId },
-      trial_period_days: remainingTrialDays,
-    },
-  });
+      customerEmail: email,
+      metadata: {
+        fullName,
+        email,
+        schoolName,
+        teamName,
+      },
+      trialEndsAtIso: state.trialEndsAtIso,
+    });
 
-  res.json({ schoolId, id: checkoutSession.id, url: checkoutSession.url });
-});
+    res.json({ schoolId, ...checkoutSession });
+  } catch {
+    res.status(503).json({ error: "Stripe is not configured" });
+  }
+}));
 
 app.get("/api/teams", (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -4473,7 +4574,7 @@ app.post("/api/player/:playerName/delete", requireApiKey, requireWriteRole, (req
   res.json({ message: "Player deleted successfully", player: record.player.name });
 });
 
-app.get("/api/season-stats", (req, res) => {
+app.get("/api/season-stats", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(getSeasonTeamStats({ schoolId }));
 });
@@ -4508,7 +4609,7 @@ app.get("/api/games/:gameId/audit-log", (req, res) => {
   });
 });
 
-app.put("/api/games/:gameId", requireApiKey, requireWriteRole, async (req, res) => {
+app.put("/api/games/:gameId", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const gameId = String(req.params.gameId);
   const existing = buildGamesPayload(schoolId).find((entry) => String(entry.gameId) === gameId);
@@ -4559,7 +4660,7 @@ app.put("/api/games/:gameId", requireApiKey, requireWriteRole, async (req, res) 
 
   await setGameOverride(schoolId, override);
   res.json({ message: "Game updated successfully", game: override });
-});
+}));
 
 app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -4594,7 +4695,7 @@ app.post("/api/reset", requireApiKey, requireWriteRole, (req, res) => {
   res.json({ ok: true, message: "Reset complete", schoolId });
 });
 
-app.get("/api/notifications", (req, res) => {
+app.get("/api/notifications", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const generatedAtIso = new Date().toISOString();
   const onboarding = buildOnboardingCompletionSummary(schoolId);
@@ -4727,22 +4828,22 @@ app.get("/api/notifications", (req, res) => {
   res.json({ notifications, generatedAtIso });
 });
 
-app.get("/api/live-context", (req, res) => {
+app.get("/api/live-context", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(getLiveContext({ schoolId }));
 });
 
-app.get("/api/leaderboards", (req, res) => {
+app.get("/api/leaderboards", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(buildLeaderboardsPayload(schoolId));
 });
 
-app.get("/api/team-trends", (req, res) => {
+app.get("/api/team-trends", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(buildTeamTrendsPayload(schoolId));
 });
 
-app.get("/api/player-trends/:playerName", (req, res) => {
+app.get("/api/player-trends/:playerName", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const targetName = normalizePersonName(req.params.playerName);
   if (!targetName || targetName.length > 100) {
@@ -4753,7 +4854,7 @@ app.get("/api/player-trends/:playerName", (req, res) => {
   res.json(buildPlayerTrendsPayload(schoolId, targetName));
 });
 
-app.get("/api/player-comparison", (req, res) => {
+app.get("/api/player-comparison", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const playerNames = ([] as string[]).concat(req.query.players as string | string[] | undefined ?? [])
     .map((name) => normalizePersonName(name))
@@ -4766,12 +4867,12 @@ app.get("/api/player-comparison", (req, res) => {
   res.json(buildPlayerComparisonPayload(schoolId, playerNames));
 });
 
-app.get("/api/advanced/team", (req, res) => {
+app.get("/api/advanced/team", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(buildTeamAdvancedPayload(schoolId));
 });
 
-app.get("/api/advanced/player/:playerName", (req, res) => {
+app.get("/api/advanced/player/:playerName", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const payload = buildPlayerAdvancedPayload(schoolId, req.params.playerName);
   if (!payload) {
@@ -4782,17 +4883,17 @@ app.get("/api/advanced/player/:playerName", (req, res) => {
   res.json(payload);
 });
 
-app.get("/api/advanced/volatility", (req, res) => {
+app.get("/api/advanced/volatility", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(buildVolatilityPayload(schoolId));
 });
 
-app.get("/api/comprehensive-insights", (req, res) => {
+app.get("/api/comprehensive-insights", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(buildComprehensiveInsightsPayload(schoolId));
 });
 
-app.post("/api/ai/chat", requireApiKey, async (req, res) => {
+app.post("/api/ai/chat", requireApiKey, requireActiveBillingEntitlement, withAsyncRoute(async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const message = sanitizeTextField((req.body as Record<string, unknown> | undefined)?.message, 1200);
   const history = (req.body as Record<string, unknown> | undefined)?.history;
@@ -4818,14 +4919,14 @@ app.post("/api/ai/chat", requireApiKey, async (req, res) => {
       "Who should absorb minutes if foul trouble increases?"
     ]
   });
-});
+}));
 
-app.get("/api/ai/team-summary", requireApiKey, (req, res) => {
+app.get("/api/ai/team-summary", requireApiKey, requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json({ summary: buildTeamSummaryText(schoolId) });
 });
 
-app.post("/api/ai/analyze", requireApiKey, (req, res) => {
+app.post("/api/ai/analyze", requireApiKey, requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const query = sanitizeTextField((req.body as Record<string, unknown> | undefined)?.query, 1200)
     || sanitizeTextField((req.body as Record<string, unknown> | undefined)?.message, 1200);
@@ -4839,7 +4940,7 @@ app.post("/api/ai/analyze", requireApiKey, (req, res) => {
   });
 });
 
-app.get("/api/ai/player-insights/:playerName", (req, res) => {
+app.get("/api/ai/player-insights/:playerName", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const insights = buildPlayerInsightsText(schoolId, req.params.playerName);
   if (!insights) {
@@ -4850,7 +4951,7 @@ app.get("/api/ai/player-insights/:playerName", (req, res) => {
   res.json({ player: req.params.playerName, insights });
 });
 
-app.get("/api/ai/game-analysis/:gameId", (req, res) => {
+app.get("/api/ai/game-analysis/:gameId", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const analysis = buildGameAnalysisText(schoolId, req.params.gameId);
   if (!analysis) {
@@ -4866,7 +4967,7 @@ app.delete("/api/ai/team-summary", requireApiKey, requireWriteRole, (_req, res) 
   res.json({ message: "Cache cleared" });
 });
 
-app.get("/api/season-analysis", (req, res) => {
+app.get("/api/season-analysis", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const force = String(req.query.force ?? "false").toLowerCase() === "true";
   res.json(buildSeasonAnalysisPayload(schoolId, force));
@@ -4878,7 +4979,7 @@ app.delete("/api/season-analysis", requireApiKey, requireWriteRole, (req, res) =
   res.json({ message: "Cache cleared" });
 });
 
-app.get("/api/ai/player-analysis/:playerName", (req, res) => {
+app.get("/api/ai/player-analysis/:playerName", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const playerName = sanitizeTextField(req.params.playerName, 100);
   if (!playerName) {
@@ -4913,7 +5014,7 @@ app.delete("/api/ai/player-analysis/:playerName", requireApiKey, requireWriteRol
   res.json({ message: `Cache cleared for ${playerName}` });
 });
 
-app.get("/api/advanced/game/:gameId", (req, res) => {
+app.get("/api/advanced/game/:gameId", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const game = buildGamesPayload(schoolId).find((g) => String(g.gameId) === String(req.params.gameId));
   if (!game) {
@@ -4937,7 +5038,7 @@ app.get("/api/advanced/game/:gameId", (req, res) => {
   });
 });
 
-app.get("/api/advanced/patterns", (req, res) => {
+app.get("/api/advanced/patterns", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const games = buildGamesPayload(schoolId);
   const homeGames = games.filter((g) => g.location === "home");
@@ -4954,12 +5055,12 @@ app.get("/api/advanced/patterns", (req, res) => {
   });
 });
 
-app.get("/api/advanced/insights", (req, res) => {
+app.get("/api/advanced/insights", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json(buildComprehensiveInsightsPayload(schoolId));
 });
 
-app.get("/api/advanced/all", (req, res) => {
+app.get("/api/advanced/all", requireActiveBillingEntitlement, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   res.json({
     team: buildTeamAdvancedPayload(schoolId),
@@ -5339,7 +5440,7 @@ app.delete("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, 
   res.json({ playerId: deleted.id });
 });
 
-app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/games", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const {
     gameId,
@@ -5460,7 +5561,7 @@ app.patch("/api/games/:gameId/lineup", requireApiKey, requireWriteRole, (req, re
   res.json(state);
 });
 
-app.get("/api/games/:gameId/insights", requireApiKey, async (req, res) => {
+app.get("/api/games/:gameId/insights", requireApiKey, withAsyncRoute(async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -5471,7 +5572,7 @@ app.get("/api/games/:gameId/insights", requireApiKey, async (req, res) => {
   const forceRefresh = req.query.force === "1" || req.query.force === "true";
   const insights = await refreshGameAiInsights(req.params.gameId, { force: forceRefresh }, { schoolId });
   res.json(insights ?? getGameInsights(req.params.gameId, { schoolId }));
-});
+}));
 
 app.get("/api/games/:gameId/ai-settings", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -5485,7 +5586,7 @@ app.get("/api/games/:gameId/ai-settings", requireApiKey, (req, res) => {
   res.json(settings);
 });
 
-app.put("/api/games/:gameId/ai-settings", requireApiKey, requireWriteRole, async (req, res) => {
+app.put("/api/games/:gameId/ai-settings", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -5506,7 +5607,7 @@ app.put("/api/games/:gameId/ai-settings", requireApiKey, requireWriteRole, async
   }
 
   res.json(updated);
-});
+}));
 
 app.get("/api/games/:gameId/ai-context", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -5520,7 +5621,7 @@ app.get("/api/games/:gameId/ai-context", requireApiKey, (req, res) => {
   res.json(context);
 });
 
-app.put("/api/games/:gameId/ai-context", requireApiKey, requireWriteRole, async (req, res) => {
+app.put("/api/games/:gameId/ai-context", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -5541,7 +5642,7 @@ app.put("/api/games/:gameId/ai-context", requireApiKey, requireWriteRole, async 
   }
 
   res.json(updated);
-});
+}));
 
 app.get("/api/games/:gameId/ai-prompt-preview", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -5560,7 +5661,7 @@ app.get("/api/games/:gameId/ai-prompt-preview", requireApiKey, (req, res) => {
   res.json(preview as AiPromptPreview);
 });
 
-app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, async (req, res) => {
+app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, withAsyncRoute(async (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
   const state = getGameState(req.params.gameId, { schoolId });
   if (!state) {
@@ -5581,7 +5682,7 @@ app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, async (r
   }
 
   res.json(response as CoachAiChatResponse);
-});
+}));
 
 app.get("/api/games/:gameId/events", requireApiKey, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
@@ -5643,8 +5744,19 @@ app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRate
 
 app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
+  const expectedSequence = parseExpectedEventSequence(req);
+  if (expectedSequence === null) {
+    res.status(400).json({ error: "x-event-sequence must be a non-negative integer" });
+    return;
+  }
+
   try {
-    const { state, insights } = deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
+    const { state, insights } = deleteEvent(
+      req.params.gameId,
+      req.params.eventId,
+      { schoolId },
+      expectedSequence === undefined ? undefined : { expectedSequence }
+    );
 
     emitToGameRooms(schoolId, req.params.gameId, "game:event:deleted", { eventId: req.params.eventId });
     broadcastGameStateWithDebounce(schoolId, req.params.gameId, state, insights);
@@ -5657,18 +5769,35 @@ app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole
       res.status(409).json({ error: message });
       return;
     }
+    if (/version mismatch/i.test(message)) {
+      const event = getGameEvents(req.params.gameId, { schoolId }).find((candidate) => candidate.id === req.params.eventId) ?? null;
+      res.status(409).json({
+        error: message,
+        code: "event_conflict",
+        event,
+        state: getGameState(req.params.gameId, { schoolId }) ?? null,
+      });
+      return;
+    }
     res.status(400).json({ error: message });
   }
 });
 
 app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
+  const expectedSequence = parseExpectedEventSequence(req);
+  if (expectedSequence === null) {
+    res.status(400).json({ error: "x-event-sequence must be a non-negative integer" });
+    return;
+  }
+
   try {
     const { event, state, insights } = updateEvent(
       req.params.gameId,
       req.params.eventId,
       req.body ?? {},
-      { schoolId }
+      { schoolId },
+      expectedSequence === undefined ? undefined : { expectedSequence }
     );
 
     emitToGameRooms(schoolId, req.params.gameId, "game:event:updated", event);
@@ -5681,6 +5810,16 @@ app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (
     const message = error instanceof Error ? error.message : "update failed";
     if (/^Game already submitted:/i.test(message)) {
       res.status(409).json({ error: message });
+      return;
+    }
+    if (/version mismatch/i.test(message)) {
+      const event = getGameEvents(req.params.gameId, { schoolId }).find((candidate) => candidate.id === req.params.eventId) ?? null;
+      res.status(409).json({
+        error: message,
+        code: "event_conflict",
+        event,
+        state: getGameState(req.params.gameId, { schoolId }) ?? null,
+      });
       return;
     }
     res.status(400).json({ error: message });
@@ -5885,6 +6024,53 @@ app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
   res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
 });
 
+app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
+  const requestId = String(res.getHeader("x-request-id") ?? "").trim() || undefined;
+  const stripeLikeError = error as {
+    type?: string;
+    statusCode?: number;
+    message?: string;
+    param?: string;
+    requestId?: string;
+  };
+
+  const isStripeError = typeof stripeLikeError?.type === "string" && stripeLikeError.type.startsWith("Stripe");
+  const statusCode = Number(stripeLikeError?.statusCode);
+  const safeStatus = Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600
+    ? statusCode
+    : 500;
+
+  logger.error("http.unhandled_error", {
+    requestId,
+    path: req.path,
+    method: req.method,
+    isStripeError,
+    statusCode: safeStatus,
+    stripeType: stripeLikeError?.type,
+    stripeParam: stripeLikeError?.param,
+    stripeRequestId: stripeLikeError?.requestId,
+    error,
+  });
+
+  if (res.headersSent) {
+    return;
+  }
+
+  if (isStripeError) {
+    res.status(safeStatus).json({
+      error: stripeLikeError.message || "Billing request failed",
+      code: "stripe_request_failed",
+      requestId,
+    });
+    return;
+  }
+
+  res.status(500).json({
+    error: "Internal server error",
+    requestId,
+  });
+});
+
 // SPA fallback: serve index.html for any non-API route not matched above.
 app.get("*", (_req, res) => {
   res.sendFile(path.join(COACH_DIST, "index.html"), (err) => {
@@ -5899,7 +6085,36 @@ let serverStarted = false;
 // Warn if API key not set in production
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 if (NODE_ENV === "production" && !API_KEY) {
-  console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Event ingest endpoints are open to anyone.");
+  logger.warn("startup.api_key_missing_in_production", {
+    warning: "BTA_API_KEY not set. Event ingest endpoints are open to anyone.",
+  });
+}
+
+function parseBooleanFlag(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return { message: String(error) };
+}
+
+function logStartupEvent(message: string, context: Record<string, unknown>): void {
+  logger.info(message, context);
+}
+
+function logStartupError(message: string, context: Record<string, unknown>): void {
+  logger.error(message, context);
 }
 
 /**
@@ -5918,9 +6133,18 @@ export async function startServer(overridePort?: number): Promise<number> {
 
   assertRuntimeConfig(readRuntimeConfig(isJwtAuthEnabled()));
 
-  await initializeStore().catch((error) => {
-    console.error("[realtime-api] Failed to initialize store persistence", error);
-  });
+  const strictPersistenceInit = parseBooleanFlag(process.env.BTA_PERSISTENCE_STARTUP_STRICT);
+  try {
+    await initializeStore();
+  } catch (error) {
+    logStartupError("startup.store_initialize_failed", {
+      strictPersistenceInit,
+      error: serializeError(error),
+    });
+    if (strictPersistenceInit) {
+      throw error;
+    }
+  }
 
   const port = overridePort ?? Number(process.env.PORT ?? 4000);
   const host = process.env.HOST ?? "0.0.0.0";
@@ -5932,23 +6156,28 @@ export async function startServer(overridePort?: number): Promise<number> {
       const boundPort = (typeof addr === "object" && addr !== null)
         ? (addr as { port: number }).port
         : port;
-      console.log(`Realtime API listening on http://${host}:${boundPort}`);
-      if (API_KEY) {
-        console.log(`[realtime-api] API key authentication: ENABLED`);
-      } else {
-        console.log(`[realtime-api] API key authentication: disabled (set BTA_API_KEY to enable)`);
-      }
-      if (DATABASE_URL) {
-        console.log("[realtime-api] Persistence backend: PostgreSQL");
-      } else {
-        console.log("[realtime-api] Persistence backend: file snapshot");
-      }
+      logStartupEvent("startup.server_listening", {
+        host,
+        port: boundPort,
+      });
+      logStartupEvent("startup.api_key_auth", {
+        enabled: Boolean(API_KEY),
+      });
+      logStartupEvent("startup.persistence_backend", {
+        backend: DATABASE_URL ? "postgres" : "file",
+      });
       if (isJwtAuthEnabled()) {
-        console.log("[realtime-api] JWT authentication: ENABLED");
+        logStartupEvent("startup.jwt_auth", { enabled: true });
       }
-      console.log(`[realtime-api] Local token signing: ${isLocalTokenAuthEnabled() ? "ENABLED" : "disabled"}`);
-      console.log(`[realtime-api] Tenant strict mode: ${REQUIRE_TENANT ? "ENABLED" : "disabled"}`);
-      console.log(`[realtime-api] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
+      logStartupEvent("startup.local_token_auth", {
+        enabled: isLocalTokenAuthEnabled(),
+      });
+      logStartupEvent("startup.tenant_strict_mode", {
+        enabled: REQUIRE_TENANT,
+      });
+      logStartupEvent("startup.cors_origins", {
+        origins: ALLOWED_ORIGINS,
+      });
       resolve(boundPort);
     });
   });

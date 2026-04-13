@@ -10,7 +10,13 @@ type SectionHeaderProps = {
 
 export function SectionHeader({ eyebrow, title, description }: SectionHeaderProps): JSX.Element {
   return (
-    <motion.div variants={revealUp} className="max-w-3xl space-y-4">
+    <motion.div
+      variants={revealUp}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, amount: 0.3 }}
+      className="max-w-3xl space-y-4"
+    >
       <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
         {eyebrow}
       </p>

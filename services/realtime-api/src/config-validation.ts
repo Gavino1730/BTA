@@ -36,7 +36,6 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     stripeConfigured: Boolean(
       process.env.BTA_STRIPE_SECRET_KEY?.trim()
       && process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim()
-      && process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim()
     ),
     stripeWebhookSecretConfigured: Boolean(process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim()),
   };
@@ -84,7 +83,7 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
   if (config.paywallEnabled && !config.stripeConfigured) {
     errors.push(
       "Paywall is enabled but Stripe is not fully configured. " +
-      "Set BTA_STRIPE_SECRET_KEY, BTA_STRIPE_PRICE_ID_MONTHLY, and BTA_STRIPE_PRICE_ID_YEARLY."
+      "Set BTA_STRIPE_SECRET_KEY and BTA_STRIPE_PRICE_ID_MONTHLY."
     );
   }
 

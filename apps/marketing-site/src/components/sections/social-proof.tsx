@@ -1,5 +1,6 @@
 "use client";
 
+import { Star } from "lucide-react";
 import { motion } from "motion/react";
 
 import { SectionHeader } from "@/components/sections/section-header";
@@ -38,8 +39,16 @@ export function SocialProof(): JSX.Element {
             <GlassPanel className="h-full p-6">
               <div className="absolute inset-0" style={{ background: proofTints[index % proofTints.length] }} />
               <div className="relative">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex gap-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className="size-3.5 fill-[var(--accent-signal)] text-[var(--accent-signal)]" />
+                    ))}
+                  </div>
+                  <span className="font-display text-5xl leading-none text-[var(--accent-primary)] opacity-60">&ldquo;</span>
+                </div>
                 <p className="text-base leading-8 text-[var(--text-primary)]">
-                  &ldquo;{card.quote}&rdquo;
+                  {card.quote}
                 </p>
                 <p className="mt-4 text-sm text-[var(--text-secondary)]">{card.attribution}</p>
                 <p className="mt-5 inline-flex rounded-full border border-[var(--border-strong)] bg-[rgba(30,24,77,0.44)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">

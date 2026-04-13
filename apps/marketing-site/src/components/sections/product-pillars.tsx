@@ -1,5 +1,6 @@
 "use client";
 
+import { Activity, Film, LayoutDashboard, Sparkles, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 
 import { SectionHeader } from "@/components/sections/section-header";
@@ -7,6 +8,8 @@ import { DataChip } from "@/components/ui/data-chip";
 import { GlassPanel } from "@/components/ui/glass-panel";
 import { pillars } from "@/content/homepage";
 import { revealUp, staggerChildren } from "@/lib/motion";
+
+const pillarIcons: LucideIcon[] = [Activity, LayoutDashboard, Film, Sparkles];
 
 const pillarCardTints = [
   "linear-gradient(160deg, rgba(96,82,180,0.42), rgba(80,112,173,0.22))",
@@ -48,7 +51,17 @@ export function ProductPillars(): JSX.Element {
               <div className="absolute inset-0" style={{ background: pillarCardTints[index % pillarCardTints.length] }} />
               <div className="relative">
                 <div className="mb-4 flex items-start justify-between gap-4">
-                  <h3 className="font-display text-3xl leading-tight text-[var(--text-primary)]">{pillar.title}</h3>
+                  <div>
+                    {(() => {
+                      const Icon = pillarIcons[index % pillarIcons.length];
+                      return (
+                        <div className="mb-3 inline-flex items-center justify-center rounded-xl border border-[var(--border-soft)] bg-[rgba(110,91,255,0.14)] p-2.5">
+                          <Icon className="size-5 text-[var(--accent-secondary)]" />
+                        </div>
+                      );
+                    })()}
+                    <h3 className="font-display text-3xl leading-tight text-[var(--text-primary)]">{pillar.title}</h3>
+                  </div>
                   <DataChip label="Outcome" value={pillar.stat} className="shrink-0" />
                 </div>
                 <p className="mb-5 text-[var(--text-secondary)]">{pillar.summary}</p>

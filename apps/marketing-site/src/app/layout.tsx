@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Syne } from "next/font/google";
 import { getSiteUrl } from "@/lib/site-url";
 import { PageTransition } from "@/components/layout/page-transition";
 import "./globals.css";
@@ -10,10 +10,11 @@ const bodyFont = Inter({
   display: "swap",
 });
 
-const displayFont = Inter({
+const displayFont = Syne({
   variable: "--font-display",
   subsets: ["latin"],
   display: "swap",
+  weight: ["700", "800"],
 });
 
 export const metadata: Metadata = {

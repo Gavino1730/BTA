@@ -36,8 +36,11 @@ export function Navbar(): JSX.Element {
       <div className="relative rounded-2xl border border-[var(--border-soft)] bg-[rgba(13,16,32,0.72)] px-5 py-3 backdrop-blur-xl md:px-7">
         <div className="absolute inset-0 bg-[radial-gradient(130%_160%_at_14%_0%,rgba(110,91,255,0.14),transparent_42%),linear-gradient(180deg,rgba(70,215,255,0.06),transparent_55%)]" />
         <nav className="relative flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-2" aria-label="BTA Courtside home">
+          <Link href="/" className="flex items-center gap-2.5" aria-label="BTA Courtside home">
             <img src="/brand-icon.png" alt="BTA Courtside" className="h-8 w-auto md:h-9" />
+            <span className="hidden font-display text-sm text-[var(--text-primary)] md:block">
+              BTA Courtside
+            </span>
           </Link>
 
           <div className="hidden items-center gap-8 lg:flex">

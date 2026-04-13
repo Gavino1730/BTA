@@ -457,6 +457,7 @@ interface PersistedSnapshot {
   localAuthAccountsBySchool?: Record<string, LocalAuthAccount[]>;
   gameOverridesBySchool?: Record<string, Record<string, GameEditOverride>>;
   billingBySchool?: Record<string, BillingState>;
+  processedStripeWebhookEvents?: Record<string, string>;
 }
 
 export interface TenantScope {
@@ -496,6 +497,7 @@ const organizationMembersBySchool = new Map<string, OrganizationMember[]>();
 const localAuthAccountsBySchool = new Map<string, LocalAuthAccount[]>();
 const gameOverridesBySchool = new Map<string, Map<string, GameEditOverride>>();
 const billingBySchool = new Map<string, BillingState>();
+const processedStripeWebhookEvents = new Map<string, string>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -2258,6 +2260,7 @@ function buildPersistedSnapshot(): PersistedSnapshot {
     organizationMembersBySchool: Object.fromEntries(organizationMembersBySchool.entries()),
     localAuthAccountsBySchool: Object.fromEntries(localAuthAccountsBySchool.entries()),
     billingBySchool: Object.fromEntries(billingBySchool.entries()),
+    processedStripeWebhookEvents: Object.fromEntries(processedStripeWebhookEvents.entries()),
     gameOverridesBySchool: Object.fromEntries(
       [...gameOverridesBySchool.entries()].map(([schoolId, overrideMap]) => [
         schoolId,
@@ -2313,6 +2316,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedLocalAuthAccounts = Array.isArray(payload) ? undefined : payload.localAuthAccountsBySchool;
   const persistedGameOverrides = Array.isArray(payload) ? undefined : payload.gameOverridesBySchool;
   const persistedBilling = Array.isArray(payload) ? undefined : payload.billingBySchool;
+  const persistedWebhookEvents = Array.isArray(payload) ? undefined : payload.processedStripeWebhookEvents;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
@@ -2322,6 +2326,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   localAuthAccountsBySchool.clear();
   gameOverridesBySchool.clear();
   billingBySchool.clear();
+  processedStripeWebhookEvents.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -2386,6 +2391,17 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
         createdAtIso: (billing as BillingState).createdAtIso ?? nowIso,
         updatedAtIso: (billing as BillingState).updatedAtIso ?? nowIso,
       });
+    }
+  }
+
+  if (persistedWebhookEvents && typeof persistedWebhookEvents === "object") {
+    for (const [eventId, processedAtIso] of Object.entries(persistedWebhookEvents)) {
+      const normalizedEventId = String(eventId ?? "").trim();
+      if (!normalizedEventId) {
+        continue;
+      }
+      const normalizedProcessedAtIso = String(processedAtIso ?? "").trim() || new Date().toISOString();
+      processedStripeWebhookEvents.set(normalizedEventId, normalizedProcessedAtIso);
     }
   }
 
@@ -2755,6 +2771,7 @@ export function resetAllData(scope?: TenantScope): void {
     localAuthAccountsBySchool.clear();
     gameOverridesBySchool.clear();
     billingBySchool.clear();
+    processedStripeWebhookEvents.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -2820,15 +2837,17 @@ export function ensureTrialBillingState(scope?: TenantScope, trialDays = 14): Bi
   }
 
   const now = new Date();
+  const normalizedTrialDays = Number.isFinite(trialDays) ? Math.max(0, Math.floor(trialDays)) : 0;
+  const hasTrial = normalizedTrialDays > 0;
   const end = new Date(now.getTime());
-  end.setUTCDate(end.getUTCDate() + Math.max(1, Math.floor(trialDays)));
+  end.setUTCDate(end.getUTCDate() + normalizedTrialDays);
 
   const created: BillingState = {
     schoolId,
-    planId: "trial",
-    status: "trialing",
-    trialStartedAtIso: now.toISOString(),
-    trialEndsAtIso: end.toISOString(),
+    planId: hasTrial ? "trial" : "pro",
+    status: hasTrial ? "trialing" : "incomplete",
+    trialStartedAtIso: hasTrial ? now.toISOString() : undefined,
+    trialEndsAtIso: hasTrial ? end.toISOString() : undefined,
     createdAtIso: now.toISOString(),
     updatedAtIso: now.toISOString(),
   };
@@ -2862,6 +2881,41 @@ export function saveBillingState(state: Partial<BillingState>, scope?: TenantSco
   billingBySchool.set(schoolId, saved);
   persistSessions();
   return { ...saved };
+}
+
+export function hasProcessedStripeWebhookEvent(eventId: string): boolean {
+  const normalized = String(eventId ?? "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return processedStripeWebhookEvents.has(normalized);
+}
+
+export function markProcessedStripeWebhookEvent(eventId: string): void {
+  const normalized = String(eventId ?? "").trim();
+  if (!normalized) {
+    return;
+  }
+
+  processedStripeWebhookEvents.set(normalized, new Date().toISOString());
+  persistSessions();
+}
+
+export function trimProcessedStripeWebhookEvents(maxEntries = 10_000): void {
+  const normalizedMax = Number.isFinite(maxEntries) ? Math.max(1, Math.floor(maxEntries)) : 10_000;
+  if (processedStripeWebhookEvents.size <= normalizedMax) {
+    return;
+  }
+
+  const entries = [...processedStripeWebhookEvents.entries()]
+    .sort(([, leftProcessedAt], [, rightProcessedAt]) => Date.parse(leftProcessedAt) - Date.parse(rightProcessedAt));
+  const toDeleteCount = entries.length - normalizedMax;
+  for (let index = 0; index < toDeleteCount; index += 1) {
+    const [eventId] = entries[index];
+    processedStripeWebhookEvents.delete(eventId);
+  }
+  persistSessions();
 }
 
 export function getOrganizationProfileByScope(scope?: TenantScope): OrganizationProfile | null {

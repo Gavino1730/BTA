@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleCheck, CircleX } from "lucide-react";
 import { motion } from "motion/react";
 
 import { SectionHeader } from "@/components/sections/section-header";
@@ -19,11 +20,28 @@ export function WhyDifferent(): JSX.Element {
           <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(120,82,45,0.34),rgba(72,58,150,0.24))]" />
           <div className="relative">
             <h3 className="font-display text-4xl text-[var(--text-primary)]">Disconnected Workflow</h3>
-            <ul className="mt-4 space-y-2 text-sm text-[var(--text-secondary)]">
-              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base">Stats captured in one tool, film clipped in another</li>
-              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base">Manual exports delay review and halftime decisions</li>
-              <li className="rounded-lg border border-[var(--border-soft)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base">Insights arrive too late to change the game</li>
-            </ul>
+            <motion.ul
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.4 }}
+              variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.07 } } }}
+              className="mt-4 space-y-2"
+            >
+              {[
+                "Stats captured in one tool, film clipped in another",
+                "Manual exports delay review and halftime decisions",
+                "Insights arrive too late to change the game",
+              ].map((item) => (
+                <motion.li
+                  key={item}
+                  variants={{ hidden: { opacity: 0, x: 10 }, visible: { opacity: 1, x: 0 } }}
+                  className="flex items-start gap-2.5 rounded-lg border border-[rgba(255,93,115,0.25)] bg-[rgba(75,48,26,0.42)] px-3 py-2 text-base text-[var(--text-secondary)]"
+                >
+                  <CircleX className="mt-0.5 size-4 shrink-0 text-[var(--accent-danger)]" />
+                  {item}
+                </motion.li>
+              ))}
+            </motion.ul>
           </div>
         </GlassPanel>
 
@@ -52,9 +70,10 @@ export function WhyDifferent(): JSX.Element {
               <motion.li
                 key={item}
                 variants={{ hidden: { opacity: 0, x: -10 }, visible: { opacity: 1, x: 0 } }}
-                className="rounded-lg border border-[var(--border-soft)] bg-[rgba(26,86,74,0.42)] px-3 py-2"
+                className="flex items-start gap-2.5 rounded-lg border border-[rgba(56,227,159,0.25)] bg-[rgba(26,86,74,0.42)] px-3 py-2"
               >
-                {item}
+                <CircleCheck className="mt-0.5 size-4 shrink-0 text-[var(--accent-success)]" />
+                <span>{item}</span>
               </motion.li>
             ))}
           </motion.ul>

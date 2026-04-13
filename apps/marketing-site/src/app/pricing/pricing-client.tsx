@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
 
 import { AmbientGrid } from "@/components/sections/ambient-grid";
@@ -12,7 +11,6 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 type Plan = {
   name: string;
   monthly: number;
-  annual: number;
   summary: string;
   features: string[];
   featured?: boolean;
@@ -22,7 +20,6 @@ const plans: Plan[] = [
   {
     name: "Courtside Platform",
     monthly: 199,
-    annual: 1999,
     summary: "One complete platform plan for live game operations, coaching workflow, and postgame review.",
     features: [
       "1 team workspace",
@@ -40,28 +37,6 @@ function formatPrice(value: number): string {
 }
 
 export function PricingClientPage(): JSX.Element {
-  const [annual, setAnnual] = useState(true);
-
-  const renderedPlans = useMemo(() => {
-    return plans.map((plan) => {
-      if (!annual) {
-        return {
-          ...plan,
-          display: plan.monthly,
-          suffix: "/mo",
-          note: "Billed monthly",
-        };
-      }
-
-      return {
-        ...plan,
-        display: plan.annual,
-        suffix: "/yr",
-        note: "Billed annually",
-      };
-    });
-  }, [annual]);
-
   return (
     <>
       <AmbientGrid />
@@ -76,35 +51,14 @@ export function PricingClientPage(): JSX.Element {
             Clear pricing, real operational value, and zero guesswork. Start with one team or roll out across your entire program.
           </p>
 
-          <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-[rgba(247,248,252,0.22)] bg-[rgba(13,16,32,0.4)] px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setAnnual(false)}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
-                !annual
-                  ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
-                  : "text-[rgba(247,248,252,0.85)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              onClick={() => setAnnual(true)}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
-                annual
-                  ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
-                  : "text-[rgba(247,248,252,0.85)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              Annual
-            </button>
-            <span className="text-sm font-semibold text-[var(--accent-signal)]">Save $389 yearly</span>
+          <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-[rgba(247,248,252,0.22)] bg-[rgba(13,16,32,0.4)] px-4 py-2">
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Monthly Plan</span>
+            <span className="text-sm font-semibold text-[var(--accent-signal)]">$199/mo</span>
           </div>
         </section>
 
         <section className="mt-8 grid gap-5 lg:grid-cols-1">
-          {renderedPlans.map((plan) => (
+          {plans.map((plan) => (
             <GlassPanel
               key={plan.name}
               className={`mx-auto w-full max-w-2xl p-7 ${plan.featured ? "border-[var(--accent-primary)] shadow-[0_0_0_1px_rgba(110,91,255,0.35),0_22px_52px_rgba(8,10,24,0.62)]" : ""}`}
@@ -120,21 +74,21 @@ export function PricingClientPage(): JSX.Element {
 
               <div className="mt-6 flex items-end gap-2">
                 <span className="text-xl font-semibold text-[var(--text-secondary)]">$</span>
-                <span className="font-display text-6xl font-semibold leading-none text-[var(--text-primary)]">{formatPrice(plan.display)}</span>
-                <span className="mb-1 text-xl text-[var(--text-tertiary)]">{plan.suffix}</span>
+                <span className="font-display text-6xl font-semibold leading-none text-[var(--text-primary)]">{formatPrice(plan.monthly)}</span>
+                <span className="mb-1 text-xl text-[var(--text-tertiary)]">/mo</span>
               </div>
-              <p className="mt-2 text-sm text-[var(--text-tertiary)]">{plan.note}</p>
+              <p className="mt-2 text-sm text-[var(--text-tertiary)]">Billed monthly</p>
               <p className="mt-1 text-xs text-[var(--accent-secondary)]">No demo required. Checkout and signup are self-serve.</p>
 
               <Link
-                href={annual ? "/get-started?cycle=yearly" : "/get-started?cycle=monthly"}
+                href="/get-started?cycle=monthly"
                 className={`mt-6 inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                   plan.featured
                     ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--accent-on)] hover:bg-[#7C6BFF]"
                     : "border-[var(--border-soft)] bg-[rgba(28,35,64,0.9)] text-[var(--text-primary)] hover:bg-[rgba(35,44,79,0.95)]"
                 }`}
               >
-                Start {annual ? "Annual" : "Monthly"} Signup
+                Start Monthly Signup
               </Link>
 
               <ul className="mt-6 space-y-3">

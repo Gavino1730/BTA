@@ -80,7 +80,8 @@ html {
 
 .font-display {
   font-family: var(--font-display), "Inter", "Segoe UI", sans-serif;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.03em;
+  font-weight: 700;
 }
 
 .grid-overlay {

@@ -10,8 +10,6 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 import { CrossAppLink } from "@/components/ui/cross-app-link";
 import { getApiBaseUrl, getDashboardLoginUrl } from "@/lib/site-url";
 
-type PlanCycle = "monthly" | "yearly";
-
 interface BootstrapCheckoutResponse {
   url?: string;
   error?: string;
@@ -19,12 +17,12 @@ interface BootstrapCheckoutResponse {
 
 export function GetStartedClientPage(): JSX.Element {
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-  const initialCycle = (params.get("cycle") ?? "").trim().toLowerCase() === "yearly" ? "yearly" : "monthly";
+  const initialCycle = (params.get("cycle") ?? "").trim().toLowerCase();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [schoolName, setSchoolName] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [planCycle, setPlanCycle] = useState<PlanCycle>(initialCycle);
+  const [planCycle] = useState<"monthly">(initialCycle === "monthly" ? "monthly" : "monthly");
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState("Enter your details to start checkout. No demo request required.");
 
@@ -140,14 +138,11 @@ export function GetStartedClientPage(): JSX.Element {
 
               <label className="text-sm text-[var(--text-secondary)]">
                 Plan
-                <select
-                  className="mt-2 w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] px-3 py-2.5 text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
-                  value={planCycle}
-                  onChange={(event) => setPlanCycle(event.target.value === "yearly" ? "yearly" : "monthly")}
-                >
-                  <option value="monthly">Monthly - $199/mo</option>
-                  <option value="yearly">Yearly - $1999/yr</option>
-                </select>
+                <input
+                  className="mt-2 w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] px-3 py-2.5 text-[var(--text-primary)] outline-none"
+                  value="Monthly - $199/mo"
+                  readOnly
+                />
               </label>
 
               <button
@@ -165,7 +160,7 @@ export function GetStartedClientPage(): JSX.Element {
           <GlassPanel className="p-7">
             <h3 className="font-display text-2xl text-[var(--text-primary)]">What happens next</h3>
             <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-7 text-[var(--text-secondary)]">
-              <li>Complete Stripe checkout for monthly or yearly subscription.</li>
+              <li>Complete Stripe checkout for monthly subscription.</li>
               <li>Return to setup with your secure school scope prefilled.</li>
               <li>Create your coach account and finish team onboarding.</li>
             </ol>
