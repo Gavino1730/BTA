@@ -2382,6 +2382,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
         stripeCustomerId: (billing as BillingState).stripeCustomerId,
         stripeSubscriptionId: (billing as BillingState).stripeSubscriptionId,
         currentPeriodEndsAtIso: (billing as BillingState).currentPeriodEndsAtIso,
+        couponCode: (billing as BillingState).couponCode,
         createdAtIso: (billing as BillingState).createdAtIso ?? nowIso,
         updatedAtIso: (billing as BillingState).updatedAtIso ?? nowIso,
       });
@@ -2781,6 +2782,36 @@ export function getBillingStateByScope(scope?: TenantScope): BillingState | null
   return existing ? { ...existing } : null;
 }
 
+export function findBillingStateByStripeCustomerId(stripeCustomerId: string): BillingState | null {
+  const normalized = String(stripeCustomerId ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  for (const state of billingBySchool.values()) {
+    if (state.stripeCustomerId === normalized) {
+      return { ...state };
+    }
+  }
+
+  return null;
+}
+
+export function findBillingStateByStripeSubscriptionId(stripeSubscriptionId: string): BillingState | null {
+  const normalized = String(stripeSubscriptionId ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  for (const state of billingBySchool.values()) {
+    if (state.stripeSubscriptionId === normalized) {
+      return { ...state };
+    }
+  }
+
+  return null;
+}
+
 export function ensureTrialBillingState(scope?: TenantScope, trialDays = 14): BillingState {
   const schoolId = resolveSchoolId(scope);
   const existing = billingBySchool.get(schoolId);
@@ -2821,6 +2852,9 @@ export function saveBillingState(state: Partial<BillingState>, scope?: TenantSco
     stripeCustomerId: state.stripeCustomerId ?? existing?.stripeCustomerId,
     stripeSubscriptionId: state.stripeSubscriptionId ?? existing?.stripeSubscriptionId,
     currentPeriodEndsAtIso: state.currentPeriodEndsAtIso ?? existing?.currentPeriodEndsAtIso,
+    couponCode: state.couponCode === undefined
+      ? existing?.couponCode
+      : (state.couponCode.trim() || undefined),
     createdAtIso: existing?.createdAtIso ?? state.createdAtIso ?? nowIso,
     updatedAtIso: nowIso,
   };

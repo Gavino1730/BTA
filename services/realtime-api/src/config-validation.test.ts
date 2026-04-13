@@ -123,4 +123,34 @@ describe("runtime config validation", () => {
     const result = validateRuntimeConfig(config);
     expect(result.errors.some((error) => error.includes("BTA_LOCAL_AUTH_SECRET") || error.includes("BTA_AUTH_SECRET"))).toBe(true);
   });
+
+  it("rejects production when paywall is enabled but Stripe checkout settings are missing", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      jwtWriteRequired: false,
+      apiKeyPresent: true,
+      paywallEnabled: true,
+      stripeConfigured: false,
+      stripeWebhookSecretConfigured: true,
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.errors.some((error) => error.includes("BTA_STRIPE_SECRET_KEY"))).toBe(true);
+  });
+
+  it("rejects production when paywall is enabled but Stripe webhook secret is missing", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      jwtWriteRequired: false,
+      apiKeyPresent: true,
+      paywallEnabled: true,
+      stripeConfigured: true,
+      stripeWebhookSecretConfigured: false,
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.errors.some((error) => error.includes("BTA_STRIPE_WEBHOOK_SECRET"))).toBe(true);
+  });
 });
