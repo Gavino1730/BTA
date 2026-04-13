@@ -1,6 +1,6 @@
 {
   "name": "BTA Courtside Coach Dashboard",
-  "short_name": "BTA Coach",
+  "short_name": "Coach",
   "description": "Live basketball coaching intelligence for high school programs.",
   "start_url": "/",
   "display": "standalone",
