@@ -989,6 +989,12 @@
   gap: 0.6rem;
 }
 
+.auth-brand-lockup-compact .auth-brand-logo {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9px;
+}
+
 .auth-brand-lockup-compact .auth-brand-badge {
   width: 2rem;
   height: 2rem;
@@ -1015,6 +1021,16 @@
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.12em;
+}
+
+.auth-brand-logo {
+  width: 2.45rem;
+  height: 2.45rem;
+  object-fit: cover;
+  border-radius: var(--bta-radius-md);
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 38%, transparent);
+  background: var(--bta-accent-violet-soft);
+  box-shadow: var(--bta-shadow-sm);
 }
 
 .auth-brand-name,

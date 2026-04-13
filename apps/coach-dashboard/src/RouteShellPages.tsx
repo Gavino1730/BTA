@@ -419,36 +419,159 @@ export function CheckoutSuccessPage({ onNavigate }: RoutedPageProps) {
   const setupPath = schoolId
     ? `/setup?schoolId=${encodeURIComponent(schoolId)}${email ? `&email=${encodeURIComponent(email)}` : ""}`
     : "/setup";
+  const [entitlement, setEntitlement] = useState<BillingEntitlement | null>(null);
+  const [syncStatus, setSyncStatus] = useState("Confirming billing status...");
+  const [syncing, setSyncing] = useState(true);
+
+  function entitlementMessage(current: BillingEntitlement | null): string {
+    if (!current) {
+      return "Checkout completed, but billing sync is still processing. Retry in a few seconds.";
+    }
+
+    if (current.accessActive) {
+      return "Billing is active. Continue setup and finish onboarding.";
+    }
+
+    if (current.status === "past_due" || current.status === "unpaid") {
+      return "Payment was received but account is still marked past due. Open Billing and refresh status.";
+    }
+
+    if (current.status === "canceled") {
+      return "This account is currently canceled. Open Billing to reactivate before continuing.";
+    }
+
+    if (current.status === "incomplete") {
+      return "Checkout did not finalize completely. Open Billing to complete payment details.";
+    }
+
+    return "Billing status is updating. Continue setup and check Billing if access remains locked.";
+  }
+
+  async function refreshEntitlement() {
+    setSyncing(true);
+    const next = await fetchBillingEntitlement();
+    setEntitlement(next);
+    setSyncStatus(entitlementMessage(next));
+    setSyncing(false);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const first = await fetchBillingEntitlement();
+      if (cancelled) {
+        return;
+      }
+
+      setEntitlement(first);
+      setSyncStatus(entitlementMessage(first));
+
+      if (first?.accessActive) {
+        setSyncing(false);
+        return;
+      }
+
+      let attempts = 0;
+      const timer = window.setInterval(async () => {
+        attempts += 1;
+        const polled = await fetchBillingEntitlement();
+        if (cancelled) {
+          window.clearInterval(timer);
+          return;
+        }
+
+        setEntitlement(polled);
+        setSyncStatus(entitlementMessage(polled));
+        if (polled?.accessActive || attempts >= 4) {
+          window.clearInterval(timer);
+          setSyncing(false);
+        }
+      }, 2000);
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      setSyncing(false);
+    };
+  }, []);
 
   return (
-    <ShellPage
-      title="Checkout Complete"
-      subtitle="Your billing workflow is marked complete. Create your account in setup to continue."
-      bullets={[
-        "If webhook sync is still processing, wait a few seconds and retry account creation.",
-        "Setup will preserve your school scope and continue onboarding.",
-        "You can still open Billing after account creation to manage subscription details.",
-      ]}
-      onPrimary={() => onNavigate(setupPath)}
-      primaryLabel="Continue Setup"
-      onSecondary={() => onNavigate("/stats")}
-      secondaryLabel="Open Dashboard"
-    />
+    <div className="stats-page">
+      <section className="stats-page-card" style={{ maxWidth: "840px", margin: "0 auto" }}>
+        <p className="stats-page-eyebrow">Preproduction</p>
+        <h1>Checkout Complete</h1>
+        <p className="stats-page-subtitle">Your billing workflow is marked complete. Confirm status and continue setup.</p>
+        <p className="stats-page-subcopy" style={{ marginTop: "0.5rem" }}>{syncStatus}</p>
+        <ul style={{ marginTop: "0.75rem", lineHeight: 1.6, color: "rgba(232,234,240,0.85)" }}>
+          <li>Setup preserves your school scope and continues onboarding.</li>
+          <li>Open Billing if access has not updated after checkout.</li>
+          <li>Webhook sync may take a few seconds during peak traffic.</li>
+        </ul>
+        {entitlement ? (
+          <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
+            Current billing status: <strong>{entitlement.status}</strong>
+          </p>
+        ) : null}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginTop: "1rem" }}>
+          <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onNavigate(setupPath)}>
+            Continue Setup
+          </button>
+          <button type="button" className="shell-nav-link" onClick={() => void refreshEntitlement()} disabled={syncing}>
+            {syncing ? "Checking Status..." : "Retry Billing Sync"}
+          </button>
+          <button type="button" className="shell-nav-link" onClick={() => onNavigate("/billing")}>
+            Open Billing
+          </button>
+          <button type="button" className="shell-nav-link" onClick={() => onNavigate("/stats")}>
+            Open Dashboard
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
 export function CheckoutCancelPage({ onNavigate }: RoutedPageProps) {
+  const [entitlement, setEntitlement] = useState<BillingEntitlement | null>(null);
+  const [status, setStatus] = useState("Reviewing your current billing status...");
+
+  useEffect(() => {
+    void (async () => {
+      const next = await fetchBillingEntitlement();
+      setEntitlement(next);
+      if (!next) {
+        setStatus("No billing update was applied. You can return to Billing whenever you are ready.");
+        return;
+      }
+
+      if (next.accessActive) {
+        setStatus("Your subscription remains active. You can manage billing details from the Billing page.");
+        return;
+      }
+
+      if (next.status === "past_due" || next.status === "unpaid") {
+        setStatus("Your account still needs payment attention. Open Billing to restore full access.");
+        return;
+      }
+
+      setStatus("No billing changes were applied. Restart checkout from Billing at any time.");
+    })();
+  }, []);
+
   return (
     <ShellPage
       title="Checkout Canceled"
-      subtitle="No billing changes were applied. You can return to billing whenever you are ready."
+      subtitle={status}
       bullets={[
         "Your current access level remains unchanged.",
         "No payment method was updated during this canceled flow.",
-        "You can restart checkout from Billing at any time.",
+        entitlement?.status ? `Current billing status: ${entitlement.status}.` : "You can restart checkout from Billing at any time.",
       ]}
       onPrimary={() => onNavigate("/billing")}
-      primaryLabel="Open Billing"
+      primaryLabel={entitlement?.accessActive ? "Manage Subscription" : "Open Billing"}
       onSecondary={() => onNavigate("/stats")}
       secondaryLabel="Open Dashboard"
     />
