@@ -2192,6 +2192,7 @@ async function createSubscriptionCheckoutSession(options: {
   const checkoutSession = await stripeClient.checkout.sessions.create({
     mode: "subscription",
     ...buildStripeCheckoutCustomerParams({ customerId, customerEmail: customerId ? undefined : customerEmail }),
+    customer_update: { address: "auto", name: "auto" },
     line_items: [{ price: STRIPE_PRICE_ID_MONTHLY, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
