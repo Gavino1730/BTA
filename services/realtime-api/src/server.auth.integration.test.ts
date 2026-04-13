@@ -9,64 +9,6 @@ function makeTestToken(payload: Record<string, unknown>): string {
   return `test.${encoded}`;
 }
 
-function collectWarnLogPayloads(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
-  return spy.mock.calls
-    .map((call) => {
-      const raw = call[0];
-      if (typeof raw !== "string") {
-        return null;
-      }
-      try {
-        return JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
-    })
-    .filter((entry): entry is Record<string, unknown> => entry !== null);
-}
-
-function collectLogPayloads(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
-  return spy.mock.calls
-    .map((call) => {
-      const raw = call[0];
-      if (typeof raw !== "string") {
-        return null;
-      }
-      try {
-        return JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
-    })
-    .filter((entry): entry is Record<string, unknown> => entry !== null);
-}
-
-function expectEmailDeliveryMetadata(payload: {
-  emailDelivery?: { status?: string };
-  warning?: string;
-}): void {
-  expect(["sent", "disabled", "failed"]).toContain(payload.emailDelivery?.status);
-  if (payload.emailDelivery?.status !== "sent") {
-    expect(typeof payload.warning).toBe("string");
-  }
-}
-
-async function waitForLog(
-  spy: ReturnType<typeof vi.spyOn>,
-  predicate: (payload: Record<string, unknown>) => boolean,
-  timeoutMs = 500,
-): Promise<Record<string, unknown> | null> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const match = collectLogPayloads(spy).find(predicate);
-    if (match) {
-      return match;
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-  }
-  return null;
-}
-
 describe("server auth integration", () => {
   let startServer: (overridePort?: number) => Promise<number>;
   let stopServer: () => Promise<void>;
@@ -105,130 +47,6 @@ describe("server auth integration", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-  });
-
-  it("returns a structured JSON error for malformed JSON payloads", async () => {
-    const response = await fetch(`${API_BASE}/api/team`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "error-shape-school"
-      },
-      body: "{\"name\":"
-    });
-
-    expect(response.status).toBe(400);
-    const body = await response.json() as {
-      error?: string;
-      code?: string;
-      requestId?: string;
-    };
-
-    expect(body.error).toBe("Invalid JSON payload");
-    expect(body.code).toBe("invalid_json");
-    expect(typeof body.requestId).toBe("string");
-    expect((body.requestId ?? "").length).toBeGreaterThan(0);
-  });
-
-  it("emits structured http.request logs for 4xx error paths", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const requestId = "http-4xx-log-req-1";
-      const response = await fetch(`${API_BASE}/api/team`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-school-id": "log-school",
-          "x-request-id": requestId,
-        },
-        body: JSON.stringify({ name: "Denied Team" }),
-      });
-
-      expect(response.status).toBe(401);
-
-      const requestLog = collectLogPayloads(logSpy).find((payload) => {
-        if (payload.message !== "http.request") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.path === "/api/team" && context?.requestId === requestId;
-      });
-
-      expect(requestLog).toBeTruthy();
-      const context = (requestLog?.context ?? {}) as Record<string, unknown>;
-      expect(context.statusCode).toBe(401);
-      expect(context.method).toBe("POST");
-    } finally {
-      logSpy.mockRestore();
-    }
-  });
-
-  it("emits structured diagnostics for 5xx unhandled request paths", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    try {
-      const requestId = "http-5xx-log-req-1";
-      const response = await fetch(`${API_BASE}/__test/error500`, {
-        headers: {
-          "x-request-id": requestId,
-          "x-school-id": "diag-school",
-        },
-      });
-
-      expect(response.status).toBe(500);
-      const body = await response.json() as {
-        error?: string;
-        code?: string;
-        requestId?: string;
-      };
-      expect(body.error).toBe("Internal server error");
-      expect(body.code).toBe("internal_error");
-      expect(typeof body.requestId).toBe("string");
-      expect((body.requestId ?? "").length).toBeGreaterThan(0);
-
-      const requestLog = collectLogPayloads(logSpy).find((payload) => {
-        if (payload.message !== "http.request") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.path === "/__test/error500" && context?.requestId === requestId;
-      });
-
-      expect(requestLog).toBeTruthy();
-      const requestContext = (requestLog?.context ?? {}) as Record<string, unknown>;
-      expect(requestContext.statusCode).toBe(500);
-      expect(requestContext.method).toBe("GET");
-
-      const errorLog = errorSpy.mock.calls
-        .map((call) => {
-          const raw = call[0];
-          if (typeof raw !== "string") {
-            return null;
-          }
-          try {
-            return JSON.parse(raw) as Record<string, unknown>;
-          } catch {
-            return null;
-          }
-        })
-        .find((payload) => {
-          if (!payload || payload.message !== "request.unhandled_error") {
-            return false;
-          }
-          const context = payload.context as Record<string, unknown> | undefined;
-          return context?.path === "/__test/error500";
-        });
-
-      expect(errorLog).toBeTruthy();
-      const errorContext = (errorLog?.context ?? {}) as Record<string, unknown>;
-      expect(errorContext.status).toBe(500);
-      expect(errorContext.code).toBe("internal_error");
-      expect(String(errorContext.error ?? "")).toContain("simulated_test_unhandled_error");
-    } finally {
-      logSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
   });
 
   it("allows API-key fallback for roster reads when JWT auth is enabled", async () => {
@@ -304,83 +122,6 @@ describe("server auth integration", () => {
     });
 
     expect(response.status).toBe(403);
-  });
-
-  it("emits security telemetry with requestId on HTTP tenant mismatch", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      const token = makeTestToken({
-        sub: "telemetry-user",
-        schoolId: "alpha",
-        role: "coach"
-      });
-      const requestId = "http-telemetry-req-123";
-
-      const response = await fetch(`${API_BASE}/api/teams`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-school-id": "beta",
-          "x-request-id": requestId,
-        }
-      });
-
-      expect(response.status).toBe(403);
-
-      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
-        if (payload.message !== "security.event") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.event === "requestTenantMismatch";
-      });
-
-      expect(securityEvent).toBeTruthy();
-      const context = (securityEvent?.context ?? {}) as Record<string, unknown>;
-      expect(context.requestId).toBe(requestId);
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it("does not leak HTTP auth credentials in denial security logs", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      const leakedAuthHeader = "Bearer super-secret-http-token";
-      const leakedApiKey = "super-secret-http-api-key";
-
-      const response = await fetch(`${API_BASE}/api/team`, {
-        method: "POST",
-        headers: {
-          Authorization: leakedAuthHeader,
-          "x-api-key": leakedApiKey,
-          "Content-Type": "application/json",
-          "x-school-id": "redaction-school",
-          "x-request-id": "http-redaction-req-123",
-        },
-        body: JSON.stringify({ name: "Denied Team" }),
-      });
-
-      expect(response.status).toBe(401);
-
-      const rawWarnOutput = warnSpy.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
-      expect(rawWarnOutput).not.toContain(leakedAuthHeader);
-      expect(rawWarnOutput).not.toContain(leakedApiKey);
-
-      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
-        if (payload.message !== "security.event") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.event === "unauthorizedHttp";
-      });
-
-      expect(securityEvent).toBeTruthy();
-      const context = (securityEvent?.context ?? {}) as Record<string, unknown>;
-      expect(["missing-valid-credentials", "jwt-write-required"]).toContain(String(context.reason));
-      expect(context.requestId).toBe("http-redaction-req-123");
-    } finally {
-      warnSpy.mockRestore();
-    }
   });
 
   it("creates an isolated school workspace when a public user registers without a preset school id", async () => {
@@ -537,15 +278,6 @@ describe("server auth integration", () => {
     });
 
     expect(inviteResponse.status).toBe(201);
-    const inviteBody = await inviteResponse.json() as {
-      member?: { memberId?: string };
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect(["sent", "disabled", "failed"]).toContain(inviteBody.emailDelivery?.status);
-    if (inviteBody.emailDelivery?.status !== "sent") {
-      expect(typeof inviteBody.warning).toBe("string");
-    }
 
     const membersResponse = await fetch(`${API_BASE}/api/org/members`, {
       headers: {
@@ -564,72 +296,6 @@ describe("server auth integration", () => {
     expect(body.currentMember?.role).toBe("owner");
     expect(body.currentMember?.status).toBe("active");
     expect(body.members.some((member) => member.email === "assistant@school.org" && member.role === "analyst" && member.status === "invited")).toBe(true);
-  });
-
-  it("resends organization invites and returns delivery status", async () => {
-    const ownerToken = makeTestToken({
-      sub: "resend-owner-1",
-      schoolId: "resend-school",
-      role: "coach",
-      email: "owner@school.org",
-      name: "Owner Coach"
-    });
-
-    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "Content-Type": "application/json",
-        "x-school-id": "resend-school"
-      },
-      body: JSON.stringify({
-        organizationName: "Resend School Athletics",
-        teamName: "Resend School",
-        season: "2026"
-      })
-    });
-
-    expect(completeResponse.status).toBe(201);
-
-    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "Content-Type": "application/json",
-        "x-school-id": "resend-school"
-      },
-      body: JSON.stringify({
-        fullName: "Resend Target",
-        email: "resend-target@school.org",
-        role: "coach"
-      })
-    });
-
-    expect(inviteResponse.status).toBe(201);
-    const inviteBody = await inviteResponse.json() as {
-      member?: { memberId?: string };
-    };
-    expect(typeof inviteBody.member?.memberId).toBe("string");
-
-    const resendResponse = await fetch(`${API_BASE}/api/org/members/${inviteBody.member?.memberId}/resend-invite`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "x-school-id": "resend-school"
-      }
-    });
-
-    expect(resendResponse.status).toBe(200);
-    const resendBody = await resendResponse.json() as {
-      message?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect(resendBody.message).toBe("Invite resent");
-    expect(["sent", "disabled", "failed"]).toContain(resendBody.emailDelivery?.status);
-    if (resendBody.emailDelivery?.status !== "sent") {
-      expect(typeof resendBody.warning).toBe("string");
-    }
   });
 
   it("accepts an invited member on first authenticated request by matching email", async () => {
@@ -848,11 +514,6 @@ describe("server auth integration", () => {
     });
 
     expect(createResponse.status).toBe(201);
-    const createBody = await createResponse.json() as {
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expectEmailDeliveryMetadata(createBody);
 
     const loginBeforeReset = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -882,11 +543,6 @@ describe("server auth integration", () => {
     });
 
     expect(resetResponse.status).toBe(200);
-    const resetBody = await resetResponse.json() as {
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expectEmailDeliveryMetadata(resetBody);
 
     const oldPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -950,13 +606,10 @@ describe("server auth integration", () => {
       resetToken?: string;
       resetPath?: string;
       message?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
     };
     expect(requestBody.message).toBeTruthy();
     expect(requestBody.resetToken).toBeTruthy();
     expect(requestBody.resetPath).toContain("/reset-password?token=");
-    expectEmailDeliveryMetadata(requestBody);
 
     const oldPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -1012,156 +665,6 @@ describe("server auth integration", () => {
     expect(newLoginAfterReset.status).toBe(200);
   });
 
-  it("confirms email verification tokens through the public verify endpoint", async () => {
-    const ownerToken = makeTestToken({
-      sub: "verify-owner-1",
-      schoolId: "verify-school",
-      role: "coach",
-      email: "owner@school.org",
-      name: "Verify Owner"
-    });
-
-    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "Content-Type": "application/json",
-        "x-school-id": "verify-school"
-      },
-      body: JSON.stringify({
-        organizationName: "Verify School",
-        teamName: "Verify Team",
-        season: "2026"
-      })
-    });
-    expect(completeResponse.status).toBe(201);
-
-    const createCoachResponse = await fetch(`${API_BASE}/api/auth/coach-account`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "Content-Type": "application/json",
-        "x-school-id": "verify-school"
-      },
-      body: JSON.stringify({
-        fullName: "Verify Flow Coach",
-        email: "verify-flow@school.org",
-        role: "coach",
-        password: "VerifyPass123!"
-      })
-    });
-
-    expect(createCoachResponse.status).toBe(201);
-
-    const resendRes = await fetch(`${API_BASE}/api/auth/email-verify/resend`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "verify-school",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ email: "verify-flow@school.org" })
-    });
-
-    expect(resendRes.status).toBe(200);
-    const resendBody = await resendRes.json() as {
-      verifyToken?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect(resendBody.verifyToken).toBeTruthy();
-    expectEmailDeliveryMetadata(resendBody);
-
-    const confirmRes = await fetch(`${API_BASE}/api/auth/email-verify/confirm`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "verify-school",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ token: resendBody.verifyToken, email: "verify-flow@school.org" })
-    });
-
-    expect(confirmRes.status).toBe(200);
-    const confirmBody = await confirmRes.json() as {
-      verified?: boolean;
-      user?: { email?: string; status?: string };
-    };
-    expect(confirmBody.verified).toBe(true);
-    expect(confirmBody.user?.email).toBe("verify-flow@school.org");
-    expect(confirmBody.user?.status).toBe("active");
-  });
-
-  it("accepts organization invites with invite tokens", async () => {
-    const ownerToken = makeTestToken({
-      sub: "invite-token-owner",
-      schoolId: "invite-token-school",
-      role: "coach",
-      email: "owner@school.org",
-      name: "Owner Coach"
-    });
-
-    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "Content-Type": "application/json",
-        "x-school-id": "invite-token-school"
-      },
-      body: JSON.stringify({
-        organizationName: "Invite Token School",
-        teamName: "Invite Token Team",
-        season: "2026"
-      })
-    });
-
-    expect(completeResponse.status).toBe(201);
-
-    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        "Content-Type": "application/json",
-        "x-school-id": "invite-token-school"
-      },
-      body: JSON.stringify({
-        fullName: "Invitee Coach",
-        email: "invitee@school.org",
-        role: "coach"
-      })
-    });
-
-    expect(inviteResponse.status).toBe(201);
-    const inviteBody = await inviteResponse.json() as {
-      inviteToken?: string;
-    };
-    expect(inviteBody.inviteToken).toBeTruthy();
-
-    const acceptResponse = await fetch(`${API_BASE}/api/org/members/accept-invite`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "invite-token-school",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        token: inviteBody.inviteToken,
-        email: "invitee@school.org"
-      })
-    });
-
-    expect(acceptResponse.status).toBe(200);
-    const acceptBody = await acceptResponse.json() as {
-      accepted?: boolean;
-      nextPath?: string;
-      member?: { status?: string; email?: string };
-    };
-    expect(acceptBody.accepted).toBe(true);
-    expect(acceptBody.member?.status).toBe("active");
-    expect(acceptBody.member?.email).toBe("invitee@school.org");
-    expect(acceptBody.nextPath).toBe("/register");
-  });
-
   it("exposes prometheus security metrics to authorized write role", async () => {
     const token = makeTestToken({
       sub: "metrics-coach",
@@ -1180,100 +683,6 @@ describe("server auth integration", () => {
     const text = await response.text();
     expect(text).toContain("bta_security_unauthorized_http_total");
     expect(text).toContain("bta_security_forbidden_write_role_total");
-    expect(text).toContain("bta_ai_budget_exceeded_total");
-    expect(text).toContain("bta_ai_total_estimated_cost_usd");
-  });
-
-  it("exposes combined admin metrics including AI alert counters", async () => {
-    const token = makeTestToken({
-      sub: "metrics-coach-json",
-      schoolId: "rbac-school",
-      role: "coach"
-    });
-
-    const response = await fetch(`${API_BASE}/admin/security-metrics`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "x-school-id": "rbac-school"
-      }
-    });
-
-    expect(response.status).toBe(200);
-    const body = await response.json() as {
-      unauthorizedHttp?: number;
-      aiBudgetExceeded?: number;
-      aiCostThresholdExceeded?: number;
-      aiTokenThresholdExceeded?: number;
-      aiTotalTokensUsed?: number;
-      aiTotalEstimatedCostUsd?: number;
-      aiActiveGames?: number;
-    };
-
-    expect(typeof body.unauthorizedHttp).toBe("number");
-    expect(typeof body.aiBudgetExceeded).toBe("number");
-    expect(typeof body.aiCostThresholdExceeded).toBe("number");
-    expect(typeof body.aiTokenThresholdExceeded).toBe("number");
-    expect(typeof body.aiTotalTokensUsed).toBe("number");
-    expect(typeof body.aiTotalEstimatedCostUsd).toBe("number");
-    expect(typeof body.aiActiveGames).toBe("number");
-  });
-
-  it("increments security counters for unauthorized and tenant-mismatch denials", async () => {
-    const adminToken = makeTestToken({
-      sub: "metrics-delta-coach",
-      schoolId: "rbac-school",
-      role: "coach",
-    });
-
-    const readMetrics = async (): Promise<{
-      unauthorizedHttp: number;
-      requestTenantMismatch: number;
-    }> => {
-      const response = await fetch(`${API_BASE}/admin/security-metrics`, {
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-          "x-school-id": "rbac-school",
-        },
-      });
-      expect(response.status).toBe(200);
-      const body = await response.json() as {
-        unauthorizedHttp?: number;
-        requestTenantMismatch?: number;
-      };
-      return {
-        unauthorizedHttp: Number(body.unauthorizedHttp ?? 0),
-        requestTenantMismatch: Number(body.requestTenantMismatch ?? 0),
-      };
-    };
-
-    const before = await readMetrics();
-
-    const unauthorizedRes = await fetch(`${API_BASE}/api/team`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-school-id": "rbac-school",
-      },
-      body: JSON.stringify({ name: "Denied Team" }),
-    });
-    expect(unauthorizedRes.status).toBe(401);
-
-    const mismatchToken = makeTestToken({
-      sub: "metrics-mismatch-user",
-      schoolId: "alpha-metrics",
-      role: "coach",
-    });
-    const mismatchRes = await fetch(`${API_BASE}/api/teams`, {
-      headers: {
-        Authorization: `Bearer ${mismatchToken}`,
-        "x-school-id": "beta-metrics",
-      },
-    });
-    expect(mismatchRes.status).toBe(403);
-
-    const after = await readMetrics();
-    expect(after.unauthorizedHttp).toBeGreaterThanOrEqual(before.unauthorizedHttp + 1);
-    expect(after.requestTenantMismatch).toBeGreaterThanOrEqual(before.requestTenantMismatch + 1);
   });
 
   it("rejects socket connection on tenant mismatch and allows matching scope", async () => {
@@ -1332,200 +741,6 @@ describe("server auth integration", () => {
     });
 
     expect(connected).toBe(true);
-  });
-
-  it("emits socket.connected log with correlated requestId", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const token = makeTestToken({
-        sub: "socket-log-user",
-        schoolId: "socket-log-school",
-        role: "coach"
-      });
-      const requestId = "socket-connect-req-123";
-
-      const connected = await new Promise<boolean>((resolve) => {
-        const client: Socket = io(API_BASE, {
-          transports: ["websocket"],
-          auth: {
-            token,
-            schoolId: "socket-log-school",
-            requestId,
-          }
-        });
-
-        client.on("connect", () => {
-          client.disconnect();
-          resolve(true);
-        });
-
-        client.on("connect_error", () => {
-          client.disconnect();
-          resolve(false);
-        });
-      });
-
-      expect(connected).toBe(true);
-
-      const socketConnectedLog = collectLogPayloads(logSpy).find((payload) => {
-        if (payload.message !== "socket.connected") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.requestId === requestId && context?.schoolId === "socket-log-school";
-      });
-
-      expect(socketConnectedLog).toBeTruthy();
-    } finally {
-      logSpy.mockRestore();
-    }
-  });
-
-  it("emits socket.disconnected log with correlated requestId", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const token = makeTestToken({
-        sub: "socket-disconnect-user",
-        schoolId: "socket-disconnect-school",
-        role: "coach"
-      });
-      const requestId = "socket-disconnect-req-123";
-
-      const disconnected = await new Promise<boolean>((resolve) => {
-        const client: Socket = io(API_BASE, {
-          transports: ["websocket"],
-          auth: {
-            token,
-            schoolId: "socket-disconnect-school",
-            requestId,
-          }
-        });
-
-        client.on("connect", () => {
-          client.disconnect();
-        });
-
-        client.on("disconnect", () => {
-          resolve(true);
-        });
-
-        client.on("connect_error", () => {
-          client.disconnect();
-          resolve(false);
-        });
-      });
-
-      expect(disconnected).toBe(true);
-
-      const disconnectedLog = await waitForLog(logSpy, (payload) => {
-        if (payload.message !== "socket.disconnected") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.requestId === requestId && context?.schoolId === "socket-disconnect-school";
-      });
-
-      expect(disconnectedLog).toBeTruthy();
-    } finally {
-      logSpy.mockRestore();
-    }
-  });
-
-  it("emits security telemetry with requestId on unauthorized socket auth", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      const requestId = "socket-telemetry-req-123";
-
-      const connectError = await new Promise<string>((resolve) => {
-        const client: Socket = io(API_BASE, {
-          transports: ["websocket"],
-          auth: {
-            schoolId: "socket-school",
-          },
-          extraHeaders: {
-            "x-request-id": requestId,
-          },
-        });
-
-        client.on("connect", () => {
-          client.disconnect();
-          resolve("unexpected-connect");
-        });
-
-        client.on("connect_error", (error) => {
-          client.disconnect();
-          resolve(String(error.message ?? ""));
-        });
-      });
-
-      expect(connectError.toLowerCase()).toContain("unauthorized");
-
-      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
-        if (payload.message !== "security.event") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.event === "unauthorizedSocket";
-      });
-
-      expect(securityEvent).toBeTruthy();
-      const context = (securityEvent?.context ?? {}) as Record<string, unknown>;
-      expect(context.requestId).toBe(requestId);
-      expect(context.reason).toBe("missing-valid-credentials");
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it("does not leak socket auth credentials in security logs", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      const leakedToken = "Bearer very-secret-token";
-      const leakedApiKey = "super-secret-api-key";
-
-      const connectError = await new Promise<string>((resolve) => {
-        const client: Socket = io(API_BASE, {
-          transports: ["websocket"],
-          auth: {
-            schoolId: "socket-school",
-            token: leakedToken,
-            apiKey: leakedApiKey,
-          },
-          extraHeaders: {
-            Authorization: leakedToken,
-            "x-api-key": leakedApiKey,
-          },
-        });
-
-        client.on("connect", () => {
-          client.disconnect();
-          resolve("unexpected-connect");
-        });
-
-        client.on("connect_error", (error) => {
-          client.disconnect();
-          resolve(String(error.message ?? ""));
-        });
-      });
-
-      expect(connectError.toLowerCase()).toContain("unauthorized");
-
-      const rawWarnOutput = warnSpy.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
-      expect(rawWarnOutput).not.toContain(leakedToken);
-      expect(rawWarnOutput).not.toContain(leakedApiKey);
-
-      const securityEvent = collectWarnLogPayloads(warnSpy).find((payload) => {
-        if (payload.message !== "security.event") {
-          return false;
-        }
-        const context = payload.context as Record<string, unknown> | undefined;
-        return context?.event === "unauthorizedSocket";
-      });
-
-      expect(securityEvent).toBeTruthy();
-    } finally {
-      warnSpy.mockRestore();
-    }
   });
 
   it("blocks player role from mutation endpoints (write-role enforcement)", async () => {
@@ -1661,7 +876,7 @@ describe("server auth integration", () => {
       body: JSON.stringify({ email: "self-update@school.org", password: "NewPass456!" })
     });
 
-    expect([200, 429]).toContain(loginRes.status);
+    expect(loginRes.status).toBe(200);
   });
 
   it("revokes prior local tokens when signing out all sessions", async () => {
@@ -1714,10 +929,10 @@ describe("server auth integration", () => {
         password: "RevokePass123!",
       }),
     });
-    expect([200, 429]).toContain(loginRes.status);
+    expect(loginRes.status).toBe(200);
   });
 
-  it("supports self-service delayed account deletion scheduling and cancellation", async () => {
+  it("supports self-service account deletion with password confirmation", async () => {
     const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1751,16 +966,7 @@ describe("server auth integration", () => {
         confirmation: "DELETE",
       }),
     });
-    expect(deleteRes.status).toBe(202);
-    const deleteBody = await deleteRes.json() as {
-      scheduledDeletionAtIso?: string;
-      graceDays?: number;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect(deleteBody.scheduledDeletionAtIso).toBeTruthy();
-    expect(typeof deleteBody.graceDays).toBe("number");
-    expectEmailDeliveryMetadata(deleteBody);
+    expect(deleteRes.status).toBe(204);
 
     const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
@@ -1773,151 +979,6 @@ describe("server auth integration", () => {
         password: "DeletePass123!",
       }),
     });
-    expect([200, 429]).toContain(loginRes.status);
-
-    const cancelRes = await fetch(`${API_BASE}/api/auth/me/cancel-deletion`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "x-school-id": schoolId,
-        "x-api-key": "rollout-api-key",
-        "Content-Type": "application/json",
-      },
-    });
-    expect(cancelRes.status).toBe(200);
-    const cancelBody = await cancelRes.json() as {
-      user?: { scheduledDeletionAtIso?: string | null };
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect(cancelBody.user?.scheduledDeletionAtIso ?? null).toBeNull();
-    expectEmailDeliveryMetadata(cancelBody);
-
-    const loginAfterCancelRes = await fetch(`${API_BASE}/api/auth/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-school-id": schoolId,
-      },
-      body: JSON.stringify({
-        email: "delete-me@school.org",
-        password: "DeletePass123!",
-      }),
-    });
-    expect([200, 429]).toContain(loginAfterCancelRes.status);
-  });
-
-  it("accepts support and contact intake submissions", async () => {
-    const supportRes = await fetch(`${API_BASE}/api/intake/support`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "intake-school",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fullName: "Support Coach",
-        email: "support-coach@school.org",
-        topic: "bug",
-        severity: "high",
-        message: "Scoreboard stopped syncing in Q3.",
-      }),
-    });
-
-    expect(supportRes.status).toBe(202);
-    const supportBody = await supportRes.json() as {
-      requestId?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect((supportBody.requestId ?? "").startsWith("sup-")).toBe(true);
-    expectEmailDeliveryMetadata(supportBody);
-
-    const contactRes = await fetch(`${API_BASE}/api/intake/contact`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "intake-school",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: "Jordan Ops",
-        email: "jordan@school.org",
-        organization: "Intake School",
-        category: "support",
-        message: "Need onboarding support for next week.",
-      }),
-    });
-
-    expect(contactRes.status).toBe(202);
-    const contactBody = await contactRes.json() as {
-      requestId?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect((contactBody.requestId ?? "").startsWith("cnt-")).toBe(true);
-    expectEmailDeliveryMetadata(contactBody);
-
-    const demoRes = await fetch(`${API_BASE}/api/intake/demo`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "intake-school",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fullName: "Demo Coach",
-        email: "demo@school.org",
-        organization: "Intake School",
-        details: "Need a 20 minute walkthrough.",
-      }),
-    });
-
-    expect(demoRes.status).toBe(202);
-    const demoBody = await demoRes.json() as {
-      requestId?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect((demoBody.requestId ?? "").startsWith("dem-")).toBe(true);
-    expectEmailDeliveryMetadata(demoBody);
-
-    const dataDeletionRes = await fetch(`${API_BASE}/api/intake/data-deletion`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "intake-school",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fullName: "Privacy Coach",
-        email: "privacy@school.org",
-        details: "Delete all scrimmage footage metadata.",
-      }),
-    });
-
-    expect(dataDeletionRes.status).toBe(202);
-    const dataDeletionBody = await dataDeletionRes.json() as {
-      requestId?: string;
-      emailDelivery?: { status?: string };
-      warning?: string;
-    };
-    expect((dataDeletionBody.requestId ?? "").startsWith("ddr-")).toBe(true);
-    expectEmailDeliveryMetadata(dataDeletionBody);
-
-    const badSupportRes = await fetch(`${API_BASE}/api/intake/support`, {
-      method: "POST",
-      headers: {
-        "x-api-key": "rollout-api-key",
-        "x-school-id": "intake-school",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fullName: "Missing Email",
-        message: "This should fail validation.",
-      }),
-    });
-
-    expect(badSupportRes.status).toBe(400);
+    expect(loginRes.status).toBe(401);
   });
 });

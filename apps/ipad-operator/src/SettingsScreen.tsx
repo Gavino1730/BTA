@@ -136,7 +136,7 @@ export function SettingsScreen({ appData, settingsView, onPersist, onNav, onBack
             Set only if your deployment requires explicit tenant scope before sync. Leave blank when coach link sync provides it.
           </p>
           <input
-            placeholder="e.g. valley-catholic"
+            placeholder="e.g. your-school-id"
             value={gsSchoolId}
             onChange={e => setGsSchoolId(normalizeSchoolScope(e.target.value))}
           />

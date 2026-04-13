@@ -146,7 +146,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
 
       <header className="auth-topbar">
         <button type="button" className="auth-topbar-link" onClick={onBackHome}>Back Home</button>
-        <div className="auth-brand-lockup" aria-label="BTA Courtside">
+        <div className="auth-brand-lockup auth-brand-lockup-compact" aria-label="BTA Courtside">
           <span className="auth-brand-badge">BTA</span>
           <div>
             <p className="auth-brand-name">Courtside</p>

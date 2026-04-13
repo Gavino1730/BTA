@@ -124,7 +124,7 @@ export function GetStartedClientPage(): JSX.Element {
                   className="mt-2 w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] px-3 py-2.5 text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
                   value={schoolName}
                   onChange={(event) => setSchoolName(event.target.value)}
-                  placeholder="Valley Catholic"
+                  placeholder="Your school name"
                 />
               </label>
 
@@ -134,7 +134,7 @@ export function GetStartedClientPage(): JSX.Element {
                   className="mt-2 w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] px-3 py-2.5 text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
                   value={teamName}
                   onChange={(event) => setTeamName(event.target.value)}
-                  placeholder="Varsity Boys Basketball"
+                  placeholder="Varsity Basketball"
                 />
               </label>
 

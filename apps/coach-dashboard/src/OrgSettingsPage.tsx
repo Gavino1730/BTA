@@ -484,11 +484,11 @@ export function OrgSettingsPage({ onNavigate }: Props) {
                   <div className="setup-grid">
                     <label className="stats-filter-field">
                       <span>Full Name</span>
-                      <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Assistant Coach Lee" />
+                      <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Full name" />
                     </label>
                     <label className="stats-filter-field">
                       <span>Email</span>
-                      <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="coach2@school.org" />
+                      <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@school.org" />
                     </label>
                     <label className="stats-filter-field">
                       <span>Role</span>
