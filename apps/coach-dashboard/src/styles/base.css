@@ -1,0 +1,402 @@
+/* ── CSS Cascade Layer Declaration ──────────────────────────────────────────
+   Priority (lowest → highest): base → layout → components → utilities → unlayered
+   • @layer base    : browser reset, touch globals, body baseline
+   • @layer layout  : structural layout (grid, flex containers, page shells)
+   • @layer components : UI components (cards, buttons, forms, badges)
+   • @layer utilities  : one-off overrides, helpers
+   • unlayered         : :root token overrides (always win — intentional)
+   ─────────────────────────────────────────────────────────────────────────── */
+@layer base, layout, components, utilities;
+
+/* ── Coach Dashboard token overrides (layered on top of courtside-theme.css) ── */
+/* courtside-theme.css is imported first in main.tsx and defines all --bta-* tokens.    Legacy variable names used throughout this file are aliased here to --bta-* values.    Migrate callsites to --bta-* over time. */
+:root {
+  /* Brand & accent */
+  --accent-primary:        var(--bta-accent-violet);
+  --accent-primary-strong: var(--bta-accent-violet-strong, #7a69ff);
+  --accent-secondary:      var(--bta-accent-cyan);
+
+  /* Semantic states */
+  --color-success: var(--bta-success);
+  --color-warning: var(--bta-warning);
+  --color-danger:  var(--bta-danger);
+  --color-info:    var(--bta-info);
+
+  /* Background aliases */
+  --bg:        var(--bta-bg-base);
+  --surface:   var(--bta-bg-elevated);
+  --surface-2: var(--bta-surface-1);
+  --surface-3: var(--bta-surface-2);
+
+  /* Text aliases — using dashboard's opacity-based scale for now */
+  --text:       var(--bta-text-primary);
+  --text-muted: rgba(244, 246, 251, 0.68);
+  --text-dim:   rgba(244, 246, 251, 0.45);
+}
+
+/* Always-on brand marker with explicit image sizing. */
+.global-brand-badge {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 0.5rem);
+  left: calc(env(safe-area-inset-left) + 0.55rem);
+  z-index: 9999;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(8,12,24,0.62);
+  backdrop-filter: blur(8px);
+  color: rgba(232,234,240,0.66);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.global-brand-badge img {
+  height: 0.76rem;
+  width: auto;
+  display: block;
+}
+
+/* ---- Lineup Unit +/- Card ---- */
+.lineup-unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.lineup-unit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+}
+.lineup-unit-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  flex: 1;
+}
+.lineup-unit-chip {
+  font-size: 0.78rem;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  white-space: nowrap;
+}
+.lineup-unit-scores {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.lineup-unit-score-for  { font-weight: 600; color: var(--bta-success); }
+.lineup-unit-score-against { font-weight: 600; color: rgba(255,255,255,0.55); }
+.lineup-unit-score-sep { opacity: 0.4; }
+.lineup-unit-pm {
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-width: 2.8rem;
+  text-align: right;
+}
+.lineup-pm-pos  { color: var(--bta-success); }
+.lineup-pm-neg  { color: var(--bta-danger); }
+.lineup-pm-zero { opacity: 0.45; }
+
+/* ---- Team Comparison Table ---- */
+.team-comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+.team-comparison-table th,
+.team-comparison-table td {
+  padding: 0.42rem 0.7rem;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.team-comparison-table th {
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+.team-comparison-table .tc-stat-col {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+.team-comparison-table .tc-lead {
+  color: var(--bta-success);
+  font-weight: 700;
+}
+
+/* ---- Replay Scrubber ---- */
+.replay-scrubber {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.6rem;
+  overflow-x: auto;
+  padding-bottom: 0.1rem;
+}
+.replay-scrubber-segment {
+  flex: 1;
+  height: 2px;
+  min-width: 1rem;
+  background: rgba(255,255,255,0.12);
+}
+.replay-scrubber-segment.scrubber-segment-active {
+  background: var(--bta-accent-violet);
+}
+.replay-scrubber-stop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.18rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+  position: relative;
+}
+.scrubber-stop-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  border: 2px solid rgba(255,255,255,0.25);
+  display: block;
+  transition: background 0.15s, border-color 0.15s;
+}
+.replay-scrubber-stop.scrubber-stop-active .scrubber-stop-dot,
+.replay-scrubber-stop.scrubber-stop-selected .scrubber-stop-dot {
+  background: var(--bta-accent-violet);
+  border-color: var(--bta-accent-violet);
+}
+.replay-scrubber-stop.scrubber-stop-live .scrubber-stop-dot {
+  background: var(--bta-success);
+  border-color: var(--bta-success);
+}
+.scrubber-stop-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.4);
+  line-height: 1;
+}
+.replay-scrubber-stop.scrubber-stop-active .scrubber-stop-label,
+.replay-scrubber-stop.scrubber-stop-selected .scrubber-stop-label,
+.replay-scrubber-stop.scrubber-stop-live .scrubber-stop-label {
+  color: var(--bta-text-primary);
+}
+.scrubber-live-pip {
+  position: absolute;
+  top: -0.15rem;
+  right: -0.1rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bta-success);
+  animation: scrubber-pulse 1.4s ease-in-out infinite;
+}
+@keyframes scrubber-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+@layer base {
+  /* ---- Reset ---- */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ---- Touch / pointer globals ---- */
+  button, a, [role="button"], .shell-nav-link, select, input {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, [role="button"], .shell-nav-link {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bta-bg-base);
+    min-height: 100dvh;
+  }
+}
+
+/* Dashboard-specific border overrides — unlayered so they win over everything */
+:root {
+  --border:    rgba(255, 255, 255, 0.10);
+  --border-hi: rgba(255, 255, 255, 0.20);
+}
+
+/* ---- Page / Layout ---- */
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-card {
+  background: var(--surface);
+  border-radius: 18px;
+  border: 1px solid var(--border);
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: var(--teal);
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header input {
+  display: block;
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 180px;
+  min-height: 44px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-hi);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.header input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+/* ---- Cards ---- */
+.card {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+
+/* ---- Status pills ---- */
+.connection-pill,
+.status-tag {
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.connection-pill.online,
+.status-tag.synced {
+  background: var(--bta-success-soft);
+  color: var(--bta-success);
+  border: 1px solid color-mix(in srgb, var(--bta-success) 45%, transparent);
+}
+
+.shell-page {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top left, var(--bta-accent-violet-soft) 0%, transparent 28%),
+    linear-gradient(180deg, var(--bta-bg-base) 0%, var(--bta-bg-panel) 100%);
+}
+
+.shell-nav {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: calc(1.4rem + env(safe-area-inset-top)) 1.25rem 0;
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.shell-nav-eyebrow {
+  margin: 0 0 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: var(--bta-accent-cyan);
+}
+
+.shell-nav h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.shell-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.shell-nav-link {
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  min-height: 44px;
+  padding: 0.65rem 0.95rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.shell-nav-link:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 32%, transparent);
+  box-shadow: 0 10px 22px rgba(8, 18, 36, 0.24);
+}
+
+.shell-nav-link:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.shell-nav-link-active {
+  background: var(--bta-accent-violet-soft);
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 45%, transparent);
+  color: var(--bta-text-secondary);
+}
+

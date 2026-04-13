@@ -471,10 +471,18 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       setLoading(true);
       const entitlement = await fetchBillingEntitlement();
       setBillingEntitlement(entitlement);
-      if (entitlement?.accessActive) {
+      if (!entitlement) {
+        setStatus("Could not load billing state. You can still retry checkout or open billing portal when available.");
+      } else if (entitlement.status === "active") {
         setStatus("Your subscription is active. Use the button below to manage your plan through Stripe.");
+      } else if (entitlement.status === "trialing") {
+        setStatus("You are currently in trial. Open the portal to add payment details or start checkout to avoid interruption.");
+      } else if (entitlement.status === "past_due" || entitlement.status === "unpaid") {
+        setStatus("Your account is past due. Update payment details in the billing portal or restart checkout to restore full access.");
+      } else if (entitlement.status === "canceled") {
+        setStatus("Your subscription is canceled. Start checkout to reactivate monthly access.");
       } else {
-        setStatus("Start checkout to activate monthly access. You can apply a promo code before checkout.");
+        setStatus("No active subscription found. Start checkout to activate monthly access.");
       }
       setLoading(false);
     };
@@ -562,18 +570,33 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
     }
   }
 
-  const showCheckout = !loading && billingEntitlement && !billingEntitlement.accessActive;
-  const showPortal = !loading && billingEntitlement && billingEntitlement.accessActive;
+  const entitlementStatus = billingEntitlement?.status;
+  const showCheckout = !loading && Boolean(billingEntitlement && !billingEntitlement.accessActive);
+  const showPortal = !loading && Boolean(billingEntitlement && billingEntitlement.accessActive);
+  const checkoutLabel = entitlementStatus === "canceled"
+    ? "Reactivate Monthly Plan"
+    : entitlementStatus === "past_due" || entitlementStatus === "unpaid"
+      ? "Restart Monthly Plan"
+      : "Start Monthly Plan";
+  const checkoutSectionTitle = entitlementStatus === "past_due" || entitlementStatus === "unpaid"
+    ? "Restore Access"
+    : entitlementStatus === "canceled"
+      ? "Reactivate Subscription"
+      : "Start Subscription";
+  const subtitle = showPortal
+    ? "Your subscription is active. Manage your account, update payment methods, or cancel anytime."
+    : entitlementStatus === "past_due" || entitlementStatus === "unpaid"
+      ? "Your account needs a billing update. Restore access through Stripe portal or restart checkout."
+      : entitlementStatus === "canceled"
+        ? "Your previous subscription is canceled. Reactivate to unlock premium features again."
+        : "Subscription access is managed through Stripe checkout. Activate a monthly plan to unlock full app access.";
 
   return (
     <div className="stats-page policy-page">
       <section className="stats-page-card policy-page-hero">
         <p className="stats-page-eyebrow">Preproduction</p>
         <h1>Billing</h1>
-        <p className="stats-page-subtitle">{showPortal 
-          ? "Your subscription is active. Manage your account, update payment methods, or cancel anytime."
-          : "Subscription access is now managed through Stripe checkout. Activate a plan to unlock full app access."
-        }</p>
+        <p className="stats-page-subtitle">{subtitle}</p>
       </section>
 
       {showPortal && (
@@ -622,11 +645,14 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
           </section>
 
           <section className="stats-page-card policy-page-section">
-            <h3 className="policy-section-heading">Start Subscription</h3>
+            <h3 className="policy-section-heading">{checkoutSectionTitle}</h3>
             <p className="stats-page-subcopy policy-section-body">{status}</p>
             <ul className="policy-section-list">
               <li>Monthly checkout is available in Stripe-hosted checkout.</li>
               <li>After checkout, return to the dashboard and refresh if access does not update immediately.</li>
+              {(entitlementStatus === "past_due" || entitlementStatus === "unpaid") && (
+                <li>Past-due access can recover automatically after successful payment confirmation.</li>
+              )}
             </ul>
           </section>
         </>
@@ -658,7 +684,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                 onClick={() => void startCheckout("monthly")}
                 disabled={submittingCycle !== null}
               >
-                {submittingCycle === "monthly" ? "Starting Monthly..." : "Start Monthly Plan"}
+                {submittingCycle === "monthly" ? "Starting Monthly..." : checkoutLabel}
               </button>
             </>
           )}

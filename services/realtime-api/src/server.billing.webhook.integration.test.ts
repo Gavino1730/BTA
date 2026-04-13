@@ -163,4 +163,146 @@ describe("server billing webhook integration", () => {
     expect(payload.ignored).toBe(true);
     expect(payload.reason).toBe("paywall_disabled");
   });
+
+  it("deduplicates replayed webhook event IDs and prevents second mutation", async () => {
+    activeServer = await startBillingServer({
+      paywallEnabled: "1",
+      stripeTestMode: "1",
+    });
+
+    const schoolId = "school-webhook-replay-idempotency";
+    const firstCustomerId = "cus_replay_first";
+    const firstSubscriptionId = "sub_replay_first";
+
+    const firstResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_replay_idempotent_1",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+            customer: firstCustomerId,
+            subscription: firstSubscriptionId,
+          },
+        },
+      }),
+    });
+
+    expect(firstResponse.status).toBe(200);
+    const firstPayload = (await firstResponse.json()) as { received?: boolean; duplicate?: boolean };
+    expect(firstPayload.received).toBe(true);
+    expect(firstPayload.duplicate).toBeUndefined();
+
+    const storeModule = await import("./store.js");
+    const stateAfterFirst = storeModule.getBillingStateByScope({ schoolId });
+    expect(stateAfterFirst?.status).toBe("active");
+    expect(stateAfterFirst?.stripeCustomerId).toBe(firstCustomerId);
+    expect(stateAfterFirst?.stripeSubscriptionId).toBe(firstSubscriptionId);
+
+    const secondResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_replay_idempotent_1",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+            customer: "cus_replay_second",
+            subscription: "sub_replay_second",
+          },
+        },
+      }),
+    });
+
+    expect(secondResponse.status).toBe(200);
+    const secondPayload = (await secondResponse.json()) as { received?: boolean; duplicate?: boolean };
+    expect(secondPayload.received).toBe(true);
+    expect(secondPayload.duplicate).toBe(true);
+
+    const stateAfterSecond = storeModule.getBillingStateByScope({ schoolId });
+    expect(stateAfterSecond?.stripeCustomerId).toBe(firstCustomerId);
+    expect(stateAfterSecond?.stripeSubscriptionId).toBe(firstSubscriptionId);
+  });
+
+  it("recovers billing status from past_due to active on invoice.payment_succeeded", async () => {
+    activeServer = await startBillingServer({
+      paywallEnabled: "1",
+      stripeTestMode: "1",
+    });
+
+    const schoolId = "school-webhook-recovery";
+    const customerId = "cus_recovery_1";
+    const subscriptionId = "sub_recovery_1";
+
+    const checkoutResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_recovery_checkout_1",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+            customer: customerId,
+            subscription: subscriptionId,
+          },
+        },
+      }),
+    });
+    expect(checkoutResponse.status).toBe(200);
+
+    const paymentFailedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_recovery_failed_1",
+        type: "invoice.payment_failed",
+        data: {
+          object: {
+            customer: customerId,
+            subscription: subscriptionId,
+          },
+        },
+      }),
+    });
+    expect(paymentFailedResponse.status).toBe(200);
+
+    const storeModule = await import("./store.js");
+    const stateAfterFailure = storeModule.getBillingStateByScope({ schoolId });
+    expect(stateAfterFailure?.status).toBe("past_due");
+
+    const paymentSucceededResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_recovery_succeeded_1",
+        type: "invoice.payment_succeeded",
+        data: {
+          object: {
+            customer: customerId,
+            subscription: subscriptionId,
+          },
+        },
+      }),
+    });
+    expect(paymentSucceededResponse.status).toBe(200);
+
+    const stateAfterRecovery = storeModule.getBillingStateByScope({ schoolId });
+    expect(stateAfterRecovery?.status).toBe("active");
+    expect(stateAfterRecovery?.stripeCustomerId).toBe(customerId);
+    expect(stateAfterRecovery?.stripeSubscriptionId).toBe(subscriptionId);
+  });
 });

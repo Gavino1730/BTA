@@ -194,6 +194,16 @@ const ALLOWED_ORIGINS = Array.from(
   new Set([...BASE_ALLOWED_ORIGINS, ...PROD_ORIGINS].flatMap((origin) => expandOriginAliases(origin)))
 ).map(normalizeOriginInput).filter(Boolean);
 
+class CorsNotAllowedError extends Error {
+  readonly statusCode = 403;
+  readonly code = "cors_not_allowed";
+
+  constructor(readonly origin?: string) {
+    super("CORS not allowed");
+    this.name = "CorsNotAllowedError";
+  }
+}
+
 export function isCorsOriginAllowed(origin: string, allowedOrigins: readonly string[] = ALLOWED_ORIGINS): boolean {
   const normalizedOrigin = normalizeOriginInput(origin);
   if (!normalizedOrigin) {
@@ -231,7 +241,7 @@ app.use(cors({
       callback(null, true);
     } else {
       logger.warn("cors.blocked_origin", { origin });
-      callback(new Error("CORS not allowed"));
+      callback(new CorsNotAllowedError(origin));
     }
   },
   credentials: true
@@ -335,6 +345,26 @@ app.post("/api/billing/webhook", express.raw({ type: "application/json" }), with
         saveBillingState({
           planId: "pro",
           status: "past_due",
+          stripeCustomerId: customerId || stateFromCustomer?.stripeCustomerId,
+          stripeSubscriptionId: subscriptionId || stateFromSubscription?.stripeSubscriptionId,
+        }, { schoolId });
+      }
+    }
+
+    if (event.type === "invoice.payment_succeeded") {
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId = typeof invoice.customer === "string" ? invoice.customer : "";
+      const invoiceSubscription = (invoice as unknown as { subscription?: unknown }).subscription;
+      const subscriptionId = typeof invoiceSubscription === "string" ? invoiceSubscription : "";
+
+      const stateFromCustomer = customerId ? findBillingStateByStripeCustomerId(customerId) : null;
+      const stateFromSubscription = subscriptionId ? findBillingStateByStripeSubscriptionId(subscriptionId) : null;
+      const schoolId = stateFromSubscription?.schoolId || stateFromCustomer?.schoolId || "";
+
+      if (schoolId) {
+        saveBillingState({
+          planId: "pro",
+          status: "active",
           stripeCustomerId: customerId || stateFromCustomer?.stripeCustomerId,
           stripeSubscriptionId: subscriptionId || stateFromSubscription?.stripeSubscriptionId,
         }, { schoolId });
@@ -2161,7 +2191,7 @@ async function createSubscriptionCheckoutSession(options: {
   const remainingTrialDays = calculateRemainingTrialDays(trialEndsAtIso);
   const checkoutSession = await stripeClient.checkout.sessions.create({
     mode: "subscription",
-    ...buildStripeCheckoutCustomerParams({ customerId, customerEmail }),
+    ...buildStripeCheckoutCustomerParams({ customerId, customerEmail: customerId ? undefined : customerEmail }),
     line_items: [{ price: STRIPE_PRICE_ID_MONTHLY, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -6037,6 +6067,19 @@ app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
 
 app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
   const requestId = String(res.getHeader("x-request-id") ?? "").trim() || undefined;
+  const isCorsError = error instanceof CorsNotAllowedError || (error instanceof Error && error.message === "CORS not allowed");
+
+  if (isCorsError) {
+    if (!res.headersSent) {
+      res.status(403).json({
+        error: "CORS not allowed",
+        code: "cors_not_allowed",
+        requestId,
+      });
+    }
+    return;
+  }
+
   const stripeLikeError = error as {
     type?: string;
     statusCode?: number;

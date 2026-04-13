@@ -1,0 +1,98 @@
+/* ── CSS Cascade Layer Declaration ──────────────────────────────────────────
+   Priority (lowest → highest): base → layout → components → utilities → unlayered
+   • @layer base    : browser reset, touch globals, body baseline
+   • @layer layout  : structural layout (game layout, panels, grid)
+   • @layer components : UI components (buttons, modals, badges)
+   • @layer utilities  : one-off overrides, helpers
+   • unlayered         : :root token overrides (always win — intentional)
+   ─────────────────────────────────────────────────────────────────────────── */
+@layer base, layout, components, utilities;
+
+@layer base {
+  /* ---- Reset ---- */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ---- iPad / Touch globals ---- */
+  button, a, [role="button"], .circle, .icon-btn, .shell-nav-link, select {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, .circle, .icon-btn, [role="button"] {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/* ── iPad Operator token overrides (layered on top of courtside-theme.css) ── */
+:root {
+  font-family: var(--bta-font-body);
+  background: var(--bta-bg-base);
+  color: var(--bta-text-primary);
+
+  /* Operator-specific layout tokens */
+  --live-bottom-nav-h: 82px;
+
+  /* Local aliases pointing to --bta-* canonical tokens */
+  --accent-primary:        var(--bta-accent-violet);
+  --accent-primary-strong: var(--bta-accent-violet-strong, #7a69ff);
+  --accent-secondary:      var(--bta-accent-cyan);
+  --accent-danger:         var(--bta-danger);
+  --accent-warning:        var(--bta-warning);
+  --accent-blue:           var(--bta-accent-violet);
+  --accent-blue-soft:      var(--bta-accent-violet-soft);
+  --accent-gold:           var(--bta-warning);
+  --accent-gold-soft:      var(--bta-warning-soft);
+
+  /* Basketball game-state tokens from --bta-* */
+  --result-make-bg:        var(--bta-make-bg);
+  --result-make-bg-strong: var(--bta-make-bg-strong);
+  --result-make-bg-soft:   var(--bta-make-bg-soft);
+  --result-make-border:    var(--bta-make-border);
+  --result-make-text:      var(--bta-make-text);
+  --result-make-text-soft: var(--bta-make-text-soft);
+  --result-miss-bg:        var(--bta-miss-bg);
+  --result-miss-bg-strong: var(--bta-miss-bg-strong);
+  --result-miss-bg-soft:   var(--bta-miss-bg-soft);
+  --result-miss-border:    var(--bta-miss-border);
+  --result-miss-text:      var(--bta-miss-text);
+  --result-miss-text-soft: var(--bta-miss-text-soft);
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  overflow: auto;
+}
+
+/* Always-on brand marker so every screen retains visible identity. */
+.global-brand-badge {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 0.5rem);
+  left: calc(env(safe-area-inset-left) + 0.55rem);
+  z-index: 9999;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(8,12,24,0.62);
+  backdrop-filter: blur(8px);
+  color: rgba(232,234,240,0.66);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.global-brand-badge img {
+  height: 0.76rem;
+  width: auto;
+  display: block;
+}
+

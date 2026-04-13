@@ -103,7 +103,7 @@ function ScoreTrend({ history, onSelectGame }: { history: PlayerGameHistoryRow[]
             type="button"
             onClick={() => onSelectGame(String(row.gameId))}
             className="player-trend-bar"
-            title={`${row.date || "No date"} vs ${row.opponent} • ${row.result} ${row.teamScore}-${row.oppScore} • ${row.pts} pts, ${row.reb} reb, ${row.ast} ast`}
+            title={`${row.date || "No date"} vs ${row.opponent} • ${row.result} ${row.teamScore}-${row.oppScore} • ${row.pts} pts, ${row.reb} reb, ${row.asst} asst`}
             style={{ display: "grid", gap: "0.35rem", justifyItems: "center", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
           >
             <strong style={{ fontSize: "0.85rem", color: "var(--text)" }}>{row.pts}</strong>
@@ -452,7 +452,7 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
                         <td><span className={`player-history-result ${row.result === "W" ? "win" : "loss"}`}>{row.result}</span> {row.teamScore}-{row.oppScore}</td>
                         <td>{row.pts}</td>
                         <td>{row.reb}</td>
-                        <td>{row.ast}</td>
+                        <td>{row.asst}</td>
                       </tr>
                     ))}
                   </tbody>
