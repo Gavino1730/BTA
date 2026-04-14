@@ -316,11 +316,11 @@ export function AiInsightsPage() {
         if (!response.ok) throw new Error("Player insight request failed");
         const payload = await response.json() as { insights?: string };
         if (!cancelled) {
-          setPlayerInsight(sanitizeText(payload.insights) || "No player-specific insight available yet.");
+          setPlayerInsight(sanitizeText(payload.insights) || "No player insight available yet.");
         }
       } catch {
         if (!cancelled) {
-          setPlayerInsight("No player-specific insight available yet.");
+          setPlayerInsight("No player insight available yet.");
         }
       }
     }
@@ -401,9 +401,9 @@ export function AiInsightsPage() {
       <section className="stats-page-hero compact">
         <div>
           <h1>AI Insights</h1>
-          <p className="stats-page-subtitle">Season analysis, coaching recommendations, player spotlights, and live game guidance.</p>
+          <p className="stats-page-subtitle">Season analysis, coaching recommendations, player spotlights, and live guidance.</p>
         </div>
-        <div style={{ display: "grid", gap: "0.5rem", justifyItems: "end" }}>
+        <div className="ai-hero-actions">
           <p className="stats-page-status">{status}</p>
           <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void refreshSeasonSummary()}>
             Refresh Analysis
@@ -445,7 +445,7 @@ export function AiInsightsPage() {
                   className="ai-live-notes-textarea"
                   value={preGameNotes}
                   onChange={(e) => setPreGameNotes(e.target.value)}
-                  placeholder="Opponent tendencies, team mindset, key rotations..."
+                  placeholder="Opponent tendencies, mindset, key rotations..."
                   rows={2}
                 />
                 <button
@@ -507,13 +507,13 @@ export function AiInsightsPage() {
       </section>
 
       {/* Season Summary + Recommendations */}
-      <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+      <section className="stats-page-grid two-column ai-section-gap">
         <section className="stats-page-card">
           <div className="stats-page-card-head">
             <h3>Season Summary</h3>
             <span className="stats-page-status">{analysis?.generated_at ? new Date(analysis.generated_at).toLocaleDateString() : "Live"}</span>
           </div>
-          <p className="stats-page-subcopy">{sanitizeText(analysis?.season_summary) || sanitizeText(teamSummary) || "No season summary available yet."}</p>
+          <p className="stats-page-subcopy">{sanitizeText(analysis?.season_summary) || sanitizeText(teamSummary) || "No season summary yet."}</p>
         </section>
 
         <section className="stats-page-card">
@@ -521,13 +521,13 @@ export function AiInsightsPage() {
             <h3>Coaching Recommendations</h3>
           </div>
           {(insights?.recommendations ?? []).length === 0 ? (
-            <p className="stats-empty-copy">No recommendations available yet.</p>
+            <p className="stats-empty-copy">No recommendations yet.</p>
           ) : (
             <ul className="stats-list">
               {(insights?.recommendations ?? []).map((item, index) => (
                 <li key={`recommendation-${index}`}>
                   <strong>{sanitizeText(item.category) || "Focus"} - {sanitizeText(item.priority) || "Info"}</strong>: {sanitizeText(item.recommendation)}
-                  {item.reason ? <div className="stats-page-subcopy" style={{ marginTop: "0.25rem" }}>{sanitizeText(item.reason)}</div> : null}
+                  {item.reason ? <div className="stats-page-subcopy ai-reason-copy">{sanitizeText(item.reason)}</div> : null}
                 </li>
               ))}
             </ul>
@@ -536,7 +536,7 @@ export function AiInsightsPage() {
       </section>
 
       {/* Ask the AI (chat with history) */}
-      <section className="stats-page-card" style={{ marginBottom: "1rem" }}>
+      <section className="stats-page-card ai-section-gap">
         <div className="stats-page-card-head">
           <h3>Ask the AI</h3>
           <span className="stats-page-status">Coach Q&amp;A - season + {liveContext?.gameActive ? "live game" : "roster"} context</span>
@@ -565,7 +565,7 @@ export function AiInsightsPage() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={handleChatKey}
-            placeholder={chatHistory.length > 0 ? "Follow up..." : "Ask about lineups, trends, who's in form, defensive concerns..."}
+            placeholder={chatHistory.length > 0 ? "Follow up..." : "Ask about lineups, trends, hot players, or defensive issues..."}
             rows={3}
             className="ai-chat-textarea"
             disabled={chatLoading}
@@ -594,13 +594,13 @@ export function AiInsightsPage() {
       </section>
 
       {/* Player Spotlight */}
-      <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+      <section className="stats-page-grid two-column ai-section-gap">
         <section className="stats-page-card">
           <div className="stats-page-card-head">
             <h3>Player Spotlight</h3>
             <span className="stats-page-status">Individual insight</span>
           </div>
-          <label className="stats-filter-field" style={{ marginBottom: "0.75rem" }}>
+          <label className="stats-filter-field ai-player-select-field">
             <span>Select player</span>
             <select value={selectedPlayer} onChange={(e) => setSelectedPlayer(e.target.value)}>
               {players.map((player) => {
@@ -609,7 +609,7 @@ export function AiInsightsPage() {
               })}
             </select>
           </label>
-          <p className="stats-page-subcopy">{playerInsight || "Select a player to see AI coaching notes."}</p>
+          <p className="stats-page-subcopy">{playerInsight || "Select a player to view AI notes."}</p>
         </section>
 
         {playerSpotlights.length > 0 && (
@@ -645,14 +645,14 @@ export function AiInsightsPage() {
           <span className="stats-page-status">Per-game breakdowns</span>
         </div>
         {recentGameAnalysis.length === 0 ? (
-          <p className="stats-empty-copy">No per-game analysis available yet.</p>
+          <p className="stats-empty-copy">No per-game analysis yet.</p>
         ) : (
           <div className="stats-game-list">
             {recentGameAnalysis.map((entry, index) => (
-              <div key={`${entry.game ?? index}`} className="stats-game-row" style={{ alignItems: "flex-start" }}>
+              <div key={`${entry.game ?? index}`} className="stats-game-row ai-game-analysis-row">
                 <div>
                   <strong>{sanitizeText(entry.date) || "No date"} - {sanitizeText(entry.opponent) || "Opponent"}</strong>
-                  <span>{sanitizeText(entry.analysis) || "No game analysis available yet."}</span>
+                  <span>{sanitizeText(entry.analysis) || "No game analysis yet."}</span>
                   {(entry.player_performances ?? []).length > 0 && (
                     <div className="ai-perf-chips">
                       {entry.player_performances!.slice(0, 4).map((p, pi) => (
@@ -674,8 +674,8 @@ export function AiInsightsPage() {
       </section>
 
       {loadError && (
-        <p className="stats-empty-copy" style={{ marginTop: "1rem" }}>
-          Tip: Make sure the realtime API is running and your API key is configured.
+        <p className="stats-empty-copy ai-tip-copy">
+          Tip: Make sure the realtime API is running and your API key is set.
         </p>
       )}
     </div>

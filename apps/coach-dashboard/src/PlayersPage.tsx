@@ -94,7 +94,7 @@ function ScoreTrend({ history, onSelectGame }: { history: PlayerGameHistoryRow[]
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`, gap: "0.55rem", alignItems: "end" }}>
+    <div className="players-scoretrend-grid" style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }}>
       {rows.map((row) => {
         const height = Math.max(16, Math.round((row.pts / maxPts) * 96));
         return (
@@ -102,22 +102,16 @@ function ScoreTrend({ history, onSelectGame }: { history: PlayerGameHistoryRow[]
             key={row.gameId}
             type="button"
             onClick={() => onSelectGame(String(row.gameId))}
-            className="player-trend-bar"
+            className="player-trend-bar players-scoretrend-btn"
             title={`${row.date || "No date"} vs ${row.opponent} • ${row.result} ${row.teamScore}-${row.oppScore} • ${row.pts} pts, ${row.reb} reb, ${row.ast} ast`}
-            style={{ display: "grid", gap: "0.35rem", justifyItems: "center", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
           >
-            <strong style={{ fontSize: "0.85rem", color: "var(--text)" }}>{row.pts}</strong>
+            <strong className="players-scoretrend-points">{row.pts}</strong>
             <div
               aria-hidden="true"
-              style={{
-                width: "100%",
-                maxWidth: 44,
-                height,
-                borderRadius: 10,
-                background: row.result === "W" ? "linear-gradient(180deg, #4f8cff, #295ecf)" : "linear-gradient(180deg, #f59e0b, #b45309)",
-              }}
+              className={`players-scoretrend-bar ${row.result === "W" ? "players-scoretrend-bar-win" : "players-scoretrend-bar-loss"}`}
+              style={{ height }}
             />
-            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>{row.result} • {row.opponent}</span>
+            <span className="players-scoretrend-label">{row.result} • {row.opponent}</span>
           </button>
         );
       })}
@@ -247,17 +241,17 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.76)", zIndex: 1000, overflowY: "auto", display: "flex", justifyContent: "center", padding: "1.5rem 1rem" }}
+      className="players-modal-overlay"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <div className="stats-page-card" style={{ width: "100%", maxWidth: 1080, alignSelf: "flex-start", padding: "1.15rem 1.15rem 1.25rem" }}>
-        <div className="stats-game-card-head" style={{ marginBottom: "1rem", alignItems: "flex-start" }}>
+      <div className="stats-page-card players-modal-card">
+        <div className="stats-game-card-head players-modal-head">
           <div className="player-profile-hero">
             <div className="player-profile-avatar" aria-hidden="true">{playerName.slice(0, 1).toUpperCase()}</div>
             <div>
               <p className="stats-page-eyebrow">{schoolLabel} • Varsity</p>
-              <h2 style={{ margin: 0 }}>{playerName}</h2>
-              <p className="stats-page-subcopy" style={{ marginTop: "0.3rem" }}>
+              <h2 className="players-modal-title">{playerName}</h2>
+              <p className="stats-page-subcopy players-modal-subcopy">
                 #{player.number ?? "-"} • {inferPosition(player.role)} • {getPlayerGamesPlayed(player)} GP
               </p>
               <div className="player-hero-ppg">
@@ -266,19 +260,19 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
               </div>
             </div>
           </div>
-          <div style={{ display: "grid", gap: "0.45rem", justifyItems: "end" }}>
+          <div className="players-modal-actions">
             {status ? <span className="stats-page-status">{status}</span> : null}
             <button
               type="button"
               onClick={onClose}
-              style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 10, padding: "0.45rem 0.85rem", cursor: "pointer" }}
+              className="players-modal-close-btn"
             >
               Close
             </button>
           </div>
         </div>
 
-        <section className="stats-metric-grid player-top-metrics" style={{ marginBottom: "1rem" }}>
+        <section className="stats-metric-grid player-top-metrics players-section-gap">
           <div className="stats-metric-card accent-blue player-metric-primary">
             <span className="stats-metric-label">PPG</span>
             <strong className="stats-metric-value">{safeNum(player.ppg)}</strong>
@@ -301,7 +295,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           </div>
         </section>
 
-        <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+        <section className="stats-page-grid two-column players-section-gap">
           <article className="stats-page-card">
             <div className="stats-page-card-head">
               <h3>Recent Scoring</h3>
@@ -348,13 +342,13 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           </article>
         </section>
 
-        <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+        <section className="stats-page-grid two-column players-section-gap">
           <article className="stats-page-card">
             <div className="stats-page-card-head">
               <h3>Player Insights</h3>
               <span className="stats-page-status">Intelligence Layer</span>
             </div>
-            <ul className="game-insight-list" style={{ marginTop: "0.25rem" }}>
+            <ul className="game-insight-list players-insight-list">
               {playerInsights.map((note, idx) => (
                 <li key={`player-insight-${idx}`}>{note}</li>
               ))}
@@ -377,7 +371,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
               </div>
               <div>
                 <span>Trend Delta</span>
-                <strong style={{ color: trendDelta >= 0 ? "#4ade80" : "#f87171" }}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
+                <strong className={trendDelta >= 0 ? "players-trend-positive" : "players-trend-negative"}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
               </div>
               <div>
                 <span>20+ Streak</span>
@@ -396,8 +390,8 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
           {playerGameBoxScores.length === 0 ? (
             <p className="stats-empty-copy">As soon as box scores are logged, they will appear here.</p>
           ) : (
-            <div style={{ display: "grid", gap: "0.9rem" }}>
-              <label className="stats-filter-field short" style={{ maxWidth: 320 }}>
+            <div className="players-games-stack">
+              <label className="stats-filter-field short players-game-select-field">
                 <span>Game</span>
                 <select value={selectedGameId} onChange={(event) => setSelectedGameId(event.target.value)}>
                   {playerGameBoxScores.map((entry) => {
@@ -414,8 +408,8 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
                 </select>
               </label>
 
-              <div style={{ overflowX: "auto" }}>
-                <table className="team-comparison-table player-history-table" style={{ marginTop: 0 }}>
+              <div className="players-table-wrap">
+                <table className="team-comparison-table player-history-table players-table-no-margin">
                   <thead>
                     <tr>
                       <th>Date</th>
@@ -453,8 +447,8 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
               </div>
 
               {selectedGameBoxScore ? (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="team-comparison-table" style={{ marginTop: 0 }}>
+                <div className="players-table-wrap">
+                  <table className="team-comparison-table players-table-no-margin">
                     <thead>
                       <tr>
                         <th>Date</th>
@@ -501,7 +495,7 @@ function PlayerDetailModal({ player, history, games, onClose }: { player: Player
                       })()}
                     </tbody>
                   </table>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.55rem" }}>
+                  <div className="players-open-game-action">
                     <button
                       type="button"
                       className="shell-nav-link"
@@ -623,7 +617,7 @@ export function PlayersPage() {
       <section className="stats-page-hero compact">
         <div>
           <h1>Players</h1>
-          <p className="stats-page-subtitle">Click any player card to open season breakdowns and previous game logs.</p>
+          <p className="stats-page-subtitle">Open any player card for season breakdowns and game logs.</p>
         </div>
         <p className="stats-page-status">{status}</p>
       </section>
@@ -656,7 +650,7 @@ export function PlayersPage() {
 
       {filtered.length === 0 ? (
         <section className="stats-page-card">
-          <p className="stats-empty-copy">No players available for the current filters.</p>
+          <p className="stats-empty-copy">No players match the current filters.</p>
         </section>
       ) : (
         <section className="stats-game-grid">
@@ -666,7 +660,6 @@ export function PlayersPage() {
               <article
                 key={`${name}-${index}`}
                 className="stats-game-card"
-                style={{ cursor: "pointer" }}
                 onClick={() => setSelectedPlayer(player)}
                 role="button"
                 tabIndex={0}
@@ -715,7 +708,7 @@ export function PlayersPage() {
                   </div>
                 </div>
 
-                <p className="stats-page-subcopy" style={{ marginTop: "0.8rem" }}>
+                <p className="stats-page-subcopy players-card-subcopy">
                   {Number(player.pts ?? 0)} total points · click for previous game stats
                 </p>
               </article>

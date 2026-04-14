@@ -82,7 +82,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    setStatus("Saving account updates...");
+    setStatus("Saving changes...");
 
     try {
       const response = await fetch(`${apiBase}/api/auth/me`, {
@@ -134,7 +134,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
       setStatus("Account updated.");
       onSessionUpdated(payload.user.role ?? null);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save account changes");
+      setStatus(error instanceof Error ? error.message : "Could not save changes");
     } finally {
       setSaving(false);
     }
@@ -147,7 +147,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
 
     const validType = ["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type);
     if (!validType) {
-      setStatus("Only PNG, JPEG, and WEBP profile photos are supported.");
+      setStatus("Use a PNG, JPEG, or WEBP profile photo.");
       return;
     }
 
@@ -177,7 +177,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
   }
 
   async function handleSignOutAllSessions() {
-    const shouldContinue = window.confirm("Sign out all active sessions for this account? You will be returned to login.");
+    const shouldContinue = window.confirm("Sign out all active sessions for this account? You will return to login.");
     if (!shouldContinue) {
       return;
     }
@@ -198,7 +198,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
       clearAuthSession();
       onSignOutRequested();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not sign out all sessions");
+      setStatus(error instanceof Error ? error.message : "Could not sign out every session");
     } finally {
       setProcessingSessionAction(false);
     }
@@ -210,7 +210,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
       return;
     }
     if (!deletePassword.trim()) {
-      setStatus("Current password is required to delete account.");
+      setStatus("Current password is required to delete your account.");
       return;
     }
 
@@ -243,9 +243,9 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
       setScheduledDeletionAtIso(payload.scheduledDeletionAtIso ?? null);
       setDeletePassword("");
       setDeleteConfirmation("");
-      setStatus(`Account deletion scheduled. You can cancel before ${formatScheduledDeletion(payload.scheduledDeletionAtIso ?? null)}.`);
+      setStatus(`Deletion scheduled. You can cancel before ${formatScheduledDeletion(payload.scheduledDeletionAtIso ?? null)}.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not schedule account deletion");
+      setStatus(error instanceof Error ? error.message : "Could not schedule deletion");
     } finally {
       setProcessingDelete(false);
     }
@@ -270,7 +270,7 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
       }
 
       setScheduledDeletionAtIso(payload.user?.scheduledDeletionAtIso ?? null);
-      setStatus("Scheduled deletion canceled.");
+      setStatus("Scheduled deletion cancelled.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not cancel scheduled deletion");
     } finally {

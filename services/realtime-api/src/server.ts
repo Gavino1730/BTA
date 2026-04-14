@@ -61,7 +61,6 @@ import {
   saveOrganizationMember,
   deleteOrganizationMember,
   type LocalAuthAccount,
-  type GameEditOverride,
   getGameOverrideMap,
   setGameOverride
 } from "./store.js";
@@ -85,6 +84,14 @@ import {
 import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
 import { registerOrgMembersRoutes } from "./routes/org-members-routes.js";
 import { registerTeamConfigRoutes } from "./routes/team-config-routes.js";
+import { registerPlayerRoutes } from "./routes/player-routes.js";
+import { registerGameManagementRoutes } from "./routes/game-management-routes.js";
+import { registerLiveInsightsRoutes } from "./routes/live-insights-routes.js";
+import { registerAdvancedInsightsRoutes } from "./routes/advanced-insights-routes.js";
+import { registerAiCompatibilityRoutes } from "./routes/ai-compat-routes.js";
+import { registerAdvancedLegacyRoutes } from "./routes/advanced-legacy-routes.js";
+import { registerRosterConfigRoutes } from "./routes/roster-config-routes.js";
+import { registerOperatorLinkRoutes } from "./routes/operator-link-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -3065,636 +3072,112 @@ registerTeamConfigRoutes(app, {
   sanitizeTextField,
 });
 
-app.get("/api/players", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(getSeasonPlayers({ schoolId }));
+registerPlayerRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getSeasonPlayers,
+  getRosterPlayers,
+  normalizeNameKey,
+  normalizePersonName,
+  getPrimaryTeam,
+  buildRosterPlayer,
+  findPlayerRecord,
+  getRosterTeamsByScope,
+  persistSchoolTeams,
 });
 
-app.get("/api/roster/players", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(getRosterPlayers({ schoolId }));
+registerGameManagementRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getSeasonTeamStats,
+  buildGamesPayload,
+  getGameOverrideMap,
+  sanitizeTextField,
+  resolveGameResult,
+  setGameOverride,
+  deleteGame,
+  emitToGameRooms,
+  submitGame,
+  resetAllData,
 });
 
-app.get("/api/player/:playerName", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const targetKey = normalizeNameKey(req.params.playerName);
-  const player = getSeasonPlayers({ schoolId }).find((entry) => {
-    return normalizeNameKey(entry.name) === targetKey
-      || normalizeNameKey(entry.full_name) === targetKey
-      || normalizeNameKey(entry.roster_info?.name) === targetKey;
-  });
-
-  if (!player) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  res.json(player);
+registerLiveInsightsRoutes(app, {
+  getSchoolIdFromRequest,
+  getLiveContext,
+  buildLeaderboardsPayload,
+  buildTeamTrendsPayload,
+  normalizePersonName,
+  buildPlayerTrendsPayload,
+  buildPlayerComparisonPayload,
 });
 
-app.post("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const requestedName = normalizePersonName(req.params.playerName);
-  if (!requestedName) {
-    res.status(400).json({ error: "Player name is required" });
-    return;
-  }
-  const originalName = normalizePersonName(payload.originalName) || requestedName;
-  const nextName = normalizePersonName(payload.name) || requestedName;
-
-  const { teams, team } = getPrimaryTeam(schoolId);
-  const primaryTeam: RosterTeam = team ?? {
-    id: "primary-team",
-    schoolId,
-    name: "Team",
-    abbreviation: "TEAM",
-    players: []
-  };
-
-  const existingRecord = findPlayerRecord([primaryTeam], originalName);
-  const builtPlayer = buildRosterPlayer({ ...payload, name: nextName }, primaryTeam.id, existingRecord?.player);
-  if (!builtPlayer) {
-    res.status(400).json({ error: "Player name is required" });
-    return;
-  }
-
-  const nextPrimaryTeam: RosterTeam = {
-    ...primaryTeam,
-    players: existingRecord
-      ? primaryTeam.players.map((player, index) => index === existingRecord.playerIndex ? builtPlayer : player)
-      : [...primaryTeam.players, builtPlayer]
-  };
-  const nextTeams = team ? [nextPrimaryTeam, ...teams.slice(1)] : [nextPrimaryTeam];
-  persistSchoolTeams(schoolId, nextTeams);
-
-  res.status(201).json({ message: "Player saved successfully", player: builtPlayer });
+registerAdvancedInsightsRoutes(app, {
+  getSchoolIdFromRequest,
+  buildTeamAdvancedPayload,
+  buildPlayerAdvancedPayload,
+  buildVolatilityPayload,
+  buildComprehensiveInsightsPayload,
 });
 
-app.delete("/api/roster/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const record = findPlayerRecord(teams, req.params.playerName);
-  if (!record) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  const nextTeams = teams.map((team, index) => index === record.teamIndex
-    ? { ...team, players: team.players.filter((_, playerIndex) => playerIndex !== record.playerIndex) }
-    : team);
-  persistSchoolTeams(schoolId, nextTeams);
-  res.json({ message: "Player deleted successfully", player: record.player.name });
+registerAiCompatibilityRoutes(app, {
+  requireApiKey,
+  getSchoolIdFromRequest,
+  sanitizeTextField,
+  getSeasonGames,
+  answerGameAiChat,
+  buildTeamSummaryText,
+  buildPlayerInsightsText,
+  buildGameAnalysisText,
+  buildSeasonAnalysisPayload,
+  seasonAnalysisBySchool,
+  playerAnalysisCacheBySchool,
+  buildPlayerAnalysisPayload,
 });
 
-app.delete("/api/player/:playerName", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const record = findPlayerRecord(teams, req.params.playerName);
-  if (!record) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  const nextTeams = teams.map((team, index) => index === record.teamIndex
-    ? { ...team, players: team.players.filter((_, playerIndex) => playerIndex !== record.playerIndex) }
-    : team);
-  persistSchoolTeams(schoolId, nextTeams);
-  res.json({ message: "Player deleted successfully", player: record.player.name });
+registerAdvancedLegacyRoutes(app, {
+  getSchoolIdFromRequest,
+  buildGamesPayload,
+  roundStat,
+  buildComprehensiveInsightsPayload,
+  buildTeamAdvancedPayload,
+  buildVolatilityPayload,
 });
 
-app.post("/api/player/:playerName/delete", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const record = findPlayerRecord(teams, req.params.playerName);
-  if (!record) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  const nextTeams = teams.map((team, index) => index === record.teamIndex
-    ? { ...team, players: team.players.filter((_, playerIndex) => playerIndex !== record.playerIndex) }
-    : team);
-  persistSchoolTeams(schoolId, nextTeams);
-  res.json({ message: "Player deleted successfully", player: record.player.name });
+registerRosterConfigRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getRosterTeamsByScope,
+  saveRosterTeams,
+  emitRosterTeams: (schoolId, teams) => {
+    io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
+  },
 });
 
-app.get("/api/season-stats", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(getSeasonTeamStats({ schoolId }));
-});
-
-app.get("/api/games", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildGamesPayload(schoolId));
-});
-
-app.get("/api/games/:gameId", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const game = buildGamesPayload(schoolId).find((entry) => String(entry.gameId) === String(req.params.gameId));
-  if (!game) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  res.json(game);
-});
-
-app.get("/api/games/:gameId/audit-log", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const override = getGameOverrideMap(schoolId).get(req.params.gameId);
-  res.json({
-    entries: override
-      ? [{
-        action: "manual_edit",
-        gameId: req.params.gameId,
-        updatedAtIso: override.updatedAtIso
-      }]
-      : []
-  });
-});
-
-app.put("/api/games/:gameId", requireApiKey, requireWriteRole, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const gameId = String(req.params.gameId);
-  const existing = buildGamesPayload(schoolId).find((entry) => String(entry.gameId) === gameId);
-  if (!existing) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const vcScore = Number(payload.vc_score);
-  const oppScore = Number(payload.opp_score);
-  if (!Number.isFinite(vcScore) || !Number.isFinite(oppScore)) {
-    res.status(400).json({ error: "vc_score and opp_score are required" });
-    return;
-  }
-
-  const baseTeamStats = (payload.team_stats && typeof payload.team_stats === "object")
-    ? payload.team_stats as Record<string, unknown>
-    : (existing.team_stats as Record<string, unknown> | undefined) ?? {};
-  const override: GameEditOverride = {
-    gameId,
-    date: sanitizeTextField(payload.date ?? existing.date, 32) || String(existing.date ?? ""),
-    opponent: sanitizeTextField(payload.opponent ?? existing.opponent, 120) || String(existing.opponent ?? "Opponent"),
-    location: (payload.location === "away" || payload.location === "neutral") ? payload.location : "home",
-    vc_score: vcScore,
-    opp_score: oppScore,
-    result: resolveGameResult(vcScore, oppScore),
-    team_stats: {
-      fg: Number(baseTeamStats.fg ?? 0),
-      fga: Number(baseTeamStats.fga ?? 0),
-      fg3: Number(baseTeamStats.fg3 ?? 0),
-      fg3a: Number(baseTeamStats.fg3a ?? 0),
-      ft: Number(baseTeamStats.ft ?? 0),
-      fta: Number(baseTeamStats.fta ?? 0),
-      oreb: Number(baseTeamStats.oreb ?? 0),
-      dreb: Number(baseTeamStats.dreb ?? 0),
-      reb: Number(baseTeamStats.reb ?? 0),
-      asst: Number(baseTeamStats.asst ?? 0),
-      to: Number(baseTeamStats.to ?? 0),
-      stl: Number(baseTeamStats.stl ?? 0),
-      blk: Number(baseTeamStats.blk ?? 0),
-      fouls: Number(baseTeamStats.fouls ?? 0)
-    },
-    player_stats: Array.isArray(payload.player_stats) ? payload.player_stats as Array<Record<string, unknown>> : [],
-    updatedAtIso: new Date().toISOString()
-  };
-
-  await setGameOverride(schoolId, override);
-  res.json({ message: "Game updated successfully", game: override });
-});
-
-app.delete("/api/games/:gameId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const gameId = String(req.params.gameId);
-  const removedFromState = deleteGame(gameId, { schoolId });
-  const removedOverride = getGameOverrideMap(schoolId).delete(gameId);
-  if (!removedFromState && !removedOverride) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  emitToGameRooms(schoolId, gameId, "game:deleted", { gameId });
-  res.json({ message: "Game deleted successfully", gameId });
-});
-
-app.post("/api/games/:gameId/submit", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const gameId = String(req.params.gameId);
-  const ok = submitGame(gameId, { schoolId });
-  if (!ok) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  emitToGameRooms(schoolId, gameId, "game:submitted", { gameId });
-  res.json({ message: "Game submitted successfully", gameId });
-});
-
-app.post("/api/reset", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  resetAllData({ schoolId });
-  res.json({ ok: true, message: "Reset complete", schoolId });
-});
-
-app.get("/api/live-context", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(getLiveContext({ schoolId }));
-});
-
-app.get("/api/leaderboards", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildLeaderboardsPayload(schoolId));
-});
-
-app.get("/api/team-trends", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildTeamTrendsPayload(schoolId));
-});
-
-app.get("/api/player-trends/:playerName", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const targetName = normalizePersonName(req.params.playerName);
-  if (!targetName || targetName.length > 100) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-
-  res.json(buildPlayerTrendsPayload(schoolId, targetName));
-});
-
-app.get("/api/player-comparison", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const playerNames = ([] as string[]).concat(req.query.players as string | string[] | undefined ?? [])
-    .map((name) => normalizePersonName(name))
-    .filter(Boolean);
-  if (playerNames.length < 2) {
-    res.status(400).json({ error: "At least 2 players required for comparison" });
-    return;
-  }
-
-  res.json(buildPlayerComparisonPayload(schoolId, playerNames));
-});
-
-app.get("/api/advanced/team", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildTeamAdvancedPayload(schoolId));
-});
-
-app.get("/api/advanced/player/:playerName", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = buildPlayerAdvancedPayload(schoolId, req.params.playerName);
-  if (!payload) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  res.json(payload);
-});
-
-app.get("/api/advanced/volatility", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildVolatilityPayload(schoolId));
-});
-
-app.get("/api/comprehensive-insights", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildComprehensiveInsightsPayload(schoolId));
-});
-
-app.post("/api/ai/chat", async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const message = sanitizeTextField((req.body as Record<string, unknown> | undefined)?.message, 1200);
-  const history = (req.body as Record<string, unknown> | undefined)?.history;
-  const allowLiveAi = !process.env.VITEST && process.env.NODE_ENV !== "test";
-  if (!message) {
-    res.status(400).json({ error: "message is required" });
-    return;
-  }
-
-  const latestGame = allowLiveAi ? getSeasonGames({ schoolId }).slice(-1)[0] : undefined;
-  if (latestGame) {
-    const ai = await answerGameAiChat(latestGame.gameId, message, history, { schoolId });
-    if (ai?.answer) {
-      res.json({ reply: ai.answer, suggestions: ai.suggestions ?? [], usedHistoricalContext: ai.usedHistoricalContext ?? false });
-      return;
-    }
-  }
-
-  res.json({
-    reply: `${buildTeamSummaryText(schoolId)} Coach question: ${message}`,
-    suggestions: [
-      "Which lineup gives us the best ball security?",
-      "Who should absorb minutes if foul trouble increases?"
-    ]
-  });
-});
-
-app.get("/api/ai/team-summary", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ summary: buildTeamSummaryText(schoolId) });
-});
-
-app.post("/api/ai/analyze", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const query = sanitizeTextField((req.body as Record<string, unknown> | undefined)?.query, 1200)
-    || sanitizeTextField((req.body as Record<string, unknown> | undefined)?.message, 1200);
-  if (!query) {
-    res.status(400).json({ error: "query is required" });
-    return;
-  }
-
-  res.json({
-    analysis: `${buildTeamSummaryText(schoolId)} Requested analysis: ${query}`
-  });
-});
-
-app.get("/api/ai/player-insights/:playerName", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const insights = buildPlayerInsightsText(schoolId, req.params.playerName);
-  if (!insights) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  res.json({ player: req.params.playerName, insights });
-});
-
-app.get("/api/ai/game-analysis/:gameId", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const analysis = buildGameAnalysisText(schoolId, req.params.gameId);
-  if (!analysis) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  res.json({ gameId: req.params.gameId, analysis });
-});
-
-app.delete("/api/ai/team-summary", requireApiKey, (_req, res) => {
-  // No persistent cache to clear in this implementation — return success.
-  res.json({ message: "Cache cleared" });
-});
-
-app.get("/api/season-analysis", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const force = String(req.query.force ?? "false").toLowerCase() === "true";
-  res.json(buildSeasonAnalysisPayload(schoolId, force));
-});
-
-app.delete("/api/season-analysis", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  seasonAnalysisBySchool.delete(schoolId);
-  res.json({ message: "Cache cleared" });
-});
-
-app.get("/api/ai/player-analysis/:playerName", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const playerName = sanitizeTextField(req.params.playerName, 100);
-  if (!playerName) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-
-  const schoolCache = playerAnalysisCacheBySchool.get(schoolId);
-  const force = String(req.query.regenerate ?? "false").toLowerCase() === "true";
-  if (!force && schoolCache?.has(playerName)) {
-    res.json({ ...(schoolCache.get(playerName) as object), cached: true });
-    return;
-  }
-
-  const payload = buildPlayerAnalysisPayload(schoolId, playerName);
-  if (!payload) {
-    res.status(404).json({ error: "Player not found" });
-    return;
-  }
-
-  if (!playerAnalysisCacheBySchool.has(schoolId)) {
-    playerAnalysisCacheBySchool.set(schoolId, new Map());
-  }
-  playerAnalysisCacheBySchool.get(schoolId)!.set(playerName, payload);
-  res.json(payload);
-});
-
-app.delete("/api/ai/player-analysis/:playerName", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const playerName = sanitizeTextField(req.params.playerName, 100) ?? "";
-  playerAnalysisCacheBySchool.get(schoolId)?.delete(playerName);
-  res.json({ message: `Cache cleared for ${playerName}` });
-});
-
-app.get("/api/advanced/game/:gameId", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const game = buildGamesPayload(schoolId).find((g) => String(g.gameId) === String(req.params.gameId));
-  if (!game) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  const ts = game.team_stats as { fg: number; fga: number; fg3: number; fg3a: number; ft: number; fta: number; asst: number; to: number; stl: number; reb: number; oreb: number; dreb: number; fouls: number; blk: number };
-  res.json({
-    gameId: game.gameId,
-    opponent: game.opponent,
-    date: game.date,
-    result: game.result,
-    efg_pct: ts.fga > 0 ? roundStat(((ts.fg + 0.5 * ts.fg3) / ts.fga) * 100) : 0,
-    ts_pct: (2 * (ts.fg > 0 ? ts.fg : 0) + ts.fta * 0.44) > 0
-      ? roundStat((game.vc_score as number) / (2 * (ts.fga + ts.fg3a * 0 + ts.fta * 0.44)) * 100)
-      : 0,
-    ast_to_ratio: ts.to > 0 ? roundStat(ts.asst / ts.to) : 0,
-    team_stats: ts,
-    player_stats: game.player_stats,
-  });
-});
-
-app.get("/api/advanced/patterns", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const games = buildGamesPayload(schoolId);
-  const homeGames = games.filter((g) => g.location === "home");
-  const awayGames = games.filter((g) => g.location === "away");
-  const avgScore = (arr: Array<Record<string, unknown>>) =>
-    arr.length > 0 ? roundStat(arr.reduce((s, g) => s + (g.vc_score as number), 0) / arr.length) : 0;
-
-  res.json({
-    home_avg_score: avgScore(homeGames),
-    away_avg_score: avgScore(awayGames),
-    total_games: games.length,
-    home_record: { wins: homeGames.filter((g) => g.result === "W").length, losses: homeGames.filter((g) => g.result === "L").length },
-    away_record: { wins: awayGames.filter((g) => g.result === "W").length, losses: awayGames.filter((g) => g.result === "L").length },
-  });
-});
-
-app.get("/api/advanced/insights", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildComprehensiveInsightsPayload(schoolId));
-});
-
-app.get("/api/advanced/all", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({
-    team: buildTeamAdvancedPayload(schoolId),
-    volatility: buildVolatilityPayload(schoolId),
-    insights: buildComprehensiveInsightsPayload(schoolId),
-  });
-});
-
-app.get("/config/roster-teams", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ teams: getRosterTeamsByScope({ schoolId }) });
-});
-
-app.put("/config/roster-teams", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = req.body?.teams;
-  if (!Array.isArray(teams)) {
-    res.status(400).json({ error: "teams array is required" });
-    return;
-  }
-
-  const saved = saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", saved);
-  res.json({ teams: saved });
-});
-
-app.get("/api/operator-links/:connectionId", (req, res) => {
-  const connectionId = normalizeConnectionKey(req.params.connectionId);
-  if (!connectionId) {
-    res.status(400).json({ error: "connectionId is required" });
-    return;
-  }
-
-  const tenantResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
-  let schoolId = tenantResolution.schoolId;
-  let resolvedViaConnectionLookup = false;
-  if (!schoolId) {
-    if (tenantResolution.error && tenantResolution.error !== "schoolId is required") {
-      res.status(tenantResolution.status ?? 400).json({ error: tenantResolution.error });
-      return;
-    }
-
-    const matchingSchoolIds = Array.from(operatorLinkByConnectionId.keys())
+registerOperatorLinkRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  normalizeConnectionKey,
+  resolveRequestSchoolId,
+  listSchoolIdsForConnection: (connectionId) => {
+    return Array.from(operatorLinkByConnectionId.keys())
       .filter((key) => key.endsWith(`:${connectionId}`))
       .map((key) => key.slice(0, key.lastIndexOf(":")));
-
-    if (matchingSchoolIds.length === 0) {
-      res.status(404).json({ error: "Connection code not found" });
-      return;
-    }
-
-    if (matchingSchoolIds.length > 1) {
-      res.status(409).json({ error: "Connection code is ambiguous; provide schoolId" });
-      return;
-    }
-
-    schoolId = matchingSchoolIds[0]!;
-    resolvedViaConnectionLookup = true;
-  }
-
-  let setup = getOperatorLinkSetup(schoolId, connectionId);
-  if (!setup) {
-    res.status(404).json({ error: "Connection code not found" });
-    return;
-  }
-
-  const operatorToken = issueLocalAuthToken({
-    subject: `operator:${connectionId}`,
-    email: `operator-${connectionId.toLowerCase()}@system.bta`,
-    schoolId,
-    role: "operator",
-    expiresInHours: 24 * 90,
-  }) ?? undefined;
-
-  if (operatorToken) {
-    setup = {
-      ...setup,
-      operatorToken,
-      updatedAtIso: new Date().toISOString(),
-    };
+  },
+  getOperatorLinkSetup,
+  setOperatorLinkSetup: (schoolId, connectionId, setup) => {
     operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
-  }
-
-  // The connection code itself is the shared secret between coach and operator.
-  // Always deliver the operator token to any caller that knows the connection ID —
-  // this allows the iPad to bootstrap auth on first sync without a prior credential.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { operatorToken: setupOperatorToken, ...publicSetup } = setup;
-  res.json({
-    connectionId,
-    schoolId,
-    setup: publicSetup,
-    teams: getRosterTeamsByScope({ schoolId }),
-    operatorToken: setupOperatorToken,
-  });
-});
-
-app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const connectionId = normalizeConnectionKey(req.params.connectionId);
-  if (!connectionId) {
-    res.status(400).json({ error: "connectionId is required" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-
-  // Re-use an existing operator token for this connection so the iPad doesn't
-  // need to re-save it every time the coach publishes an update.
-  const existing = operatorLinkByConnectionId.get(operatorLinkKey(schoolId, connectionId));
-  const operatorToken = existing?.operatorToken
-    ?? issueLocalAuthToken({
-      subject: `operator:${connectionId}`,
-      email: `operator-${connectionId.toLowerCase()}@system.bta`,
-      schoolId,
-      role: "operator",
-      expiresInHours: 24 * 90, // 90 days
-    })
-    ?? undefined;
-
-  const hasField = (field: string): boolean => Object.prototype.hasOwnProperty.call(payload, field);
-  const mergeSanitizedTextField = (field: string, maxLength: number, fallback?: string): string | undefined => {
-    if (!hasField(field)) {
-      return fallback;
-    }
-    return sanitizeTextField(payload[field], maxLength) || undefined;
-  };
-
-  const setup: OperatorLinkSetup = {
-    gameId: mergeSanitizedTextField("gameId", 120, existing?.gameId),
-    myTeamId: mergeSanitizedTextField("myTeamId", 120, existing?.myTeamId),
-    myTeamName: mergeSanitizedTextField("myTeamName", 120, existing?.myTeamName),
-    opponentName: mergeSanitizedTextField("opponentName", 120, existing?.opponentName),
-    vcSide:
-      payload.vcSide === "away" || payload.vcSide === "home"
-        ? payload.vcSide
-        : (existing?.vcSide ?? "home"),
-    homeTeamColor: hasField("homeTeamColor")
-      ? normalizeTeamColor(payload.homeTeamColor)
-      : existing?.homeTeamColor,
-    awayTeamColor: hasField("awayTeamColor")
-      ? normalizeTeamColor(payload.awayTeamColor)
-      : existing?.awayTeamColor,
-    dashboardUrl: mergeSanitizedTextField("dashboardUrl", 320, existing?.dashboardUrl),
-    startingLineup: hasField("startingLineup") && Array.isArray(payload.startingLineup)
-      ? (payload.startingLineup as unknown[]).filter((id): id is string => typeof id === "string" && id.trim().length > 0).slice(0, 10)
-      : existing?.startingLineup,
-    updatedAtIso: new Date().toISOString(),
-    operatorToken,
-  };
-
-  operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
-
-  // Strip token from the socket broadcast — only deliver it via the authenticated GET
-  const { operatorToken: _tok, ...publicSetup } = setup;
-  const response = {
-    connectionId,
-    setup: publicSetup,
-    teams: getRosterTeamsByScope({ schoolId }),
-  };
-
-  io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
-  res.json({ ...response, operatorToken });
+  },
+  issueLocalAuthToken,
+  getRosterTeamsByScope,
+  sanitizeTextField,
+  normalizeTeamColor,
+  emitOperatorLinkUpdated: (schoolId, connectionId, response) => {
+    io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
+  },
 });
 
 // ─────────────────────────────────────────────────────────────────────────

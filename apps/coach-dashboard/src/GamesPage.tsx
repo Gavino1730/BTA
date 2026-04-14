@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
 
@@ -124,37 +123,6 @@ function sumTeamStats(rows: EditPlayerRow[]): Required<GameTeamStats> {
   t.reb = t.oreb + t.dreb;
   return t;
 }
-
-const inputSt: CSSProperties = {
-  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.16)",
-  color: "var(--text)", borderRadius: 8, padding: "0.55rem 0.7rem", width: "100%", boxSizing: "border-box",
-};
-const readOnlyFieldSt: CSSProperties = {
-  background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(255,255,255,0.08)",
-  color: "var(--text)",
-  borderRadius: 8,
-  padding: "0.55rem 0.7rem",
-  width: "100%",
-  boxSizing: "border-box",
-  minHeight: 42,
-  display: "flex",
-  alignItems: "center",
-  cursor: "default",
-  userSelect: "text",
-};
-const cellSt: CSSProperties = {
-  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-  color: "var(--text)", borderRadius: 5, padding: "0.32rem 0.4rem", textAlign: "center", width: "100%", boxSizing: "border-box",
-  fontVariantNumeric: "tabular-nums",
-};
-const thSt: CSSProperties = {
-  padding: "0.5rem 0.45rem", textAlign: "center", fontSize: "0.72rem",
-  textTransform: "uppercase", color: "var(--text-muted)", whiteSpace: "nowrap",
-  fontWeight: 700, letterSpacing: "0.04em",
-  borderBottom: "2px solid var(--border-hi)",
-  background: "var(--surface-2)",
-};
 
 function pctValue(made: number, attempted: number): number | null {
   if (attempted <= 0) {
@@ -389,62 +357,62 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, overflowY: "auto", display: "flex", justifyContent: "center", padding: "1.5rem 1rem" }}
+      className="game-modal-overlay"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{ background: "var(--surface)", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 16, width: "100%", maxWidth: 1220, alignSelf: "flex-start" }}>
+      <div className="game-modal-card">
         {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.1rem 1.4rem", borderBottom: "1px solid var(--border)" }}>
+        <div className="game-modal-head">
           <div>
-            <p style={{ margin: 0, fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.06em" }}>{isEditing ? "Edit" : "View"} Game #{game.gameId}</p>
-            <h2 style={{ margin: "0.2rem 0 0" }}>{location === "away" ? "@" : "vs"} {opponent}</h2>
+            <p className="game-modal-eyebrow">{isEditing ? "Edit" : "View"} Game #{game.gameId}</p>
+            <h2 className="game-modal-title">{location === "away" ? "@" : "vs"} {opponent}</h2>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "var(--text-muted)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
+          <div className="game-modal-head-actions">
+            <button type="button" onClick={onClose} className="game-modal-btn game-modal-btn-ghost">Close</button>
             {!isEditing && (
-              <button type="button" onClick={() => setMode("edit")} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1rem", cursor: "pointer", fontWeight: 600 }}>
+              <button type="button" onClick={() => setMode("edit")} className="game-modal-btn game-modal-btn-primary">
                 Edit
               </button>
             )}
             {!isEditing && (
-              <button type="button" onClick={() => void handleDelete()} disabled={deleting} style={{ background: "transparent", border: "1px solid rgba(248,113,113,0.25)", color: "rgba(248,113,113,0.95)", borderRadius: 8, padding: "0.45rem 1rem", cursor: deleting ? "default" : "pointer", fontWeight: 600, opacity: deleting ? 0.75 : 1 }}>
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} className={`game-modal-btn game-modal-btn-danger ${deleting ? "is-busy" : ""}`}>
                 {deleting ? "Deleting..." : "Delete Game"}
               </button>
             )}
             {isEditing && (
-              <button type="button" onClick={() => setMode("view")} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>
+              <button type="button" onClick={() => setMode("view")} className="game-modal-btn game-modal-btn-outline">
                 Back to View
               </button>
             )}
             {isEditing && (
-              <button type="button" onClick={() => void handleSave()} disabled={saving} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1.1rem", cursor: saving ? "default" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+              <button type="button" onClick={() => void handleSave()} disabled={saving} className={`game-modal-btn game-modal-btn-primary ${saving ? "is-busy" : ""}`}>
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             )}
           </div>
         </div>
 
-        <div style={{ padding: "1.1rem 1.4rem" }}>
-          {saveError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{saveError}</p>}
-          {deleteError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{deleteError}</p>}
+        <div className="game-modal-body">
+          {saveError && <p className="game-modal-error">{saveError}</p>}
+          {deleteError && <p className="game-modal-error">{deleteError}</p>}
 
           {isEditing ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
+            <div className="game-edit-grid">
               {([
-                ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />],
-                ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} />],
+                ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} className="game-edit-input" />],
+                ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} className="game-edit-input" />],
                 ["Location", (
-                  <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt}>
+                  <select key="l" value={location} onChange={e => setLocation(e.target.value)} className="game-edit-input">
                     <option value="home">Home</option>
                     <option value="away">Away</option>
                     <option value="neutral">Neutral</option>
                   </select>
                 )],
-                ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} />],
-                ["Opp Score", <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} />],
+                ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} className="game-edit-input" />],
+                ["Opp Score", <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} className="game-edit-input" />],
               ] as [string, JSX.Element][]).map(([lbl, editEl]) => (
-                <div key={lbl} style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
-                  <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>{lbl}</span>
+                <div key={lbl} className="game-edit-field">
+                  <span className="game-edit-label">{lbl}</span>
                   {editEl}
                 </div>
               ))}
@@ -558,7 +526,7 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
                     </div>
                     <div>
                       <span>Quarter Splits</span>
-                      <strong style={{ fontSize: "0.95rem" }}>Not recorded</strong>
+                      <strong className="game-flow-note">Not recorded</strong>
                     </div>
                   </div>
                 </article>
@@ -566,65 +534,65 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
             </>
           )}
 
-          {mismatch && <p style={{ color: "var(--red)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Player totals ({playerPts}) don't match team score ({vcScore}).</p>}
+          {mismatch && <p className="game-modal-mismatch">Player totals ({playerPts}) don't match team score ({vcScore}).</p>}
 
           {/* box score table */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <h3 style={{ margin: 0 }}>Box Score</h3>
-            <div style={{ display: "flex", gap: "0.45rem" }}>
+          <div className="game-box-head">
+            <h3 className="game-box-title">Box Score</h3>
+            <div className="game-box-actions">
               {!isEditing && (
                 <>
-                  <button type="button" onClick={() => setBoxMode("basic")} style={{ background: boxMode === "basic" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Basic Stats</button>
-                  <button type="button" onClick={() => setBoxMode("advanced")} style={{ background: boxMode === "advanced" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Advanced Stats</button>
+                  <button type="button" onClick={() => setBoxMode("basic")} className={`game-box-toggle-btn ${boxMode === "basic" ? "is-active" : ""}`}>Basic Stats</button>
+                  <button type="button" onClick={() => setBoxMode("advanced")} className={`game-box-toggle-btn ${boxMode === "advanced" ? "is-active" : ""}`}>Advanced Stats</button>
                 </>
               )}
               {isEditing && (
-                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
+                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} className="game-box-add-row-btn">+ Add Row</button>
               )}
             </div>
           </div>
-          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid var(--border)" }} className="game-box-wrap">
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 820, fontSize: "0.83rem", fontVariantNumeric: "tabular-nums" }} className="game-box-score-table">
+          <div className="game-box-wrap">
+            <table className="game-box-score-table">
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  <th style={{ ...thSt, textAlign: "left", minWidth: 140 }} className="sticky-col" rowSpan={2}>Player</th>
-                  <th style={{ ...thSt, minWidth: 44 }} rowSpan={2}>#</th>
-                  {groupedCols.shooting.length > 0 && <th style={thSt} colSpan={groupedCols.shooting.length}>Shooting</th>}
-                  {groupedCols.playmaking.length > 0 && <th style={thSt} colSpan={groupedCols.playmaking.length}>Playmaking</th>}
-                  {groupedCols.defense.length > 0 && <th style={thSt} colSpan={groupedCols.defense.length}>Defense / Glass</th>}
-                  <th style={thSt} rowSpan={2}>REB</th>
-                  <th style={{ ...thSt, color: "var(--teal)" }} rowSpan={2}>PTS</th>
-                  {isEditing && <th style={thSt} rowSpan={2}></th>}
+                <tr className="game-box-head-row">
+                  <th className="sticky-col game-box-th game-box-th-player" rowSpan={2}>Player</th>
+                  <th className="game-box-th game-box-th-number" rowSpan={2}>#</th>
+                  {groupedCols.shooting.length > 0 && <th className="game-box-th" colSpan={groupedCols.shooting.length}>Shooting</th>}
+                  {groupedCols.playmaking.length > 0 && <th className="game-box-th" colSpan={groupedCols.playmaking.length}>Playmaking</th>}
+                  {groupedCols.defense.length > 0 && <th className="game-box-th" colSpan={groupedCols.defense.length}>Defense / Glass</th>}
+                  <th className="game-box-th" rowSpan={2}>REB</th>
+                  <th className="game-box-th game-box-th-points" rowSpan={2}>PTS</th>
+                  {isEditing && <th className="game-box-th" rowSpan={2}></th>}
                 </tr>
-                <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => <th key={c.key} style={thSt}>{c.label}</th>)}
+                <tr className="game-box-head-row">
+                  {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => <th key={c.key} className="game-box-th">{c.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.025)" }} className={`game-box-row ${!isEditing && rowPts(row) === maxPts && maxPts > 0 ? "leader-points" : ""} ${!isEditing && rowReb(row) === maxReb && maxReb > 0 ? "leader-reb" : ""} ${!isEditing && row.asst === maxAst && maxAst > 0 ? "leader-ast" : ""}`}>
-                    <td style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }} className="sticky-col">
+                  <tr key={i} className={`game-box-row ${i % 2 === 1 ? "game-box-row-alt" : ""} ${!isEditing && rowPts(row) === maxPts && maxPts > 0 ? "leader-points" : ""} ${!isEditing && rowReb(row) === maxReb && maxReb > 0 ? "leader-reb" : ""} ${!isEditing && row.asst === maxAst && maxAst > 0 ? "leader-ast" : ""}`}>
+                    <td className="sticky-col game-box-cell game-box-cell-player">
                       {isEditing
-                        ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} />
-                        : <span style={{ padding: "0 0.3rem" }}>{row.name || "—"}</span>}
+                        ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" className="game-box-input game-box-input-name" />
+                        : <span className="game-box-player-name">{row.name || "—"}</span>}
                     </td>
-                    <td style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
+                    <td className="game-box-cell game-box-cell-center">
                       {isEditing
-                        ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} />
+                        ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" className="game-box-input game-box-input-number" />
                         : <span>{row.number || "—"}</span>}
                     </td>
                     {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => (
-                      <td key={c.key} style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
+                      <td key={c.key} className="game-box-cell game-box-cell-center">
                         {isEditing
-                          ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} />
+                          ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} className="game-box-input game-box-input-stat" />
                           : <span>{String(row[c.key as StatKey])}</span>}
                       </td>
                     ))}
-                    <td style={{ padding: "0.45rem 0.4rem", fontWeight: 700, textAlign: "center" }}>{rowReb(row)}</td>
-                    <td style={{ padding: "0.45rem 0.4rem", fontWeight: 700, color: "var(--teal)", textAlign: "center", fontSize: "0.92em" }}>{rowPts(row)}</td>
+                    <td className="game-box-cell game-box-cell-center game-box-cell-strong">{rowReb(row)}</td>
+                    <td className="game-box-cell game-box-cell-center game-box-cell-strong game-box-cell-points">{rowPts(row)}</td>
                     {isEditing && (
-                      <td style={{ padding: "0.45rem 0.4rem" }}>
-                        <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} style={{ background: "rgba(248,113,113,0.14)", border: "none", color: "var(--red)", borderRadius: 6, padding: "0.28rem 0.55rem", cursor: "pointer" }}>✕</button>
+                      <td className="game-box-cell game-box-cell-delete">
+                        <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} className="game-box-delete-btn">✕</button>
                       </td>
                     )}
                   </tr>
@@ -726,7 +694,7 @@ export function GamesPage() {
       <section className="stats-page-hero compact">
         <div>
           <h1>Games</h1>
-          <p className="stats-page-subtitle">Full season history. Click any game to view details, then choose Edit to make changes.</p>
+          <p className="stats-page-subtitle">Full season history. Open any game to view details and make edits.</p>
         </div>
         {status && <p className="stats-page-status">{status}</p>}
       </section>
@@ -758,8 +726,7 @@ export function GamesPage() {
             return (
               <article
                 key={String(game.gameId)}
-                className="stats-game-card"
-                style={{ cursor: "pointer" }}
+                className="stats-game-card game-card-clickable"
                 onClick={() => setSelectedGame(game)}
                 role="button"
                 tabIndex={0}
@@ -814,7 +781,7 @@ export function GamesPage() {
                     <strong>{Number(game.team_stats?.blk ?? 0)}</strong>
                   </div>
                 </div>
-                <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--teal)", opacity: 0.8 }}>Click to view box score →</p>
+                <p className="game-card-open-hint">Click to view box score →</p>
               </article>
             );
           })}

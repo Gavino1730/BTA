@@ -152,6 +152,11 @@
   min-width: 0;
 }
 
+.coach-nav-actions .connection-pill-copy {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 .coach-nav-actions .connection-pill-status {
   font-size: 0.78rem;
   letter-spacing: 0.07em;
@@ -233,6 +238,27 @@
   flex-wrap: wrap;
   gap: 0.65rem;
   margin-top: 0.5rem;
+}
+
+.account-upload-trigger {
+  cursor: pointer;
+}
+
+.account-upload-trigger.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.account-upload-input {
+  display: none;
+}
+
+.account-danger-scheduled-note {
+  margin-top: 0.5rem;
+}
+
+.account-danger-grid-gap {
+  margin-top: 0.75rem;
 }
 
 .account-danger-btn {

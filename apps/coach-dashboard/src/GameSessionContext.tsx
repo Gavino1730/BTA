@@ -278,6 +278,14 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     (() => { try { return JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[]; } catch { return []; } })()
   ));
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
+  const [, setLastFinishedGameSummary] = useState<{
+    gameId: string;
+    finishedAtIso: string;
+    myTeamName: string;
+    opponentName: string;
+    myScore: number;
+    oppScore: number;
+  } | null>(null);
   const [activePage, setActivePageState] = useState<"live" | "ai">(
     () => (sessionStorage.getItem("coach:live-tab") as "live" | "ai" | null) ?? "live"
   );
@@ -465,10 +473,11 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
 
   // Socket hook
   useCoachSocket({
-    connectionId, gameIdRef, endedGameIdsRef, clearActiveGame,
+    connectionId, setupNames, gameIdRef, endedGameIdsRef, clearActiveGame,
     setGameId, setState, setServerConnected, setDeviceConnected,
     setConnectedOperatorCount, setConnectedOperators,
     setDashboardStatus, setInsights, setRosterTeamsFromRemote,
+    setLastFinishedGameSummary,
   });
 
   // Hydration hook

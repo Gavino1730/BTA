@@ -15,7 +15,7 @@ export default function FeaturesPage(): JSX.Element {
     <ContentPage
       eyebrow="Platform"
       title="Everything connected from event entry to decision"
-      summary="BTA Courtside treats live events, coaching interpretation, and postgame review as one connected operating flow. Instead of stitching context manually, staff can move from possession signal to action with confidence."
+      summary="BTA Courtside connects live events, coaching decisions, and postgame review in one flow. Instead of stitching context manually, staff can move from possession signal to action with confidence."
       primaryCta={{ label: "Start Demo Signup", href: "/demo-signup" }}
       secondaryCta={{ label: "View Pricing", href: "/pricing" }}
       variant="atlas"
@@ -28,27 +28,27 @@ export default function FeaturesPage(): JSX.Element {
       sections={[
         {
           title: "Live Operations",
-          intro: "Operator reliability is the foundation of trustworthy downstream analytics and coaching decisions.",
+          intro: "Operator reliability drives trustworthy analytics and coaching decisions.",
           points: [
             "Low-latency event ingestion built for fast possessions, substitutions, corrections, and pressure moments.",
-            "Deterministic state transitions preserve accuracy even when corrections occur after downstream consumption.",
-            "Operator-first controls are designed for touch speed, guardrails, and minimal cognitive overhead.",
+            "Deterministic state transitions preserve accuracy, even after downstream corrections.",
+            "Operator-first controls are built for touch speed, guardrails, and low cognitive load.",
           ],
           note: "Outcome: cleaner event streams under real game conditions.",
         },
         {
           title: "Shared Staff Context",
-          intro: "Coaches, coordinators, and support staff need the same truth at the same time.",
+          intro: "Coaches, coordinators, and staff need the same truth at the same time.",
           points: [
             "Coach dashboard surfaces lineup, pace, possession trend, and correction-aware context in one view.",
-            "Possession timelines unify score state, tactical sequence, and clip reference for faster review loops.",
+            "Possession timelines unify score state, tactical sequence, and clip references for faster review loops.",
             "Role-specific visibility keeps assistants, analysts, and operators aligned without information overload.",
           ],
           note: "Outcome: faster decisions with fewer handoff errors.",
         },
         {
           title: "Insight and Review Loop",
-          intro: "The platform is built for actionable coaching feedback, not passive reporting.",
+          intro: "The platform is built for actionable coaching feedback, not passive reports.",
           points: [
             "Rules-based insight generation ties recommendations to explicit possession and lineup evidence.",
             "Postgame workflows preserve live context so staff can validate insights against synchronized clips.",

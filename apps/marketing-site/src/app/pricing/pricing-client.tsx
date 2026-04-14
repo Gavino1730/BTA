@@ -20,7 +20,7 @@ const plans: Plan[] = [
   {
     name: "Courtside Platform",
     monthly: 199,
-    summary: "One complete platform plan for live game operations, coaching workflow, and postgame review.",
+    summary: "One platform plan for live game operations, coaching workflow, and postgame review.",
     features: [
       "1 team workspace",
       "Live possession tracking + corrections",
@@ -48,11 +48,11 @@ export function PricingClientPage(): JSX.Element {
             One clear plan for your sideline workflow.
           </h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-[rgba(247,248,252,0.9)]">
-            Clear pricing, real operational value, and zero guesswork. Start with one team or roll out across your entire program.
+            Clear pricing and real value, without guesswork. Start with one team or scale across your program.
           </p>
 
           <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-[rgba(247,248,252,0.22)] bg-[rgba(13,16,32,0.4)] px-4 py-2">
-            <span className="text-sm font-semibold text-(--text-primary)">Monthly and Yearly Plans</span>
+            <span className="text-sm font-semibold text-(--text-primary)">Monthly or yearly plans</span>
             <span className="text-sm font-semibold text-(--accent-signal)">From $199/mo</span>
           </div>
         </section>
@@ -77,8 +77,8 @@ export function PricingClientPage(): JSX.Element {
                 <span className="font-display text-6xl font-semibold leading-none text-(--text-primary)">{formatPrice(plan.monthly)}</span>
                 <span className="mb-1 text-xl text-(--text-tertiary)">/mo</span>
               </div>
-              <p className="mt-2 text-sm text-(--text-tertiary)">Choose monthly or yearly billing at checkout</p>
-              <p className="mt-1 text-xs text-(--accent-secondary)">No demo required. Checkout and signup are self-serve.</p>
+              <p className="mt-2 text-sm text-(--text-tertiary)">Choose monthly or yearly billing at checkout.</p>
+              <p className="mt-1 text-xs text-(--accent-secondary)">No demo required. Checkout is fully self-serve.</p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 <Link
@@ -118,7 +118,7 @@ export function PricingClientPage(): JSX.Element {
         <section className="mt-10 rounded-2xl border border-(--border-soft) bg-(--panel-1) p-6 md:p-8">
           <h3 className="font-display text-3xl font-semibold text-(--text-primary)">Need a custom rollout?</h3>
           <p className="mt-3 max-w-3xl text-(--text-secondary)">
-            If you need district-wide deployment, custom implementation planning, or contract alignment with school procurement, we can scope an enterprise package.
+            Need district-wide deployment, implementation planning, or procurement-aligned contracts? We can scope an enterprise package.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link

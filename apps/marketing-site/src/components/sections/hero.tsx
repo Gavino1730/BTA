@@ -31,7 +31,7 @@ export function Hero(): JSX.Element {
           transition={{ duration: 0.7, delay: 0.05 }}
           className="font-display text-6xl leading-[0.92] text-[var(--text-primary)] md:text-[5.4rem]"
         >
-          Run stats, film, and coaching decisions
+          Run stats, film, and game decisions
           <span className="block bg-[linear-gradient(120deg,var(--accent-ivory)_0%,var(--text-primary)_40%,var(--accent-secondary)_100%)] bg-clip-text text-transparent">
             from one live system.
           </span>
@@ -44,8 +44,8 @@ export function Hero(): JSX.Element {
           transition={{ duration: 0.65, delay: 0.1 }}
           className="max-w-xl text-lg leading-8 text-[var(--text-secondary)] md:text-[1.35rem]"
         >
-          BTA Courtside gives coaches and operators precise control on game day, synchronized
-          postgame review, and AI guidance grounded in real possessions.
+          BTA Courtside gives coaches and operators game-day control, synchronized
+          postgame review, and AI guidance tied to real possessions.
         </motion.p>
 
         <motion.div
@@ -93,7 +93,7 @@ export function Hero(): JSX.Element {
               <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
                 <span className="inline-flex items-center gap-2">
                   <span className="size-1.5 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_8px_rgba(37,210,197,0.7)]" />
-                  Command Center Feed
+                  Live Command Feed
                 </span>
                 <span>Q3 05:12</span>
               </div>
@@ -108,12 +108,12 @@ export function Hero(): JSX.Element {
                     <ArrowRight className="mb-2 size-4 text-[var(--text-tertiary)]" />
                     <p className="font-display text-4xl text-[var(--text-primary)]">55</p>
                   </div>
-                  <p className="mt-2 text-xs text-[var(--text-secondary)]">Home run: 11-4 over last 7 possessions</p>
+                  <p className="mt-2 text-xs text-[var(--text-secondary)]">Home run: 11-4 in the last 7 possessions</p>
                 </div>
 
                 <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(28,35,64,0.94)] p-3">
                   <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Possession Arrow</p>
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Possession Flow</p>
                     <Activity className="size-4 text-[var(--accent-primary)]" />
                   </div>
                   <div className="space-y-2">
@@ -186,7 +186,7 @@ export function Hero(): JSX.Element {
                 className="rounded-xl border border-[var(--border-soft)] bg-[rgba(28,35,64,0.94)] p-4"
               >
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs text-[var(--text-tertiary)]">AI Timeline Markers</p>
+                  <p className="text-xs text-[var(--text-tertiary)]">AI Timeline</p>
                   <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-soft)] px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
                     <Timer className="size-3" />
                     Live
@@ -194,9 +194,9 @@ export function Hero(): JSX.Element {
                 </div>
                 <div className="space-y-2.5">
                   {[
-                    "04:50  High tag available after weakside drift.",
-                    "04:21  #12 mismatch detected at nail coverage.",
-                    "03:58  Clip marker saved for halftime sequence.",
+                    "04:50  High tag open after weakside drift.",
+                    "04:21  #12 mismatch at nail coverage.",
+                    "03:58  Clip marker saved for halftime.",
                   ].map((item) => (
                     <p
                       key={item}

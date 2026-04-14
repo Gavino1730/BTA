@@ -21,7 +21,7 @@ export default function AboutPage(): JSX.Element {
       variant="horizon"
       sectionLayout="split"
       keyMetrics={[
-        { label: "Pilot Seasons", value: "12", detail: "Across varsity, academy, and club programs" },
+        { label: "Seasons Supported", value: "12", detail: "Across varsity, academy, and club programs" },
         { label: "Staff Roles Supported", value: "9", detail: "Coaches, operators, analysts, and coordinators" },
         { label: "Workflow Goal", value: "1 System", detail: "No fragmented tools on game day" },
       ]}

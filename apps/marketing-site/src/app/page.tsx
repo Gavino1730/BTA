@@ -25,7 +25,7 @@ export default function Home(): JSX.Element {
         <div className="section-shell" data-tone="alpha">
           <ProductPillars />
         </div>
-        <div className="section-shell" data-tone="beta">
+        <div className="section-shell" data-tone="pulse">
           <ProductShowcase />
         </div>
         <div className="section-shell" data-tone="gamma">
@@ -34,7 +34,7 @@ export default function Home(): JSX.Element {
         <div className="section-shell" data-tone="alpha">
           <WhyDifferent />
         </div>
-        <div className="section-shell" data-tone="beta">
+        <div className="section-shell" data-tone="pulse">
           <SocialProof />
         </div>
         <div className="section-shell" data-tone="gamma">

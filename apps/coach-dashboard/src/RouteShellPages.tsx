@@ -105,7 +105,7 @@ function ShellPage({ title, subtitle, bullets = [], onPrimary, primaryLabel, onS
   return (
     <div className="stats-page">
       <section className="stats-page-card" style={{ maxWidth: "840px", margin: "0 auto" }}>
-        <p className="stats-page-eyebrow">Preproduction</p>
+        <p className="stats-page-eyebrow">Platform</p>
         <h1>{title}</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
         {bullets.length > 0 && (
@@ -136,7 +136,7 @@ function PolicyPage({ title, subtitle, sections, onPrimary, primaryLabel, onSeco
   return (
     <div className="stats-page policy-page">
       <section className="stats-page-card policy-page-hero">
-        <p className="stats-page-eyebrow">Preproduction</p>
+        <p className="stats-page-eyebrow">Platform</p>
         <h1>{title}</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
       </section>
@@ -502,7 +502,7 @@ export function CheckoutSuccessPage({ onNavigate }: RoutedPageProps) {
   return (
     <div className="stats-page">
       <section className="stats-page-card" style={{ maxWidth: "840px", margin: "0 auto" }}>
-        <p className="stats-page-eyebrow">Preproduction</p>
+        <p className="stats-page-eyebrow">Billing</p>
         <h1>Checkout Complete</h1>
         <p className="stats-page-subtitle">Your billing workflow is marked complete. Confirm status and continue setup.</p>
         <p className="stats-page-subcopy" style={{ marginTop: "0.5rem" }}>{syncStatus}</p>
@@ -722,7 +722,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
   return (
     <div className="stats-page policy-page billing-page">
       <section className="stats-page-card policy-page-hero billing-page-hero-card">
-        <p className="stats-page-eyebrow">Preproduction</p>
+        <p className="stats-page-eyebrow">Billing</p>
         <h1>Billing</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
         <div className="billing-hero-meta">
@@ -826,7 +826,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
           <li>Hosted checkout for monthly and yearly plans</li>
           <li>Org-level entitlement and billing portal</li>
           <li>Subscription-based paywall enforcement</li>
-          <li>Promo code support (beta)</li>
+          <li>Promo code support</li>
         </ul>
       </section>
 
@@ -868,7 +868,7 @@ export function AdminPage({ onNavigate }: RoutedPageProps) {
     <PolicyPage
       onNavigate={onNavigate}
       title="Admin Panel"
-      subtitle="Starter admin surface for preproduction operations. This page is intentionally read-only while management tools are phased in."
+      subtitle="Starter admin surface for operations. This page is intentionally read-only while management tools are phased in."
       sections={[
         {
           heading: "Tenant and User Operations",
@@ -1023,7 +1023,7 @@ export function ContactPage({ onNavigate }: RoutedPageProps) {
           <label className="stats-filter-field"><span>Name</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label className="stats-filter-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label className="stats-filter-field"><span>Organization</span><input value={organization} onChange={(event) => setOrganization(event.target.value)} /></label>
-          <label className="stats-filter-field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="support">Support</option><option value="pilot">Pilot</option><option value="billing">Billing</option><option value="security">Security</option></select></label>
+          <label className="stats-filter-field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="support">Support</option><option value="onboarding">Onboarding</option><option value="billing">Billing</option><option value="security">Security</option></select></label>
           <label className="stats-filter-field" style={{ gridColumn: "1 / -1" }}><span>Message</span><textarea rows={5} value={message} onChange={(event) => setMessage(event.target.value)} /></label>
         </div>
         <p className="stats-page-status">{status}</p>

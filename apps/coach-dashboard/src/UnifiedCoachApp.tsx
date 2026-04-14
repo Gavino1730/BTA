@@ -49,8 +49,7 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
     <>
       <button
         type="button"
-        className={`connection-pill ${deviceConnected ? "online" : "offline"}`}
-        style={{ flexShrink: 0, cursor: "pointer" }}
+        className={`connection-pill connection-pill-copy ${deviceConnected ? "online" : "offline"}`}
         onClick={handleCopyCode}
         title={codeCopied ? "Copied!" : "Click to copy operator code"}
         aria-label={codeCopied ? "Code copied" : `Copy operator code ${connectionId}`}

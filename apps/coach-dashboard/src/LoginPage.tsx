@@ -34,10 +34,11 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState(
     hasInviteLink
-      ? "You were invited to this workspace. Sign in if you already have an account, or create one with the invited email."
-      : "Private preview only. Sign in with an approved coach account.",
+      ? "You were invited to this workspace. Sign in, or create an account with the invited email."
+      : "Sign in with an approved coach account.",
   );
   const [busy, setBusy] = useState(false);
+  const statusIsError = /^could not|^cannot|^enter /i.test(status);
 
   useEffect(() => {
     if (!activeSchoolId) {
@@ -140,52 +141,142 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
   }
 
   return (
-    <div className="marketing-page">
-      <header className="marketing-header marketing-header-tight">
-        <button type="button" className="shell-nav-link" onClick={onBackHome}>← Back Home</button>
-        <span className="marketing-coming-pill">Invite Only</span>
+    <div className="auth-page auth-login-page">
+      <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
+      <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
+
+      <header className="auth-topbar auth-login-topbar">
+        <button type="button" className="auth-topbar-link" onClick={onBackHome}>Back Home</button>
+        <span className="auth-topbar-pill">Coach Access</span>
       </header>
 
-      <main className="marketing-login-shell">
-        <section className="marketing-login-card stats-page-card">
-          <p className="stats-page-eyebrow">Coach access</p>
-          <h1>Sign in to your dashboard</h1>
-          <p className="stats-page-subtitle">
-            Sign in below, or use the temporary create-account flow to unlock your dashboard.
-          </p>
-
-          <div className="marketing-login-note">
-            <strong>{hasInviteLink ? "Invite detected" : "Temporary access enabled"}</strong>
+      <main className="auth-shell auth-shell-wide auth-login-shell">
+        <section className="auth-card auth-login-card">
+          <span className="auth-kicker">Coach access</span>
+          <div className="auth-card-head">
+            <h2>Sign in to your dashboard</h2>
             <p>
-              {hasInviteLink
-                ? "Use the invited email address to create your account and finish joining this workspace."
-                : "If you do not have a coach login yet, create one first and then finish setup."}
+              Enter your coach credentials and jump straight into live game control.
             </p>
-            <button type="button" className="shell-nav-link" onClick={onCreateAccount}>
-              {hasInviteLink ? "Accept Invite" : "Create Account"}
-            </button>
           </div>
 
-          <form className="marketing-login-form" onSubmit={handleSubmit}>
-            <label className="stats-filter-field">
+          <form className="auth-form auth-login-form" onSubmit={handleSubmit}>
+            <label className="auth-field">
               <span>Coach Email</span>
-              <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
+              <input
+                type="email"
+                value={coachEmail}
+                onChange={(event) => setCoachEmail(event.target.value)}
+                placeholder="coach@program.org"
+                autoComplete="email"
+              />
             </label>
-            <label className="stats-filter-field">
+            <label className="auth-field">
               <span>Password</span>
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Your password"
+                autoComplete="current-password"
+              />
             </label>
 
-            <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={busy}>
+            <button type="submit" className="auth-primary-button" disabled={busy}>
               {busy ? "Signing In..." : "Sign In"}
             </button>
           </form>
 
-          <div style={{ marginTop: "0.65rem" }}>
-            <button type="button" className="shell-nav-link" onClick={onForgotPassword}>Forgot password?</button>
+          <div className="auth-login-assist">
+            <div className="auth-inline-row">
+              <button type="button" className="auth-text-link auth-secondary-button" onClick={onForgotPassword}>
+                Forgot password?
+              </button>
+              <button type="button" className="auth-text-link auth-secondary-button" onClick={onCreateAccount}>
+                {hasInviteLink ? "Accept Invite" : "Create Account"}
+              </button>
+            </div>
+            <div className="auth-login-quick-links">
+              <button type="button" className="auth-text-link auth-secondary-button" onClick={onBackHome}>
+                Return Home
+              </button>
+              <button type="button" className="auth-text-link auth-secondary-button" onClick={onCreateAccount}>
+                {hasInviteLink ? "Use Invite Email" : "Need Access"}
+              </button>
+            </div>
           </div>
 
-          <p className="stats-page-status">{status}</p>
+          <p className={`auth-status auth-login-status${statusIsError ? " auth-status-error" : ""}`}>{status}</p>
+        </section>
+
+        <section className="auth-hero-panel auth-login-hero-panel">
+          <div className="auth-login-hero-header">
+            <div className="auth-login-ribbon-row" aria-hidden="true">
+              <span className="auth-login-ribbon">Live Feed Armed</span>
+              <span className="auth-login-ribbon">Bench Alerts Ready</span>
+              <span className="auth-login-ribbon">Replay Safe</span>
+            </div>
+            <span className="auth-kicker">Game Day Control Room</span>
+            <h1 className="auth-display-title">
+              Run the sideline
+              <span>without losing tempo.</span>
+            </h1>
+            <p className="auth-hero-copy">
+              Every possession, foul, and rotation update hits the staff dashboard in seconds so the bench can react in real time.
+            </p>
+          </div>
+
+          <div className="auth-login-snapshot-card" aria-hidden="true">
+            <div className="auth-login-snapshot-head">
+              <strong>Live Snapshot</strong>
+              <span>Q3 · 03:41</span>
+            </div>
+            <div className="auth-login-snapshot-scoreboard">
+              <div>
+                <p>Home</p>
+                <strong>58</strong>
+              </div>
+              <span>:</span>
+              <div>
+                <p>Away</p>
+                <strong>51</strong>
+              </div>
+            </div>
+            <div className="auth-login-snapshot-events">
+              <p>Last event: Defensive rebound, #12</p>
+              <p>Next insight: Foul pressure warning</p>
+            </div>
+            <div className="auth-login-tempo-track">
+              <span className="auth-login-tempo-fill" style={{ width: "72%" }} />
+            </div>
+          </div>
+
+          <div className="auth-login-feature-grid" aria-hidden="true">
+            <article className="auth-login-feature-card">
+              <span>Latency</span>
+              <strong>Sub-2s event fanout</strong>
+            </article>
+            <article className="auth-login-feature-card">
+              <span>Replay</span>
+              <strong>Deterministic game state</strong>
+            </article>
+            <article className="auth-login-feature-card">
+              <span>Coverage</span>
+              <strong>Live + postgame AI insights</strong>
+            </article>
+          </div>
+
+          <aside className="auth-side-note auth-login-cta-note">
+            <strong>{hasInviteLink ? "Finish your invite setup" : "Need an approved account?"}</strong>
+            <p>
+              {hasInviteLink
+                ? "Create your account with the invited address and your dashboard will be provisioned automatically."
+                : "Use create account to request access, then return here to unlock your live workspace."}
+            </p>
+            <button type="button" className="auth-text-link auth-secondary-button" onClick={onCreateAccount}>
+              {hasInviteLink ? "Complete Invite" : "Start Create Account"}
+            </button>
+          </aside>
         </section>
       </main>
     </div>

@@ -72,7 +72,7 @@ export const proofCards = [
   {
     quote: "Operators can keep pace through chaos without losing clean data.",
     attribution: "Basketball Ops Coordinator",
-    metric: "99.6% event integrity in pilot",
+    metric: "99.6% event integrity in live play",
   },
   {
     quote: "Film sync changed how we teach. Every correction is tied to a clip.",

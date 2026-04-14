@@ -12,7 +12,7 @@ export function LineupUnitPanel({ lineupUnitStats, coachedTeamId, displayPlayerN
   return (
     <section className="card">
       <h2>Lineup +/-</h2>
-      <p className="insight-context-note" style={{ marginBottom: "0.75rem" }}>
+      <p className="insight-context-note lineup-context-gap">
         Points scored for / against while each 5-man unit was on the floor.
       </p>
       <div className="lineup-unit-list">
