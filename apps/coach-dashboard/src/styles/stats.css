@@ -476,6 +476,79 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.trends-chart-scroll {
+  overflow-x: auto;
+}
+
+.trends-chart-scroll-offset {
+  margin-top: 0.5rem;
+}
+
+.trends-chart-svg {
+  width: 100%;
+  max-width: 600px;
+  display: block;
+}
+
+.trends-player-subtitle {
+  margin-bottom: 0.75rem;
+}
+
+.trends-player-bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.trends-player-bar-col {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: center;
+}
+
+.trends-player-bar-points {
+  font-size: 0.82rem;
+}
+
+.trends-player-bar-fill {
+  width: 100%;
+  max-width: 42px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #4f8cff, #295ecf);
+}
+
+.trends-player-bar-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.trends-table-wrap {
+  overflow-x: auto;
+}
+
+.trends-table-no-margin {
+  margin-top: 0;
+}
+
+.trends-section-gap {
+  margin-bottom: 1rem;
+}
+
+.trends-section-card {
+  margin-bottom: 1rem;
+}
+
+.trends-diff-positive {
+  color: var(--teal);
+}
+
+.trends-diff-negative {
+  color: var(--red);
+}
+
 .notifications-grid {
   align-items: start;
   grid-template-columns: minmax(0, 1fr);

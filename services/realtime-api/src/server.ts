@@ -84,6 +84,7 @@ import {
 } from "./tenant-guards.js";
 import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
 import { registerOrgMembersRoutes } from "./routes/org-members-routes.js";
+import { registerTeamConfigRoutes } from "./routes/team-config-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -3048,105 +3049,20 @@ registerOrgMembersRoutes(app, {
   deleteOrganizationMember,
 });
 
-app.get("/api/teams", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId }).map((team) => ({
-    id: team.id,
-    name: team.name,
-    abbreviation: team.abbreviation,
-    season: team.season ?? "",
-    teamColor: team.teamColor ?? "",
-    coachStyle: team.coachStyle ?? "",
-    playingStyle: team.playingStyle ?? "",
-    teamContext: team.teamContext ?? "",
-    customPrompt: team.customPrompt ?? "",
-    focusInsights: team.focusInsights ?? defaultTeamAiSettings().focusInsights,
-    players: team.players
-  }));
-  res.json({ teams });
-});
-
-app.get("/api/ai-settings", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const { team } = getPrimaryTeam(schoolId);
-  res.json(extractTeamAiSettings(team));
-});
-
-app.put("/api/ai-settings", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const savedTeams = upsertPrimaryTeam(schoolId, {
-    playingStyle: payload.playingStyle,
-    teamContext: payload.teamContext,
-    customPrompt: payload.customPrompt,
-    focusInsights: payload.focusInsights
-  });
-  res.json({ message: "AI settings saved", settings: extractTeamAiSettings(savedTeams[0]) });
-});
-
-app.put("/api/roster-sync", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-
-  if (Array.isArray(payload.teams)) {
-    const saved = persistSchoolTeams(schoolId, payload.teams as RosterTeam[]);
-    res.json({
-      message: "Roster synced successfully",
-      team: saved[0]?.name ?? "",
-      players_loaded: saved[0]?.players.length ?? 0
-    });
-    return;
-  }
-
-  const existing = getPrimaryTeam(schoolId).team;
-  const teamId = existing?.id ?? "primary-team";
-  const currentPlayers = new Map((existing?.players ?? []).map((player) => [normalizeNameKey(player.name), player]));
-  const rosterPayload = Array.isArray(payload.roster) ? payload.roster : [];
-  const players = rosterPayload
-    .map((entry) => buildRosterPlayer(entry as Record<string, unknown>, teamId, currentPlayers.get(normalizeNameKey((entry as Record<string, unknown>).name))))
-    .filter((player): player is RosterPlayer => Boolean(player));
-
-  const saved = upsertPrimaryTeam(schoolId, {
-    name: payload.team,
-    season: payload.season,
-    teamColor: payload.teamColor,
-    coachStyle: payload.coachStyle,
-    playingStyle: payload.playingStyle,
-    teamContext: payload.teamContext,
-    customPrompt: payload.customPrompt,
-    focusInsights: payload.focusInsights,
-    abbreviation: existing?.abbreviation ?? buildTeamAbbreviation(sanitizeTextField(payload.team, 120) || existing?.name || "Team")
-  });
-
-  saved[0]!.players = players;
-  const persisted = persistSchoolTeams(schoolId, saved);
-  res.json({
-    message: "Roster synced successfully",
-    team: persisted[0]?.name ?? "",
-    players_loaded: persisted[0]?.players.length ?? 0
-  });
-});
-
-app.post("/api/team", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const name = sanitizeTextField(payload.name, 120);
-  if (!name) {
-    res.status(400).json({ error: "name is required" });
-    return;
-  }
-
-  const saved = upsertPrimaryTeam(schoolId, payload);
-  res.status(201).json({
-    message: "Team created successfully",
-    team: { id: saved[0]?.id ?? "primary-team", name: saved[0]?.name ?? name }
-  });
-});
-
-app.post("/api/reload-data", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  res.json({ ok: true, teamsLoaded: teams.length, message: "Realtime data already current" });
+registerTeamConfigRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getRosterTeamsByScope,
+  defaultTeamAiSettings,
+  getPrimaryTeam,
+  extractTeamAiSettings,
+  upsertPrimaryTeam,
+  persistSchoolTeams,
+  normalizeNameKey,
+  buildRosterPlayer,
+  buildTeamAbbreviation,
+  sanitizeTextField,
 });
 
 app.get("/api/players", (req, res) => {

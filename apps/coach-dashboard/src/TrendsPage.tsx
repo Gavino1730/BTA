@@ -112,10 +112,10 @@ function ScoreChart({ rows }: { rows: TrendRow[] }) {
   const ticks = [0, Math.round(maxScore / 2), maxScore];
 
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div className="trends-chart-scroll">
       <svg
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-        style={{ width: "100%", maxWidth: CHART_W, display: "block" }}
+        className="trends-chart-svg"
         aria-label="Score chart"
       >
         {ticks.map((t) => (
@@ -181,8 +181,8 @@ function FgChart({ rows }: { rows: TrendRow[] }) {
   const fg3Path = chronological.map((r, i) => `${i === 0 ? "M" : "L"} ${scaleX(i)} ${scaleY(r.fg3Pct)}`).join(" ");
 
   return (
-    <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-      <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} style={{ width: "100%", maxWidth: CHART_W, display: "block" }} aria-label="FG% trend chart">
+    <div className="trends-chart-scroll trends-chart-scroll-offset">
+      <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="trends-chart-svg" aria-label="FG% trend chart">
         {[0, 25, 50].map((t) => (
           <g key={t}>
             <line x1={PAD.left} y1={scaleY(t)} x2={PAD.left + plotW} y2={scaleY(t)} stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
@@ -216,15 +216,15 @@ function PlayerTrendChart({ rows, playerName }: { rows: PlayerTrendRow[]; player
 
   return (
     <div>
-      <p className="stats-page-subcopy" style={{ marginBottom: "0.75rem" }}>{playerName} points by game</p>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${recent.length}, minmax(0, 1fr))`, gap: "0.55rem", alignItems: "end" }}>
+      <p className="stats-page-subcopy trends-player-subtitle">{playerName} points by game</p>
+      <div className="trends-player-bars">
         {recent.map((row) => {
           const height = Math.max(14, Math.round((row.pts / maxPts) * 92));
           return (
-            <div key={row.id} style={{ display: "grid", gap: "0.3rem", justifyItems: "center" }}>
-              <strong style={{ fontSize: "0.82rem" }}>{row.pts}</strong>
-              <div style={{ width: "100%", maxWidth: 42, height, borderRadius: 10, background: "linear-gradient(180deg, #4f8cff, #295ecf)" }} />
-              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>{row.opponent}</span>
+            <div key={row.id} className="trends-player-bar-col">
+              <strong className="trends-player-bar-points">{row.pts}</strong>
+              <div className="trends-player-bar-fill" style={{ height }} />
+              <span className="trends-player-bar-label">{row.opponent}</span>
             </div>
           );
         })}
@@ -253,8 +253,8 @@ function PlayerComparisonTable({ comparison }: { comparison: PlayerComparisonPay
   ];
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="team-comparison-table" style={{ marginTop: 0 }}>
+    <div className="trends-table-wrap">
+      <table className="team-comparison-table trends-table-no-margin">
         <thead>
           <tr>
             <th>{left.name}</th>
@@ -561,7 +561,7 @@ export function TrendsPage() {
         </section>
       ) : (
         <>
-          <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+          <section className="stats-page-grid two-column trends-section-gap">
             <section className="stats-page-card">
               <div className="stats-page-card-head">
                 <h3>Scoring by Game</h3>
@@ -577,7 +577,7 @@ export function TrendsPage() {
             </section>
           </section>
 
-          <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+          <section className="stats-page-grid two-column trends-section-gap">
             <section className="stats-page-card">
               <div className="stats-page-card-head">
                 <h3>Player Form</h3>
@@ -595,7 +595,7 @@ export function TrendsPage() {
             </section>
           </section>
 
-          <section className="stats-page-card" style={{ marginBottom: "1rem" }}>
+          <section className="stats-page-card trends-section-card">
             <div className="stats-page-card-head">
               <h3>{selectedPlayerLabel} Game Log</h3>
             </div>
@@ -633,7 +633,7 @@ export function TrendsPage() {
                       <span>Score {row.teamScore}–{row.oppScore}</span>
                     </div>
                     <div className="stats-game-score-block">
-                      <strong style={{ color: diff > 0 ? "var(--teal)" : diff < 0 ? "var(--red)" : undefined }}>
+                      <strong className={`trends-diff ${diff > 0 ? "trends-diff-positive" : diff < 0 ? "trends-diff-negative" : ""}`}>
                         {diff > 0 ? `+${diff}` : String(diff)}
                       </strong>
                       <span>FG {row.fgPct.toFixed(1)}% | 3PT {row.fg3Pct.toFixed(1)}%</span>
