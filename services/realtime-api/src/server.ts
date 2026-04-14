@@ -92,6 +92,7 @@ import { registerAiCompatibilityRoutes } from "./routes/ai-compat-routes.js";
 import { registerAdvancedLegacyRoutes } from "./routes/advanced-legacy-routes.js";
 import { registerRosterConfigRoutes } from "./routes/roster-config-routes.js";
 import { registerOperatorLinkRoutes } from "./routes/operator-link-routes.js";
+import { registerTeamManagementRoutes } from "./routes/team-management-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -3180,216 +3181,36 @@ registerOperatorLinkRoutes(app, {
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-// Team Management Routes
-// ─────────────────────────────────────────────────────────────────────────
-
-app.get("/teams", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ teams: getRosterTeamsByScope({ schoolId }) });
-});
-
-app.post("/teams", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const { name, abbreviation } = req.body ?? {};
-  const teamColor = normalizeTeamColor(req.body?.teamColor);
-  if (!name || !abbreviation) {
-    res.status(400).json({ error: "name and abbreviation are required" });
-    return;
-  }
-
-  const teams = getRosterTeamsByScope({ schoolId });
-  const normalizedName = sanitizeTextField(name, 120);
-  const normalizedAbbreviation = sanitizeTextField(abbreviation, 12).toUpperCase();
-  if (!normalizedName || !normalizedAbbreviation) {
-    res.status(400).json({ error: "name and abbreviation are required" });
-    return;
-  }
-
-  const id = buildUniqueSchoolTeamId(normalizedName, teams);
-  const newTeam = {
-    id,
-    schoolId,
-    name: normalizedName,
-    abbreviation: normalizedAbbreviation,
-    teamColor,
-    players: []
-  };
-
-  teams.push(newTeam);
-  saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  io.to(schoolRoom(schoolId)).emit("team:created", { team: newTeam });
-
-  res.status(201).json({ team: newTeam });
-});
-
-app.get("/api/school/teams", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ teams: getRosterTeamsByScope({ schoolId }) });
-});
-
-app.post("/api/school/teams", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const name = sanitizeTextField(payload.name, 120);
-  const abbreviation = sanitizeTextField(payload.abbreviation, 12).toUpperCase();
-  const season = sanitizeTextField(payload.season, 40) || undefined;
-  const teamColor = normalizeTeamColor(payload.teamColor);
-
-  if (!name || !abbreviation) {
-    res.status(400).json({ error: "name and abbreviation are required" });
-    return;
-  }
-
-  const teams = getRosterTeamsByScope({ schoolId });
-  const id = buildUniqueSchoolTeamId(name, teams);
-  const team: RosterTeam = {
-    id,
-    schoolId,
-    name,
-    abbreviation,
-    season,
-    teamColor,
-    players: []
-  };
-
-  const saved = saveRosterTeams([...teams, team], { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", saved);
-  io.to(schoolRoom(schoolId)).emit("team:created", { team });
-
-  res.status(201).json({ team });
-});
-
-app.put("/teams/:teamId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const { name, abbreviation } = req.body ?? {};
-  const teamColor = normalizeTeamColor(req.body?.teamColor);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const team = teams.find((t) => t.id === req.params.teamId);
-
-  if (!team) {
-    res.status(404).json({ error: "team not found" });
-    return;
-  }
-
-  if (name) team.name = name;
-  if (abbreviation) team.abbreviation = abbreviation;
-  if (req.body && Object.prototype.hasOwnProperty.call(req.body, "teamColor")) {
-    team.teamColor = teamColor;
-  }
-
-  saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  io.to(schoolRoom(schoolId)).emit("team:updated", { team });
-
-  res.json({ team });
-});
-
-app.delete("/teams/:teamId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const idx = teams.findIndex((t) => t.id === req.params.teamId);
-
-  if (idx < 0) {
-    res.status(404).json({ error: "team not found" });
-    return;
-  }
-
-  const deleted = teams.splice(idx, 1)[0];
-  saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  io.to(schoolRoom(schoolId)).emit("team:deleted", { teamId: deleted.id });
-
-  res.json({ teamId: deleted.id });
-});
-
-app.post("/teams/:teamId/players", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const { number, name, position, height, grade } = req.body ?? {};
-  if (!name) {
-    res.status(400).json({ error: "name is required" });
-    return;
-  }
-
-  const teams = getRosterTeamsByScope({ schoolId });
-  const team = teams.find((t) => t.id === req.params.teamId);
-
-  if (!team) {
-    res.status(404).json({ error: "team not found" });
-    return;
-  }
-
-  const playerId = `${req.params.teamId}-${Date.now()}`;
-  const player = {
-    id: playerId,
-    number: String(number || ""),
-    name,
-    position: String(position || ""),
-    height: height ? String(height) : undefined,
-    grade: grade ? String(grade) : undefined
-  };
-
-  team.players.push(player);
-  saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  io.to(schoolRoom(schoolId)).emit("player:added", { teamId: req.params.teamId, player });
-
-  res.status(201).json({ player });
-});
-
-app.put("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const { number, name, position, height, grade } = req.body ?? {};
-  const teams = getRosterTeamsByScope({ schoolId });
-  const team = teams.find((t) => t.id === req.params.teamId);
-
-  if (!team) {
-    res.status(404).json({ error: "team not found" });
-    return;
-  }
-
-  const player = team.players.find((p) => p.id === req.params.playerId);
-  if (!player) {
-    res.status(404).json({ error: "player not found" });
-    return;
-  }
-
-  if (number !== undefined) player.number = String(number);
-  if (name !== undefined) player.name = name;
-  if (position !== undefined) player.position = String(position);
-  if (height !== undefined) player.height = height ? String(height) : undefined;
-  if (grade !== undefined) player.grade = grade ? String(grade) : undefined;
-
-  saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  io.to(schoolRoom(schoolId)).emit("player:updated", { teamId: req.params.teamId, player });
-
-  res.json({ player });
-});
-
-app.delete("/teams/:teamId/players/:playerId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = getRosterTeamsByScope({ schoolId });
-  const team = teams.find((t) => t.id === req.params.teamId);
-
-  if (!team) {
-    res.status(404).json({ error: "team not found" });
-    return;
-  }
-
-  const idx = team.players.findIndex((p) => p.id === req.params.playerId);
-  if (idx < 0) {
-    res.status(404).json({ error: "player not found" });
-    return;
-  }
-
-  const deleted = team.players.splice(idx, 1)[0];
-  saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  io.to(schoolRoom(schoolId)).emit("player:deleted", { teamId: req.params.teamId, playerId: deleted.id });
-
-  res.json({ playerId: deleted.id });
+registerTeamManagementRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getRosterTeamsByScope,
+  saveRosterTeams,
+  sanitizeTextField,
+  normalizeTeamColor,
+  buildUniqueSchoolTeamId,
+  emitRosterTeams: (schoolId, teams) => {
+    io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
+  },
+  emitTeamCreated: (schoolId, team) => {
+    io.to(schoolRoom(schoolId)).emit("team:created", { team });
+  },
+  emitTeamUpdated: (schoolId, team) => {
+    io.to(schoolRoom(schoolId)).emit("team:updated", { team });
+  },
+  emitTeamDeleted: (schoolId, teamId) => {
+    io.to(schoolRoom(schoolId)).emit("team:deleted", { teamId });
+  },
+  emitPlayerAdded: (schoolId, teamId, player) => {
+    io.to(schoolRoom(schoolId)).emit("player:added", { teamId, player });
+  },
+  emitPlayerUpdated: (schoolId, teamId, player) => {
+    io.to(schoolRoom(schoolId)).emit("player:updated", { teamId, player });
+  },
+  emitPlayerDeleted: (schoolId, teamId, playerId) => {
+    io.to(schoolRoom(schoolId)).emit("player:deleted", { teamId, playerId });
+  },
 });
 
 app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) => {
