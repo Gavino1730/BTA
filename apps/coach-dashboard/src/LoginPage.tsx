@@ -217,34 +217,66 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
           </div>
         </section>
 
-        <section className="auth-hero-panel auth-login-hero-panel">
-          <span className="auth-kicker">Unified Game-Day Workflow</span>
-          <h1 className="auth-display-title">
-            Run the bench-side dashboard
-            <span>with the same polish as the marketing site.</span>
-          </h1>
-          <p className="auth-hero-copy">
-            Sign in to the live coach workspace for synced stats, film context, secure account controls, and production-grade session handling.
-          </p>
+        <section className="auth-hero-panel auth-login-hero-panel" aria-label="Coach workspace overview">
+          <div className="auth-login-hero-header">
+            <span className="auth-kicker">Coach Workspace</span>
+            <div className="auth-login-ribbon-row" aria-hidden="true">
+              <span className="auth-login-ribbon">Live Stats</span>
+              <span className="auth-login-ribbon">Film Context</span>
+              <span className="auth-login-ribbon">Secure Sessions</span>
+            </div>
+            <h1 className="auth-display-title">
+              Run the sideline command desk
+              <span>without losing game tempo.</span>
+            </h1>
+            <p className="auth-hero-copy">
+              Keep your bench synced, your staff aligned, and your adjustments fast with one unified coach control room.
+            </p>
+          </div>
 
-          <div className="auth-metric-grid auth-login-metric-grid" aria-label="Product highlights">
-            <article className="auth-metric-card">
-              <span>Live Feed</span>
-              <strong>Realtime dashboard sync</strong>
+          <article className="auth-login-snapshot-card" aria-label="Live snapshot preview">
+            <div className="auth-login-snapshot-head">
+              <strong>Live Preview</strong>
+              <span>Quarter 3 · 04:12</span>
+            </div>
+            <div className="auth-login-snapshot-scoreboard">
+              <div>
+                <p>Home</p>
+                <strong>64</strong>
+              </div>
+              <span>:</span>
+              <div>
+                <p>Away</p>
+                <strong>59</strong>
+              </div>
+            </div>
+            <div className="auth-login-snapshot-events">
+              <p>Momentum: 6-0 run in last 1:42</p>
+              <p>Lineup: 2-way wing unit on floor</p>
+              <div className="auth-login-tempo-track" aria-hidden="true">
+                <span className="auth-login-tempo-fill" style={{ width: "68%" }} />
+              </div>
+            </div>
+          </article>
+
+          <div className="auth-login-feature-grid" aria-label="Platform capabilities">
+            <article className="auth-login-feature-card">
+              <span>Realtime Sync</span>
+              <strong>Operator and dashboard stay aligned possession-by-possession.</strong>
             </article>
-            <article className="auth-metric-card">
-              <span>Session Security</span>
-              <strong>Remembered or browser-session sign-in</strong>
+            <article className="auth-login-feature-card">
+              <span>Secure Sessions</span>
+              <strong>Use remembered or browser-session sign-in for trusted devices.</strong>
             </article>
-            <article className="auth-metric-card">
-              <span>Recovery</span>
-              <strong>Email-based password reset flow</strong>
+            <article className="auth-login-feature-card">
+              <span>Account Recovery</span>
+              <strong>Email verification and password reset built into the same flow.</strong>
             </article>
           </div>
 
-          <div className="auth-side-note">
+          <div className="auth-side-note auth-login-cta-note">
             <strong>New to BTA Courtside?</strong>
-            <p>Create your coach account first, finish setup once, and then return directly to live operations on future sign-ins.</p>
+            <p>Create your coach account, finish setup once, and return straight to live operations for future sign-ins.</p>
             <button type="button" className="auth-secondary-button" onClick={handleCreateAccount}>Create Account</button>
           </div>
         </section>
