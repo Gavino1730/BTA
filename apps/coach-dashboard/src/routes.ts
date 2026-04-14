@@ -3,6 +3,7 @@ export type AppRoute =
   | "login"
   | "forgot-password"
   | "reset-password"
+  | "billing"
   | "live"
   | "setup"
   | "stats-overview"
@@ -46,6 +47,9 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/reset-password") {
     return "reset-password";
+  }
+  if (canonical === "/billing") {
+    return "billing";
   }
   if (canonical === "/setup") {
     return "setup";

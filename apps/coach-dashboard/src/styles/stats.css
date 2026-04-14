@@ -1339,7 +1339,7 @@
 .setup-game-shell {
   position: relative;
   overflow: hidden;
-  font-family: "Sora", "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  font-family: var(--bta-font-body);
   background:
     radial-gradient(120% 170% at 92% -10%, rgba(79,140,255,0.18), rgba(79,140,255,0) 52%),
     radial-gradient(90% 140% at 8% -18%, rgba(20,184,166,0.1), rgba(20,184,166,0) 45%),

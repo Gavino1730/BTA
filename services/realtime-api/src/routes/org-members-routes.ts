@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import type { EmailDeliveryResult } from "../email.js";
 import type { OrganizationMember } from "../store.js";
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
@@ -9,6 +10,13 @@ type OrganizationState = {
   };
 };
 
+interface InvitationIssueResult {
+  inviteToken?: string;
+  invitePath: string;
+  emailDelivery: EmailDeliveryResult;
+  warning?: string;
+}
+
 interface RegisterOrgMembersRoutesOptions {
   requireApiKey: Middleware;
   requireWriteRole: Middleware;
@@ -18,9 +26,11 @@ interface RegisterOrgMembersRoutesOptions {
   requireOrganizationManager: (req: Request, res: Response) => OrganizationMember | null;
   getOrganizationMembersByScope: (scope: { schoolId: string }) => OrganizationMember[];
   sanitizeTextField: (value: unknown, maxLength: number) => string;
+  isValidEmail: (value: string) => boolean;
   normalizeMemberRole: (value: unknown, fallback?: OrganizationMember["role"]) => OrganizationMember["role"];
   saveOrganizationMember: (member: Partial<OrganizationMember>, scope: { schoolId: string }) => OrganizationMember;
   deleteOrganizationMember: (memberId: string, scope: { schoolId: string }) => boolean;
+  issueMemberInvitation: (req: Request, schoolId: string, member: OrganizationMember) => Promise<InvitationIssueResult>;
 }
 
 export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembersRoutesOptions): void {
@@ -35,7 +45,7 @@ export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembe
     });
   });
 
-  app.post("/api/org/members", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.post("/api/org/members", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const actingMember = options.requireOrganizationManager(req, res);
     if (!actingMember) {
@@ -57,6 +67,11 @@ export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembe
       return;
     }
 
+    if (!options.isValidEmail(email)) {
+      res.status(400).json({ error: "Enter a valid email address" });
+      return;
+    }
+
     const member = options.saveOrganizationMember({
       organizationId: actingMember.organizationId || account.organization.organizationId,
       fullName,
@@ -66,10 +81,19 @@ export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembe
       invitedAtIso: new Date().toISOString(),
     }, { schoolId });
 
-    res.status(201).json({ member, members: options.getOrganizationMembersByScope({ schoolId }) });
+    const invite = await options.issueMemberInvitation(req, schoolId, member);
+
+    res.status(201).json({
+      member,
+      members: options.getOrganizationMembersByScope({ schoolId }),
+      inviteToken: invite.inviteToken,
+      invitePath: invite.invitePath,
+      emailDelivery: invite.emailDelivery,
+      warning: invite.warning,
+    });
   });
 
-  app.put("/api/org/members/:memberId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.put("/api/org/members/:memberId", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const actingMember = options.requireOrganizationManager(req, res);
     if (!actingMember) {
@@ -91,10 +115,23 @@ export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembe
 
     const payload = (req.body ?? {}) as Record<string, unknown>;
     const fullName = options.sanitizeTextField(payload.fullName ?? existing.fullName, 120);
+    const email = options.sanitizeTextField(payload.email ?? existing.email, 160).toLowerCase();
     const role = options.normalizeMemberRole(payload.role, existing.role);
     const status = payload.status === "active" || payload.status === "invited"
       ? payload.status
       : existing.status;
+
+    if (!email) {
+      res.status(400).json({ error: "Email is required" });
+      return;
+    }
+
+    if (!options.isValidEmail(email)) {
+      res.status(400).json({ error: "Enter a valid email address" });
+      return;
+    }
+
+    const emailChanged = email !== existing.email;
 
     const ownerCount = options.getOrganizationMembersByScope({ schoolId }).filter((member) => member.role === "owner").length;
     if (existing.role === "owner" && role !== "owner" && ownerCount <= 1) {
@@ -106,7 +143,7 @@ export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembe
       memberId,
       organizationId: actingMember.organizationId || account.organization.organizationId,
       authSubject: existing.authSubject,
-      email: existing.email,
+      email,
       invitedAtIso: existing.invitedAtIso,
       joinedAtIso: existing.joinedAtIso,
       fullName,
@@ -114,7 +151,51 @@ export function registerOrgMembersRoutes(app: Express, options: RegisterOrgMembe
       status,
     }, { schoolId });
 
-    res.json({ member, members: options.getOrganizationMembersByScope({ schoolId }), actingMember });
+    if (!emailChanged) {
+      res.json({ member, members: options.getOrganizationMembersByScope({ schoolId }), actingMember });
+      return;
+    }
+
+    const invite = await options.issueMemberInvitation(req, schoolId, member);
+    res.json({
+      member,
+      members: options.getOrganizationMembersByScope({ schoolId }),
+      actingMember,
+      inviteToken: invite.inviteToken,
+      invitePath: invite.invitePath,
+      emailDelivery: invite.emailDelivery,
+      warning: invite.warning,
+    });
+  });
+
+  app.post("/api/org/members/:memberId/resend-invite", options.requireApiKey, options.requireWriteRole, async (req, res) => {
+    const schoolId = options.getSchoolIdFromRequest(req);
+    const actingMember = options.requireOrganizationManager(req, res);
+    if (!actingMember) {
+      return;
+    }
+
+    const memberId = options.sanitizeTextField(req.params.memberId, 80);
+    const member = options.getOrganizationMembersByScope({ schoolId }).find((entry) => entry.memberId === memberId);
+    if (!member) {
+      res.status(404).json({ error: "Organization member not found" });
+      return;
+    }
+
+    if (!member.email || !options.isValidEmail(member.email)) {
+      res.status(400).json({ error: "Organization member email is missing or invalid" });
+      return;
+    }
+
+    const invite = await options.issueMemberInvitation(req, schoolId, member);
+    res.status(200).json({
+      member,
+      members: options.getOrganizationMembersByScope({ schoolId }),
+      inviteToken: invite.inviteToken,
+      invitePath: invite.invitePath,
+      emailDelivery: invite.emailDelivery,
+      warning: invite.warning,
+    });
   });
 
   app.delete("/api/org/members/:memberId", options.requireApiKey, options.requireWriteRole, (req, res) => {

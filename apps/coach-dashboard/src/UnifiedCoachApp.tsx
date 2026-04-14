@@ -14,6 +14,7 @@ import { StatsOverviewPage } from "./StatsOverviewPage.js";
 import { TeamSettingsPage } from "./TeamSettingsPage.js";
 import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
+import { BillingPage } from "./RouteShellPages.js";
 
 function normalizeConnectionId(value: string | null | undefined): string {
   return normalizeConnectionCode(value);
@@ -351,6 +352,7 @@ export function UnifiedCoachApp() {
         </div>
       </nav>
       {isLive && <LivePage />}
+      {route === "billing" && <BillingPage onNavigate={navigate} />}
       {route === "stats-overview" && <StatsOverviewPage />}
       {route === "stats-games" && <GamesPage />}
       {route === "stats-players" && <PlayersPage />}

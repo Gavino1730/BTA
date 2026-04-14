@@ -108,6 +108,18 @@ interface OrganizationMembersResponse {
   members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
 }
 
+interface EmailDeliveryResult {
+  delivered?: boolean;
+  skipped?: boolean;
+  reason?: string;
+}
+
+interface InviteActionResponse {
+  members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
+  emailDelivery?: EmailDeliveryResult;
+  warning?: string;
+}
+
 interface RosterPlayerDto {
   name: string;
   number?: string | number;
@@ -119,6 +131,28 @@ interface RosterPlayerDto {
   notes?: string;
   email?: string;
   phone?: string;
+}
+
+function isValidEmail(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+}
+
+function buildInviteDeliveryStatus(email: string, emailDelivery?: EmailDeliveryResult, warning?: string): string {
+  if (warning?.trim()) {
+    return warning;
+  }
+  if (emailDelivery?.delivered) {
+    return `Invite email sent to ${email}.`;
+  }
+  if (emailDelivery?.skipped) {
+    return emailDelivery.reason?.trim() || `Invite created, but email delivery is disabled for ${email}.`;
+  }
+  if (emailDelivery && emailDelivery.delivered === false) {
+    return emailDelivery.reason?.trim() || `Invite created, but email delivery failed for ${email}.`;
+  }
+
+  return `Invite created for ${email}.`;
 }
 
 interface RosterEditRow {
@@ -587,6 +621,54 @@ export function TeamSettingsPage() {
     }
   }
 
+  async function resendMemberInvite(member: OrganizationMemberDto) {
+    setSaving(true);
+    setStatus(`Sending invite to ${member.email}...`);
+
+    try {
+      const response = await fetch(`${apiBase}/api/org/members/${encodeURIComponent(member.memberId)}/resend-invite`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+      });
+
+      const payload = await response.json().catch(() => ({})) as InviteActionResponse;
+      if (!response.ok) {
+        throw new Error("Invite resend failed");
+      }
+
+      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : members);
+      setStatus(buildInviteDeliveryStatus(member.email, payload.emailDelivery, payload.warning));
+    } catch {
+      setStatus("Could not resend member invite email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendPasswordResetEmail(email: string) {
+    setSaving(true);
+    setStatus(`Sending password reset email to ${email}...`);
+
+    try {
+      const response = await fetch(`${apiBase}/api/auth/password-reset/request`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const payload = await response.json().catch(() => ({})) as { message?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not send password reset email.");
+      }
+
+      setStatus(payload.message || `Password reset email sent to ${email}.`);
+    } catch {
+      setStatus("Could not send password reset email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function addPlayer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newPlayer.name.trim();
@@ -715,6 +797,35 @@ export function TeamSettingsPage() {
     }
   }
 
+  async function sendPlayerInviteEmail(row: RosterEditRow) {
+    const playerName = row.originalName.trim() || row.name.trim();
+    if (!playerName) {
+      setStatus("Save the player first before sending an invite.");
+      return;
+    }
+
+    setSaving(true);
+    setStatus(`Sending invite to ${row.email}...`);
+
+    try {
+      const response = await fetch(`${apiBase}/api/player/${encodeURIComponent(playerName)}/send-invite`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+      });
+
+      const payload = await response.json().catch(() => ({})) as { emailDelivery?: EmailDeliveryResult; warning?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not send player invite email.");
+      }
+
+      setStatus(buildInviteDeliveryStatus(row.email, payload.emailDelivery, payload.warning));
+    } catch {
+      setStatus("Could not send player invite email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const SECTIONS = [
     { key: "pairing", label: "Live Pairing" },
     { key: "roster", label: "Roster" },
@@ -794,6 +905,9 @@ export function TeamSettingsPage() {
             <div>
               <h3>Roster</h3>
               <p className="settings-section-desc">{roster.length} player{roster.length !== 1 ? "s" : ""} on the active roster.</p>
+              <p className="stats-page-subcopy org-settings-invite-note">
+                Invite Email sends a new player invite. Reset Email sends a password reset link for existing player login.
+              </p>
             </div>
           </div>
 
@@ -842,6 +956,8 @@ export function TeamSettingsPage() {
                         {row.showExpanded ? "▲" : "▼"} AI
                       </button>
                       <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void savePlayer(row)}>Save</button>
+                      <button type="button" className="shell-nav-link" title="Send a fresh invite email with setup access" disabled={saving || !isValidEmail(row.email)} onClick={() => void sendPlayerInviteEmail(row)}>Invite Email</button>
+                      <button type="button" className="shell-nav-link" title="Send a password reset email to this address" disabled={saving || !isValidEmail(row.email)} onClick={() => void sendPasswordResetEmail(row.email)}>Reset Email</button>
                       <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void removePlayer(row)}>Remove</button>
                     </div>
                   </div>
@@ -1105,6 +1221,9 @@ export function TeamSettingsPage() {
               <p className="settings-section-desc">
                 {currentMember ? `Signed in as ${currentMember.fullName} · ${currentMember.role}` : "Manage staff access to the coach dashboard."}
               </p>
+              <p className="stats-page-subcopy org-settings-invite-note">
+                Invite Email sends onboarding access. Reset Email sends a password reset link for existing staff login.
+              </p>
             </div>
           </div>
 
@@ -1143,6 +1262,12 @@ export function TeamSettingsPage() {
                       <>
                         <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void saveMember(member)}>
                           Save
+                        </button>
+                        <button type="button" className="shell-nav-link" title="Send a fresh invite email with setup access" disabled={saving || !isValidEmail(member.email)} onClick={() => void resendMemberInvite(member)}>
+                          Invite Email
+                        </button>
+                        <button type="button" className="shell-nav-link" title="Send a password reset email to this address" disabled={saving || !isValidEmail(member.email)} onClick={() => void sendPasswordResetEmail(member.email)}>
+                          Reset Email
                         </button>
                         <button type="button" className="shell-nav-link" disabled={saving || member.memberId === currentMember?.memberId} onClick={() => void removeMember(member)}>
                           Remove

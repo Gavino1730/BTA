@@ -1569,7 +1569,7 @@
   letter-spacing: 0.18em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-family: var(--bta-font-body);
 }
 
 .settings-pairing-hint {

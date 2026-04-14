@@ -32,11 +32,10 @@ interface OrgMembersResponse {
   members?: OrganizationMember[];
 }
 
-type InviteEmailStatus = "sent" | "disabled" | "failed";
-
 interface InviteEmailDelivery {
-  status: InviteEmailStatus;
-  providerId?: string;
+  delivered?: boolean;
+  skipped?: boolean;
+  reason?: string;
 }
 
 interface InviteMemberResponse {
@@ -96,14 +95,14 @@ function buildInviteDeliveryStatus(email: string, emailDelivery?: InviteEmailDel
     return warning;
   }
 
-  if (emailDelivery?.status === "sent") {
+  if (emailDelivery?.delivered) {
     return `Invite email sent to ${email}.`;
   }
-  if (emailDelivery?.status === "disabled") {
-    return `Member invited, but email delivery is disabled. Copy invite details for ${email}.`;
+  if (emailDelivery?.skipped) {
+    return emailDelivery.reason?.trim() || `Member invited, but email delivery is disabled for ${email}.`;
   }
-  if (emailDelivery?.status === "failed") {
-    return `Member invited, but invite email failed for ${email}.`;
+  if (emailDelivery && emailDelivery.delivered === false) {
+    return emailDelivery.reason?.trim() || `Member invited, but invite email failed for ${email}.`;
   }
 
   return "Member invitation sent.";
@@ -311,6 +310,54 @@ export function OrgSettingsPage({ onNavigate }: Props) {
     }
   }
 
+  async function resendMemberInvite(member: OrganizationMember) {
+    setSaving(true);
+    setStatus(`Sending invite to ${member.email}...`);
+
+    try {
+      const response = await fetch(`${apiBase}/api/org/members/${encodeURIComponent(member.memberId)}/resend-invite`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+      });
+
+      const payload = await response.json().catch(() => ({})) as InviteMemberResponse;
+      if (!response.ok) {
+        throw new Error("Could not send invite email");
+      }
+
+      setMembers(Array.isArray(payload.members) ? payload.members : members);
+      setStatus(buildInviteDeliveryStatus(member.email, payload.emailDelivery, payload.warning));
+    } catch {
+      setStatus("Could not send invite email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendPasswordResetEmail(email: string) {
+    setSaving(true);
+    setStatus(`Sending password reset email to ${email}...`);
+
+    try {
+      const response = await fetch(`${apiBase}/api/auth/password-reset/request`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const payload = await response.json().catch(() => ({})) as { message?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not send password reset email.");
+      }
+
+      setStatus(payload.message || `Password reset email sent to ${email}.`);
+    } catch {
+      setStatus("Could not send password reset email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const managerView = canManageMembers(currentMember);
 
   return (
@@ -418,6 +465,9 @@ export function OrgSettingsPage({ onNavigate }: Props) {
                   <p className="settings-section-desc">
                     {currentMember ? `Signed in as ${currentMember.fullName} (${roleLabel(currentMember.role)})` : "Manage organization members."}
                   </p>
+                  <p className="stats-page-subcopy org-settings-invite-note">
+                    Invite Email sends onboarding access. Reset Email sends a password reset link for an existing login.
+                  </p>
                 </div>
               </div>
 
@@ -457,6 +507,12 @@ export function OrgSettingsPage({ onNavigate }: Props) {
                           <>
                             <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void saveMember(member)}>
                               Save
+                            </button>
+                            <button type="button" className="shell-nav-link" title="Send a fresh invite email with setup access" disabled={saving} onClick={() => void resendMemberInvite(member)}>
+                              Invite Email
+                            </button>
+                            <button type="button" className="shell-nav-link" title="Send a password reset email to this address" disabled={saving || !isValidEmail(member.email)} onClick={() => void sendPasswordResetEmail(member.email)}>
+                              Reset Email
                             </button>
                             <button
                               type="button"

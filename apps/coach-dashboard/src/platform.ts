@@ -507,17 +507,39 @@ export async function fetchBillingEntitlement(): Promise<BillingEntitlement | nu
   return payload.entitlement ?? null;
 }
 
-export async function fetchBillingPortalUrl(): Promise<string | null> {
+export async function fetchBillingPortalUrl(): Promise<string> {
   const response = await fetch(`${apiBase}/api/billing/portal-session`, {
     headers: apiKeyHeader(),
   });
 
   if (!response.ok) {
-    return null;
+    let message = "Could not open portal right now. Please try again.";
+    try {
+      const payload = await response.json() as { error?: unknown };
+      if (typeof payload.error === "string" && payload.error.trim()) {
+        message = payload.error;
+      }
+    } catch {
+      // Keep generic message when API does not return JSON.
+    }
+    throw new Error(message);
   }
 
-  const payload = await response.json() as { url?: string };
-  return payload.url ?? null;
+  let payload: { url?: unknown; error?: unknown };
+  try {
+    payload = await response.json() as { url?: unknown; error?: unknown };
+  } catch {
+    throw new Error("Billing portal returned an unexpected response. Check API base URL configuration.");
+  }
+
+  if (typeof payload.url !== "string" || !payload.url.trim()) {
+    if (typeof payload.error === "string" && payload.error.trim()) {
+      throw new Error(payload.error);
+    }
+    throw new Error("Could not open portal right now. Please try again.");
+  }
+
+  return payload.url;
 }
 
 export interface CouponValidationResult {

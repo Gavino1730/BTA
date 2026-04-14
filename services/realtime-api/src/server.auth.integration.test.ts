@@ -307,6 +307,179 @@ describe("server auth integration", () => {
     expect(membersBody.members?.find((member) => member.email === "assistant-coach@example.org")?.status).toBe("active");
   });
 
+  it("re-sends an invitation when a member email is changed", async () => {
+    const ownerToken = makeTestToken({
+      sub: "member-email-owner-1",
+      schoolId: "member-email-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "member-email-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Member Email School Athletics",
+        teamName: "Member Email School",
+        season: "2026"
+      })
+    });
+    expect(completeResponse.status).toBe(201);
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "member-email-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant-old@school.org",
+        role: "coach"
+      })
+    });
+
+    expect(inviteResponse.status).toBe(201);
+    const inviteBody = await inviteResponse.json() as { member?: { memberId?: string } };
+    const memberId = inviteBody.member?.memberId ?? "";
+    expect(memberId).toBeTruthy();
+
+    clearTestEmailOutbox();
+
+    const updateResponse = await fetch(`${API_BASE}/api/org/members/${encodeURIComponent(memberId)}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "member-email-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant-new@school.org",
+        role: "coach",
+        status: "invited"
+      })
+    });
+
+    expect(updateResponse.status).toBe(200);
+    const updateBody = await updateResponse.json() as {
+      inviteToken?: string;
+      invitePath?: string;
+      member?: { email?: string };
+    };
+
+    expect(updateBody.member?.email).toBe("assistant-new@school.org");
+    expect(updateBody.inviteToken).toBeTruthy();
+    expect(updateBody.invitePath).toContain("/setup?");
+
+    const emails = readTestEmailOutbox();
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.to).toBe("assistant-new@school.org");
+    expect(emails[0]?.subject).toContain("You're invited");
+    expect(emails[0]?.text).toContain(updateBody.inviteToken ?? "");
+  });
+
+  it("emails player invites when player email is created or newly added", async () => {
+    const coachToken = makeTestToken({
+      sub: "player-invite-coach-1",
+      schoolId: "player-invite-school",
+      role: "coach",
+      email: "coach@school.org",
+      name: "Coach One"
+    });
+
+    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${coachToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-invite-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Player Invite School Athletics",
+        teamName: "Player Invite School",
+        season: "2026"
+      })
+    });
+    expect(completeResponse.status).toBe(201);
+
+    const createWithEmailResponse = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Lane")}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${coachToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-invite-school"
+      },
+      body: JSON.stringify({
+        number: "11",
+        email: "jordan.lane@school.org"
+      })
+    });
+
+    expect(createWithEmailResponse.status).toBe(201);
+    const createWithEmailBody = await createWithEmailResponse.json() as {
+      inviteToken?: string;
+      invitePath?: string;
+    };
+    expect(createWithEmailBody.inviteToken).toBeTruthy();
+    expect(createWithEmailBody.invitePath).toContain("/setup?");
+
+    let emails = readTestEmailOutbox();
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.to).toBe("jordan.lane@school.org");
+    expect(emails[0]?.text).toContain(createWithEmailBody.inviteToken ?? "");
+
+    const createWithoutEmailResponse = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Aiden Cole")}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${coachToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-invite-school"
+      },
+      body: JSON.stringify({
+        number: "5"
+      })
+    });
+    expect(createWithoutEmailResponse.status).toBe(201);
+
+    clearTestEmailOutbox();
+
+    const addEmailResponse = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Aiden Cole")}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${coachToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-invite-school"
+      },
+      body: JSON.stringify({
+        originalName: "Aiden Cole",
+        name: "Aiden Cole",
+        number: "5",
+        email: "aiden.cole@school.org"
+      })
+    });
+
+    expect(addEmailResponse.status).toBe(201);
+    const addEmailBody = await addEmailResponse.json() as {
+      inviteToken?: string;
+      invitePath?: string;
+    };
+    expect(addEmailBody.inviteToken).toBeTruthy();
+    expect(addEmailBody.invitePath).toContain("/setup?");
+
+    emails = readTestEmailOutbox();
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.to).toBe("aiden.cole@school.org");
+    expect(emails[0]?.subject).toContain("You're invited");
+    expect(emails[0]?.text).toContain(addEmailBody.inviteToken ?? "");
+  });
+
   it("creates an isolated school workspace when a public user registers without a preset school id", async () => {
     const response = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
@@ -479,6 +652,94 @@ describe("server auth integration", () => {
     expect(body.currentMember?.role).toBe("owner");
     expect(body.currentMember?.status).toBe("active");
     expect(body.members.some((member) => member.email === "assistant@school.org" && member.role === "analyst" && member.status === "invited")).toBe(true);
+  });
+
+  it("keeps invited coach role during onboarding account saves", async () => {
+    const ownerToken = makeTestToken({
+      sub: "org-owner-2",
+      schoolId: "onboarding-role-guard-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    const completeResponse = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "onboarding-role-guard-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Onboarding Role Guard",
+        teamName: "Guard Team",
+        season: "2026"
+      })
+    });
+    expect(completeResponse.status).toBe(201);
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "onboarding-role-guard-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant-guard@school.org",
+        role: "coach"
+      })
+    });
+    expect(inviteResponse.status).toBe(201);
+
+    const assistantToken = makeTestToken({
+      sub: "assistant-guard-2",
+      schoolId: "onboarding-role-guard-school",
+      role: "coach",
+      email: "assistant-guard@school.org",
+      name: "Assistant Coach"
+    });
+
+    const activateResponse = await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${assistantToken}`,
+        "x-school-id": "onboarding-role-guard-school"
+      }
+    });
+    expect(activateResponse.status).toBe(200);
+
+    const onboardingUpdate = await fetch(`${API_BASE}/api/onboarding/account`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${assistantToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "onboarding-role-guard-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Onboarding Role Guard",
+        coachName: "Owner Coach",
+        coachEmail: "owner@school.org",
+        teamName: "Guard Team",
+        season: "2026"
+      })
+    });
+    expect(onboardingUpdate.status).toBe(200);
+
+    const membersResponse = await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "x-school-id": "onboarding-role-guard-school"
+      }
+    });
+    expect(membersResponse.status).toBe(200);
+
+    const membersBody = await membersResponse.json() as {
+      members: Array<{ email: string; role: string }>;
+    };
+
+    const assistant = membersBody.members.find((member) => member.email === "assistant-guard@school.org");
+    expect(assistant?.role).toBe("coach");
   });
 
   it("accepts an invited member on first authenticated request by matching email", async () => {

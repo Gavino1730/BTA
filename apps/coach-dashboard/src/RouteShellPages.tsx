@@ -685,14 +685,9 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
     setStatus("Opening subscription management portal...");
     try {
       const portalUrl = await fetchBillingPortalUrl();
-      if (!portalUrl) {
-        setStatus("Could not open portal right now. Please try again.");
-        return;
-      }
-
       window.location.assign(portalUrl);
-    } catch {
-      setStatus("Could not reach portal service. Please try again.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not reach portal service. Please try again.");
     } finally {
       setSubmittingPortal(false);
     }

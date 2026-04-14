@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
+import Stripe from "stripe";
 import {
   normalizeTeamColor,
   sanitizePromptText,
@@ -65,6 +66,9 @@ import {
   setGameOverride
 } from "./store.js";
 import {
+  ensureTrialBillingState,
+} from "./store.js";
+import {
   extractBearerToken,
   isJwtAuthEnabled,
   isLocalTokenAuthEnabled,
@@ -73,7 +77,7 @@ import {
   type AuthContext
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
-import { sendTransactionalEmail } from "./email.js";
+import { sendTransactionalEmail, type EmailDeliveryResult } from "./email.js";
 import {
   hasWriteRole,
   normalizeSchoolId,
@@ -93,6 +97,9 @@ import { registerAdvancedLegacyRoutes } from "./routes/advanced-legacy-routes.js
 import { registerRosterConfigRoutes } from "./routes/roster-config-routes.js";
 import { registerOperatorLinkRoutes } from "./routes/operator-link-routes.js";
 import { registerTeamManagementRoutes } from "./routes/team-management-routes.js";
+import { registerGameSessionRoutes } from "./routes/game-session-routes.js";
+import { registerGameAiRoutes } from "./routes/game-ai-routes.js";
+import { registerGameEventRoutes } from "./routes/game-event-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -239,6 +246,13 @@ interface InvitationTokenRecord {
   createdAt: number;
 }
 
+interface InvitationIssueResult {
+  inviteToken?: string;
+  invitePath: string;
+  emailDelivery: EmailDeliveryResult;
+  warning?: string;
+}
+
 const passwordResetTokens = new Map<string, PasswordResetTokenRecord>();
 const invitationTokens = new Map<string, InvitationTokenRecord>();
 
@@ -323,6 +337,71 @@ async function deliverInvitationEmail(
     ].join(""),
   });
 }
+
+function resolveInvitationOrganizationName(schoolId: string): string {
+  const onboardingOrganization = getOnboardingAccountStateByScope({ schoolId })?.organization.organizationName;
+  if (onboardingOrganization) {
+    return onboardingOrganization;
+  }
+
+  const profileOrganization = getOrganizationProfileByScope({ schoolId })?.organizationName;
+  if (profileOrganization) {
+    return profileOrganization;
+  }
+
+  return schoolId;
+}
+
+async function issueMemberInvitation(
+  req: Request,
+  schoolId: string,
+  member: OrganizationMember,
+): Promise<InvitationIssueResult> {
+  pruneExpiredInvitationTokens();
+
+  const now = Date.now();
+  const token = randomBytes(24).toString("hex");
+  const invitation: InvitationTokenRecord = {
+    token,
+    schoolId,
+    memberId: member.memberId,
+    email: member.email,
+    fullName: member.fullName,
+    role: member.role,
+    organizationName: resolveInvitationOrganizationName(schoolId),
+    createdAt: now,
+    expiresAt: now + INVITATION_TOKEN_TTL_MS,
+  };
+
+  invitationTokens.set(token, invitation);
+  const invitePath = buildInvitePath(schoolId, token);
+
+  try {
+    const emailDelivery = await deliverInvitationEmail(req, invitation);
+    const warning = emailDelivery.delivered
+      ? undefined
+      : emailDelivery.reason || "Invite email was not delivered. Share the invite link manually.";
+
+    return {
+      inviteToken: EXPOSE_INVITATION_TOKEN ? token : undefined,
+      invitePath,
+      emailDelivery,
+      warning,
+    };
+  } catch (error) {
+    return {
+      inviteToken: EXPOSE_INVITATION_TOKEN ? token : undefined,
+      invitePath,
+      emailDelivery: {
+        delivered: false,
+        skipped: false,
+        provider: "unknown",
+        reason: error instanceof Error ? error.message : "Unknown invite delivery error",
+      },
+      warning: "Invite created, but email delivery failed. Share the invite link manually.",
+    };
+  }
+}
 const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
   "substitutions",
@@ -390,6 +469,10 @@ function resolveCoachName(payload: Record<string, unknown>): string {
 
 function resolveCoachEmail(payload: Record<string, unknown>): string {
   return sanitizeTextField(payload.coachEmail ?? payload.email, 160).toLowerCase();
+}
+
+function shouldSyncPrimaryCoachIdentity(role: OrganizationMember["role"]): boolean {
+  return role === "owner" || role === "coach";
 }
 
 function defaultTeamAiSettings(): CoachAiSettings {
@@ -603,7 +686,25 @@ function ensureAuthenticatedOrganizationMember(req: Request, schoolId: string): 
 }
 
 function ensureOwnerMembership(req: Request, schoolId: string, account: OnboardingAccountState): OrganizationMember {
-  const payload = withSuggestedOnboardingIdentity(req, {});
+  const currentMember = resolveCurrentOrganizationMember(req, schoolId);
+  if (currentMember) {
+    return saveOrganizationMember({
+      memberId: currentMember.memberId,
+      organizationId: account.organization.organizationId,
+      authSubject: currentMember.authSubject || resolveAuthSubject((req as ScopedRequest).authContext),
+      fullName: currentMember.fullName,
+      email: currentMember.email,
+      role: currentMember.role,
+      status: "active",
+      invitedAtIso: currentMember.invitedAtIso,
+      joinedAtIso: currentMember.joinedAtIso || new Date().toISOString(),
+    }, { schoolId });
+  }
+
+  const payload = withSuggestedOnboardingIdentity(req, {
+    coachName: account.primaryCoach.fullName,
+    coachEmail: account.primaryCoach.email,
+  });
   return saveOrganizationMember({
     organizationId: account.organization.organizationId,
     authSubject: resolveAuthSubject((req as ScopedRequest).authContext),
@@ -1589,8 +1690,26 @@ const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
+const BILLING_PAYWALL_ENABLED = process.env.BTA_PAYWALL_ENABLED !== "0";
+const BILLING_TRIAL_DAYS = Number(process.env.BTA_BILLING_TRIAL_DAYS ?? 14);
+const BILLING_STRIPE_TEST_MODE = process.env.BTA_STRIPE_TEST_MODE !== "0";
+const BILLING_STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim() || "";
 const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
 const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
+
+let stripeClient: Stripe | null = null;
+
+function getStripeClient(): Stripe | null {
+  if (!BILLING_STRIPE_SECRET_KEY) {
+    return null;
+  }
+
+  if (!stripeClient) {
+    stripeClient = new Stripe(BILLING_STRIPE_SECRET_KEY);
+  }
+
+  return stripeClient;
+}
 
 type SecurityMetricKey =
   | "requestTenantMismatch"
@@ -2351,6 +2470,48 @@ app.use("/teams", requireTenantScope);
 app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
 
+app.get("/api/billing/portal-session", requireApiKey, async (req, res) => {
+  if (!BILLING_PAYWALL_ENABLED) {
+    res.status(400).json({ error: "Billing is not enabled" });
+    return;
+  }
+
+  const schoolId = getSchoolIdFromRequest(req);
+  const trialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 14;
+  const billingState = ensureTrialBillingState({ schoolId }, trialDays);
+  const stripeCustomerId = String(billingState.stripeCustomerId ?? "").trim();
+
+  if (!stripeCustomerId) {
+    res.status(400).json({ error: "No Stripe customer found for this school" });
+    return;
+  }
+
+  const returnUrl = `${resolveCoachRedirectOrigin(req)}/billing`;
+
+  if (BILLING_STRIPE_TEST_MODE) {
+    const portalUrl = `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}portal=test&customer=${encodeURIComponent(stripeCustomerId)}`;
+    res.status(201).json({ url: portalUrl });
+    return;
+  }
+
+  const stripe = getStripeClient();
+  if (!stripe) {
+    res.status(503).json({ error: "Stripe portal is not configured" });
+    return;
+  }
+
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      return_url: returnUrl,
+    });
+    res.status(201).json({ url: session.url, sessionId: session.id });
+  } catch (error) {
+    console.warn("[realtime-api] Failed to create Stripe billing portal session", { schoolId, error });
+    res.status(502).json({ error: "Could not create billing portal session" });
+  }
+});
+
 app.get("/api/auth/session", (req, res) => {
   const schoolResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
   const schoolId = schoolResolution.schoolId;
@@ -2478,27 +2639,30 @@ app.post("/api/auth/register", authRateLimiter, (req, res) => {
     status: existingMember?.status === "invited" ? "invited" : "active",
   }, { schoolId });
 
-  saveOnboardingAccountState({
-    organization: { schoolId },
-    primaryCoach: {
-      schoolId,
-      fullName,
-      email,
-      role: "owner",
-      organizationId: existingMember?.organizationId ?? "",
-      accountId: account.accountId,
-      createdAtIso: "",
-      updatedAtIso: "",
-    },
-  }, { schoolId });
-
   const currentMember = activateKnownMemberForAccount(schoolId, account);
+  const resolvedRole = currentMember?.role ?? account.role;
+  if (shouldSyncPrimaryCoachIdentity(resolvedRole)) {
+    saveOnboardingAccountState({
+      organization: { schoolId },
+      primaryCoach: {
+        schoolId,
+        fullName,
+        email,
+        role: "owner",
+        organizationId: existingMember?.organizationId ?? "",
+        accountId: account.accountId,
+        createdAtIso: "",
+        updatedAtIso: "",
+      },
+    }, { schoolId });
+  }
+
   const token = issueLocalAuthToken({
     subject: account.accountId,
     email: account.email,
     name: account.fullName,
     schoolId,
-    role: currentMember?.role ?? account.role,
+    role: resolvedRole,
   });
 
   if (!token) {
@@ -2538,27 +2702,30 @@ app.post("/api/auth/login", authRateLimiter, (req, res) => {
   }
 
   const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
-  saveOnboardingAccountState({
-    organization: { schoolId },
-    primaryCoach: {
-      schoolId,
-      fullName: refreshedAccount.fullName,
-      email: refreshedAccount.email,
-      role: "owner",
-      organizationId: refreshedAccount.organizationId ?? "",
-      accountId: refreshedAccount.accountId,
-      createdAtIso: "",
-      updatedAtIso: "",
-    },
-  }, { schoolId });
-
   const currentMember = activateKnownMemberForAccount(schoolId, refreshedAccount);
+  const resolvedRole = currentMember?.role ?? refreshedAccount.role;
+  if (shouldSyncPrimaryCoachIdentity(resolvedRole)) {
+    saveOnboardingAccountState({
+      organization: { schoolId },
+      primaryCoach: {
+        schoolId,
+        fullName: refreshedAccount.fullName,
+        email: refreshedAccount.email,
+        role: "owner",
+        organizationId: refreshedAccount.organizationId ?? "",
+        accountId: refreshedAccount.accountId,
+        createdAtIso: "",
+        updatedAtIso: "",
+      },
+    }, { schoolId });
+  }
+
   const token = issueLocalAuthToken({
     subject: refreshedAccount.accountId,
     email: refreshedAccount.email,
     name: refreshedAccount.fullName,
     schoolId,
-    role: currentMember?.role ?? refreshedAccount.role,
+    role: resolvedRole,
   });
 
   if (!token) {
@@ -3052,9 +3219,11 @@ registerOrgMembersRoutes(app, {
   requireOrganizationManager,
   getOrganizationMembersByScope,
   sanitizeTextField,
+  isValidEmail,
   normalizeMemberRole,
   saveOrganizationMember,
   deleteOrganizationMember,
+  issueMemberInvitation,
 });
 
 registerTeamConfigRoutes(app, {
@@ -3086,6 +3255,12 @@ registerPlayerRoutes(app, {
   findPlayerRecord,
   getRosterTeamsByScope,
   persistSchoolTeams,
+  sanitizeTextField,
+  isValidEmail,
+  getOnboardingAccountStateByScope,
+  getOrganizationMembersByScope,
+  saveOrganizationMember,
+  issueMemberInvitation,
 });
 
 registerGameManagementRoutes(app, {
@@ -3213,352 +3388,50 @@ registerTeamManagementRoutes(app, {
   },
 });
 
-app.post(["/games", "/api/games"], requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const {
-    gameId,
-    homeTeamId,
-    awayTeamId,
-    opponentName,
-    opponentTeamId,
-    startingLineupByTeam,
-    aiContext
-  } = req.body ?? {};
-
-  if (!gameId || !homeTeamId || !awayTeamId) {
-    res.status(400).json({ error: "gameId, homeTeamId, awayTeamId are required" });
-    return;
-  }
-
-  const existingState = getGameState(gameId, { schoolId });
-  if (existingState) {
-    res.status(200).json(existingState);
-    return;
-  }
-
-  const activeState = getActiveGameState({ schoolId });
-  if (activeState && activeState.gameId !== gameId) {
-    res.status(409).json({
-      error: "An active game is already in progress for this school",
-      activeGameId: activeState.gameId,
-      activeState,
-    });
-    return;
-  }
-
-  const state = createGame({
-    schoolId,
-    gameId,
-    homeTeamId,
-    awayTeamId,
-    opponentName,
-    opponentTeamId,
-    startingLineupByTeam,
-    aiContext
-  }, { schoolId });
-
-  emitToGameRooms(schoolId, gameId, "game:state", state);
-  emitToGameRooms(schoolId, gameId, "game:insights", []);
-
-  res.status(201).json(state);
+registerGameSessionRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getGameState,
+  getActiveGameState,
+  createGame,
+  emitToGameRooms,
+  getLatestOperatorLinkSetup,
+  patchGameLineup,
 });
 
-app.get("/api/games/active/state", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const activeState = getActiveGameState({ schoolId });
-
-  if (!activeState) {
-    res.json({ gameId: null });
-    return;
-  }
-
-  res.json(activeState);
+registerGameAiRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getGameState,
+  refreshGameAiInsights,
+  getGameInsights,
+  getGameAiSettings,
+  updateGameAiSettings,
+  emitGameInsights: (schoolId, gameId, insights) => {
+    emitToGameRooms(schoolId, gameId, "game:insights", insights);
+  },
+  getGameAiContext,
+  updateGameAiContext,
+  getGameAiPromptPreview,
+  sanitizePromptText,
+  answerGameAiChat,
 });
 
-app.get("/api/games/active/setup", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const activeState = getActiveGameState({ schoolId });
-
-  if (!activeState) {
-    res.status(404).json({ error: "no active game" });
-    return;
-  }
-
-  const latestForActiveGame = getLatestOperatorLinkSetup(schoolId, { gameId: activeState.gameId });
-  const latestForSchool = getLatestOperatorLinkSetup(schoolId);
-  const resolved = latestForActiveGame ?? latestForSchool;
-
-  if (!resolved) {
-    res.status(404).json({ error: "no active setup" });
-    return;
-  }
-
-  const { operatorToken, ...publicSetup } = resolved.setup;
-  res.json({
-    connectionId: resolved.connectionId,
-    activeGameId: activeState.gameId,
-    setup: publicSetup,
-  });
-});
-
-app.get("/api/games/:gameId/state", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  res.json(state);
-});
-
-// Sync (or re-sync) the starting lineup without resetting the game.
-// Only fills teams whose active lineup is currently empty, so in-game
-// substitutions are never overwritten.
-app.patch("/api/games/:gameId/lineup", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const { startingLineupByTeam } = req.body ?? {};
-  if (!startingLineupByTeam || typeof startingLineupByTeam !== "object") {
-    res.status(400).json({ error: "startingLineupByTeam is required" });
-    return;
-  }
-
-  const state = patchGameLineup(req.params.gameId, startingLineupByTeam as Record<string, string[]>, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  emitToGameRooms(schoolId, req.params.gameId, "game:state", state);
-  res.json(state);
-});
-
-app.get("/api/games/:gameId/insights", requireApiKey, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const forceRefresh = req.query.force === "1" || req.query.force === "true";
-  const insights = await refreshGameAiInsights(req.params.gameId, { force: forceRefresh }, { schoolId });
-  res.json(insights ?? getGameInsights(req.params.gameId, { schoolId }));
-});
-
-app.get("/api/games/:gameId/ai-settings", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const settings = getGameAiSettings(req.params.gameId, { schoolId });
-  res.json(settings);
-});
-
-app.put("/api/games/:gameId/ai-settings", requireApiKey, requireWriteRole, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Partial<CoachAiSettings>;
-  const updated = updateGameAiSettings(req.params.gameId, payload, { schoolId });
-  if (!updated) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const insights = await refreshGameAiInsights(req.params.gameId, undefined, { schoolId });
-  if (insights) {
-    emitToGameRooms(schoolId, req.params.gameId, "game:insights", insights);
-  }
-
-  res.json(updated);
-});
-
-app.get("/api/games/:gameId/ai-context", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const context = getGameAiContext(req.params.gameId, { schoolId });
-  res.json(context);
-});
-
-app.put("/api/games/:gameId/ai-context", requireApiKey, requireWriteRole, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Partial<GameAiContext>;
-  const updated = updateGameAiContext(req.params.gameId, payload, { schoolId });
-  if (!updated) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const insights = await refreshGameAiInsights(req.params.gameId, { force: true }, { schoolId });
-  if (insights) {
-    emitToGameRooms(schoolId, req.params.gameId, "game:insights", insights);
-  }
-
-  res.json(updated);
-});
-
-app.get("/api/games/:gameId/ai-prompt-preview", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const preview = getGameAiPromptPreview(req.params.gameId, { schoolId });
-  if (!preview) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  res.json(preview as AiPromptPreview);
-});
-
-app.post("/api/games/:gameId/ai-chat", requireApiKey, requireWriteRole, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const question = typeof req.body?.question === "string" ? sanitizePromptText(req.body.question, 2000) : "";
-  if (!question.trim()) {
-    res.status(400).json({ error: "question is required" });
-    return;
-  }
-
-  const response = await answerGameAiChat(req.params.gameId, question, req.body?.history, { schoolId });
-  if (!response) {
-    res.status(503).json({ error: "ai chat unavailable" });
-    return;
-  }
-
-  res.json(response as CoachAiChatResponse);
-});
-
-app.get("/api/games/:gameId/events", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const state = getGameState(req.params.gameId, { schoolId });
-  if (!state) {
-    res.status(404).json({ error: "game not found" });
-    return;
-  }
-
-  const allEvents = getGameEvents(req.params.gameId, { schoolId });
-  const limit = req.query.limit !== undefined ? Math.min(Math.max(Number(req.query.limit) || 50, 1), 500) : undefined;
-  const offset = req.query.offset !== undefined ? Math.max(Number(req.query.offset) || 0, 0) : 0;
-
-  if (limit !== undefined) {
-    const paginated = allEvents.slice(offset, offset + limit);
-    res.json({ events: paginated, total: allEvents.length, offset, limit });
-  } else {
-    res.json(allEvents);
-  }
-});
-
-app.post("/api/games/:gameId/events", requireApiKey, requireWriteRole, eventRateLimiter, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  try {
-    const payload = {
-      ...(req.body ?? {}),
-      gameId: req.params.gameId,
-      schoolId
-    };
-
-    const { event, state, insights } = ingestEvent(payload, { schoolId });
-
-    emitToGameRooms(schoolId, event.gameId, "game:event", event);
-    broadcastGameStateWithDebounce(schoolId, event.gameId, state, insights);
-    void refreshAndBroadcastInsights(schoolId, event.gameId);
-
-    res.status(201).json({ event, state, insights });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "invalid event";
-    if (/^Game not found:/i.test(message)) {
-      res.status(404).json({ error: message });
-      return;
-    }
-    if (/^Game already submitted:/i.test(message)) {
-      res.status(409).json({ error: message });
-      return;
-    }
-    if (/^Sequence\s+\d+\s+already belongs to event\s+/i.test(message) || /^Event\s+.+\s+already exists with different payload/i.test(message)) {
-      res.status(409).json({
-        error: message,
-        code: "event_conflict",
-        state: getGameState(req.params.gameId, { schoolId }) ?? null,
-      });
-      return;
-    }
-    res.status(400).json({ error: message });
-  }
-});
-
-app.delete("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  try {
-    const { state, insights } = deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
-
-    emitToGameRooms(schoolId, req.params.gameId, "game:event:deleted", { eventId: req.params.eventId });
-    broadcastGameStateWithDebounce(schoolId, req.params.gameId, state, insights);
-    void refreshAndBroadcastInsights(schoolId, req.params.gameId);
-
-    res.json({ state, insights });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "delete failed";
-    if (/^Game already submitted:/i.test(message)) {
-      res.status(409).json({ error: message });
-      return;
-    }
-    res.status(400).json({ error: message });
-  }
-});
-
-app.put("/api/games/:gameId/events/:eventId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  try {
-    const { event, state, insights } = updateEvent(
-      req.params.gameId,
-      req.params.eventId,
-      req.body ?? {},
-      { schoolId }
-    );
-
-    emitToGameRooms(schoolId, req.params.gameId, "game:event:updated", event);
-    emitToGameRooms(schoolId, req.params.gameId, "game:state", state);
-    emitToGameRooms(schoolId, req.params.gameId, "game:insights", insights);
-    void refreshAndBroadcastInsights(schoolId, req.params.gameId);
-
-    res.json({ event, state, insights });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "update failed";
-    if (/^Game already submitted:/i.test(message)) {
-      res.status(409).json({ error: message });
-      return;
-    }
-    res.status(400).json({ error: message });
-  }
+registerGameEventRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  eventRateLimiter,
+  getSchoolIdFromRequest,
+  getGameState,
+  getGameEvents,
+  ingestEvent,
+  emitToGameRooms,
+  broadcastGameStateWithDebounce,
+  refreshAndBroadcastInsights,
+  deleteEvent,
+  updateEvent,
 });
 
 io.on("connection", (socket) => {

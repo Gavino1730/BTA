@@ -1073,6 +1073,86 @@ describe("unified stats endpoints", () => {
     expect(loginBody.currentMember?.role).toBe("owner");
   });
 
+  it("does not overwrite onboarding coach identity when a player signs in", async () => {
+    await resetSchool("player-auth-school");
+
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "player-auth-school" },
+      body: JSON.stringify({
+        fullName: "Coach Rivera",
+        email: "coach@playerschool.org",
+        password: "Secret123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      token: string;
+      user: { email: string };
+    };
+
+    const completeRes = await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${registerBody.token}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-auth-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Player School Athletics",
+        coachName: "Coach Rivera",
+        coachEmail: "coach@playerschool.org",
+        teamName: "Player School Varsity",
+        season: "2026",
+        roster: [{ name: "Ava Stone", number: "2", position: "G", grade: "11" }]
+      })
+    });
+    expect(completeRes.status).toBe(201);
+
+    const createPlayerRes = await fetch(`${API_BASE}/api/auth/player-account`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${registerBody.token}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-auth-school"
+      },
+      body: JSON.stringify({
+        playerName: "Ava Stone",
+        email: "ava@playerschool.org",
+        password: "Secret123!"
+      })
+    });
+    expect(createPlayerRes.status).toBe(201);
+
+    const playerLoginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": "player-auth-school" },
+      body: JSON.stringify({
+        email: "ava@playerschool.org",
+        password: "Secret123!"
+      })
+    });
+    expect(playerLoginRes.status).toBe(200);
+
+    const accountRes = await fetch(`${API_BASE}/api/onboarding/account`, {
+      headers: { "x-school-id": "player-auth-school" }
+    });
+    expect(accountRes.status).toBe(200);
+
+    const accountBody = await accountRes.json() as {
+      account?: {
+        primaryCoach?: {
+          fullName?: string;
+          email?: string;
+        };
+      };
+    };
+
+    expect(accountBody.account?.primaryCoach?.fullName).toBe("Coach Rivera");
+    expect(accountBody.account?.primaryCoach?.email).toBe("coach@playerschool.org");
+  });
+
   it("supports game edit and reset compatibility routes", async () => {
     await resetSchool("games-compat");
 
