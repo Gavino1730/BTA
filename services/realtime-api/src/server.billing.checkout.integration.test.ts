@@ -31,23 +31,11 @@ async function startCheckoutSessionServer(env: {
   process.env.BTA_STRIPE_TEST_MODE = env.stripeTestMode ?? "1";
   process.env.BTA_BILLING_TRIAL_DAYS = "14";
 
-  if (env.stripeSecretKey) {
-    process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey;
-  } else {
-    delete process.env.BTA_STRIPE_SECRET_KEY;
-  }
+  process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey ?? "";
 
-  if (env.stripePriceIdMonthly) {
-    process.env.BTA_STRIPE_PRICE_ID_MONTHLY = env.stripePriceIdMonthly;
-  } else {
-    delete process.env.BTA_STRIPE_PRICE_ID_MONTHLY;
-  }
+  process.env.BTA_STRIPE_PRICE_ID_MONTHLY = env.stripePriceIdMonthly ?? "";
 
-  if (env.stripePriceIdYearly) {
-    process.env.BTA_STRIPE_PRICE_ID_YEARLY = env.stripePriceIdYearly;
-  } else {
-    delete process.env.BTA_STRIPE_PRICE_ID_YEARLY;
-  }
+  process.env.BTA_STRIPE_PRICE_ID_YEARLY = env.stripePriceIdYearly ?? "";
 
   process.env.NODE_ENV = "test";
   process.env.PORT = API_PORT;
@@ -176,6 +164,32 @@ describe("server billing checkout-session integration", () => {
 
     // Missing planCycle defaults to "monthly"
     expect([200, 202, 201]).toContain(response.status);
+  });
+
+  it("successfully creates yearly checkout session when yearly price is configured", async () => {
+    activeServer = await startCheckoutSessionServer({
+      paywallEnabled: "1",
+      stripeTestMode: "1",
+      stripeSecretKey: "sk_test_checkout",
+      stripePriceIdMonthly: "price_test_monthly",
+      stripePriceIdYearly: "price_test_yearly",
+      requireTenant: "0",
+    });
+
+    const token = makeTestToken({ sub: "coach-yearly-valid", schoolId: "school-yearly", role: "coach" });
+    const response = await fetch(`${API_BASE}/api/billing/checkout-session`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": "school-yearly",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ planCycle: "yearly" }),
+    });
+
+    expect([200, 202, 201]).toContain(response.status);
+    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean };
+    expect(payload).toBeDefined();
   });
 
   it("returns 403 when user has insufficient write role", async () => {

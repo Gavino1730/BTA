@@ -19,6 +19,7 @@ async function startBillingServer(env: {
   stripeSecretKey?: string;
   stripeWebhookSecret?: string;
   stripePriceIdMonthly?: string;
+  stripePriceIdYearly?: string;
 }): Promise<ServerModule> {
   process.env.BTA_AUTH_TEST_MODE = "1";
   process.env.BTA_REQUIRE_TENANT = "1";
@@ -28,23 +29,13 @@ async function startBillingServer(env: {
   process.env.BTA_PAYWALL_ENABLED = env.paywallEnabled ?? "1";
   process.env.BTA_STRIPE_TEST_MODE = env.stripeTestMode ?? "1";
 
-  if (env.stripeSecretKey) {
-    process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey;
-  } else {
-    delete process.env.BTA_STRIPE_SECRET_KEY;
-  }
+  process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey ?? "";
 
-  if (env.stripeWebhookSecret) {
-    process.env.BTA_STRIPE_WEBHOOK_SECRET = env.stripeWebhookSecret;
-  } else {
-    delete process.env.BTA_STRIPE_WEBHOOK_SECRET;
-  }
+  process.env.BTA_STRIPE_WEBHOOK_SECRET = env.stripeWebhookSecret ?? "";
 
-  if (env.stripePriceIdMonthly) {
-    process.env.BTA_STRIPE_PRICE_ID_MONTHLY = env.stripePriceIdMonthly;
-  } else {
-    delete process.env.BTA_STRIPE_PRICE_ID_MONTHLY;
-  }
+  process.env.BTA_STRIPE_PRICE_ID_MONTHLY = env.stripePriceIdMonthly ?? "";
+
+  process.env.BTA_STRIPE_PRICE_ID_YEARLY = env.stripePriceIdYearly ?? "";
 
   process.env.NODE_ENV = "test";
   process.env.PORT = API_PORT;
@@ -67,6 +58,7 @@ async function stopBillingServer(server: ServerModule): Promise<void> {
   delete process.env.BTA_STRIPE_SECRET_KEY;
   delete process.env.BTA_STRIPE_WEBHOOK_SECRET;
   delete process.env.BTA_STRIPE_PRICE_ID_MONTHLY;
+  delete process.env.BTA_STRIPE_PRICE_ID_YEARLY;
   delete process.env.PORT;
 }
 
@@ -130,29 +122,30 @@ describe("server billing routes integration", () => {
     expect(payload.error).toBe("Stripe checkout is not configured");
   });
 
-  it("rejects unsupported yearly checkout requests", async () => {
+  it("accepts yearly checkout when yearly price is configured", async () => {
     activeServer = await startBillingServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
       stripeSecretKey: "stripe_test_secret_key",
       stripeWebhookSecret: "whsec_test_bta",
       stripePriceIdMonthly: "price_monthly_test",
+      stripePriceIdYearly: "price_yearly_test",
     });
 
-    const token = makeTestToken({ sub: "coach-yearly", schoolId: "billing-yearly", role: "coach" });
+    const token = makeTestToken({ sub: "coach-yearly-ok", schoolId: "billing-yearly-ok", role: "coach" });
     const response = await fetch(`${API_BASE}/api/billing/checkout-session`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "x-school-id": "billing-yearly",
+        "x-school-id": "billing-yearly-ok",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ planCycle: "yearly" }),
     });
 
-    expect(response.status).toBe(400);
-    const payload = await response.json() as { error?: string };
-    expect(payload.error).toBe("Yearly plan is not available in this phase");
+    expect([200, 201]).toContain(response.status);
+    const payload = await response.json() as { url?: string };
+    expect(payload.url).toBeDefined();
   });
 
   it("returns 400 for portal when no Stripe customer exists", async () => {
@@ -261,13 +254,14 @@ describe("server billing routes integration", () => {
     expect(payload.error).toBe("A valid full name and email are required");
   });
 
-  it("rejects unsupported yearly bootstrap checkout requests", async () => {
+  it("accepts yearly bootstrap checkout when yearly price is configured", async () => {
     activeServer = await startBillingServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
       stripeSecretKey: "stripe_test_secret_key",
       stripeWebhookSecret: "whsec_test_bta",
       stripePriceIdMonthly: "price_monthly_test",
+      stripePriceIdYearly: "price_yearly_test",
     });
 
     const response = await fetch(`${API_BASE}/api/billing/bootstrap-checkout-session`, {
@@ -276,16 +270,16 @@ describe("server billing routes integration", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        fullName: "Bootstrap Coach",
-        email: "bootstrap-yearly@school.org",
+        fullName: "Bootstrap Yearly",
+        email: "bootstrap-yearly-ok@school.org",
         schoolName: "Bootstrap High",
         teamName: "Bootstrap Varsity",
         planCycle: "yearly",
       }),
     });
 
-    expect(response.status).toBe(400);
-    const payload = await response.json() as { error?: string };
-    expect(payload.error).toBe("Yearly plan is not available in this phase");
+    expect([200, 201]).toContain(response.status);
+    const payload = await response.json() as { url?: string };
+    expect(payload.url).toBeDefined();
   });
 });

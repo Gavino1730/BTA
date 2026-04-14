@@ -52,8 +52,8 @@ export function PricingClientPage(): JSX.Element {
           </p>
 
           <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-[rgba(247,248,252,0.22)] bg-[rgba(13,16,32,0.4)] px-4 py-2">
-            <span className="text-sm font-semibold text-[var(--text-primary)]">Monthly Plan</span>
-            <span className="text-sm font-semibold text-[var(--accent-signal)]">$199/mo</span>
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Monthly and Yearly Plans</span>
+            <span className="text-sm font-semibold text-[var(--accent-signal)]">From $199/mo</span>
           </div>
         </section>
 
@@ -77,19 +77,31 @@ export function PricingClientPage(): JSX.Element {
                 <span className="font-display text-6xl font-semibold leading-none text-[var(--text-primary)]">{formatPrice(plan.monthly)}</span>
                 <span className="mb-1 text-xl text-[var(--text-tertiary)]">/mo</span>
               </div>
-              <p className="mt-2 text-sm text-[var(--text-tertiary)]">Billed monthly</p>
+              <p className="mt-2 text-sm text-[var(--text-tertiary)]">Choose monthly or yearly billing at checkout</p>
               <p className="mt-1 text-xs text-[var(--accent-secondary)]">No demo required. Checkout and signup are self-serve.</p>
 
-              <Link
-                href="/get-started?cycle=monthly"
-                className={`mt-6 inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-                  plan.featured
-                    ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--accent-on)] hover:bg-[#7C6BFF]"
-                    : "border-[var(--border-soft)] bg-[rgba(28,35,64,0.9)] text-[var(--text-primary)] hover:bg-[rgba(35,44,79,0.95)]"
-                }`}
-              >
-                Start Monthly Signup
-              </Link>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <Link
+                  href="/get-started?cycle=monthly"
+                  className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                    plan.featured
+                      ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[var(--accent-on)] hover:bg-[#7C6BFF]"
+                      : "border-[var(--border-soft)] bg-[rgba(28,35,64,0.9)] text-[var(--text-primary)] hover:bg-[rgba(35,44,79,0.95)]"
+                  }`}
+                >
+                  Start Monthly Signup
+                </Link>
+                <Link
+                  href="/get-started?cycle=yearly"
+                  className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                    plan.featured
+                      ? "border-[var(--border-soft)] bg-transparent text-[var(--text-primary)] hover:bg-[rgba(28,35,64,0.9)]"
+                      : "border-[var(--border-soft)] bg-[rgba(28,35,64,0.9)] text-[var(--text-primary)] hover:bg-[rgba(35,44,79,0.95)]"
+                  }`}
+                >
+                  Start Yearly Signup
+                </Link>
+              </div>
 
               <ul className="mt-6 space-y-3">
                 {plan.features.map((feature) => (

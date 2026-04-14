@@ -21,7 +21,9 @@ export function GetStartedClientPage(): JSX.Element {
   const [email, setEmail] = useState("");
   const [schoolName, setSchoolName] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [planCycle] = useState<"monthly">(initialCycle === "monthly" ? "monthly" : "monthly");
+  const [planCycle, setPlanCycle] = useState<"monthly" | "yearly">(
+    initialCycle === "yearly" ? "yearly" : "monthly"
+  );
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState("Enter your details to start checkout. No demo request required.");
 
@@ -137,11 +139,14 @@ export function GetStartedClientPage(): JSX.Element {
 
               <label className="text-sm text-[var(--text-secondary)]">
                 Plan
-                <input
+                <select
                   className="mt-2 w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(21,26,48,0.9)] px-3 py-2.5 text-[var(--text-primary)] outline-none"
-                  value="Monthly - $199/mo"
-                  readOnly
-                />
+                  value={planCycle}
+                  onChange={(event) => setPlanCycle(event.target.value === "yearly" ? "yearly" : "monthly")}
+                >
+                  <option value="monthly">Monthly - $199/mo</option>
+                  <option value="yearly">Yearly - billed annually</option>
+                </select>
               </label>
 
               <button
@@ -159,7 +164,7 @@ export function GetStartedClientPage(): JSX.Element {
           <GlassPanel className="p-7">
             <h3 className="font-display text-2xl text-[var(--text-primary)]">What happens next</h3>
             <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-7 text-[var(--text-secondary)]">
-              <li>Complete Stripe checkout for monthly subscription.</li>
+              <li>Complete Stripe checkout for your selected subscription cycle.</li>
               <li>Return to setup with your secure school scope prefilled.</li>
               <li>Create your coach account and finish team onboarding.</li>
             </ol>

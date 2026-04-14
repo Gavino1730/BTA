@@ -4,14 +4,13 @@
  * This file defines the canonical billing model for Phase 1 of the platform rebuild.
  * All checkout, webhook, and entitlement logic must align with these constraints.
  *
- * Phase 1 Scope (locked):
+ * Current Scope:
  * - Hosted Stripe Checkout (not custom Payment Element)
- * - Monthly subscription only (no yearly)
+ * - Monthly and yearly subscription cycles
  * - No free trial (account finalization on successful payment)
  * - Hybrid account creation (lead context before checkout, account finalized post-payment)
  *
- * Explicitly excluded from Phase 1:
- * - Yearly pricing
+ * Explicitly excluded:
  * - Free trial
  * - Multi-seat, one-time add-ons, and advanced analytics (MRR/churn/LTV)
  */
@@ -47,17 +46,17 @@ export enum EntitlementDenialReason {
 }
 
 /**
- * Plan cycle options supported in Phase 1.
- * Only monthly is active; yearly and other cycles are reserved for future phases.
+ * Plan cycle options supported by hosted checkout.
  */
 export enum PlanCycle {
   MONTHLY = "monthly",
+  YEARLY = "yearly",
 }
 
 /**
- * Valid plan cycles for Phase 1 (string form for validation).
+ * Valid plan cycles for checkout request validation.
  */
-export const PHASE_1_VALID_PLAN_CYCLES: readonly string[] = ["monthly"];
+export const PHASE_1_VALID_PLAN_CYCLES: readonly string[] = ["monthly", "yearly"];
 
 /**
  * Canonical state transitions for billing lifecycle.
@@ -91,7 +90,7 @@ export const ALLOWED_STATE_TRANSITIONS = new Map<
 
 /**
  * Default trial days for new accounts.
- * Phase 1: No trial. Reserved for future enablement.
+ * Current behavior: no trial. Reserved for future enablement.
  */
 export const PHASE_1_TRIAL_DAYS = 0;
 
@@ -111,7 +110,7 @@ export function initializeStripeMode(testModeStr: string): void {
 }
 
 /**
- * Stripe Checkout configuration defaults for Phase 1.
+ * Stripe Checkout configuration defaults.
  * These values are applied to Checkout session creation unless overridden.
  */
 export const PHASE_1_CHECKOUT_CONFIG = {

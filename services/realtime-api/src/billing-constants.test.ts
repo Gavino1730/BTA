@@ -17,10 +17,10 @@ describe("billing-constants: Phase 1 scope definition", () => {
     expect(BillingEntitlementStatus.CANCELED).toBe("canceled");
   });
 
-  it("confirms Phase 1 is monthly-only", () => {
+  it("includes both monthly and yearly checkout cycles", () => {
     expect(PHASE_1_VALID_PLAN_CYCLES).toContain("monthly");
-    expect(PHASE_1_VALID_PLAN_CYCLES).toHaveLength(1);
-    expect(PHASE_1_VALID_PLAN_CYCLES).not.toContain("yearly");
+    expect(PHASE_1_VALID_PLAN_CYCLES).toContain("yearly");
+    expect(PHASE_1_VALID_PLAN_CYCLES).toHaveLength(2);
   });
 
   it("defines valid state transitions for billing lifecycle", () => {
@@ -138,14 +138,8 @@ describe("billing-constants: Phase 1 scope definition", () => {
     expect(seasonFeatures.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("lock Phase 1 constraints: no yearly, no trial", () => {
-    // Confirm no yearly pricing allowed in Phase 1
-    expect(PHASE_1_VALID_PLAN_CYCLES).not.toContain("yearly");
-
-    // Confirm monthly-only
-    expect(PHASE_1_VALID_PLAN_CYCLES).toEqual(["monthly"]);
-
-    // Stripe checkout config does not include trial behavior
+  it("locks current constraints: no trial", () => {
+    expect(PHASE_1_VALID_PLAN_CYCLES).toEqual(["monthly", "yearly"]);
     expect(PHASE_1_CHECKOUT_CONFIG.mode).toBe("subscription");
   });
 });

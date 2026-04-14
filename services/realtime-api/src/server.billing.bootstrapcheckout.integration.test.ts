@@ -13,6 +13,7 @@ async function startBootstrapServer(env: {
   stripeTestMode?: "0" | "1";
   stripeSecretKey?: string;
   stripePriceIdMonthly?: string;
+  stripePriceIdYearly?: string;
 }): Promise<ServerModule> {
   process.env.BTA_AUTH_TEST_MODE = "1";
   process.env.BTA_REQUIRE_TENANT = "0";
@@ -23,19 +24,12 @@ async function startBootstrapServer(env: {
   process.env.BTA_STRIPE_TEST_MODE = env.stripeTestMode ?? "1";
   process.env.BTA_BILLING_TRIAL_DAYS = "14";
 
-  const stripeSecretKey = env.stripeSecretKey ?? "sk_test_bootstrap_checkout";
-  if (stripeSecretKey) {
-    process.env.BTA_STRIPE_SECRET_KEY = stripeSecretKey;
-  } else {
-    delete process.env.BTA_STRIPE_SECRET_KEY;
-  }
+    process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey ?? "sk_test_bootstrap_checkout";
 
   const monthlyPriceId = env.stripePriceIdMonthly ?? "price_test_monthly";
-  if (monthlyPriceId) {
-    process.env.BTA_STRIPE_PRICE_ID_MONTHLY = monthlyPriceId;
-  } else {
-    delete process.env.BTA_STRIPE_PRICE_ID_MONTHLY;
-  }
+    process.env.BTA_STRIPE_PRICE_ID_MONTHLY = monthlyPriceId ?? "";
+
+    process.env.BTA_STRIPE_PRICE_ID_YEARLY = env.stripePriceIdYearly ?? "";
 
   process.env.NODE_ENV = "test";
   process.env.PORT = API_PORT;
@@ -57,6 +51,7 @@ async function stopBootstrapServer(server: ServerModule): Promise<void> {
   delete process.env.BTA_STRIPE_TEST_MODE;
   delete process.env.BTA_STRIPE_SECRET_KEY;
   delete process.env.BTA_STRIPE_PRICE_ID_MONTHLY;
+  delete process.env.BTA_STRIPE_PRICE_ID_YEARLY;
   delete process.env.BTA_BILLING_TRIAL_DAYS;
   delete process.env.PORT;
 }

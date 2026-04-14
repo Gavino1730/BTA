@@ -579,7 +579,7 @@ export function CheckoutCancelPage({ onNavigate }: RoutedPageProps) {
 }
 
 export function BillingPage({ onNavigate }: RoutedPageProps) {
-  const [submittingCycle, setSubmittingCycle] = useState<"monthly" | null>(null);
+  const [submittingCycle, setSubmittingCycle] = useState<"monthly" | "yearly" | null>(null);
   const [submittingPortal, setSubmittingPortal] = useState(false);
   const [status, setStatus] = useState("Loading billing information...");
   const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
@@ -603,9 +603,9 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       } else if (entitlement.status === "past_due" || entitlement.status === "unpaid") {
         setStatus("Your account is past due. Update payment details in the billing portal or restart checkout to restore full access.");
       } else if (entitlement.status === "canceled") {
-        setStatus("Your subscription is canceled. Start checkout to reactivate monthly access.");
+        setStatus("Your subscription is canceled. Start checkout to reactivate access.");
       } else {
-        setStatus("No active subscription found. Start checkout to activate monthly access.");
+        setStatus("No active subscription found. Start checkout to activate access.");
       }
       setLoading(false);
     };
@@ -651,7 +651,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
     }
   }
 
-  async function startCheckout(planCycle: "monthly") {
+  async function startCheckout(planCycle: "monthly" | "yearly") {
     setSubmittingCycle(planCycle);
     setStatus(`Starting ${planCycle} checkout...`);
     try {
@@ -697,10 +697,10 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
   const showCheckout = !loading && Boolean(billingEntitlement && !billingEntitlement.accessActive);
   const showPortal = !loading && Boolean(billingEntitlement && billingEntitlement.accessActive);
   const checkoutLabel = entitlementStatus === "canceled"
-    ? "Reactivate Monthly Plan"
+    ? "Reactivate Plan"
     : entitlementStatus === "past_due" || entitlementStatus === "unpaid"
-      ? "Restart Monthly Plan"
-      : "Start Monthly Plan";
+      ? "Restart Plan"
+      : "Start Plan";
   const checkoutSectionTitle = entitlementStatus === "past_due" || entitlementStatus === "unpaid"
     ? "Restore Access"
     : entitlementStatus === "canceled"
@@ -712,7 +712,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       ? "Your account needs a billing update. Restore access through Stripe portal or restart checkout."
       : entitlementStatus === "canceled"
         ? "Your previous subscription is canceled. Reactivate to unlock premium features again."
-        : "Subscription access is managed through Stripe checkout. Activate a monthly plan to unlock full app access.";
+        : "Subscription access is managed through Stripe checkout. Activate a plan to unlock full app access.";
 
   return (
     <div className="stats-page policy-page">
@@ -771,7 +771,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             <h3 className="policy-section-heading">{checkoutSectionTitle}</h3>
             <p className="stats-page-subcopy policy-section-body">{status}</p>
             <ul className="policy-section-list">
-              <li>Monthly checkout is available in Stripe-hosted checkout.</li>
+              <li>Monthly and yearly checkout are available in Stripe-hosted checkout.</li>
               <li>After checkout, return to the dashboard and refresh if access does not update immediately.</li>
               {(entitlementStatus === "past_due" || entitlementStatus === "unpaid") && (
                 <li>Past-due access can recover automatically after successful payment confirmation.</li>
@@ -785,7 +785,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         <h3 className="policy-section-heading">Current Rollout</h3>
         <p className="stats-page-subcopy policy-section-body">This phase includes core checkout and subscription management.</p>
         <ul className="policy-section-list">
-          <li>Hosted checkout for monthly plans</li>
+          <li>Hosted checkout for monthly and yearly plans</li>
           <li>Org-level entitlement and billing portal</li>
           <li>Subscription-based paywall enforcement</li>
           <li>Promo code support (beta)</li>
@@ -807,7 +807,15 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                 onClick={() => void startCheckout("monthly")}
                 disabled={submittingCycle !== null}
               >
-                {submittingCycle === "monthly" ? "Starting Monthly..." : checkoutLabel}
+                {submittingCycle === "monthly" ? "Starting Monthly..." : `${checkoutLabel} (Monthly)`}
+              </button>
+              <button
+                type="button"
+                className="shell-nav-link"
+                onClick={() => void startCheckout("yearly")}
+                disabled={submittingCycle !== null}
+              >
+                {submittingCycle === "yearly" ? "Starting Yearly..." : `${checkoutLabel} (Yearly)`}
               </button>
             </>
           )}

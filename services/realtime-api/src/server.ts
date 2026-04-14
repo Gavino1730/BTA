@@ -1861,8 +1861,9 @@ const STRIPE_TEST_MODE = process.env.BTA_STRIPE_TEST_MODE === "1";
 const STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim();
 const STRIPE_WEBHOOK_SECRET = process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim();
 const STRIPE_PRICE_ID_MONTHLY = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim();
-const CHECKOUT_PLAN_CYCLE = "monthly" as const;
+const STRIPE_PRICE_ID_YEARLY = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim();
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+type CheckoutPlanCycle = "monthly" | "yearly";
 
 interface BillingEntitlementResponse {
   paywallEnabled: boolean;
@@ -1885,17 +1886,17 @@ interface ResolvedCouponInfo {
 }
 
 function hasStripeCheckoutConfig(): boolean {
-  return Boolean(stripeClient && STRIPE_PRICE_ID_MONTHLY);
+  return Boolean(stripeClient && (STRIPE_PRICE_ID_MONTHLY || STRIPE_PRICE_ID_YEARLY));
 }
 
-function resolveCheckoutPlanCycle(rawCycle: unknown): { planCycle: "monthly" | null; error?: string } {
+function resolveCheckoutPlanCycle(rawCycle: unknown): { planCycle: CheckoutPlanCycle | null; error?: string } {
   const normalized = String(rawCycle ?? "").trim().toLowerCase();
   if (!normalized || normalized === "monthly") {
     return { planCycle: "monthly" };
   }
 
   if (normalized === "yearly") {
-    return { planCycle: null, error: "Yearly plan is not available in this phase" };
+    return { planCycle: "yearly" };
   }
 
   return { planCycle: null, error: "Unsupported plan cycle" };
@@ -2166,6 +2167,7 @@ function buildStripeCheckoutCustomerParams(options: {
 async function createSubscriptionCheckoutSession(options: {
   req: Request;
   schoolId: string;
+  planCycle: CheckoutPlanCycle;
   customerId: string;
   discountPromotionCodeId?: string;
   flow: "coach-billing" | "marketing-bootstrap";
@@ -2173,19 +2175,24 @@ async function createSubscriptionCheckoutSession(options: {
   metadata?: Record<string, string>;
   trialEndsAtIso?: string;
 }): Promise<{ id: string; url: string }> {
-  const { req, schoolId, customerId, discountPromotionCodeId, flow, customerEmail, metadata, trialEndsAtIso } = options;
+  const { req, schoolId, planCycle, customerId, discountPromotionCodeId, flow, customerEmail, metadata, trialEndsAtIso } = options;
   const { successUrl, cancelUrl } = resolveCheckoutReturnUrls(req, schoolId);
 
   if (STRIPE_TEST_MODE) {
     const testFlow = flow === "marketing-bootstrap" ? "bootstrap" : flow;
     return {
-      id: `cs_test_${testFlow}_${schoolId}_${CHECKOUT_PLAN_CYCLE}`,
-      url: `https://checkout.stripe.com/test/session/${testFlow}-${schoolId}-${CHECKOUT_PLAN_CYCLE}`,
+      id: `cs_test_${testFlow}_${schoolId}_${planCycle}`,
+      url: `https://checkout.stripe.com/test/session/${testFlow}-${schoolId}-${planCycle}`,
     };
   }
 
-  if (!stripeClient || !STRIPE_PRICE_ID_MONTHLY) {
+  if (!stripeClient) {
     throw new Error("Stripe is not configured");
+  }
+
+  const selectedPriceId = planCycle === "yearly" ? STRIPE_PRICE_ID_YEARLY : STRIPE_PRICE_ID_MONTHLY;
+  if (!selectedPriceId) {
+    throw new Error(`${planCycle === "yearly" ? "Yearly" : "Monthly"} plan is not configured`);
   }
 
   const remainingTrialDays = calculateRemainingTrialDays(trialEndsAtIso);
@@ -2193,7 +2200,7 @@ async function createSubscriptionCheckoutSession(options: {
     mode: "subscription",
     ...buildStripeCheckoutCustomerParams({ customerId, customerEmail: customerId ? undefined : customerEmail }),
     customer_update: { address: "auto", name: "auto" },
-    line_items: [{ price: STRIPE_PRICE_ID_MONTHLY, quantity: 1 }],
+    line_items: [{ price: selectedPriceId, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
     client_reference_id: schoolId,
@@ -2206,11 +2213,11 @@ async function createSubscriptionCheckoutSession(options: {
     metadata: {
       schoolId,
       flow,
-      planCycle: CHECKOUT_PLAN_CYCLE,
+      planCycle,
       ...(metadata ?? {}),
     },
     subscription_data: {
-      metadata: { schoolId, flow, planCycle: CHECKOUT_PLAN_CYCLE },
+      metadata: { schoolId, flow, planCycle },
       trial_period_days: remainingTrialDays,
     },
   });
@@ -2341,6 +2348,7 @@ async function handleUnifiedCheckout(options: {
     const checkoutSession = await createSubscriptionCheckoutSession({
       req,
       schoolId,
+      planCycle: planCycle.planCycle,
       customerId,
       discountPromotionCodeId,
       flow,
@@ -2359,7 +2367,12 @@ async function handleUnifiedCheckout(options: {
     } else {
       res.json(checkoutSession);
     }
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "Yearly plan is not configured" || message === "Monthly plan is not configured") {
+      res.status(503).json({ error: message });
+      return;
+    }
     res.status(503).json({ error: "Stripe is not configured" });
   }
 }
