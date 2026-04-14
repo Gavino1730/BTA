@@ -277,7 +277,11 @@ function buildResetPath(schoolId: string, token: string): string {
 }
 
 function buildInvitePath(schoolId: string, token: string): string {
-  return `/setup?schoolId=${encodeURIComponent(schoolId)}&invite=${encodeURIComponent(token)}`;
+  const invitation = invitationTokens.get(token);
+  const emailPart = invitation?.email
+    ? `&email=${encodeURIComponent(invitation.email)}`
+    : "";
+  return `/login?schoolId=${encodeURIComponent(schoolId)}&invite=${encodeURIComponent(token)}${emailPart}`;
 }
 
 function buildAbsoluteCoachUrl(req: Request, pathname: string): string {

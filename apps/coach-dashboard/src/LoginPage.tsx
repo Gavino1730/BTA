@@ -29,8 +29,9 @@ interface AuthSessionPayload {
 
 export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword }: LoginPageProps) {
   const activeSchoolId = resolveActiveSchoolId();
+  const inviteEmailFromUrl = new URLSearchParams(window.location.search).get("email")?.trim().toLowerCase() ?? "";
   const hasInviteLink = Boolean(new URLSearchParams(window.location.search).get("invite"));
-  const [coachEmail, setCoachEmail] = useState("");
+  const [coachEmail, setCoachEmail] = useState(inviteEmailFromUrl);
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState(
     hasInviteLink

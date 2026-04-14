@@ -20,6 +20,29 @@ function normalizeConnectionId(value: string | null | undefined): string {
   return normalizeConnectionCode(value);
 }
 
+function buildSetupPathFromInviteQuery(): string {
+  const params = new URLSearchParams(window.location.search);
+  const invite = params.get("invite")?.trim() ?? "";
+  const email = params.get("email")?.trim() ?? "";
+  const schoolId = params.get("schoolId")?.trim() ?? "";
+  if (!invite && !email && !schoolId) {
+    return "/setup";
+  }
+
+  const next = new URLSearchParams();
+  if (schoolId) {
+    next.set("schoolId", schoolId);
+  }
+  if (invite) {
+    next.set("invite", invite);
+  }
+  if (email) {
+    next.set("email", email);
+  }
+
+  return `/setup?${next.toString()}`;
+}
+
 interface ConnectedNavActionsProps {
   onSignOut: () => void;
   onShowTutorial: () => void;
@@ -246,7 +269,7 @@ export function UnifiedCoachApp() {
     return (
       <LoginPage
         onBackHome={() => navigate("/")}
-        onCreateAccount={() => navigate("/setup")}
+        onCreateAccount={() => navigate(buildSetupPathFromInviteQuery())}
         onForgotPassword={() => navigate("/forgot-password")}
         onSuccess={handleAuthSuccess}
       />
@@ -257,7 +280,7 @@ export function UnifiedCoachApp() {
     return (
       <LoginPage
         onBackHome={() => navigate("/")}
-        onCreateAccount={() => navigate("/setup")}
+        onCreateAccount={() => navigate(buildSetupPathFromInviteQuery())}
         onForgotPassword={() => navigate("/forgot-password")}
         onSuccess={handleAuthSuccess}
       />
