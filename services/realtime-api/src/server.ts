@@ -5,7 +5,6 @@ import { createServer } from "node:http";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
-import Stripe from "stripe";
 import {
   normalizeTeamColor,
   sanitizePromptText,
@@ -66,9 +65,6 @@ import {
   setGameOverride
 } from "./store.js";
 import {
-  ensureTrialBillingState,
-} from "./store.js";
-import {
   extractBearerToken,
   isJwtAuthEnabled,
   isLocalTokenAuthEnabled,
@@ -77,7 +73,7 @@ import {
   type AuthContext
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
-import { sendTransactionalEmail, type EmailDeliveryResult } from "./email.js";
+import { sendTransactionalEmail } from "./email.js";
 import {
   hasWriteRole,
   normalizeSchoolId,
@@ -100,6 +96,11 @@ import { registerTeamManagementRoutes } from "./routes/team-management-routes.js
 import { registerGameSessionRoutes } from "./routes/game-session-routes.js";
 import { registerGameAiRoutes } from "./routes/game-ai-routes.js";
 import { registerGameEventRoutes } from "./routes/game-event-routes.js";
+import { registerAuthCoreRoutes } from "./routes/auth-core-routes.js";
+import { registerAuthAccountRoutes } from "./routes/auth-account-routes.js";
+import { registerAdminRoutes, registerHealthRoute } from "./routes/system-routes.js";
+import { registerSocketAuth } from "./sockets/socket-auth.js";
+import { registerRealtimeConnectionHandlers } from "./sockets/realtime-connection.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -246,13 +247,6 @@ interface InvitationTokenRecord {
   createdAt: number;
 }
 
-interface InvitationIssueResult {
-  inviteToken?: string;
-  invitePath: string;
-  emailDelivery: EmailDeliveryResult;
-  warning?: string;
-}
-
 const passwordResetTokens = new Map<string, PasswordResetTokenRecord>();
 const invitationTokens = new Map<string, InvitationTokenRecord>();
 
@@ -277,11 +271,7 @@ function buildResetPath(schoolId: string, token: string): string {
 }
 
 function buildInvitePath(schoolId: string, token: string): string {
-  const invitation = invitationTokens.get(token);
-  const emailPart = invitation?.email
-    ? `&email=${encodeURIComponent(invitation.email)}`
-    : "";
-  return `/login?schoolId=${encodeURIComponent(schoolId)}&invite=${encodeURIComponent(token)}${emailPart}`;
+  return `/setup?schoolId=${encodeURIComponent(schoolId)}&invite=${encodeURIComponent(token)}`;
 }
 
 function buildAbsoluteCoachUrl(req: Request, pathname: string): string {
@@ -342,69 +332,46 @@ async function deliverInvitationEmail(
   });
 }
 
-function resolveInvitationOrganizationName(schoolId: string): string {
-  const onboardingOrganization = getOnboardingAccountStateByScope({ schoolId })?.organization.organizationName;
-  if (onboardingOrganization) {
-    return onboardingOrganization;
-  }
-
-  const profileOrganization = getOrganizationProfileByScope({ schoolId })?.organizationName;
-  if (profileOrganization) {
-    return profileOrganization;
-  }
-
-  return schoolId;
-}
-
-async function issueMemberInvitation(
-  req: Request,
-  schoolId: string,
-  member: OrganizationMember,
-): Promise<InvitationIssueResult> {
+async function issueMemberInvitation(req: Request, schoolId: string, member: OrganizationMember) {
   pruneExpiredInvitationTokens();
 
+  for (const [token, invitation] of invitationTokens.entries()) {
+    if (invitation.schoolId === schoolId && invitation.memberId === member.memberId) {
+      invitationTokens.delete(token);
+    }
+  }
+
   const now = Date.now();
-  const token = randomBytes(24).toString("hex");
+  const inviteToken = randomBytes(24).toString("hex");
+  const organizationName = sanitizeTextField(
+    getOnboardingAccountStateByScope({ schoolId })?.organization.organizationName
+      || getOrganizationProfileByScope({ schoolId })?.organizationName
+      || "your organization",
+    160,
+  );
+
   const invitation: InvitationTokenRecord = {
-    token,
+    token: inviteToken,
     schoolId,
     memberId: member.memberId,
     email: member.email,
     fullName: member.fullName,
     role: member.role,
-    organizationName: resolveInvitationOrganizationName(schoolId),
+    organizationName,
     createdAt: now,
     expiresAt: now + INVITATION_TOKEN_TTL_MS,
   };
 
-  invitationTokens.set(token, invitation);
-  const invitePath = buildInvitePath(schoolId, token);
+  invitationTokens.set(inviteToken, invitation);
+  const invitePath = buildInvitePath(schoolId, inviteToken);
+  const emailDelivery = await deliverInvitationEmail(req, invitation);
 
-  try {
-    const emailDelivery = await deliverInvitationEmail(req, invitation);
-    const warning = emailDelivery.delivered
-      ? undefined
-      : emailDelivery.reason || "Invite email was not delivered. Share the invite link manually.";
-
-    return {
-      inviteToken: EXPOSE_INVITATION_TOKEN ? token : undefined,
-      invitePath,
-      emailDelivery,
-      warning,
-    };
-  } catch (error) {
-    return {
-      inviteToken: EXPOSE_INVITATION_TOKEN ? token : undefined,
-      invitePath,
-      emailDelivery: {
-        delivered: false,
-        skipped: false,
-        provider: "unknown",
-        reason: error instanceof Error ? error.message : "Unknown invite delivery error",
-      },
-      warning: "Invite created, but email delivery failed. Share the invite link manually.",
-    };
-  }
+  return {
+    inviteToken: EXPOSE_INVITATION_TOKEN ? inviteToken : undefined,
+    invitePath,
+    emailDelivery,
+    warning: emailDelivery.delivered ? undefined : "Invitation email was not delivered. Share the invite link manually.",
+  };
 }
 const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
   "timeouts",
@@ -690,25 +657,7 @@ function ensureAuthenticatedOrganizationMember(req: Request, schoolId: string): 
 }
 
 function ensureOwnerMembership(req: Request, schoolId: string, account: OnboardingAccountState): OrganizationMember {
-  const currentMember = resolveCurrentOrganizationMember(req, schoolId);
-  if (currentMember) {
-    return saveOrganizationMember({
-      memberId: currentMember.memberId,
-      organizationId: account.organization.organizationId,
-      authSubject: currentMember.authSubject || resolveAuthSubject((req as ScopedRequest).authContext),
-      fullName: currentMember.fullName,
-      email: currentMember.email,
-      role: currentMember.role,
-      status: "active",
-      invitedAtIso: currentMember.invitedAtIso,
-      joinedAtIso: currentMember.joinedAtIso || new Date().toISOString(),
-    }, { schoolId });
-  }
-
-  const payload = withSuggestedOnboardingIdentity(req, {
-    coachName: account.primaryCoach.fullName,
-    coachEmail: account.primaryCoach.email,
-  });
+  const payload = withSuggestedOnboardingIdentity(req, {});
   return saveOrganizationMember({
     organizationId: account.organization.organizationId,
     authSubject: resolveAuthSubject((req as ScopedRequest).authContext),
@@ -1694,26 +1643,8 @@ const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
-const BILLING_PAYWALL_ENABLED = process.env.BTA_PAYWALL_ENABLED !== "0";
-const BILLING_TRIAL_DAYS = Number(process.env.BTA_BILLING_TRIAL_DAYS ?? 14);
-const BILLING_STRIPE_TEST_MODE = process.env.BTA_STRIPE_TEST_MODE !== "0";
-const BILLING_STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim() || "";
 const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
 const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
-
-let stripeClient: Stripe | null = null;
-
-function getStripeClient(): Stripe | null {
-  if (!BILLING_STRIPE_SECRET_KEY) {
-    return null;
-  }
-
-  if (!stripeClient) {
-    stripeClient = new Stripe(BILLING_STRIPE_SECRET_KEY);
-  }
-
-  return stripeClient;
-}
 
 type SecurityMetricKey =
   | "requestTenantMismatch"
@@ -2126,52 +2057,15 @@ const io = new Server(httpServer, {
   pingTimeout: 90000,    // how long to wait for a pong before disconnecting (ms)
 });
 
-io.use(async (socket, next) => {
-  const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
-
-  const token = extractBearerToken(socket.handshake.headers, auth);
-  if (token) {
-    const authContext = await verifyBearerToken(token);
-    if (authContext) {
-      socket.data.authContext = authContext;
-      const resolved = resolveSocketSchoolId(socket);
-      if (!resolved.schoolId) {
-        next(new Error(resolved.error ?? "schoolId is required"));
-        return;
-      }
-      next();
-      return;
-    }
-  }
-
-  const provided = typeof auth.apiKey === "string"
-    ? auth.apiKey
-    : typeof socket.handshake.headers["x-api-key"] === "string"
-      ? socket.handshake.headers["x-api-key"]
-      : undefined;
-
-  if (!API_KEY && !isJwtAuthEnabled()) {
-    const resolved = resolveSocketSchoolId(socket);
-    if (!resolved.schoolId) {
-      next(new Error(resolved.error ?? "schoolId is required"));
-      return;
-    }
-    next();
-    return;
-  }
-
-  if (API_KEY && provided === API_KEY) {
-    const resolved = resolveSocketSchoolId(socket);
-    if (!resolved.schoolId) {
-      next(new Error(resolved.error ?? "schoolId is required"));
-      return;
-    }
-    next();
-    return;
-  }
-
-  next(new Error("Unauthorized — provide a valid bearer token or apiKey"));
-  trackSecurityEvent("unauthorizedSocket", { reason: "missing-valid-credentials" });
+registerSocketAuth(io, {
+  extractBearerToken,
+  verifyBearerToken,
+  resolveSocketSchoolId,
+  apiKey: API_KEY,
+  isJwtAuthEnabled,
+  trackSecurityEvent: (event, details) => {
+    trackSecurityEvent(event, details);
+  },
 });
 
 interface OperatorPresence {
@@ -2451,16 +2345,10 @@ app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
   res.redirect(302, `${resolveCoachRedirectOrigin(req)}${targetPath}`);
 });
 
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    uptime: Math.round(process.uptime()),
-    persistence: DATABASE_URL ? "postgres" : "file",
-    auth: {
-      apiKey: Boolean(API_KEY),
-      jwt: isJwtAuthEnabled(),
-    },
-  });
+registerHealthRoute(app, {
+  databaseUrl: DATABASE_URL,
+  apiKey: API_KEY,
+  isJwtAuthEnabled,
 });
 
 // Keep /api probe tenant-agnostic so platform health checks can use it.
@@ -2474,718 +2362,56 @@ app.use("/teams", requireTenantScope);
 app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
 
-app.get("/api/billing/portal-session", requireApiKey, async (req, res) => {
-  if (!BILLING_PAYWALL_ENABLED) {
-    res.status(400).json({ error: "Billing is not enabled" });
-    return;
-  }
-
-  const schoolId = getSchoolIdFromRequest(req);
-  const trialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 14;
-  const billingState = ensureTrialBillingState({ schoolId }, trialDays);
-  const stripeCustomerId = String(billingState.stripeCustomerId ?? "").trim();
-
-  if (!stripeCustomerId) {
-    res.status(400).json({ error: "No Stripe customer found for this school" });
-    return;
-  }
-
-  const returnUrl = `${resolveCoachRedirectOrigin(req)}/billing`;
-
-  if (BILLING_STRIPE_TEST_MODE) {
-    const portalUrl = `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}portal=test&customer=${encodeURIComponent(stripeCustomerId)}`;
-    res.status(201).json({ url: portalUrl });
-    return;
-  }
-
-  const stripe = getStripeClient();
-  if (!stripe) {
-    res.status(503).json({ error: "Stripe portal is not configured" });
-    return;
-  }
-
-  try {
-    const session = await stripe.billingPortal.sessions.create({
-      customer: stripeCustomerId,
-      return_url: returnUrl,
-    });
-    res.status(201).json({ url: session.url, sessionId: session.id });
-  } catch (error) {
-    console.warn("[realtime-api] Failed to create Stripe billing portal session", { schoolId, error });
-    res.status(502).json({ error: "Could not create billing portal session" });
-  }
+registerAuthCoreRoutes(app, {
+  authRateLimiter,
+  resolveRequestSchoolId,
+  getSchoolIdFromRequest,
+  getAuthContextFromRequest: (req) => (req as ScopedRequest).authContext,
+  buildOnboardingCompletionSummary,
+  buildSuggestedCoachIdentity,
+  resolveCurrentOrganizationMember,
+  getLocalAuthAccountByEmail,
+  buildAuthSessionResponse,
+  sanitizeTextField,
+  resolveAuthSchoolId,
+  pruneExpiredInvitationTokens,
+  invitationTokens,
+  isValidEmail,
+  hashPassword,
+  getOrganizationMembersByScope,
+  saveLocalAuthAccount,
+  activateKnownMemberForAccount,
+  shouldSyncPrimaryCoachIdentity,
+  saveOnboardingAccountState,
+  issueLocalAuthToken,
+  buildInvitePath,
+  verifyPassword,
+  recordLocalAuthLogin,
+  pruneExpiredPasswordResetTokens,
+  passwordResetTokens,
+  generatePasswordResetToken: () => randomBytes(24).toString("hex"),
+  passwordResetTokenTtlMs: PASSWORD_RESET_TOKEN_TTL_MS,
+  deliverPasswordResetEmail,
+  buildResetPath,
+  exposePasswordResetToken: EXPOSE_PASSWORD_RESET_TOKEN,
+  getLocalAuthAccountsByScope,
 });
 
-app.get("/api/auth/session", (req, res) => {
-  const schoolResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
-  const schoolId = schoolResolution.schoolId;
-  const authContext = (req as ScopedRequest).authContext;
-
-  if (!schoolId && !authContext) {
-    res.json({
-      authenticated: false,
-      token: null,
-      user: null,
-      currentMember: null,
-      onboarding: {
-        completed: false,
-        hasAccount: false,
-        hasProfile: false,
-        hasTeam: false,
-        teamCount: 0,
-      },
-    });
-    return;
-  }
-
-  if (!schoolId) {
-    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
-    return;
-  }
-
-  if (!authContext) {
-    res.json({
-      authenticated: false,
-      token: null,
-      user: null,
-      currentMember: null,
-      onboarding: buildOnboardingCompletionSummary(schoolId),
-    });
-    return;
-  }
-
-  const suggested = buildSuggestedCoachIdentity(authContext);
-  const email = sanitizeTextField(suggested?.coachEmail, 160).toLowerCase();
-  const currentMember = resolveCurrentOrganizationMember(req, schoolId);
-  const localAccount = email ? getLocalAuthAccountByEmail(email, { schoolId }) : null;
-
-  if (localAccount) {
-    res.json(buildAuthSessionResponse(schoolId, localAccount, currentMember));
-    return;
-  }
-
-  res.json({
-    authenticated: true,
-    token: null,
-    user: {
-      accountId: resolveAuthSubject(authContext) ?? email ?? "authenticated-user",
-      email: email || undefined,
-      fullName: sanitizeTextField(suggested?.coachName, 120) || undefined,
-      role: currentMember?.role ?? (sanitizeTextField(authContext.role, 40) || "coach"),
-      status: currentMember?.status ?? "active",
-      schoolId,
-      organizationId: currentMember?.organizationId,
-      lastLoginAtIso: null,
-    },
-    currentMember,
-    onboarding: buildOnboardingCompletionSummary(schoolId),
-  });
-});
-
-app.post("/api/auth/register", authRateLimiter, (req, res) => {
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const inviteToken = String(payload.inviteToken ?? "").trim();
-  const fullName = sanitizeTextField(payload.fullName ?? payload.coachName, 120);
-  const email = sanitizeTextField(payload.email ?? payload.coachEmail, 160).toLowerCase();
-  const password = String(payload.password ?? "").trim();
-
-  if (!fullName || !email || !password) {
-    res.status(400).json({ error: "fullName, email, and password are required" });
-    return;
-  }
-
-  const schoolResolution = resolveAuthSchoolId(req, payload, email);
-  if (!schoolResolution.schoolId) {
-    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
-    return;
-  }
-
-  const schoolId = schoolResolution.schoolId;
-
-  let invitation: InvitationTokenRecord | null = null;
-  if (inviteToken) {
-    pruneExpiredInvitationTokens();
-    invitation = invitationTokens.get(inviteToken) ?? null;
-    if (!invitation || invitation.schoolId !== schoolId) {
-      res.status(400).json({ error: "Invalid or expired invite token" });
-      return;
-    }
-    if (invitation.email !== email) {
-      res.status(400).json({ error: "Invite token does not match this email address" });
-      return;
-    }
-  }
-
-  if (!isValidEmail(email)) {
-    res.status(400).json({ error: "Enter a valid email address" });
-    return;
-  }
-
-  if (password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
-    return;
-  }
-
-  if (getLocalAuthAccountByEmail(email, { schoolId })) {
-    res.status(409).json({ error: "An account with that email already exists" });
-    return;
-  }
-
-  const existingMember = getOrganizationMembersByScope({ schoolId }).find((member) => member.email === email) ?? null;
-  const { passwordHash, passwordSalt } = hashPassword(password);
-  const account = saveLocalAuthAccount({
-    email,
-    fullName,
-    passwordHash,
-    passwordSalt,
-    organizationId: existingMember?.organizationId,
-    role: existingMember?.role ?? "owner",
-    status: existingMember?.status === "invited" ? "invited" : "active",
-  }, { schoolId });
-
-  const currentMember = activateKnownMemberForAccount(schoolId, account);
-  const resolvedRole = currentMember?.role ?? account.role;
-  if (shouldSyncPrimaryCoachIdentity(resolvedRole)) {
-    saveOnboardingAccountState({
-      organization: { schoolId },
-      primaryCoach: {
-        schoolId,
-        fullName,
-        email,
-        role: "owner",
-        organizationId: existingMember?.organizationId ?? "",
-        accountId: account.accountId,
-        createdAtIso: "",
-        updatedAtIso: "",
-      },
-    }, { schoolId });
-  }
-
-  const token = issueLocalAuthToken({
-    subject: account.accountId,
-    email: account.email,
-    name: account.fullName,
-    schoolId,
-    role: resolvedRole,
-  });
-
-  if (!token) {
-    res.status(500).json({ error: "Local auth token signing is not configured" });
-    return;
-  }
-
-  if (invitation) {
-    invitationTokens.delete(invitation.token);
-  }
-
-  res.status(201).json(buildAuthSessionResponse(schoolId, account, currentMember, token));
-});
-
-app.post("/api/auth/login", authRateLimiter, (req, res) => {
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const password = String(payload.password ?? "").trim();
-
-  if (!email || !password) {
-    res.status(400).json({ error: "email and password are required" });
-    return;
-  }
-
-  const schoolResolution = resolveAuthSchoolId(req, payload, email);
-  if (!schoolResolution.schoolId) {
-    res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
-    return;
-  }
-
-  const schoolId = schoolResolution.schoolId;
-
-  const account = getLocalAuthAccountByEmail(email, { schoolId });
-  if (!account || !verifyPassword(password, account.passwordSalt, account.passwordHash)) {
-    res.status(401).json({ error: "Invalid email or password" });
-    return;
-  }
-
-  const refreshedAccount = recordLocalAuthLogin(account.accountId, { schoolId }) ?? account;
-  const currentMember = activateKnownMemberForAccount(schoolId, refreshedAccount);
-  const resolvedRole = currentMember?.role ?? refreshedAccount.role;
-  if (shouldSyncPrimaryCoachIdentity(resolvedRole)) {
-    saveOnboardingAccountState({
-      organization: { schoolId },
-      primaryCoach: {
-        schoolId,
-        fullName: refreshedAccount.fullName,
-        email: refreshedAccount.email,
-        role: "owner",
-        organizationId: refreshedAccount.organizationId ?? "",
-        accountId: refreshedAccount.accountId,
-        createdAtIso: "",
-        updatedAtIso: "",
-      },
-    }, { schoolId });
-  }
-
-  const token = issueLocalAuthToken({
-    subject: refreshedAccount.accountId,
-    email: refreshedAccount.email,
-    name: refreshedAccount.fullName,
-    schoolId,
-    role: resolvedRole,
-  });
-
-  if (!token) {
-    res.status(500).json({ error: "Local auth token signing is not configured" });
-    return;
-  }
-
-  res.json(buildAuthSessionResponse(schoolId, refreshedAccount, currentMember, token));
-});
-
-app.post("/api/auth/logout", (_req, res) => {
-  res.status(204).send();
-});
-
-app.get("/api/auth/invitations/:token", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const token = sanitizeTextField(req.params.token, 120);
-
-  pruneExpiredInvitationTokens();
-  const invitation = invitationTokens.get(token);
-  if (!invitation || invitation.schoolId !== schoolId) {
-    res.status(404).json({ error: "Invitation not found or expired" });
-    return;
-  }
-
-  res.json({
-    invitation: {
-      email: invitation.email,
-      fullName: invitation.fullName,
-      role: invitation.role,
-      organizationName: invitation.organizationName,
-      expiresAtIso: new Date(invitation.expiresAt).toISOString(),
-      invitePath: buildInvitePath(schoolId, invitation.token),
-    },
-  });
-});
-
-app.post("/api/auth/password-reset/request", authRateLimiter, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-
-  if (!email || !isValidEmail(email)) {
-    res.status(400).json({ error: "Enter a valid email address" });
-    return;
-  }
-
-  pruneExpiredPasswordResetTokens();
-  const account = getLocalAuthAccountByEmail(email, { schoolId });
-  if (!account) {
-    res.json({ message: "If this email exists for your organization, reset instructions have been sent." });
-    return;
-  }
-
-  for (const [token, record] of passwordResetTokens.entries()) {
-    if (record.schoolId === schoolId && record.accountId === account.accountId) {
-      passwordResetTokens.delete(token);
-    }
-  }
-
-  const token = randomBytes(24).toString("hex");
-  const now = Date.now();
-  passwordResetTokens.set(token, {
-    token,
-    schoolId,
-    accountId: account.accountId,
-    email: account.email,
-    createdAt: now,
-    expiresAt: now + PASSWORD_RESET_TOKEN_TTL_MS,
-  });
-
-  try {
-    await deliverPasswordResetEmail(req, schoolId, account, token);
-  } catch (error) {
-    console.warn("[realtime-api] Failed to deliver password reset email", error);
-  }
-
-  res.json({
-    message: "If this email exists for your organization, reset instructions have been sent.",
-    expiresInMinutes: Math.floor(PASSWORD_RESET_TOKEN_TTL_MS / 60000),
-    resetPath: buildResetPath(schoolId, token),
-    ...(EXPOSE_PASSWORD_RESET_TOKEN ? { resetToken: token } : {}),
-  });
-});
-
-app.post("/api/auth/password-reset/confirm", authRateLimiter, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const token = String(payload.token ?? "").trim();
-  const nextPassword = String(payload.password ?? "").trim();
-
-  if (!token || !nextPassword) {
-    res.status(400).json({ error: "token and password are required" });
-    return;
-  }
-
-  if (nextPassword.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
-    return;
-  }
-
-  pruneExpiredPasswordResetTokens();
-  const resetRecord = passwordResetTokens.get(token);
-  if (!resetRecord || resetRecord.schoolId !== schoolId) {
-    res.status(400).json({ error: "Invalid or expired reset token" });
-    return;
-  }
-
-  const account = getLocalAuthAccountsByScope({ schoolId }).find((entry) => entry.accountId === resetRecord.accountId) ?? null;
-  if (!account) {
-    passwordResetTokens.delete(token);
-    res.status(400).json({ error: "Invalid or expired reset token" });
-    return;
-  }
-
-  const credentials = hashPassword(nextPassword);
-  saveLocalAuthAccount({
-    accountId: account.accountId,
-    organizationId: account.organizationId,
-    email: account.email,
-    fullName: account.fullName,
-    passwordHash: credentials.passwordHash,
-    passwordSalt: credentials.passwordSalt,
-    role: account.role,
-    status: account.status,
-    lastLoginAtIso: account.lastLoginAtIso,
-  }, { schoolId });
-
-  passwordResetTokens.delete(token);
-  res.json({ message: "Password reset successful" });
-});
-
-app.get("/api/onboarding/state", (req, res) => {
-  const schoolResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
-  const schoolId = schoolResolution.schoolId;
-  if (!schoolId) {
-    if (schoolResolution.error && schoolResolution.error !== "schoolId is required") {
-      res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error });
-      return;
-    }
-
-    res.json({
-      completed: false,
-      hasAccount: false,
-      hasProfile: false,
-      hasTeam: false,
-      teamCount: 0,
-      account: null,
-      profile: null,
-      suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
-    });
-    return;
-  }
-
-  const profile = buildOnboardingProfileView(schoolId);
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  const suggestedCoach = buildSuggestedCoachIdentity((req as ScopedRequest).authContext);
-  const { teams, team } = getPrimaryTeam(schoolId);
-  const completed = Boolean((account?.organization.onboardingCompletedAtIso || profile?.completedAtIso) && team?.name?.trim());
-
-  res.json({
-    completed,
-    hasAccount: Boolean(account?.organization.organizationName && account?.primaryCoach.email),
-    hasProfile: Boolean(profile),
-    hasTeam: Boolean(team?.name?.trim()),
-    teamCount: teams.length,
-    account,
-    profile,
-    suggestedCoach,
-  });
-});
-
-app.get("/api/onboarding/account", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
-  res.json({
-    account: getOnboardingAccountStateByScope({ schoolId }),
-    suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
-    currentMember,
-  });
-});
-
-app.put("/api/onboarding/account", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
-  if (!requireOnboardingIdentity(payload, res)) {
-    return;
-  }
-
-  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload), { schoolId });
-  const member = ensureOwnerMembership(req, schoolId, account);
-  const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload), { schoolId });
-  res.json({ message: "Onboarding account saved", account, profile, member });
-});
-
-app.get("/api/onboarding/profile", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ profile: buildOnboardingProfileView(schoolId), suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext) });
-});
-
-app.put("/api/onboarding/profile", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
-  if (!requireOnboardingIdentity(payload, res)) {
-    return;
-  }
-
-  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload), { schoolId });
-  const member = ensureOwnerMembership(req, schoolId, account);
-  const saved = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload), { schoolId });
-  res.json({ message: "Onboarding profile saved", profile: saved, account, member });
-});
-
-app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
-  if (!requireOnboardingIdentity(payload, res)) {
-    return;
-  }
-
-  const teamName = sanitizeTextField(payload.teamName ?? payload.name, 120);
-  if (!teamName) {
-    res.status(400).json({ error: "teamName is required" });
-    return;
-  }
-
-  const requestedAbbreviation = sanitizeTextField(payload.abbreviation, 12).toUpperCase();
-
-  const existing = getPrimaryTeam(schoolId).team;
-  const teamId = existing?.id ?? `team-${buildOrganizationSlug(teamName) || "primary"}`;
-  const currentPlayers = new Map((existing?.players ?? []).map((player) => [normalizeNameKey(player.name), player]));
-  const rosterPayload = Array.isArray(payload.roster) ? payload.roster : [];
-  const players = rosterPayload
-    .map((entry) => buildRosterPlayer(entry as Record<string, unknown>, teamId, currentPlayers.get(normalizeNameKey((entry as Record<string, unknown>).name))))
-    .filter((player): player is RosterPlayer => Boolean(player));
-
-  const savedTeams = upsertPrimaryTeam(schoolId, {
-    teamId,
-    name: teamName,
-    season: payload.season,
-    teamColor: payload.teamColor,
-    coachStyle: payload.coachStyle ?? existing?.coachStyle,
-    playingStyle: payload.playingStyle,
-    teamContext: payload.teamContext ?? existing?.teamContext,
-    abbreviation: requestedAbbreviation || existing?.abbreviation || buildTeamAbbreviation(teamName),
-  });
-
-  savedTeams[0]!.players = players;
-  const persistedTeams = persistSchoolTeams(schoolId, savedTeams);
-  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload, { complete: true }), { schoolId });
-  const member = ensureOwnerMembership(req, schoolId, account);
-  const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload, { complete: true }), { schoolId });
-
-  res.status(201).json({
-    message: "Onboarding completed successfully",
-    completed: true,
-    account,
-    member,
-    profile,
-    team: { id: persistedTeams[0]?.id ?? teamId, name: persistedTeams[0]?.name ?? teamName },
-    playersLoaded: persistedTeams[0]?.players.length ?? 0,
-  });
-});
-
-app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingMember = requireOrganizationManager(req, res);
-  if (!actingMember) {
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const password = String(payload.password ?? "").trim();
-
-  if (!email || !password) {
-    res.status(400).json({ error: "email and password are required" });
-    return;
-  }
-
-  if (password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
-    return;
-  }
-
-  const account = getLocalAuthAccountByEmail(email, { schoolId });
-  if (!account || account.role === "player") {
-    res.status(404).json({ error: "Coach account not found" });
-    return;
-  }
-
-  if (account.role === "owner" && actingMember.role !== "owner") {
-    res.status(403).json({ error: "Only organization owners can reset owner passwords" });
-    return;
-  }
-
-  const nextCredentials = hashPassword(password);
-  const savedAccount = saveLocalAuthAccount({
-    accountId: account.accountId,
-    organizationId: account.organizationId,
-    email: account.email,
-    fullName: account.fullName,
-    passwordHash: nextCredentials.passwordHash,
-    passwordSalt: nextCredentials.passwordSalt,
-    role: account.role,
-    status: account.status,
-    lastLoginAtIso: account.lastLoginAtIso,
-  }, { schoolId });
-
-  res.json({
-    message: "Coach password reset",
-    account: {
-      accountId: savedAccount.accountId,
-      email: savedAccount.email,
-      fullName: savedAccount.fullName,
-      role: savedAccount.role,
-      status: savedAccount.status,
-    },
-  });
-});
-
-app.post("/api/auth/player-account", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingMember = requireOrganizationManager(req, res);
-  if (!actingMember) {
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const playerName = normalizePersonName(payload.playerName);
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const password = String(payload.password ?? "").trim();
-
-  if (!playerName || !email || !password) {
-    res.status(400).json({ error: "playerName, email, and password are required" });
-    return;
-  }
-
-  if (!isValidEmail(email)) {
-    res.status(400).json({ error: "Enter a valid email address" });
-    return;
-  }
-
-  if (password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
-    return;
-  }
-
-  if (getLocalAuthAccountByEmail(email, { schoolId })) {
-    res.status(409).json({ error: "An account with that email already exists" });
-    return;
-  }
-
-  const teams = getRosterTeamsByScope({ schoolId });
-  const record = findPlayerRecord(teams, playerName);
-  if (!record) {
-    res.status(404).json({ error: "Player not found on roster" });
-    return;
-  }
-
-  const { passwordHash, passwordSalt } = hashPassword(password);
-  const account = saveLocalAuthAccount({
-    email,
-    fullName: sanitizeTextField(payload.fullName, 120) || record.player.name,
-    passwordHash,
-    passwordSalt,
-    organizationId: actingMember.organizationId,
-    role: "player",
-    status: "active",
-  }, { schoolId });
-
-  const member = saveOrganizationMember({
-    organizationId: actingMember.organizationId,
-    authSubject: account.accountId,
-    fullName: account.fullName,
-    email: account.email,
-    role: "player",
-    status: "active",
-    joinedAtIso: new Date().toISOString(),
-  }, { schoolId });
-
-  if (record.player.email !== account.email) {
-    const nextTeams = teams.map((team, teamIndex) => teamIndex === record.teamIndex
-      ? {
-        ...team,
-        players: team.players.map((player, playerIndex) => playerIndex === record.playerIndex
-          ? { ...player, email: account.email }
-          : player),
-      }
-      : team);
-    persistSchoolTeams(schoolId, nextTeams);
-  }
-
-  res.status(201).json({
-    message: "Player account created",
-    account: {
-      accountId: account.accountId,
-      email: account.email,
-      fullName: account.fullName,
-      role: account.role,
-      status: account.status,
-    },
-    member,
-  });
-});
-
-app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingMember = requireOrganizationManager(req, res);
-  if (!actingMember) {
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const password = String(payload.password ?? "").trim();
-
-  if (!email || !password) {
-    res.status(400).json({ error: "email and password are required" });
-    return;
-  }
-
-  if (password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters" });
-    return;
-  }
-
-  const account = getLocalAuthAccountByEmail(email, { schoolId });
-  if (!account || account.role !== "player") {
-    res.status(404).json({ error: "Player account not found" });
-    return;
-  }
-
-  const nextCredentials = hashPassword(password);
-  const savedAccount = saveLocalAuthAccount({
-    accountId: account.accountId,
-    organizationId: account.organizationId,
-    email: account.email,
-    fullName: account.fullName,
-    passwordHash: nextCredentials.passwordHash,
-    passwordSalt: nextCredentials.passwordSalt,
-    role: account.role,
-    status: account.status,
-    lastLoginAtIso: account.lastLoginAtIso,
-  }, { schoolId });
-
-  res.json({
-    message: "Player password reset",
-    account: {
-      accountId: savedAccount.accountId,
-      email: savedAccount.email,
-      fullName: savedAccount.fullName,
-      role: savedAccount.role,
-      status: savedAccount.status,
-    },
-  });
+registerAuthAccountRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  requireOrganizationManager,
+  sanitizeTextField,
+  normalizePersonName,
+  isValidEmail,
+  hashPassword,
+  getLocalAuthAccountByEmail,
+  saveLocalAuthAccount,
+  getRosterTeamsByScope,
+  findPlayerRecord,
+  saveOrganizationMember,
+  persistSchoolTeams,
 });
 
 registerOnboardingRoutes(app, {
@@ -3438,202 +2664,40 @@ registerGameEventRoutes(app, {
   updateEvent,
 });
 
-io.on("connection", (socket) => {
-  const schoolId = getSchoolIdFromSocket(socket);
-  if (!schoolId) {
-    socket.emit("error", { error: "schoolId is required" });
-    socket.disconnect(true);
-    return;
-  }
-  const socketSchoolId = schoolId;
-  socket.join(schoolRoom(socketSchoolId));
-
-  function registerOperator(rawPayload: unknown): void {
-    const payload = (rawPayload ?? {}) as Record<string, unknown>;
-    const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
-    const deviceName = typeof payload.deviceName === "string" ? payload.deviceName.trim() : "";
-    const connectionId = normalizeConnectionKey(payload.connectionId);
-    const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
-
-    if (!connectionId || !gameId) {
-      return;
-    }
-
-    const socketApiKey = typeof socket.handshake.auth?.apiKey === "string"
-      ? socket.handshake.auth.apiKey
-      : typeof socket.handshake.headers["x-api-key"] === "string"
-        ? socket.handshake.headers["x-api-key"]
-        : undefined;
-    const hasValidKey = Boolean(API_KEY && socketApiKey === API_KEY);
-
-    if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !socket.data.authContext && !hasValidKey) {
-      socket.emit("error", { error: "operator registration requires bearer auth" });
-      return;
-    }
-
-    if (isJwtAuthEnabled() && !hasValidKey) {
-      const role = socket.data.authContext?.role?.trim().toLowerCase();
-      if (!hasWriteRole(role)) {
-        socket.emit("error", { error: "insufficient role for operator registration" });
-        return;
-      }
-    }
-
-    const userId = socket.data.authContext?.subject;
-    const claimedByAnotherUser = connectionId
-      ? getOperatorsByConnectionId(socketSchoolId, connectionId).some((presence) => presence.userId && userId && presence.userId !== userId)
-      : false;
-    if (claimedByAnotherUser) {
-      socket.emit("error", { error: "connection is already registered to another account" });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const existing = operatorPresenceBySocketId.get(socket.id);
-
-    // Remove old indexes if the operator changed binding keys.
-    if (existing?.deviceId && existing.deviceId !== deviceId) {
-      operatorPresenceByDeviceId.delete(`${socketSchoolId}:${existing.deviceId}`);
-    }
-    const presence: OperatorPresence = {
-      schoolId: socketSchoolId,
-      userId,
-      deviceId: deviceId || undefined,
-      deviceName: deviceName || undefined,
-      connectionId: connectionId || undefined,
-      gameId,
-      socketId: socket.id,
-      connectedAtIso: existing?.connectedAtIso ?? now,
-      lastSeenIso: now
-    };
-
-    operatorPresenceBySocketId.set(socket.id, presence);
-    if (deviceId) {
-      operatorPresenceByDeviceId.set(`${socketSchoolId}:${deviceId}`, presence);
-    }
-    if (existing?.connectionId && existing.connectionId !== connectionId) {
-      refreshOperatorConnectionIndex(socketSchoolId, existing.connectionId);
-    }
-    if (connectionId) {
-      refreshOperatorConnectionIndex(socketSchoolId, connectionId);
-    }
-
-    socket.join(gameId);
-    socket.join(gameRoom(socketSchoolId, gameId));
-    if (deviceId) {
-      socket.join(deviceRoom(socketSchoolId, deviceId));
-      emitPresenceForDevice(socketSchoolId, deviceId);
-    }
-    if (connectionId) {
-      socket.join(connectionRoom(socketSchoolId, connectionId));
-      emitPresenceForConnection(socketSchoolId, connectionId);
-    }
-
-    // Re-sync the starting lineup if the operator included one and the server
-    // has an empty active lineup (e.g. after an API restart).
-    const rawLineupByTeam = payload.startingLineupByTeam;
-    if (rawLineupByTeam && typeof rawLineupByTeam === "object" && !Array.isArray(rawLineupByTeam)) {
-      const updated = patchGameLineup(gameId, rawLineupByTeam as Record<string, string[]>, { schoolId: socketSchoolId });
-      if (updated) {
-        emitToGameRooms(socketSchoolId, gameId, "game:state", updated);
-      }
-    }
-  }
-
-  socket.on("operator:register", (payload: unknown) => {
-    registerOperator(payload);
-  });
-
-  socket.on("operator:heartbeat", (payload: unknown) => {
-    registerOperator(payload);
-  });
-
-  socket.on("join:game", (gameId: string) => {
-    if (!gameId) {
-      return;
-    }
-
-    socket.join(gameId);
-    socket.join(gameRoom(socketSchoolId, gameId));
-    if (isGameSubmitted(gameId, { schoolId: socketSchoolId })) {
-      socket.emit("game:submitted", { gameId });
-      return;
-    }
-    const state = getGameState(gameId, { schoolId: socketSchoolId });
-    if (state) {
-      socket.emit("game:state", state);
-      socket.emit("game:insights", getGameInsights(gameId, { schoolId: socketSchoolId }));
-      void refreshAndBroadcastInsights(socketSchoolId, gameId);
-    }
-  });
-
-  socket.on("join:coach", (rawPayload: unknown) => {
-    const payload = (rawPayload ?? {}) as Record<string, unknown>;
-    const gameId = typeof payload.gameId === "string" ? payload.gameId.trim() : "";
-    const connectionId = normalizeConnectionKey(payload.connectionId);
-
-    if (gameId) {
-      socket.join(gameId);
-      socket.join(gameRoom(socketSchoolId, gameId));
-      if (isGameSubmitted(gameId, { schoolId: socketSchoolId })) {
-        socket.emit("game:submitted", { gameId });
-      } else {
-        const state = getGameState(gameId, { schoolId: socketSchoolId });
-        if (state) {
-          socket.emit("game:state", state);
-          socket.emit("game:insights", getGameInsights(gameId, { schoolId: socketSchoolId }));
-          void refreshAndBroadcastInsights(socketSchoolId, gameId);
-        }
-      }
-    }
-
-    if (connectionId) {
-      socket.join(connectionRoom(socketSchoolId, connectionId));
-      socket.emit("presence:status", buildConnectionPresencePayload(socketSchoolId, connectionId));
-    }
-  });
-
-  socket.on("disconnect", () => {
-    const operator = operatorPresenceBySocketId.get(socket.id);
-    if (!operator) {
-      return;
-    }
-
-    operatorPresenceBySocketId.delete(socket.id);
-    if (operator.deviceId) {
-      operatorPresenceByDeviceId.delete(`${operator.schoolId}:${operator.deviceId}`);
-      socket.leave(deviceRoom(operator.schoolId, operator.deviceId));
-    }
-    if (operator.connectionId) {
-      refreshOperatorConnectionIndex(operator.schoolId, operator.connectionId);
-      socket.leave(connectionRoom(operator.schoolId, operator.connectionId));
-    }
-    socket.leave(gameRoom(operator.schoolId, operator.gameId));
-    socket.leave(operator.gameId);
-
-    if (operator.deviceId) {
-      emitPresenceForDevice(operator.schoolId, operator.deviceId);
-    }
-    if (operator.connectionId) {
-      emitPresenceForConnection(operator.schoolId, operator.connectionId);
-    }
-  });
+registerRealtimeConnectionHandlers(io, {
+  getSchoolIdFromSocket,
+  schoolRoom,
+  normalizeConnectionKey,
+  apiKey: API_KEY,
+  isJwtAuthEnabled,
+  jwtWriteRequired: JWT_WRITE_REQUIRED,
+  hasWriteRole,
+  getOperatorsByConnectionId,
+  operatorPresenceBySocketId,
+  operatorPresenceByDeviceId,
+  refreshOperatorConnectionIndex,
+  gameRoom,
+  deviceRoom,
+  emitPresenceForDevice,
+  connectionRoom,
+  emitPresenceForConnection,
+  patchGameLineup,
+  emitToGameRooms,
+  isGameSubmitted,
+  getGameState,
+  getGameInsights,
+  refreshAndBroadcastInsights,
+  buildConnectionPresencePayload,
 });
 
-// Factory reset — clears all game sessions and roster data for the selected school.
-app.get("/admin/security-metrics", requireApiKey, requireWriteRole, (_req, res) => {
-  res.json({ ...securityTelemetry });
-});
-
-app.get("/admin/security-metrics/prometheus", requireApiKey, requireWriteRole, (_req, res) => {
-  res.type("text/plain; version=0.0.4").send(renderPrometheusSecurityMetrics());
-});
-
-app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  resetAllData({ schoolId });
-  clearOperatorLinksForSchool(schoolId);
-  res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
+registerAdminRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSecurityTelemetry: () => securityTelemetry,
+  renderPrometheusSecurityMetrics,
+  getSchoolIdFromRequest,
+  resetAllData,
+  clearOperatorLinksForSchool,
 });
 
 // SPA fallback: serve index.html for any non-API route not matched above.
