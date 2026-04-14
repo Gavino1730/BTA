@@ -91,6 +91,7 @@ import { registerAdvancedInsightsRoutes } from "./routes/advanced-insights-route
 import { registerAiCompatibilityRoutes } from "./routes/ai-compat-routes.js";
 import { registerAdvancedLegacyRoutes } from "./routes/advanced-legacy-routes.js";
 import { registerRosterConfigRoutes } from "./routes/roster-config-routes.js";
+import { registerOperatorLinkRoutes } from "./routes/operator-link-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -3155,143 +3156,28 @@ registerRosterConfigRoutes(app, {
   },
 });
 
-app.get("/api/operator-links/:connectionId", (req, res) => {
-  const connectionId = normalizeConnectionKey(req.params.connectionId);
-  if (!connectionId) {
-    res.status(400).json({ error: "connectionId is required" });
-    return;
-  }
-
-  const tenantResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
-  let schoolId = tenantResolution.schoolId;
-  let resolvedViaConnectionLookup = false;
-  if (!schoolId) {
-    if (tenantResolution.error && tenantResolution.error !== "schoolId is required") {
-      res.status(tenantResolution.status ?? 400).json({ error: tenantResolution.error });
-      return;
-    }
-
-    const matchingSchoolIds = Array.from(operatorLinkByConnectionId.keys())
+registerOperatorLinkRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  normalizeConnectionKey,
+  resolveRequestSchoolId,
+  listSchoolIdsForConnection: (connectionId) => {
+    return Array.from(operatorLinkByConnectionId.keys())
       .filter((key) => key.endsWith(`:${connectionId}`))
       .map((key) => key.slice(0, key.lastIndexOf(":")));
-
-    if (matchingSchoolIds.length === 0) {
-      res.status(404).json({ error: "Connection code not found" });
-      return;
-    }
-
-    if (matchingSchoolIds.length > 1) {
-      res.status(409).json({ error: "Connection code is ambiguous; provide schoolId" });
-      return;
-    }
-
-    schoolId = matchingSchoolIds[0]!;
-    resolvedViaConnectionLookup = true;
-  }
-
-  let setup = getOperatorLinkSetup(schoolId, connectionId);
-  if (!setup) {
-    res.status(404).json({ error: "Connection code not found" });
-    return;
-  }
-
-  const operatorToken = issueLocalAuthToken({
-    subject: `operator:${connectionId}`,
-    email: `operator-${connectionId.toLowerCase()}@system.bta`,
-    schoolId,
-    role: "operator",
-    expiresInHours: 24 * 90,
-  }) ?? undefined;
-
-  if (operatorToken) {
-    setup = {
-      ...setup,
-      operatorToken,
-      updatedAtIso: new Date().toISOString(),
-    };
+  },
+  getOperatorLinkSetup,
+  setOperatorLinkSetup: (schoolId, connectionId, setup) => {
     operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
-  }
-
-  // The connection code itself is the shared secret between coach and operator.
-  // Always deliver the operator token to any caller that knows the connection ID —
-  // this allows the iPad to bootstrap auth on first sync without a prior credential.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { operatorToken: setupOperatorToken, ...publicSetup } = setup;
-  res.json({
-    connectionId,
-    schoolId,
-    setup: publicSetup,
-    teams: getRosterTeamsByScope({ schoolId }),
-    operatorToken: setupOperatorToken,
-  });
-});
-
-app.put("/api/operator-links/:connectionId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const connectionId = normalizeConnectionKey(req.params.connectionId);
-  if (!connectionId) {
-    res.status(400).json({ error: "connectionId is required" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-
-  // Re-use an existing operator token for this connection so the iPad doesn't
-  // need to re-save it every time the coach publishes an update.
-  const existing = operatorLinkByConnectionId.get(operatorLinkKey(schoolId, connectionId));
-  const operatorToken = existing?.operatorToken
-    ?? issueLocalAuthToken({
-      subject: `operator:${connectionId}`,
-      email: `operator-${connectionId.toLowerCase()}@system.bta`,
-      schoolId,
-      role: "operator",
-      expiresInHours: 24 * 90, // 90 days
-    })
-    ?? undefined;
-
-  const hasField = (field: string): boolean => Object.prototype.hasOwnProperty.call(payload, field);
-  const mergeSanitizedTextField = (field: string, maxLength: number, fallback?: string): string | undefined => {
-    if (!hasField(field)) {
-      return fallback;
-    }
-    return sanitizeTextField(payload[field], maxLength) || undefined;
-  };
-
-  const setup: OperatorLinkSetup = {
-    gameId: mergeSanitizedTextField("gameId", 120, existing?.gameId),
-    myTeamId: mergeSanitizedTextField("myTeamId", 120, existing?.myTeamId),
-    myTeamName: mergeSanitizedTextField("myTeamName", 120, existing?.myTeamName),
-    opponentName: mergeSanitizedTextField("opponentName", 120, existing?.opponentName),
-    vcSide:
-      payload.vcSide === "away" || payload.vcSide === "home"
-        ? payload.vcSide
-        : (existing?.vcSide ?? "home"),
-    homeTeamColor: hasField("homeTeamColor")
-      ? normalizeTeamColor(payload.homeTeamColor)
-      : existing?.homeTeamColor,
-    awayTeamColor: hasField("awayTeamColor")
-      ? normalizeTeamColor(payload.awayTeamColor)
-      : existing?.awayTeamColor,
-    dashboardUrl: mergeSanitizedTextField("dashboardUrl", 320, existing?.dashboardUrl),
-    startingLineup: hasField("startingLineup") && Array.isArray(payload.startingLineup)
-      ? (payload.startingLineup as unknown[]).filter((id): id is string => typeof id === "string" && id.trim().length > 0).slice(0, 10)
-      : existing?.startingLineup,
-    updatedAtIso: new Date().toISOString(),
-    operatorToken,
-  };
-
-  operatorLinkByConnectionId.set(operatorLinkKey(schoolId, connectionId), setup);
-
-  // Strip token from the socket broadcast — only deliver it via the authenticated GET
-  const { operatorToken: _tok, ...publicSetup } = setup;
-  const response = {
-    connectionId,
-    setup: publicSetup,
-    teams: getRosterTeamsByScope({ schoolId }),
-  };
-
-  io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
-  res.json({ ...response, operatorToken });
+  },
+  issueLocalAuthToken,
+  getRosterTeamsByScope,
+  sanitizeTextField,
+  normalizeTeamColor,
+  emitOperatorLinkUpdated: (schoolId, connectionId, response) => {
+    io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
+  },
 });
 
 // ─────────────────────────────────────────────────────────────────────────
