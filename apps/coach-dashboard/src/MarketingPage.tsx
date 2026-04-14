@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-
 interface MarketingPageProps {
   onNavigate: (path: string) => void;
   isAuthenticated: boolean;
