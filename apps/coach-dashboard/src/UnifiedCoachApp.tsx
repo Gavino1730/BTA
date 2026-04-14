@@ -5,7 +5,6 @@ import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
-import { DemoPage, MarketingPage } from "./MarketingPage.js";
 import { PlayersPage } from "./PlayersPage.js";
 import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
@@ -243,12 +242,15 @@ export function UnifiedCoachApp() {
     setRoute(resolveCoachRoute(nextPath));
   }
 
-  if (route === "marketing") {
-    return <MarketingPage onNavigate={navigate} isAuthenticated={Boolean(isAuthenticated)} />;
-  }
-
-  if (route === "demo") {
-    return <DemoPage onNavigate={navigate} />;
+  if (route === "marketing" || route === "demo") {
+    return (
+      <LoginPage
+        onBackHome={() => navigate("/")}
+        onCreateAccount={() => navigate("/setup")}
+        onForgotPassword={() => navigate("/forgot-password")}
+        onSuccess={handleAuthSuccess}
+      />
+    );
   }
 
   if (route === "login") {
