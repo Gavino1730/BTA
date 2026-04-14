@@ -1,6 +1,24 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, resolveActiveSchoolId } from "./platform.js";
+import {
+  apiBase,
+  apiKeyHeader,
+  fetchBillingEntitlement,
+  generateConnectionCode,
+  normalizeConnectionCode,
+  resolveActiveSchoolId,
+  type BillingEntitlement,
+} from "./platform.js";
 
+type SettingsSection = "pairing" | "roster" | "profile" | "ai" | "members" | "billing";
+type MemberFilter = "all" | "pending" | "active";
+
+function normalizeSettingsSection(value: string | null | undefined, fallback: SettingsSection): SettingsSection {
+  if (value === "pairing" || value === "roster" || value === "profile" || value === "ai" || value === "members" || value === "billing") {
+    return value;
+  }
+
+  return fallback;
+}
 interface TeamDto {
   id: string;
   name: string;
@@ -171,16 +189,18 @@ export function TeamSettingsPage() {
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
-  const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
     const saved = localStorage.getItem("coach:settings-section");
-    if (saved === "pairing" || saved === "roster" || saved === "profile" || saved === "ai" || saved === "members") return saved;
-    return "pairing";
+    return normalizeSettingsSection(saved, "pairing");
   });
   const [copyConfirmed, setCopyConfirmed] = useState(false);
   const [playingStyle, setPlayingStyle] = useState("");
   const [teamContext, setTeamContext] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [focusInsightsText, setFocusInsightsText] = useState("");
+  const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
+  const [billingStatus, setBillingStatus] = useState("Open Billing to manage your plan, payment method, and invoices.");
+  const [billingLoading, setBillingLoading] = useState(false);
   const [connectionCode, setConnectionCode] = useState(() => {
     if (typeof window === "undefined") {
       return generateConnectionCode();
@@ -289,6 +309,51 @@ export function TeamSettingsPage() {
     window.localStorage.setItem("coach-bound-connection-id", connectionCode);
   }, [connectionCode]);
 
+  useEffect(() => {
+    if (activeSection !== "billing") {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadBillingSummary() {
+      setBillingLoading(true);
+      setBillingStatus("Loading billing status...");
+      try {
+        const entitlement = await fetchBillingEntitlement();
+        if (cancelled) {
+          return;
+        }
+
+        setBillingEntitlement(entitlement);
+        if (!entitlement) {
+          setBillingStatus("Could not load billing status. Open Billing to retry.");
+        } else if (entitlement.accessActive) {
+          setBillingStatus("Your subscription is active. Open Billing to manage your subscription details.");
+        } else if (entitlement.status === "past_due" || entitlement.status === "unpaid") {
+          setBillingStatus("Your account needs payment attention. Open Billing to restore full access.");
+        } else if (entitlement.status === "canceled") {
+          setBillingStatus("Your subscription is canceled. Open Billing to reactivate access.");
+        } else {
+          setBillingStatus("No active subscription found. Open Billing to start your plan.");
+        }
+      } catch {
+        if (!cancelled) {
+          setBillingEntitlement(null);
+          setBillingStatus("Could not load billing status. Open Billing to retry.");
+        }
+      } finally {
+        if (!cancelled) {
+          setBillingLoading(false);
+        }
+      }
+    }
+
+    void loadBillingSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection]);
   async function saveOrganizationProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!profile?.organizationName?.trim() || !profile.coachName?.trim() || !profile.coachEmail?.trim()) {
@@ -619,6 +684,7 @@ export function TeamSettingsPage() {
     { key: "profile", label: "Profile" },
     { key: "ai", label: "AI Context" },
     { key: "members", label: "Members" },
+    { key: "billing", label: "Billing" },
   ] as const;
 
   return (
@@ -1068,6 +1134,44 @@ export function TeamSettingsPage() {
               <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>Send Invite</button>
             </div>
           </form>
+        </section>
+      )}
+
+      {/* ── Billing ── */}
+      {activeSection === "billing" && (
+        <section className="stats-page-card settings-section-card">
+          <div className="stats-page-card-head">
+            <div>
+              <h3>Billing</h3>
+              <p className="settings-section-desc">Manage your subscription, payment method, invoices, and plan access.</p>
+            </div>
+          </div>
+          <p className="stats-page-subcopy" style={{ marginTop: 0 }}>
+            {billingStatus}
+          </p>
+          {billingEntitlement ? (
+            <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>
+              Current status: <strong>{billingEntitlement.status}</strong>
+              {" · "}
+              {billingEntitlement.accessActive ? "Access active" : "Access limited"}
+            </p>
+          ) : null}
+          <div className="settings-form-footer" style={{ marginTop: "1rem" }}>
+            <button
+              type="button"
+              className="shell-nav-link shell-nav-link-active"
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate("/billing");
+                  return;
+                }
+                window.location.assign("/billing");
+              }}
+              disabled={billingLoading}
+            >
+              Open Billing Page
+            </button>
+          </div>
         </section>
       )}
     </div>
