@@ -89,6 +89,8 @@ import { registerGameManagementRoutes } from "./routes/game-management-routes.js
 import { registerLiveInsightsRoutes } from "./routes/live-insights-routes.js";
 import { registerAdvancedInsightsRoutes } from "./routes/advanced-insights-routes.js";
 import { registerAiCompatibilityRoutes } from "./routes/ai-compat-routes.js";
+import { registerAdvancedLegacyRoutes } from "./routes/advanced-legacy-routes.js";
+import { registerRosterConfigRoutes } from "./routes/roster-config-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -3133,77 +3135,24 @@ registerAiCompatibilityRoutes(app, {
   buildPlayerAnalysisPayload,
 });
 
-app.get("/api/advanced/game/:gameId", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const game = buildGamesPayload(schoolId).find((g) => String(g.gameId) === String(req.params.gameId));
-  if (!game) {
-    res.status(404).json({ error: "Game not found" });
-    return;
-  }
-
-  const ts = game.team_stats as { fg: number; fga: number; fg3: number; fg3a: number; ft: number; fta: number; asst: number; to: number; stl: number; reb: number; oreb: number; dreb: number; fouls: number; blk: number };
-  res.json({
-    gameId: game.gameId,
-    opponent: game.opponent,
-    date: game.date,
-    result: game.result,
-    efg_pct: ts.fga > 0 ? roundStat(((ts.fg + 0.5 * ts.fg3) / ts.fga) * 100) : 0,
-    ts_pct: (2 * (ts.fg > 0 ? ts.fg : 0) + ts.fta * 0.44) > 0
-      ? roundStat((game.vc_score as number) / (2 * (ts.fga + ts.fg3a * 0 + ts.fta * 0.44)) * 100)
-      : 0,
-    ast_to_ratio: ts.to > 0 ? roundStat(ts.asst / ts.to) : 0,
-    team_stats: ts,
-    player_stats: game.player_stats,
-  });
+registerAdvancedLegacyRoutes(app, {
+  getSchoolIdFromRequest,
+  buildGamesPayload,
+  roundStat,
+  buildComprehensiveInsightsPayload,
+  buildTeamAdvancedPayload,
+  buildVolatilityPayload,
 });
 
-app.get("/api/advanced/patterns", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const games = buildGamesPayload(schoolId);
-  const homeGames = games.filter((g) => g.location === "home");
-  const awayGames = games.filter((g) => g.location === "away");
-  const avgScore = (arr: Array<Record<string, unknown>>) =>
-    arr.length > 0 ? roundStat(arr.reduce((s, g) => s + (g.vc_score as number), 0) / arr.length) : 0;
-
-  res.json({
-    home_avg_score: avgScore(homeGames),
-    away_avg_score: avgScore(awayGames),
-    total_games: games.length,
-    home_record: { wins: homeGames.filter((g) => g.result === "W").length, losses: homeGames.filter((g) => g.result === "L").length },
-    away_record: { wins: awayGames.filter((g) => g.result === "W").length, losses: awayGames.filter((g) => g.result === "L").length },
-  });
-});
-
-app.get("/api/advanced/insights", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json(buildComprehensiveInsightsPayload(schoolId));
-});
-
-app.get("/api/advanced/all", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({
-    team: buildTeamAdvancedPayload(schoolId),
-    volatility: buildVolatilityPayload(schoolId),
-    insights: buildComprehensiveInsightsPayload(schoolId),
-  });
-});
-
-app.get("/config/roster-teams", requireApiKey, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ teams: getRosterTeamsByScope({ schoolId }) });
-});
-
-app.put("/config/roster-teams", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const teams = req.body?.teams;
-  if (!Array.isArray(teams)) {
-    res.status(400).json({ error: "teams array is required" });
-    return;
-  }
-
-  const saved = saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", saved);
-  res.json({ teams: saved });
+registerRosterConfigRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getRosterTeamsByScope,
+  saveRosterTeams,
+  emitRosterTeams: (schoolId, teams) => {
+    io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
+  },
 });
 
 app.get("/api/operator-links/:connectionId", (req, res) => {

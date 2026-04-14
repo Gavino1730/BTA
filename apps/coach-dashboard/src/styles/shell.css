@@ -240,6 +240,27 @@
   margin-top: 0.5rem;
 }
 
+.account-upload-trigger {
+  cursor: pointer;
+}
+
+.account-upload-trigger.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.account-upload-input {
+  display: none;
+}
+
+.account-danger-scheduled-note {
+  margin-top: 0.5rem;
+}
+
+.account-danger-grid-gap {
+  margin-top: 0.75rem;
+}
+
 .account-danger-btn {
   border-color: color-mix(in srgb, var(--bta-danger) 42%, transparent);
   color: var(--bta-miss-text-soft);

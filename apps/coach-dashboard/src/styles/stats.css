@@ -195,6 +195,38 @@
   margin-top: 0.35rem;
 }
 
+.org-settings-retry-btn {
+  margin-top: 0.65rem;
+}
+
+.org-settings-section-gap {
+  margin-bottom: 1rem;
+}
+
+.org-settings-role-note {
+  margin-top: 0.75rem;
+}
+
+.org-settings-invite-note {
+  margin-bottom: 0.75rem;
+}
+
+.org-settings-request-access-wrap {
+  margin-top: 1rem;
+}
+
+.system-status-card {
+  max-width: 760px;
+  margin: 2.5rem auto;
+}
+
+.system-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
 .stats-game-grid {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   margin-bottom: 1.25rem;
@@ -1942,6 +1974,16 @@
   color: var(--text-muted);
 }
 
+.game-edit-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .game-flow-note {
   font-size: 0.95rem;
 }
@@ -2008,6 +2050,96 @@
 
 .game-box-head-row {
   border-bottom: 1px solid var(--border);
+}
+
+.game-box-th-player {
+  text-align: left;
+  min-width: 140px;
+}
+
+.game-box-th {
+  padding: 0.5rem 0.45rem;
+  text-align: center;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--border-hi);
+  background: var(--surface-2);
+}
+
+.game-box-th-number {
+  min-width: 44px;
+}
+
+.game-box-th-points {
+  color: var(--teal);
+}
+
+.game-box-cell {
+  padding: 0.45rem 0.4rem;
+}
+
+.game-box-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 0.32rem 0.4rem;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-box-input-name {
+  width: 130px;
+  text-align: left;
+}
+
+.game-box-input-number {
+  width: 40px;
+}
+
+.game-box-input-stat {
+  width: 46px;
+}
+
+.game-box-cell-player {
+  padding: 0.45rem 0.5rem;
+  font-weight: 600;
+}
+
+.game-box-cell-center {
+  text-align: center;
+}
+
+.game-box-cell-strong {
+  font-weight: 700;
+}
+
+.game-box-cell-points {
+  color: var(--teal);
+  font-size: 0.92em;
+}
+
+.game-box-cell-delete {
+  padding: 0.45rem 0.4rem;
+}
+
+.game-box-player-name {
+  padding: 0 0.3rem;
+}
+
+.game-box-delete-btn {
+  background: rgba(248, 113, 113, 0.14);
+  border: none;
+  color: var(--red);
+  border-radius: 6px;
+  padding: 0.28rem 0.55rem;
+  cursor: pointer;
 }
 
 .game-card-clickable {
@@ -2268,7 +2400,12 @@
 }
 
 .game-box-score-table .game-box-row {
+  border-bottom: 1px solid var(--border);
   transition: background-color 120ms ease, box-shadow 130ms ease, transform 130ms ease;
+}
+
+.game-box-score-table .game-box-row.game-box-row-alt {
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .game-box-score-table .game-box-row:hover {

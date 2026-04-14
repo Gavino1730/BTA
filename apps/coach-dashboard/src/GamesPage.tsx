@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
 
@@ -124,37 +123,6 @@ function sumTeamStats(rows: EditPlayerRow[]): Required<GameTeamStats> {
   t.reb = t.oreb + t.dreb;
   return t;
 }
-
-const inputSt: CSSProperties = {
-  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.16)",
-  color: "var(--text)", borderRadius: 8, padding: "0.55rem 0.7rem", width: "100%", boxSizing: "border-box",
-};
-const readOnlyFieldSt: CSSProperties = {
-  background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(255,255,255,0.08)",
-  color: "var(--text)",
-  borderRadius: 8,
-  padding: "0.55rem 0.7rem",
-  width: "100%",
-  boxSizing: "border-box",
-  minHeight: 42,
-  display: "flex",
-  alignItems: "center",
-  cursor: "default",
-  userSelect: "text",
-};
-const cellSt: CSSProperties = {
-  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-  color: "var(--text)", borderRadius: 5, padding: "0.32rem 0.4rem", textAlign: "center", width: "100%", boxSizing: "border-box",
-  fontVariantNumeric: "tabular-nums",
-};
-const thSt: CSSProperties = {
-  padding: "0.5rem 0.45rem", textAlign: "center", fontSize: "0.72rem",
-  textTransform: "uppercase", color: "var(--text-muted)", whiteSpace: "nowrap",
-  fontWeight: 700, letterSpacing: "0.04em",
-  borderBottom: "2px solid var(--border-hi)",
-  background: "var(--surface-2)",
-};
 
 function pctValue(made: number, attempted: number): number | null {
   if (attempted <= 0) {
@@ -431,17 +399,17 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
           {isEditing ? (
             <div className="game-edit-grid">
               {([
-                ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />],
-                ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} style={inputSt} />],
+                ["Date", <input key="d" value={date} onChange={e => setDate(e.target.value)} className="game-edit-input" />],
+                ["Opponent", <input key="o" value={opponent} onChange={e => setOpponent(e.target.value)} className="game-edit-input" />],
                 ["Location", (
-                  <select key="l" value={location} onChange={e => setLocation(e.target.value)} style={inputSt}>
+                  <select key="l" value={location} onChange={e => setLocation(e.target.value)} className="game-edit-input">
                     <option value="home">Home</option>
                     <option value="away">Away</option>
                     <option value="neutral">Neutral</option>
                   </select>
                 )],
-                ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} style={inputSt} />],
-                ["Opp Score", <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} style={inputSt} />],
+                ["Team Score", <input key="vs" type="number" min={0} value={vcScore} onChange={e => setVcScore(e.target.value)} className="game-edit-input" />],
+                ["Opp Score", <input key="os" type="number" min={0} value={oppScore} onChange={e => setOppScore(e.target.value)} className="game-edit-input" />],
               ] as [string, JSX.Element][]).map(([lbl, editEl]) => (
                 <div key={lbl} className="game-edit-field">
                   <span className="game-edit-label">{lbl}</span>
@@ -587,44 +555,44 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
             <table className="game-box-score-table">
               <thead>
                 <tr className="game-box-head-row">
-                  <th style={{ ...thSt, textAlign: "left", minWidth: 140 }} className="sticky-col" rowSpan={2}>Player</th>
-                  <th style={{ ...thSt, minWidth: 44 }} rowSpan={2}>#</th>
-                  {groupedCols.shooting.length > 0 && <th style={thSt} colSpan={groupedCols.shooting.length}>Shooting</th>}
-                  {groupedCols.playmaking.length > 0 && <th style={thSt} colSpan={groupedCols.playmaking.length}>Playmaking</th>}
-                  {groupedCols.defense.length > 0 && <th style={thSt} colSpan={groupedCols.defense.length}>Defense / Glass</th>}
-                  <th style={thSt} rowSpan={2}>REB</th>
-                  <th style={{ ...thSt, color: "var(--teal)" }} rowSpan={2}>PTS</th>
-                  {isEditing && <th style={thSt} rowSpan={2}></th>}
+                  <th className="sticky-col game-box-th game-box-th-player" rowSpan={2}>Player</th>
+                  <th className="game-box-th game-box-th-number" rowSpan={2}>#</th>
+                  {groupedCols.shooting.length > 0 && <th className="game-box-th" colSpan={groupedCols.shooting.length}>Shooting</th>}
+                  {groupedCols.playmaking.length > 0 && <th className="game-box-th" colSpan={groupedCols.playmaking.length}>Playmaking</th>}
+                  {groupedCols.defense.length > 0 && <th className="game-box-th" colSpan={groupedCols.defense.length}>Defense / Glass</th>}
+                  <th className="game-box-th" rowSpan={2}>REB</th>
+                  <th className="game-box-th game-box-th-points" rowSpan={2}>PTS</th>
+                  {isEditing && <th className="game-box-th" rowSpan={2}></th>}
                 </tr>
                 <tr className="game-box-head-row">
-                  {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => <th key={c.key} style={thSt}>{c.label}</th>)}
+                  {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => <th key={c.key} className="game-box-th">{c.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--border)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.025)" }} className={`game-box-row ${!isEditing && rowPts(row) === maxPts && maxPts > 0 ? "leader-points" : ""} ${!isEditing && rowReb(row) === maxReb && maxReb > 0 ? "leader-reb" : ""} ${!isEditing && row.asst === maxAst && maxAst > 0 ? "leader-ast" : ""}`}>
-                    <td style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }} className="sticky-col">
+                  <tr key={i} className={`game-box-row ${i % 2 === 1 ? "game-box-row-alt" : ""} ${!isEditing && rowPts(row) === maxPts && maxPts > 0 ? "leader-points" : ""} ${!isEditing && rowReb(row) === maxReb && maxReb > 0 ? "leader-reb" : ""} ${!isEditing && row.asst === maxAst && maxAst > 0 ? "leader-ast" : ""}`}>
+                    <td className="sticky-col game-box-cell game-box-cell-player">
                       {isEditing
-                        ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" style={{ ...cellSt, width: 130, textAlign: "left" }} />
-                        : <span style={{ padding: "0 0.3rem" }}>{row.name || "—"}</span>}
+                        ? <input value={row.name} onChange={e => setField(i, "name", e.target.value)} placeholder="Name" className="game-box-input game-box-input-name" />
+                        : <span className="game-box-player-name">{row.name || "—"}</span>}
                     </td>
-                    <td style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
+                    <td className="game-box-cell game-box-cell-center">
                       {isEditing
-                        ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" style={{ ...cellSt, width: 40 }} />
+                        ? <input value={row.number} onChange={e => setField(i, "number", e.target.value)} placeholder="#" className="game-box-input game-box-input-number" />
                         : <span>{row.number || "—"}</span>}
                     </td>
                     {[...groupedCols.shooting, ...groupedCols.playmaking, ...groupedCols.defense].map(c => (
-                      <td key={c.key} style={{ padding: "0.45rem 0.4rem", textAlign: "center" }}>
+                      <td key={c.key} className="game-box-cell game-box-cell-center">
                         {isEditing
-                          ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} style={{ ...cellSt, width: 46 }} />
+                          ? <input type="number" value={String(row[c.key as StatKey])} onChange={e => setField(i, c.key as keyof EditPlayerRow, e.target.value)} className="game-box-input game-box-input-stat" />
                           : <span>{String(row[c.key as StatKey])}</span>}
                       </td>
                     ))}
-                    <td style={{ padding: "0.45rem 0.4rem", fontWeight: 700, textAlign: "center" }}>{rowReb(row)}</td>
-                    <td style={{ padding: "0.45rem 0.4rem", fontWeight: 700, color: "var(--teal)", textAlign: "center", fontSize: "0.92em" }}>{rowPts(row)}</td>
+                    <td className="game-box-cell game-box-cell-center game-box-cell-strong">{rowReb(row)}</td>
+                    <td className="game-box-cell game-box-cell-center game-box-cell-strong game-box-cell-points">{rowPts(row)}</td>
                     {isEditing && (
-                      <td style={{ padding: "0.45rem 0.4rem" }}>
-                        <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} style={{ background: "rgba(248,113,113,0.14)", border: "none", color: "var(--red)", borderRadius: 6, padding: "0.28rem 0.55rem", cursor: "pointer" }}>✕</button>
+                      <td className="game-box-cell game-box-cell-delete">
+                        <button type="button" onClick={() => setRows(p => p.filter((_, j) => j !== i))} className="game-box-delete-btn">✕</button>
                       </td>
                     )}
                   </tr>

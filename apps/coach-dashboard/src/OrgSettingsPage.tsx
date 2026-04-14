@@ -337,8 +337,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
           <p className="stats-empty-copy">{loadError}</p>
           <button
             type="button"
-            className="shell-nav-link"
-            style={{ marginTop: "0.65rem" }}
+            className="shell-nav-link org-settings-retry-btn"
             onClick={() => setRetryKey((value) => value + 1)}
           >
             Retry
@@ -348,7 +347,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
 
       {!isLoading && !loadError && (
         <>
-          <section className="stats-page-grid two-column" style={{ marginBottom: "1rem" }}>
+          <section className="stats-page-grid two-column org-settings-section-gap">
             <form className="stats-page-card settings-section-card" onSubmit={saveProfile}>
               <div className="stats-page-card-head">
                 <div>
@@ -406,7 +405,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
                 </label>
               </div>
               {!managerView && (
-                <p className="stats-page-subcopy" style={{ marginTop: "0.75rem" }}>
+                <p className="stats-page-subcopy org-settings-role-note">
                   You are signed in as {roleLabel(currentMember?.role ?? "coach")}. Only organization admins can edit this section.
                 </p>
               )}
@@ -478,7 +477,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
               {managerView ? (
                 <form className="settings-invite-form" onSubmit={inviteMember}>
                   <h4 className="settings-sub-heading">Invite Member</h4>
-                  <p className="stats-page-subcopy" style={{ marginBottom: "0.75rem" }}>
+                  <p className="stats-page-subcopy org-settings-invite-note">
                     Invite emails are sent automatically when configured.
                   </p>
                   <div className="setup-grid">
@@ -504,7 +503,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
                   </div>
                 </form>
               ) : (
-                <div style={{ marginTop: "1rem" }}>
+                <div className="org-settings-request-access-wrap">
                   <button type="button" className="shell-nav-link" onClick={() => onNavigate("/account")}>Request Admin Access</button>
                 </div>
               )}

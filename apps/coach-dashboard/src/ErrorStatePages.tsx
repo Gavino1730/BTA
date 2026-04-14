@@ -17,11 +17,11 @@ function ErrorStatePage({
 }: ErrorStatePageProps) {
   return (
     <div className="stats-page">
-      <section className="stats-page-card" style={{ maxWidth: "760px", margin: "2.5rem auto" }}>
+      <section className="stats-page-card system-status-card">
         <p className="stats-page-eyebrow">System Status</p>
         <h1>{title}</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginTop: "1rem" }}>
+        <div className="system-status-actions">
           {onPrimary && primaryLabel && (
             <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
               {primaryLabel}
