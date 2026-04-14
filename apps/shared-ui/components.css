@@ -1,0 +1,215 @@
+/* ============================================================
+   BTA Shared Component Styles
+   Consumed by coach-dashboard and ipad-operator.
+   Requires courtside-theme.css to be loaded first (for --bta-* tokens).
+   ============================================================ */
+
+/* ──────────────────────────────────────────
+   BUTTON SYSTEM
+────────────────────────────────────────── */
+.bta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  border: 1px solid transparent;
+  border-radius: var(--bta-radius-md);
+  padding: 0.55rem 1.1rem;
+  min-height: 40px;
+  font-family: var(--bta-font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background   var(--bta-motion-fast),
+    border-color var(--bta-motion-fast),
+    opacity      var(--bta-motion-fast),
+    transform    var(--bta-motion-fast);
+}
+
+.bta-btn:active { transform: translateY(1px); }
+
+.bta-btn:disabled,
+.bta-btn[aria-disabled="true"] {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.bta-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bta-ring) 36%, transparent);
+}
+
+/* Primary */
+.bta-btn-primary {
+  background: var(--bta-accent-violet);
+  border-color: var(--bta-accent-violet);
+  color: var(--bta-accent-on);
+}
+.bta-btn-primary:not(:disabled):hover {
+  background: var(--bta-accent-violet-strong, #7a69ff);
+  border-color: var(--bta-accent-violet-strong, #7a69ff);
+}
+
+/* Secondary */
+.bta-btn-secondary {
+  background: transparent;
+  border-color: var(--bta-border-strong);
+  color: var(--bta-text-secondary);
+}
+.bta-btn-secondary:not(:disabled):hover {
+  background: var(--bta-surface-1);
+  border-color: var(--bta-accent-cyan);
+  color: var(--bta-text-primary);
+}
+
+/* Ghost */
+.bta-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--bta-text-secondary);
+}
+.bta-btn-ghost:not(:disabled):hover {
+  background: var(--bta-surface-1);
+  color: var(--bta-text-primary);
+}
+
+/* Danger */
+.bta-btn-danger {
+  background: var(--bta-danger-soft);
+  border-color: var(--bta-danger);
+  color: var(--bta-danger);
+}
+.bta-btn-danger:not(:disabled):hover {
+  background: var(--bta-danger);
+  color: var(--bta-accent-on);
+}
+
+/* Success */
+.bta-btn-success {
+  background: var(--bta-success-soft);
+  border-color: var(--bta-success);
+  color: var(--bta-success);
+}
+.bta-btn-success:not(:disabled):hover {
+  background: var(--bta-success);
+  color: #0a1f1a;
+}
+
+/* Sizes */
+.bta-btn-sm { padding: 0.35rem 0.75rem; min-height: 32px; font-size: 0.8rem; }
+.bta-btn-lg { padding: 0.75rem 1.5rem;  min-height: 48px; font-size: 1rem; border-radius: var(--bta-radius-lg); }
+.bta-btn-full { width: 100%; }
+
+/* ──────────────────────────────────────────
+   STATUS MESSAGES
+────────────────────────────────────────── */
+.bta-status {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--bta-radius-sm);
+  border: 1px solid transparent;
+}
+
+.bta-status-success {
+  background: var(--bta-success-soft);
+  border-color: color-mix(in srgb, var(--bta-success) 40%, transparent);
+  color: var(--bta-success);
+}
+.bta-status-error {
+  background: var(--bta-danger-soft);
+  border-color: color-mix(in srgb, var(--bta-danger) 40%, transparent);
+  color: var(--bta-danger);
+}
+.bta-status-info {
+  background: var(--bta-accent-cyan-soft);
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 35%, transparent);
+  color: var(--bta-accent-cyan);
+}
+.bta-status-warning {
+  background: var(--bta-warning-soft);
+  border-color: color-mix(in srgb, var(--bta-warning) 40%, transparent);
+  color: var(--bta-warning);
+}
+
+/* ──────────────────────────────────────────
+   FORM FIELDS
+────────────────────────────────────────── */
+.bta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.bta-field-full { grid-column: 1 / -1; }
+
+.bta-field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--bta-text-tertiary);
+  text-transform: uppercase;
+}
+
+.bta-field-hint {
+  font-size: 0.74rem;
+  color: var(--bta-text-muted);
+}
+
+.bta-field-error {
+  font-size: 0.74rem;
+  color: var(--bta-danger);
+}
+
+.bta-field-invalid input,
+.bta-field-invalid select,
+.bta-field-invalid textarea {
+  border-color: var(--bta-danger) !important;
+  box-shadow: 0 0 0 3px var(--bta-danger-soft);
+}
+
+/* ──────────────────────────────────────────
+   CARD
+────────────────────────────────────────── */
+.bta-card {
+  position: relative;
+  background: var(--bta-bg-elevated);
+  border: 1px solid var(--bta-border-soft);
+  border-radius: var(--bta-radius-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(201, 205, 227, 0.06),
+    var(--bta-shadow-sm);
+  overflow: hidden;
+}
+
+.bta-card-pad-sm { padding: 0.75rem; }
+.bta-card-pad-md { padding: 1.25rem; }
+.bta-card-pad-lg { padding: 1.75rem; }
+
+.bta-card-glow-violet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% -10%, rgba(110, 91, 255, 0.10), transparent 64%);
+}
+
+.bta-card-glow-cyan::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 80% 0%, rgba(70, 215, 255, 0.08), transparent 60%);
+}
+
+.bta-card > * { position: relative; z-index: 1; }

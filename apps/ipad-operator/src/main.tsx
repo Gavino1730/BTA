@@ -3,7 +3,12 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App.js";
 import { initSupabaseSessionRefresh } from "./supabase/client.js";
 import "../../shared-ui/courtside-theme.css";
-import "./styles.css";
+import "../../shared-ui/components.css";
+// App-specific styles — split from the former monolithic styles.css
+import "./styles/base.css";     // layer declaration, reset, iPad globals
+import "./styles/game.css";     // Game layout, left/center/right panels, modal, scoreboard
+import "./styles/setup.css";    // Settings page, Pre-game screen, team/roster setup
+import "./styles/endgame.css";  // End-game actions, Post-game screen, Possession chain
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

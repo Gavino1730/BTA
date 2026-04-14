@@ -150,12 +150,7 @@ class SupabaseRestClient:
             raise RuntimeError(f"Unexpected response shape for {table}: {type(data)}")
         return data
 
-    def get_all(
-        self,
-        table: str,
-        params: dict[str, str],
-        page_size: int = 1000,
-    ) -> list[dict[str, Any]]:
+    def get_all(self, table: str, params: dict[str, str], page_size: int = 1000) -> list[dict[str, Any]]:
         offset = 0
         all_rows: list[dict[str, Any]] = []
         while True:
@@ -233,11 +228,7 @@ def cluster_roster_rows(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]
     return clusters
 
 
-def row_score(
-    row: dict[str, Any],
-    averages_by_player: dict[str, dict[str, Any]],
-    logs_by_player: dict[str, list[dict[str, Any]]],
-) -> tuple[int, int, int, int]:
+def row_score(row: dict[str, Any], averages_by_player: dict[str, dict[str, Any]], logs_by_player: dict[str, list[dict[str, Any]]]) -> tuple[int, int, int, int]:
     player_id = str(row.get("player_id") or "")
     stats = averages_by_player.get(player_id, {})
     games_played = int(stats.get("games_played") or 0)
@@ -254,7 +245,7 @@ def make_player_id(slug: str, fallback_name: str) -> str:
         safe = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
     else:
         safe = re.sub(r"[^a-z0-9]+", "-", normalize_name(fallback_name)).strip("-")
-    return f"vwb-{safe or 'player'}"
+    return f"team-{safe or 'player'}"
 
 
 def pct(value: Any) -> float | None:
@@ -283,11 +274,7 @@ def fmt_pair(made: Any, attempted: Any) -> str | None:
     return f"{m}/{a}"
 
 
-def build_player_notes(
-    season_averages: dict[str, Any] | None,
-    season_totals: dict[str, Any] | None,
-    shooting_splits: dict[str, Any] | None,
-) -> str:
+def build_player_notes(season_averages: dict[str, Any] | None, season_totals: dict[str, Any] | None, shooting_splits: dict[str, Any] | None) -> str:
     if not season_averages:
         return ""
 
@@ -486,12 +473,12 @@ def main() -> None:
 
         home_score = int_or_none(game.get("home_score"))
         away_score = int_or_none(game.get("away_score"))
-        vwb_score = home_score if is_home else away_score
+        team_score = home_score if is_home else away_score
         opp_score = away_score if is_home else home_score
 
         result = ""
-        if game.get("status") == "final" and vwb_score is not None and opp_score is not None:
-            result = "W" if vwb_score > opp_score else "L"
+        if game.get("status") == "final" and team_score is not None and opp_score is not None:
+            result = "W" if team_score > opp_score else "L"
 
         entry = {
             "date": as_ascii(str(game.get("game_date") or "")),
@@ -521,10 +508,7 @@ def main() -> None:
         clusters = cluster_roster_rows(roster_rows)
         deduped_rows: list[dict[str, Any]] = []
         for cluster in clusters:
-            best = max(
-                cluster,
-                key=lambda row: row_score(row, averages_by_player, logs_by_player),
-            )
+            best = max(cluster, key=lambda row: row_score(row, averages_by_player, logs_by_player))
             deduped_rows.append(best)
 
             aliases = []
@@ -595,11 +579,7 @@ def main() -> None:
             "seasonTotals": drop_none(season_totals) or None,
             "shootingSplits": drop_none(shooting_splits) or None,
             "gameLog": logs_by_player.get(pid, []),
-            "notes": build_player_notes(
-                drop_none(season_averages),
-                drop_none(season_totals),
-                drop_none(shooting_splits),
-            ),
+            "notes": build_player_notes(drop_none(season_averages), drop_none(season_totals), drop_none(shooting_splits)),
             "sourcePlayerId": pid,
             "aliases": alias_map.get(pid) or None,
         }
@@ -618,13 +598,13 @@ def main() -> None:
 
         home_score = int_or_none(game.get("home_score"))
         away_score = int_or_none(game.get("away_score"))
-        vwb_score = home_score if is_home else away_score
+        team_score = home_score if is_home else away_score
         opp_score = away_score if is_home else home_score
 
         status = as_ascii(str(game.get("status") or ""))
         result = None
-        if status == "final" and vwb_score is not None and opp_score is not None:
-            result = "W" if vwb_score > opp_score else "L"
+        if status == "final" and team_score is not None and opp_score is not None:
+            result = "W" if team_score > opp_score else "L"
             if result == "W":
                 wins += 1
             else:
@@ -636,7 +616,7 @@ def main() -> None:
             "home_away": "HOME" if is_home else "AWAY",
             "status": status,
             "result": result,
-            "vwb_score": vwb_score,
+            "team_score": team_score,
             "opp_score": opp_score,
             "venue": as_ascii(str(game.get("venue") or "")) or None,
         }
@@ -657,7 +637,7 @@ def main() -> None:
                 "conference": "Western",
                 "arena": "Home Arena",
                 "teamContext": (
-                    "Semi-pro team in the USBL Western Conference. "
+                    "Team in the USBL Western Conference. "
                     f"Season record {record}. "
                     "Data imported from USBL backend for setup/testing."
                 ),

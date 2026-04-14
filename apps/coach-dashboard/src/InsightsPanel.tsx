@@ -23,6 +23,7 @@ interface Props {
   aiInsights: Insight[];
   rulesInsights: Insight[];
   aiRefreshError: string;
+  aiHealthMessage: string;
   isRefreshingAiInsights: boolean;
   refreshAiBenchCalls: () => Promise<void>;
   prettifyInsightText: (text: string, relatedTeamId?: string | null, relatedPlayerId?: string | null) => string;
@@ -35,12 +36,13 @@ export function InsightsPanel({
   aiInsights,
   rulesInsights,
   aiRefreshError,
+  aiHealthMessage,
   isRefreshingAiInsights,
   refreshAiBenchCalls,
   prettifyInsightText,
 }: Props) {
   const urgentInsights = rulesInsights.filter(i => URGENT_TYPES.includes(i.type));
-  const systemInsights = rulesInsights.filter(i => !URGENT_TYPES.includes(i.type) && i.type !== "ot_awareness");
+  const systemInsights = rulesInsights.filter(i => !URGENT_TYPES.includes(i.type));
 
   return (
     <section className="card">
@@ -66,6 +68,7 @@ export function InsightsPanel({
             </button>
           </div>
           {aiRefreshError ? <p className="insight-context-note insight-context-note-error">{aiRefreshError}</p> : null}
+          {!aiRefreshError && aiHealthMessage ? <p className="insight-context-note insight-context-note-warning">{aiHealthMessage}</p> : null}
           {aiInsights.length > 0 ? (
             <div className="insight-list">
               {aiInsights.map((insight) => (

@@ -32,8 +32,9 @@ export const TEAM_COLOR_OPTIONS = [
 
 // ─── Side / navigation ──────────────────────────────────────────────────
 export type TeamSide = "home" | "away";
-export type SettingsView = "menu" | "game-setup" | "ipad-tips";
-export type FeedbackTone = "event" | "undo" | "warning";
+export type SettingsView = "menu" | "game-setup" | "ipad-tips" | "sound";
+export type SoundProfile = "click" | "soft" | "sharp";
+export type FeedbackTone = "event" | "undo" | "warning" | "tap" | "toggle" | "confirm" | "danger" | "modal";
 export type NoticeTone = "info" | "success" | "warning" | "error";
 
 // ─── Data model ─────────────────────────────────────────────────────────
@@ -64,7 +65,6 @@ export interface GameSetup {
   schoolId?: string;
   opponent: string;
   vcSide: "home" | "away";
-  dashboardUrl: string;
   clockVisible?: boolean;
   clockEnabled?: boolean;
   trackClock?: boolean;
@@ -73,7 +73,10 @@ export interface GameSetup {
   opponentTrackStats?: OpponentTrackStat[];
   homeTeamColor?: string;
   awayTeamColor?: string;
-  statsGameId?: number;
+  soundEnabled?: boolean;
+  soundProfile?: SoundProfile;
+  soundVolume?: number;
+  hapticsEnabled?: boolean;
   startingLineup?: string[];
   deviceName?: string;
   /** @deprecated use myTeamId + vcSide instead */
@@ -99,7 +102,6 @@ export interface OperatorLinkResponse {
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
-    dashboardUrl?: string;
     startingLineup?: string[];
     updatedAtIso?: string;
   } | null;

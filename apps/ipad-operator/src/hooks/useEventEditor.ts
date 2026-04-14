@@ -1,7 +1,9 @@
 import type { GameEvent } from "@bta/shared-schema";
 import { getEventTeamSide, removeEventById, upsertSortedEvent } from "../helpers/events.js";
-import { apiKeyHeader } from "../helpers/network.js";
+import { apiKeyHeader, fetchOperatorLinkSnapshot } from "../helpers/network.js";
+import { loadAppData, saveAppData } from "../helpers/storage.js";
 import type { EventEditContext, FeedEventSelection, Modal } from "../types.js";
+import type { GameSetup } from "../types.js";
 
 export interface UseEventEditorInput {
   homeTeamId: string;
@@ -20,6 +22,43 @@ export function useEventEditor({
   homeTeamId, awayTeamId, gameId, apiUrl, apiSetup,
   setModal, showInlineNotice, setPendingEvents, setSubmittedEvents, normalizeEventTeamId,
 }: UseEventEditorInput) {
+
+  async function recoverSetupFromConnection(options?: { clearStaleToken?: boolean }): Promise<GameSetup | null> {
+    const latest = loadAppData();
+    const baseSetup = options?.clearStaleToken
+      ? { ...latest.gameSetup, apiKey: undefined }
+      : latest.gameSetup;
+
+    if (options?.clearStaleToken && baseSetup.apiKey !== latest.gameSetup.apiKey) {
+      saveAppData({ ...latest, gameSetup: baseSetup });
+    }
+
+    const snapshot = await fetchOperatorLinkSnapshot(baseSetup).catch(() => null);
+    if (!snapshot) {
+      return options?.clearStaleToken ? baseSetup : null;
+    }
+
+    const payload = snapshot.payload;
+    const nextSetup: GameSetup = {
+      ...baseSetup,
+      connectionId: snapshot.connectionId,
+      syncedConnectionId: snapshot.connectionId,
+      schoolId: payload.schoolId?.trim() || baseSetup.schoolId,
+      apiKey: payload.operatorToken ?? baseSetup.apiKey,
+    };
+
+    if (nextSetup.apiKey !== latest.gameSetup.apiKey || nextSetup.schoolId !== latest.gameSetup.schoolId) {
+      saveAppData({ ...latest, gameSetup: nextSetup });
+    }
+    return nextSetup;
+  }
+
+  function authHeadersFor(setup: GameSetup): Record<string, string> {
+    return apiKeyHeader({
+      apiKey: setup.apiKey ?? apiSetup.apiKey,
+      schoolId: setup.schoolId ?? apiSetup.schoolId,
+    });
+  }
 
   function buildEditModalForEvent(target: FeedEventSelection): Modal | null {
     const editContext: EventEditContext = {
@@ -120,19 +159,45 @@ export function useEventEditor({
     }
 
     try {
+      let activeSetup = loadAppData().gameSetup;
       const response = await fetch(`${apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(apiSetup) },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeadersFor(activeSetup),
+          "x-event-sequence": String(editContext.originalEvent.sequence),
+        },
         body: JSON.stringify(normalizedEvent),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
+      let finalResponse = response;
+      if (response.status === 401) {
+        const recoveredSetup = await recoverSetupFromConnection({ clearStaleToken: true });
+        if (recoveredSetup) {
+          activeSetup = recoveredSetup;
+          finalResponse = await fetch(`${apiUrl}/api/games/${gameId}/events/${editContext.eventId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeadersFor(activeSetup),
+              "x-event-sequence": String(editContext.originalEvent.sequence),
+            },
+            body: JSON.stringify(normalizedEvent),
+          });
+        }
+      }
+
+      if (!finalResponse.ok) {
+        if (finalResponse.status === 401) {
+          showInlineNotice("Session expired while editing. Re-sync connection code and retry.", "warning", 5000);
+          return false;
+        }
+        const errorText = await finalResponse.text().catch(() => "");
         showInlineNotice(`Could not update event${errorText ? `: ${errorText}` : "."}`, "error");
         return false;
       }
 
-      const payload = await response.json().catch(() => null) as { event?: GameEvent } | null;
+      const payload = await finalResponse.json().catch(() => null) as { event?: GameEvent } | null;
       const savedEvent = normalizeEventTeamId(payload?.event ?? normalizedEvent);
       setSubmittedEvents((current) => upsertSortedEvent(current, savedEvent));
       setPendingEvents((current) => removeEventById(current, savedEvent.id));
@@ -159,12 +224,34 @@ export function useEventEditor({
     }
 
     try {
-      const response = await fetch(`${apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
+      let activeSetup = loadAppData().gameSetup;
+      let response = await fetch(`${apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
         method: "DELETE",
-        headers: apiKeyHeader(apiSetup),
+        headers: {
+          ...authHeadersFor(activeSetup),
+          "x-event-sequence": String(target.event.sequence),
+        },
       });
 
+      if (response.status === 401) {
+        const recoveredSetup = await recoverSetupFromConnection({ clearStaleToken: true });
+        if (recoveredSetup) {
+          activeSetup = recoveredSetup;
+          response = await fetch(`${apiUrl}/api/games/${gameId}/events/${target.event.id}`, {
+            method: "DELETE",
+            headers: {
+              ...authHeadersFor(activeSetup),
+              "x-event-sequence": String(target.event.sequence),
+            },
+          });
+        }
+      }
+
       if (!response.ok) {
+        if (response.status === 401) {
+          showInlineNotice("Session expired while deleting. Re-sync connection code and retry.", "warning", 5000);
+          return false;
+        }
         const errorText = await response.text().catch(() => "");
         showInlineNotice(`Could not delete event${errorText ? `: ${errorText}` : "."}`, "error");
         return false;

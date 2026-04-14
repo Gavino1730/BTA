@@ -1,4 +1,7 @@
-# BTA Hosting Setup
+# BTA Courtside Hosting Setup
+
+Canonical release execution checklist: `RELEASE_CHECKLIST.md`.
+Use that file for preflight, rollout verification, and rollback procedures.
 
 Use this hosting split for production:
 
@@ -31,6 +34,12 @@ Recommended settings:
 
 Paste the values from `.env.production.example` into Railway.
 
+Optional AI budget controls:
+- `BTA_OPENAI_MAX_TOKENS_PER_GAME`
+- `BTA_OPENAI_MAX_COST_PER_GAME_USD`
+- `BTA_AI_ALERT_TOKENS_THRESHOLD`
+- `BTA_AI_ALERT_COST_USD_THRESHOLD`
+
 ## 3. Vercel — Coach Dashboard
 
 Create a Vercel project for the repo and point the root directory to:
@@ -40,10 +49,12 @@ Then add env vars from:
 - `apps/coach-dashboard/.env.production.example`
 
 Minimum coach Vercel env vars:
-- `VITE_API=https://api.yourdomain.com`
-- `VITE_OPERATOR_CONSOLE=https://operator.yourdomain.com`
+- `VITE_API=https://api.btaintel.com`
+- `VITE_OPERATOR_CONSOLE=https://operator.btaintel.com`
 - `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
+- Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
+- Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
 
 The included `vercel.json` already handles:
 - monorepo install/build
@@ -58,11 +69,36 @@ Then add env vars from:
 - `apps/ipad-operator/.env.production.example`
 
 Minimum operator Vercel env vars:
-- `VITE_API=https://api.yourdomain.com`
-- `VITE_COACH_DASHBOARD=https://coach.yourdomain.com`
-- `VITE_STATS_DASHBOARD=https://api.yourdomain.com`
+- `VITE_API=https://api.btaintel.com`
+- `VITE_COACH_DASHBOARD=https://dashboard.btaintel.com`
 - `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
+- Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
+- Optional explicit tenant scope default (recommended to leave unset): `VITE_SCHOOL_ID=<school-id>`
+
+## 4b. Vercel — Marketing Site
+
+Create a Vercel project for `apps/marketing-site` and set:
+
+- `NEXT_PUBLIC_SITE_URL=https://btaintel.com`
+- `NEXT_PUBLIC_DASHBOARD_URL=https://dashboard.btaintel.com`
+- `NEXT_PUBLIC_API_BASE=https://api.btaintel.com`
+
+You can bootstrap values from:
+- `apps/marketing-site/.env.example`
+- Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
+- Optional explicit tenant scope default (recommended to leave unset): `VITE_SCHOOL_ID=<school-id>`
+
+## 4b. Vercel — Marketing Site
+
+Create a Vercel project for `apps/marketing-site` and set:
+
+- `NEXT_PUBLIC_SITE_URL=https://btaintel.com`
+- `NEXT_PUBLIC_DASHBOARD_URL=https://dashboard.btaintel.com`
+- `NEXT_PUBLIC_API_BASE=https://api.btaintel.com`
+
+You can bootstrap values from:
+- `apps/marketing-site/.env.example`
 
 The included `vercel.json` already handles:
 - monorepo install/build
@@ -72,25 +108,15 @@ The included `vercel.json` already handles:
 ## 5. Domain layout
 
 Recommended:
-- `api.yourdomain.com` -> Railway
-- `coach.yourdomain.com` -> Vercel coach app
-- `operator.yourdomain.com` -> Vercel operator app
+- `api.btaintel.com` -> Railway
+- `btaintel.com` -> Vercel marketing site
+- `dashboard.btaintel.com` -> Vercel coach app
+- `operator.btaintel.com` -> Vercel operator app
 
 ## 6. Final validation
 
-Run these before or after go-live:
-
-```bash
-npm run validate:env
-npm run build
-npm run test -w @bta/realtime-api
-```
-
-Then verify:
-1. `GET /health` returns OK
-2. operator app can submit an event
-3. coach dashboard updates live
-4. data persists to Supabase
+Run the full preflight and rollout verification in `RELEASE_CHECKLIST.md` sections 1 and 3.
+Use `RELEASE_CHECKLIST.md` section 4 for AI degradation rollback actions.
 
 ## Gym use note
 

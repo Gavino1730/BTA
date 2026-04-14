@@ -15,9 +15,38 @@ export function resolveDefaultApiBase(hostname: string, origin: string): string 
   return resolveDefaultAppBase(hostname, origin, 4000);
 }
 
+export function resolveDefaultMarketingBase(hostname: string): string {
+  if (isLocalNetworkHost(hostname) || hostname === "localhost") {
+    return "http://localhost:3000";
+  }
+
+  return "https://btaintel.com";
+}
+
 export function resolveDefaultSchoolId(hostname: string): string {
   void hostname;
   return "";
+}
+
+export function resolveRuntimeBase(base: string, pageHostname: string, pageProtocol: string): string {
+  const trimmed = base.trim().replace(/\/+$/, "");
+  const normalizedHost = trimmed.replace(/api\.btainte1\.com/gi, "api.btaintel.com");
+  if (!normalizedHost) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalizedHost);
+    if (pageProtocol === "https:" && parsed.protocol === "http:" && !isLocalNetworkHost(parsed.hostname)) {
+      parsed.protocol = "https:";
+    }
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    if (pageProtocol === "https:" && normalizedHost.startsWith("http://") && !isLocalNetworkHost(pageHostname)) {
+      return normalizedHost.replace(/^http:\/\//, "https://");
+    }
+    return normalizedHost;
+  }
 }
 
 function normalizeSchoolId(value: unknown): string {
@@ -107,6 +136,44 @@ function decodeSchoolIdFromToken(token: string | undefined): string {
   );
 }
 
+function decodeTokenPayload(token: string | undefined): Record<string, unknown> | null {
+  if (!token) {
+    return null;
+  }
+
+  const normalized = token.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    if (normalized.startsWith("bta.")) {
+      const [, encodedPayload] = normalized.split(".");
+      if (!encodedPayload) {
+        return null;
+      }
+      return parseJsonSafely(decodeBase64Url(encodedPayload));
+    }
+
+    const jwtParts = normalized.split(".");
+    if (jwtParts.length < 2) {
+      return null;
+    }
+    return parseJsonSafely(decodeBase64Url(jwtParts[1]!));
+  } catch {
+    return null;
+  }
+}
+
+export function decodeTokenExpiryMs(token: string | undefined): number | null {
+  const payload = decodeTokenPayload(token);
+  const exp = Number(payload?.exp ?? 0);
+  if (!Number.isFinite(exp) || exp <= 0) {
+    return null;
+  }
+  return exp * 1000;
+}
+
 export function resolveActiveSchoolId(locationSearch?: string): string {
   const params = typeof locationSearch === "string"
     ? new URLSearchParams(locationSearch)
@@ -123,10 +190,27 @@ export function resolveActiveSchoolId(locationSearch?: string): string {
   );
 }
 
-export const apiBase = (import.meta.env.VITE_API ?? resolveDefaultApiBase(defaultHost, defaultOrigin)).replace(/\/+$/, "");
-export const operatorBase = (import.meta.env.VITE_OPERATOR_CONSOLE ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5174)).replace(/\/+$/, "");
+const pageProtocol = typeof window !== "undefined" ? window.location.protocol : "http:";
+
+export const apiBase = resolveRuntimeBase(
+  import.meta.env.VITE_API ?? resolveDefaultApiBase(defaultHost, defaultOrigin),
+  defaultHost,
+  pageProtocol,
+);
+export const operatorBase = resolveRuntimeBase(
+  import.meta.env.VITE_OPERATOR_CONSOLE ?? resolveDefaultAppBase(defaultHost, defaultOrigin, 5174),
+  defaultHost,
+  pageProtocol,
+);
+export const marketingBase = resolveRuntimeBase(
+  import.meta.env.VITE_MARKETING_SITE ?? resolveDefaultMarketingBase(defaultHost),
+  defaultHost,
+  pageProtocol,
+);
 export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 export const AUTH_SESSION_KEY = "bta.coach.authSession";
+
+export type AuthSessionPersistence = "local" | "session";
 
 const AUTH_COOKIE_NAME = "bta_coach_auth";
 const AUTH_COOKIE_DAYS = 90;
@@ -166,6 +250,79 @@ export interface StoredAuthSession {
   lastLoginAtIso?: string | null;
 }
 
+interface StoreAuthSessionOptions {
+  persistence?: AuthSessionPersistence;
+}
+
+function getLocalStorageHandle(): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function getSessionStorageHandle(): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function parseStoredAuthSession(raw: string | null): StoredAuthSession | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredAuthSession;
+    if (typeof parsed?.token !== "string" || !parsed.token.trim()) {
+      return null;
+    }
+
+    return {
+      ...parsed,
+      token: parsed.token.trim(),
+      schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readStoredAuthSessionFromStorage(storage: Storage | null): StoredAuthSession | null {
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    return parseStoredAuthSession(storage.getItem(AUTH_SESSION_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function detectStoredAuthSessionPersistence(): AuthSessionPersistence | null {
+  if (readStoredAuthSessionFromStorage(getSessionStorageHandle())) {
+    return "session";
+  }
+
+  if (readStoredAuthSessionFromStorage(getLocalStorageHandle())) {
+    return "local";
+  }
+
+  return null;
+}
+
 export function generateConnectionCode(): string {
   return String(Math.floor(100000 + (Math.random() * 900000)));
 }
@@ -180,54 +337,57 @@ export function readStoredAuthSession(): StoredAuthSession | null {
     return null;
   }
 
-  // Primary: try localStorage first
-  try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as StoredAuthSession;
-      if (typeof parsed?.token === "string" && parsed.token.trim()) {
-        return {
-          ...parsed,
-          token: parsed.token.trim(),
-          schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
-        };
-      }
-    }
-  } catch {
-    // fall through to cookie fallback
+  const sessionScoped = readStoredAuthSessionFromStorage(getSessionStorageHandle());
+  if (sessionScoped) {
+    return sessionScoped;
   }
 
-  // Fallback: try cookie. iOS WebKit can clear localStorage for home screen
-  // web apps during suspend/eviction; cookies with explicit expiry survive longer.
-  try {
-    const raw = readAuthCookieRaw();
-    if (raw) {
-      const parsed = JSON.parse(raw) as StoredAuthSession;
-      if (typeof parsed?.token === "string" && parsed.token.trim()) {
-        // Restore localStorage from the cookie so subsequent reads are fast.
-        try { window.localStorage.setItem(AUTH_SESSION_KEY, raw); } catch { /* ignore */ }
-        return {
-          ...parsed,
-          token: parsed.token.trim(),
-          schoolId: normalizeSchoolId(parsed.schoolId) || undefined,
-        };
+  const remembered = readStoredAuthSessionFromStorage(getLocalStorageHandle());
+  if (remembered) {
+    return remembered;
+  }
+
+  const cookieSession = parseStoredAuthSession(readAuthCookieRaw());
+  if (cookieSession) {
+    const localStorageHandle = getLocalStorageHandle();
+    if (localStorageHandle) {
+      try {
+        localStorageHandle.setItem(AUTH_SESSION_KEY, JSON.stringify(cookieSession));
+      } catch {
+        // ignore storage write failures and still return the recovered session
       }
     }
-  } catch {
-    // cookie unreadable
+
+    return cookieSession;
   }
 
   return null;
 }
 
-export function storeAuthSession(session: StoredAuthSession | null): void {
+export function storeAuthSession(session: StoredAuthSession | null, options: StoreAuthSessionOptions = {}): void {
   if (typeof window === "undefined") {
     return;
   }
 
+  const persistence = options.persistence ?? detectStoredAuthSessionPersistence() ?? "local";
+  const localStorageHandle = getLocalStorageHandle();
+  const sessionStorageHandle = getSessionStorageHandle();
+
+  try {
+    localStorageHandle?.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
+  try {
+    sessionStorageHandle?.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
+  clearAuthCookie();
+
   if (!session?.token?.trim()) {
-    window.localStorage.removeItem(AUTH_SESSION_KEY);
-    clearAuthCookie();
     return;
   }
 
@@ -237,7 +397,26 @@ export function storeAuthSession(session: StoredAuthSession | null): void {
     schoolId: normalizeSchoolId(session.schoolId) || undefined,
   });
 
-  window.localStorage.setItem(AUTH_SESSION_KEY, serialized);
+  if (persistence === "session") {
+    try {
+      sessionStorageHandle?.setItem(AUTH_SESSION_KEY, serialized);
+    } catch {
+      // fall back to remembered storage if sessionStorage is unavailable
+      try {
+        localStorageHandle?.setItem(AUTH_SESSION_KEY, serialized);
+        writeAuthCookie(serialized);
+      } catch {
+        // ignore hard storage failures
+      }
+    }
+    return;
+  }
+
+  try {
+    localStorageHandle?.setItem(AUTH_SESSION_KEY, serialized);
+  } catch {
+    // ignore storage write failures and still attempt cookie fallback
+  }
   writeAuthCookie(serialized);
 }
 
@@ -245,7 +424,19 @@ export function clearAuthSession(): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.removeItem(AUTH_SESSION_KEY);
+
+  try {
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
+  try {
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage clear failures
+  }
+
   clearAuthCookie();
 }
 
@@ -267,3 +458,107 @@ export function apiKeyHeader(json = false): Record<string, string> {
   }
   return headers;
 }
+
+export async function redirectToBillingIfRequired(response: Response): Promise<boolean> {
+  if (response.status !== 402) {
+    return false;
+  }
+
+  let code = "";
+  try {
+    const payload = await response.clone().json() as { code?: unknown };
+    code = typeof payload.code === "string" ? payload.code : "";
+  } catch {
+    return false;
+  }
+
+  if (code !== "billing_required") {
+    return false;
+  }
+
+  if (typeof window !== "undefined") {
+    window.history.replaceState({}, "", "/billing");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+
+  return true;
+}
+
+export interface BillingEntitlement {
+  paywallEnabled: boolean;
+  accessActive: boolean;
+  status: "trialing" | "active" | "past_due" | "canceled" | "unpaid" | "incomplete";
+  planId: string;
+  trialEndsAtIso: string | null;
+  currentPeriodEndsAtIso: string | null;
+  reason: "paywall_disabled" | "trial_active" | "subscription_active" | "trial_expired" | "inactive_subscription";
+}
+
+export async function fetchBillingEntitlement(): Promise<BillingEntitlement | null> {
+  const response = await fetch(`${apiBase}/api/billing/entitlement`, {
+    headers: apiKeyHeader(),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json() as { entitlement?: BillingEntitlement };
+  return payload.entitlement ?? null;
+}
+
+export async function fetchBillingPortalUrl(): Promise<string | null> {
+  const response = await fetch(`${apiBase}/api/billing/portal-session`, {
+    headers: apiKeyHeader(),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json() as { url?: string };
+  return payload.url ?? null;
+}
+
+export interface CouponValidationResult {
+  valid: boolean;
+  couponId?: string;
+  percentOff?: number | null;
+  amountOff?: number | null;
+  currency?: string | null;
+  duration?: string | null;
+  durationInMonths?: number | null;
+  error?: string;
+}
+
+export async function validateCoupon(couponCode: string): Promise<CouponValidationResult | null> {
+  const response = await fetch(`${apiBase}/api/billing/validate-coupon`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify({ couponCode }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json() as { error?: string };
+    return { valid: false, error: error.error };
+  }
+
+  const payload = await response.json() as CouponValidationResult;
+  return payload;
+}
+
+export async function applyCoupon(couponCode: string): Promise<{ applied: boolean; error?: string }> {
+  const response = await fetch(`${apiBase}/api/billing/apply-coupon`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify({ couponCode }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json() as { error?: string };
+    return { applied: false, error: error.error };
+  }
+
+  return { applied: true };
+}
+

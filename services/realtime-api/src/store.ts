@@ -25,6 +25,7 @@ import {
   type PersistenceProvider
 } from "./persistence.js";
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "./school-id.js";
+import { logger } from "./logger.js";
 
 export interface CreateGameInput {
   schoolId: string;
@@ -90,7 +91,7 @@ export interface OrganizationMember {
   authSubject?: string;
   fullName: string;
   email: string;
-  role: "owner" | "coach" | "analyst";
+  role: "owner" | "coach" | "analyst" | "player";
   status: "active" | "invited";
   invitedAtIso?: string;
   joinedAtIso?: string;
@@ -118,11 +119,14 @@ export interface LocalAuthAccount {
   fullName: string;
   passwordHash: string;
   passwordSalt: string;
-  role: "owner" | "coach" | "analyst";
+  profilePhotoDataUrl?: string;
+  role: "owner" | "coach" | "analyst" | "player";
   status: "active" | "invited";
   createdAtIso: string;
   updatedAtIso: string;
   lastLoginAtIso?: string;
+  sessionInvalidBeforeIso?: string;
+  scheduledDeletionAtIso?: string;
 }
 
 export interface LocalAuthAccountInput {
@@ -132,9 +136,34 @@ export interface LocalAuthAccountInput {
   fullName?: string;
   passwordHash?: string;
   passwordSalt?: string;
+  profilePhotoDataUrl?: string;
   role?: LocalAuthAccount["role"];
   status?: LocalAuthAccount["status"];
   lastLoginAtIso?: string;
+  sessionInvalidBeforeIso?: string;
+  scheduledDeletionAtIso?: string;
+}
+
+export type BillingSubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "incomplete";
+
+export interface BillingState {
+  schoolId?: string;
+  planId: string;
+  status: BillingSubscriptionStatus;
+  trialStartedAtIso?: string;
+  trialEndsAtIso?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  currentPeriodEndsAtIso?: string;
+  couponCode?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
 }
 
 export interface CoachAiSettings {
@@ -172,6 +201,36 @@ export interface CoachAiChatResponse {
   suggestions: string[];
   generatedAtIso: string;
   usedHistoricalContext: boolean;
+}
+
+export type GameAiErrorCode =
+  | "missing_api_key"
+  | "budget_exceeded"
+  | "rate_limited"
+  | "timeout"
+  | "service_unavailable"
+  | "upstream_error"
+  | "invalid_payload"
+  | "network_error";
+
+export interface GameAiStatus {
+  model: string;
+  healthy: boolean;
+  totalTokensUsed: number;
+  totalEstimatedCostUsd: number;
+  maxTokensPerGame?: number;
+  maxCostPerGameUsd?: number;
+  lastSuccessAtIso?: string;
+  lastErrorAtIso?: string;
+  lastErrorCode?: GameAiErrorCode;
+  lastErrorMessage?: string;
+  lastErrorStatus?: number;
+}
+
+export interface AiUsageTotals {
+  activeGames: number;
+  totalTokensUsed: number;
+  totalEstimatedCostUsd: number;
 }
 
 export interface GameAiContext {
@@ -332,6 +391,7 @@ interface GameSession {
   ruleInsights: LiveInsight[];
   aiInsights: LiveInsight[];
   aiRefreshInFlight: Promise<LiveInsight[] | null> | null;
+  aiStatus: GameAiStatus;
   lastAiRefreshAtMs: number;
   lastAiEventCount: number;
   lastAiFingerprint: string;
@@ -347,11 +407,16 @@ interface PersistedGameSession {
   opponentTeamId?: string;
   startingLineupByTeam?: Record<string, string[]>;
   aiSettings?: CoachAiSettings;
+  aiStatus?: Partial<GameAiStatus>;
   aiContext?: GameAiContext;
   historicalContextSummary?: string;
   historicalContextFetchedAtMs?: number;
   events: GameEvent[];
   submitted?: boolean;
+}
+
+interface EventMutationPrecondition {
+  expectedSequence?: number;
 }
 
 export interface GameEditOverride {
@@ -379,6 +444,7 @@ export interface GameEditOverride {
     fouls: number;
   };
   player_stats: Array<Record<string, unknown>>;
+  coach_notes?: string;
   updatedAtIso: string;
 }
 
@@ -391,6 +457,8 @@ interface PersistedSnapshot {
   organizationMembersBySchool?: Record<string, OrganizationMember[]>;
   localAuthAccountsBySchool?: Record<string, LocalAuthAccount[]>;
   gameOverridesBySchool?: Record<string, Record<string, GameEditOverride>>;
+  billingBySchool?: Record<string, BillingState>;
+  processedStripeWebhookEvents?: Record<string, string>;
 }
 
 export interface TenantScope {
@@ -429,6 +497,8 @@ const onboardingAccountsBySchool = new Map<string, OnboardingAccountState>();
 const organizationMembersBySchool = new Map<string, OrganizationMember[]>();
 const localAuthAccountsBySchool = new Map<string, LocalAuthAccount[]>();
 const gameOverridesBySchool = new Map<string, Map<string, GameEditOverride>>();
+const billingBySchool = new Map<string, BillingState>();
+const processedStripeWebhookEvents = new Map<string, string>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -546,8 +616,226 @@ function readEnvNumber(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function readEnvOptionalPositiveInteger(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  const integerValue = Math.floor(parsed);
+  return integerValue > 0 ? integerValue : undefined;
+}
+
+function readEnvOptionalPositiveUsd(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function getAiBudgetCaps(): { maxTokensPerGame?: number; maxCostPerGameUsd?: number } {
+  return {
+    maxTokensPerGame: readEnvOptionalPositiveInteger("BTA_OPENAI_MAX_TOKENS_PER_GAME"),
+    maxCostPerGameUsd: readEnvOptionalPositiveUsd("BTA_OPENAI_MAX_COST_PER_GAME_USD"),
+  };
+}
+
 function getOpenAiApiKey(): string {
   return process.env.OPENAI_API_KEY ?? "";
+}
+
+function defaultGameAiStatus(): GameAiStatus {
+  const caps = getAiBudgetCaps();
+  return {
+    model: LIVE_AI_MODEL,
+    healthy: true,
+    totalTokensUsed: 0,
+    totalEstimatedCostUsd: 0,
+    maxTokensPerGame: caps.maxTokensPerGame,
+    maxCostPerGameUsd: caps.maxCostPerGameUsd,
+  };
+}
+
+function sanitizePersistedGameAiStatus(input: Partial<GameAiStatus> | null | undefined): GameAiStatus {
+  const defaults = defaultGameAiStatus();
+  const totalTokensUsed = Number(input?.totalTokensUsed ?? defaults.totalTokensUsed);
+  const totalEstimatedCostUsd = Number(input?.totalEstimatedCostUsd ?? defaults.totalEstimatedCostUsd);
+
+  return {
+    ...defaults,
+    healthy: typeof input?.healthy === "boolean" ? input.healthy : defaults.healthy,
+    totalTokensUsed: Number.isFinite(totalTokensUsed) && totalTokensUsed > 0 ? Math.floor(totalTokensUsed) : 0,
+    totalEstimatedCostUsd: Number.isFinite(totalEstimatedCostUsd) && totalEstimatedCostUsd > 0
+      ? Number(totalEstimatedCostUsd.toFixed(6))
+      : 0,
+    lastSuccessAtIso: typeof input?.lastSuccessAtIso === "string" ? input.lastSuccessAtIso : undefined,
+    lastErrorAtIso: typeof input?.lastErrorAtIso === "string" ? input.lastErrorAtIso : undefined,
+    lastErrorCode: input?.lastErrorCode,
+    lastErrorMessage: typeof input?.lastErrorMessage === "string" ? input.lastErrorMessage : undefined,
+    lastErrorStatus: typeof input?.lastErrorStatus === "number" ? input.lastErrorStatus : undefined,
+  };
+}
+
+function markAiSuccess(session: GameSession): void {
+  session.aiStatus = {
+    ...session.aiStatus,
+    model: LIVE_AI_MODEL,
+    healthy: true,
+    lastSuccessAtIso: new Date().toISOString(),
+  };
+}
+
+function markAiFailure(
+  session: GameSession,
+  code: GameAiErrorCode,
+  message: string,
+  status?: number,
+): void {
+  const nowIso = new Date().toISOString();
+  session.aiStatus = {
+    ...session.aiStatus,
+    model: LIVE_AI_MODEL,
+    healthy: false,
+    lastErrorAtIso: nowIso,
+    lastErrorCode: code,
+    lastErrorMessage: message,
+    lastErrorStatus: status,
+  };
+
+  logger.warn("ai.status_degraded", {
+    code,
+    gameId: session.state.gameId,
+    schoolId: session.schoolId,
+    status,
+    message,
+  });
+}
+
+interface AiRequestIssue {
+  code: GameAiErrorCode;
+  message: string;
+  status?: number;
+}
+
+interface OpenAiUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+function normalizeOpenAiUsage(raw: unknown): OpenAiUsage | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const usage = raw as Record<string, unknown>;
+  const promptTokens = Number(usage.prompt_tokens ?? 0);
+  const completionTokens = Number(usage.completion_tokens ?? 0);
+  const totalTokensRaw = Number(usage.total_tokens ?? Number.NaN);
+  const fallbackTotal = Math.max(0, promptTokens) + Math.max(0, completionTokens);
+  const totalTokens = Number.isFinite(totalTokensRaw) && totalTokensRaw > 0
+    ? totalTokensRaw
+    : fallbackTotal;
+
+  const normalizedPrompt = Number.isFinite(promptTokens) && promptTokens > 0 ? Math.floor(promptTokens) : 0;
+  const normalizedCompletion = Number.isFinite(completionTokens) && completionTokens > 0 ? Math.floor(completionTokens) : 0;
+  const normalizedTotal = Number.isFinite(totalTokens) && totalTokens > 0 ? Math.floor(totalTokens) : 0;
+  if (normalizedTotal === 0) {
+    return null;
+  }
+
+  return {
+    promptTokens: normalizedPrompt,
+    completionTokens: normalizedCompletion,
+    totalTokens: normalizedTotal,
+  };
+}
+
+function resolveModelCostPer1k(model: string): { inputUsd: number; outputUsd: number } {
+  const normalized = model.trim().toLowerCase();
+  if (normalized.startsWith("gpt-4o-mini")) {
+    return { inputUsd: 0.00015, outputUsd: 0.0006 };
+  }
+  if (normalized.startsWith("gpt-4o")) {
+    return { inputUsd: 0.005, outputUsd: 0.015 };
+  }
+  // Conservative fallback for unknown models when usage data is available.
+  return { inputUsd: 0.001, outputUsd: 0.001 };
+}
+
+function estimateUsageCostUsd(usage: OpenAiUsage): number {
+  const rates = resolveModelCostPer1k(LIVE_AI_MODEL);
+  const inputCost = (usage.promptTokens / 1000) * rates.inputUsd;
+  const outputCost = (usage.completionTokens / 1000) * rates.outputUsd;
+  const blendedCost = usage.promptTokens === 0 && usage.completionTokens === 0
+    ? (usage.totalTokens / 1000) * rates.outputUsd
+    : inputCost + outputCost;
+  return Number(blendedCost.toFixed(6));
+}
+
+function syncAiBudgetCaps(session: GameSession): void {
+  const caps = getAiBudgetCaps();
+  session.aiStatus.maxTokensPerGame = caps.maxTokensPerGame;
+  session.aiStatus.maxCostPerGameUsd = caps.maxCostPerGameUsd;
+}
+
+function getAiBudgetViolation(session: GameSession): AiRequestIssue | null {
+  syncAiBudgetCaps(session);
+
+  const maxTokensPerGame = session.aiStatus.maxTokensPerGame;
+  if (typeof maxTokensPerGame === "number" && session.aiStatus.totalTokensUsed >= maxTokensPerGame) {
+    return {
+      code: "budget_exceeded",
+      message: `AI token budget reached for this game (${session.aiStatus.totalTokensUsed}/${maxTokensPerGame} tokens).`,
+      status: 429,
+    };
+  }
+
+  const maxCostPerGameUsd = session.aiStatus.maxCostPerGameUsd;
+  if (typeof maxCostPerGameUsd === "number" && session.aiStatus.totalEstimatedCostUsd >= maxCostPerGameUsd) {
+    return {
+      code: "budget_exceeded",
+      message: `AI cost budget reached for this game ($${session.aiStatus.totalEstimatedCostUsd.toFixed(4)}/$${maxCostPerGameUsd.toFixed(4)}).`,
+      status: 429,
+    };
+  }
+
+  return null;
+}
+
+function recordAiUsage(session: GameSession, rawUsage: unknown): void {
+  syncAiBudgetCaps(session);
+
+  const usage = normalizeOpenAiUsage(rawUsage);
+  if (!usage) {
+    return;
+  }
+
+  session.aiStatus.totalTokensUsed += usage.totalTokens;
+  session.aiStatus.totalEstimatedCostUsd = Number(
+    (session.aiStatus.totalEstimatedCostUsd + estimateUsageCostUsd(usage)).toFixed(6)
+  );
+}
+
+function mapOpenAiHttpFailure(status: number): AiRequestIssue {
+  if (status === 429) {
+    return { code: "rate_limited", message: "OpenAI rate limit reached", status };
+  }
+  if (status === 503) {
+    return { code: "service_unavailable", message: "OpenAI service unavailable", status };
+  }
+  if (status >= 500) {
+    return { code: "upstream_error", message: `OpenAI upstream error (${status})`, status };
+  }
+  return { code: "upstream_error", message: `OpenAI request rejected (${status})`, status };
 }
 
 function buildStatsHeaders(): Record<string, string> {
@@ -783,7 +1071,7 @@ function sanitizeOrganizationMember(
 ): OrganizationMember {
   const now = new Date().toISOString();
   const email = trimProfileField(input.email ?? existing?.email, 160).toLowerCase();
-  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner"
+  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner" || input.role === "player"
     ? input.role
     : existing?.role ?? "coach";
   const status = input.status === "invited" || input.status === "active"
@@ -834,7 +1122,7 @@ function sanitizeLocalAuthAccount(
   const organizationId = trimProfileField(input.organizationId ?? existing?.organizationId, 80)
     || onboardingAccountsBySchool.get(schoolId)?.organization.organizationId
     || undefined;
-  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner"
+  const role = input.role === "analyst" || input.role === "coach" || input.role === "owner" || input.role === "player"
     ? input.role
     : existing?.role ?? "owner";
   const status = input.status === "invited" || input.status === "active"
@@ -849,11 +1137,14 @@ function sanitizeLocalAuthAccount(
     fullName: trimProfileField(input.fullName ?? existing?.fullName, 120),
     passwordHash: trimProfileField(input.passwordHash ?? existing?.passwordHash, 240),
     passwordSalt: trimProfileField(input.passwordSalt ?? existing?.passwordSalt, 240),
+    profilePhotoDataUrl: trimProfileField(input.profilePhotoDataUrl ?? existing?.profilePhotoDataUrl, 350_000) || undefined,
     role,
     status,
     createdAtIso: existing?.createdAtIso ?? now,
     updatedAtIso: now,
     lastLoginAtIso: trimProfileField(input.lastLoginAtIso ?? existing?.lastLoginAtIso, 64) || undefined,
+    sessionInvalidBeforeIso: trimProfileField(input.sessionInvalidBeforeIso ?? existing?.sessionInvalidBeforeIso, 64) || undefined,
+    scheduledDeletionAtIso: trimProfileField(input.scheduledDeletionAtIso ?? existing?.scheduledDeletionAtIso, 64) || undefined,
   };
 }
 
@@ -917,6 +1208,7 @@ function touchLocalAuthAccountLoginForSchool(schoolId: string, accountId: string
     role: existing.role,
     status: existing.status,
     lastLoginAtIso: new Date().toISOString(),
+    scheduledDeletionAtIso: existing.scheduledDeletionAtIso,
   });
 }
 
@@ -1443,6 +1735,32 @@ function trimToLength(value: unknown, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
+function normalizeAiInsightText(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function hasUnsafeAiInsightText(value: string): boolean {
+  if (!value) {
+    return true;
+  }
+
+  const lower = value.toLowerCase();
+  if (lower.includes("```") || /<\s*script/i.test(value)) {
+    return true;
+  }
+
+  return /(ignore\s+(all\s+)?previous\s+instructions|disregard\s+previous\s+instructions|reveal\s+system\s+prompt|show\s+system\s+prompt|developer\s+message|prompt\s+injection|jailbreak)/i.test(value);
+}
+
 function summarizeHistoricalPlayers(playersPayload: SeasonPlayerSummary[], session: GameSession): string {
   if (playersPayload.length === 0) {
     return "";
@@ -1674,6 +1992,12 @@ async function requestAiChatResponse(
     return null;
   }
 
+  const budgetViolation = getAiBudgetViolation(session);
+  if (budgetViolation) {
+    markAiFailure(session, budgetViolation.code, budgetViolation.message, budgetViolation.status);
+    return null;
+  }
+
   const orderedEvents = listOrderedEvents(session);
   const latestEventForChat = orderedEvents[orderedEvents.length - 1];
   const isChatPeriodTransition = latestEventForChat?.type === "period_transition";
@@ -1722,16 +2046,25 @@ async function requestAiChatResponse(
     });
 
     if (!response.ok) {
+      const failure = mapOpenAiHttpFailure(response.status);
+      logger.warn("ai.chat_upstream_failure", {
+        gameId: session.state.gameId,
+        schoolId: session.schoolId,
+        status: failure.status,
+        code: failure.code,
+      });
       return null;
     }
 
     const payload = await response.json() as {
+      usage?: unknown;
       choices?: Array<{
         message?: {
           content?: string;
         };
       }>;
     };
+    recordAiUsage(session, payload.usage);
     const content = payload.choices?.[0]?.message?.content;
     if (!content) {
       return null;
@@ -1744,7 +2077,13 @@ async function requestAiChatResponse(
       generatedAtIso: new Date().toISOString(),
       usedHistoricalContext: Boolean(session.historicalContextSummary)
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      logger.warn("ai.chat_timeout", {
+        gameId: session.state.gameId,
+        schoolId: session.schoolId,
+      });
+    }
     return null;
   } finally {
     clearTimeout(timeout);
@@ -1764,14 +2103,17 @@ function parseAiInsightResponse(content: string, session: GameSession, latestEve
       }
 
       const raw = item as Record<string, unknown>;
-      const message = typeof raw.message === "string" ? raw.message.trim() : "";
-      const explanation = typeof raw.explanation === "string" ? raw.explanation.trim() : "";
+      const message = normalizeAiInsightText(raw.message, 280);
+      const explanation = normalizeAiInsightText(raw.explanation, 500);
       if (!message || !explanation) {
         return null;
       }
 
-      // Length guard: discard suspiciously short (<10 chars) or bloated (>300 chars) messages
-      if (message.length < 10 || message.length > 300) {
+      // Discard suspiciously short/bloated insights and obvious prompt-injection patterns.
+      if (message.length < 12 || explanation.length < 20) {
+        return null;
+      }
+      if (hasUnsafeAiInsightText(message) || hasUnsafeAiInsightText(explanation)) {
         return null;
       }
 
@@ -1806,6 +2148,12 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
   const latestEvent = orderedEvents[orderedEvents.length - 1];
 
   if (!apiKey || !latestEvent) {
+    return [];
+  }
+
+  const budgetViolation = getAiBudgetViolation(session);
+  if (budgetViolation) {
+    markAiFailure(session, budgetViolation.code, budgetViolation.message, budgetViolation.status);
     return [];
   }
 
@@ -1854,22 +2202,35 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
     });
 
     if (!response.ok) {
+      const failure = mapOpenAiHttpFailure(response.status);
+      markAiFailure(session, failure.code, failure.message, failure.status);
       return [];
     }
 
     const payload = await response.json() as {
+      usage?: unknown;
       choices?: Array<{
         message?: {
           content?: string;
         };
       }>;
     };
+    recordAiUsage(session, payload.usage);
     const content = payload.choices?.[0]?.message?.content;
     if (!content) {
+      markAiFailure(session, "invalid_payload", "OpenAI returned empty chat completion content", 502);
       return [];
     }
 
-    const parsedInsights = parseAiInsightResponse(content, session, latestEvent);
+    let parsedInsights: LiveInsight[];
+    try {
+      parsedInsights = parseAiInsightResponse(content, session, latestEvent);
+    } catch {
+      markAiFailure(session, "invalid_payload", "OpenAI returned invalid JSON payload", 502);
+      return [];
+    }
+
+    markAiSuccess(session);
     if (!isOpeningSample(session.state, orderedEvents)) {
       return parsedInsights;
     }
@@ -1882,7 +2243,13 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
           ? insight.explanation
           : `Opening sample: ${insight.explanation}`
       }));
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      markAiFailure(session, "timeout", "OpenAI request timed out", 504);
+      return [];
+    }
+
+    markAiFailure(session, "network_error", "OpenAI request failed due to network/runtime error", 503);
     return [];
   } finally {
     clearTimeout(timeout);
@@ -1904,6 +2271,7 @@ function buildPersistedSnapshot(): PersistedSnapshot {
       historicalContextFetchedAtMs: session.historicalContextFetchedAtMs,
       events: listOrderedEvents(session),
       aiSettings: sanitizeCoachAiSettings(session.aiSettings),
+      aiStatus: session.aiStatus,
       submitted: session.submitted
     })),
     rosterTeamsBySchool: Object.fromEntries(rosterTeamsBySchool.entries()),
@@ -1911,6 +2279,8 @@ function buildPersistedSnapshot(): PersistedSnapshot {
     onboardingAccountsBySchool: Object.fromEntries(onboardingAccountsBySchool.entries()),
     organizationMembersBySchool: Object.fromEntries(organizationMembersBySchool.entries()),
     localAuthAccountsBySchool: Object.fromEntries(localAuthAccountsBySchool.entries()),
+    billingBySchool: Object.fromEntries(billingBySchool.entries()),
+    processedStripeWebhookEvents: Object.fromEntries(processedStripeWebhookEvents.entries()),
     gameOverridesBySchool: Object.fromEntries(
       [...gameOverridesBySchool.entries()].map(([schoolId, overrideMap]) => [
         schoolId,
@@ -1965,6 +2335,8 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedOrganizationMembers = Array.isArray(payload) ? undefined : payload.organizationMembersBySchool;
   const persistedLocalAuthAccounts = Array.isArray(payload) ? undefined : payload.localAuthAccountsBySchool;
   const persistedGameOverrides = Array.isArray(payload) ? undefined : payload.gameOverridesBySchool;
+  const persistedBilling = Array.isArray(payload) ? undefined : payload.billingBySchool;
+  const persistedWebhookEvents = Array.isArray(payload) ? undefined : payload.processedStripeWebhookEvents;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
@@ -1973,6 +2345,8 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   organizationMembersBySchool.clear();
   localAuthAccountsBySchool.clear();
   gameOverridesBySchool.clear();
+  billingBySchool.clear();
+  processedStripeWebhookEvents.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -2018,6 +2392,39 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
     }
   }
 
+  if (persistedBilling && typeof persistedBilling === "object") {
+    for (const [schoolId, billing] of Object.entries(persistedBilling)) {
+      if (!billing || typeof billing !== "object") {
+        continue;
+      }
+      const nowIso = new Date().toISOString();
+      billingBySchool.set(normalizeSchoolId(schoolId), {
+        schoolId: normalizeSchoolId(schoolId),
+        planId: String((billing as BillingState).planId ?? "trial"),
+        status: ((billing as BillingState).status ?? "trialing") as BillingSubscriptionStatus,
+        trialStartedAtIso: (billing as BillingState).trialStartedAtIso,
+        trialEndsAtIso: (billing as BillingState).trialEndsAtIso,
+        stripeCustomerId: (billing as BillingState).stripeCustomerId,
+        stripeSubscriptionId: (billing as BillingState).stripeSubscriptionId,
+        currentPeriodEndsAtIso: (billing as BillingState).currentPeriodEndsAtIso,
+        couponCode: (billing as BillingState).couponCode,
+        createdAtIso: (billing as BillingState).createdAtIso ?? nowIso,
+        updatedAtIso: (billing as BillingState).updatedAtIso ?? nowIso,
+      });
+    }
+  }
+
+  if (persistedWebhookEvents && typeof persistedWebhookEvents === "object") {
+    for (const [eventId, processedAtIso] of Object.entries(persistedWebhookEvents)) {
+      const normalizedEventId = String(eventId ?? "").trim();
+      if (!normalizedEventId) {
+        continue;
+      }
+      const normalizedProcessedAtIso = String(processedAtIso ?? "").trim() || new Date().toISOString();
+      processedStripeWebhookEvents.set(normalizedEventId, normalizedProcessedAtIso);
+    }
+  }
+
   for (const session of persistedSessions) {
     const normalizedSchoolId = normalizeSchoolId(session.schoolId);
     const normalizedEvents = sanitizePersistedEventsForSession(
@@ -2054,6 +2461,7 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
       opponentTeamId: session.opponentTeamId,
       startingLineupByTeam: session.startingLineupByTeam,
       aiSettings: sanitizeCoachAiSettings(session.aiSettings),
+      aiStatus: sanitizePersistedGameAiStatus(session.aiStatus),
       aiContext: sanitizeGameAiContext(session.aiContext),
       historicalContextSummary: typeof session.historicalContextSummary === "string" ? session.historicalContextSummary : "",
       historicalContextFetchedAtMs: Number(session.historicalContextFetchedAtMs ?? 0),
@@ -2121,19 +2529,83 @@ function persistRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): voi
     return;
   }
 
-  void persistenceProvider.replaceRosterTeamsForSchool(schoolId, teams).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist roster teams for school ${schoolId}`, error);
-  });
+  const normalizedSchoolId = normalizeSchoolId(schoolId);
+  queuedRosterPersistBySchool.set(normalizedSchoolId, cloneRosterTeamsForPersistence(teams));
+
+  if (rosterPersistInFlightBySchool.has(normalizedSchoolId)) {
+    return;
+  }
+
+  flushRosterTeamsPersistence(normalizedSchoolId);
 }
+
+const rosterPersistInFlightBySchool = new Set<string>();
+const queuedRosterPersistBySchool = new Map<string, RosterTeam[]>();
+
+function cloneRosterTeamsForPersistence(teams: RosterTeam[]): RosterTeam[] {
+  return teams.map((team) => ({
+    ...team,
+    focusInsights: Array.isArray(team.focusInsights) ? [...team.focusInsights] : team.focusInsights,
+    players: team.players.map((player) => ({ ...player })),
+  }));
+}
+
+function flushRosterTeamsPersistence(schoolId: string): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  const queuedTeams = queuedRosterPersistBySchool.get(schoolId);
+  if (!queuedTeams) {
+    return;
+  }
+
+  queuedRosterPersistBySchool.delete(schoolId);
+  rosterPersistInFlightBySchool.add(schoolId);
+
+  void persistenceProvider
+    .replaceRosterTeamsForSchool(schoolId, queuedTeams)
+    .catch((error) => {
+      logger.warn("persistence.roster_teams_save_failed", { schoolId, error });
+    })
+    .finally(() => {
+      rosterPersistInFlightBySchool.delete(schoolId);
+      if (queuedRosterPersistBySchool.has(schoolId)) {
+        flushRosterTeamsPersistence(schoolId);
+      }
+    });
+}
+
+let normalizedSessionsPersistInFlight = false;
+let normalizedSessionsPersistQueued = false;
 
 function persistNormalizedSessions(): void {
   if (!persistenceProvider) {
     return;
   }
 
-  void persistenceProvider.replacePersistedSessions(buildPersistedSessions()).catch((error) => {
-    console.warn("[realtime-api] Failed to persist normalized game sessions", error);
-  });
+  // If a write is already running, mark that we need another pass once it
+  // finishes rather than launching a second concurrent transaction.  This
+  // collapses rapid bursts of events into at-most-two DB writes and prevents
+  // the deadlocks that arise when concurrent DELETE+INSERT transactions race.
+  if (normalizedSessionsPersistInFlight) {
+    normalizedSessionsPersistQueued = true;
+    return;
+  }
+
+  normalizedSessionsPersistInFlight = true;
+  void persistenceProvider
+    .replacePersistedSessions(buildPersistedSessions())
+    .catch((error) => {
+      logger.warn("persistence.normalized_sessions_save_failed", { error });
+    })
+    .finally(() => {
+      normalizedSessionsPersistInFlight = false;
+      if (normalizedSessionsPersistQueued) {
+        normalizedSessionsPersistQueued = false;
+        persistNormalizedSessions();
+      }
+    });
 }
 
 function clearPersistedRosterTeams(): void {
@@ -2142,7 +2614,7 @@ function clearPersistedRosterTeams(): void {
   }
 
   void persistenceProvider.clearAllRosterTeams().catch((error) => {
-    console.warn("[realtime-api] Failed to clear persisted roster teams", error);
+    logger.warn("persistence.roster_teams_clear_failed", { error });
   });
 }
 
@@ -2152,7 +2624,7 @@ function persistOrgProfileForSchool(schoolId: string, profile: OrganizationProfi
   }
 
   void persistenceProvider.replaceOrgProfileForSchool(schoolId, profile).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist org profile for school ${schoolId}`, error);
+    logger.warn("persistence.org_profile_save_failed", { schoolId, error });
   });
 }
 
@@ -2162,7 +2634,7 @@ function persistOrgMembersForSchool(schoolId: string, members: OrganizationMembe
   }
 
   void persistenceProvider.replaceOrgMembersForSchool(schoolId, members).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist org members for school ${schoolId}`, error);
+    logger.warn("persistence.org_members_save_failed", { schoolId, error });
   });
 }
 
@@ -2172,7 +2644,7 @@ function persistLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuth
   }
 
   void persistenceProvider.replaceLocalAuthAccountsForSchool(schoolId, accounts).catch((error) => {
-    console.warn(`[realtime-api] Failed to persist local auth accounts for school ${schoolId}`, error);
+    logger.warn("persistence.local_auth_save_failed", { schoolId, error });
   });
 }
 
@@ -2217,7 +2689,7 @@ function persistSessions() {
 
   if (persistenceProvider) {
     void persistenceProvider.save(payload).catch((error) => {
-      console.warn("[realtime-api] Failed to persist snapshot to PostgreSQL", error);
+      logger.warn("persistence.snapshot_save_failed", { error });
     });
   }
 
@@ -2249,11 +2721,11 @@ function setupRetentionMaintenance(): void {
     void persistenceProvider.pruneStaleGames(retentionDays)
       .then((deletedGames) => {
         if (deletedGames > 0) {
-          console.log(`[realtime-api] Retention maintenance removed ${deletedGames} stale games older than ${retentionDays} days.`);
+          logger.info("persistence.retention_pruned", { deletedGames, retentionDays });
         }
       })
       .catch((error) => {
-        console.warn("[realtime-api] Retention maintenance failed", error);
+        logger.warn("persistence.retention_prune_failed", { error, retentionDays });
       });
   };
 
@@ -2270,10 +2742,12 @@ function setupRetentionMaintenance(): void {
   retentionTimer = setInterval(runPrune, intervalMinutes * 60 * 1000);
 }
 
-export async function initializeStore(): Promise<void> {
+export async function initializeStore(options: { failOnPersistenceError?: boolean } = {}): Promise<void> {
   if (storeInitialized) {
     return;
   }
+
+  const failOnPersistenceError = Boolean(options.failOnPersistenceError);
 
   let restoredSnapshot = false;
   if (persistenceProvider) {
@@ -2284,7 +2758,10 @@ export async function initializeStore(): Promise<void> {
         restoredSnapshot = true;
       }
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore snapshot from PostgreSQL", error);
+      logger.warn("persistence.snapshot_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL snapshot restore failed during startup");
+      }
     }
   }
 
@@ -2292,11 +2769,17 @@ export async function initializeStore(): Promise<void> {
     try {
       restoredSnapshot = await restoreSessionsFromProvider();
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore normalized game sessions from PostgreSQL", error);
+      logger.warn("persistence.normalized_sessions_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL game session restore failed during startup");
+      }
     }
   }
 
-  if (!restoredSnapshot) {
+  // When PostgreSQL persistence is enabled, never fall back to local file
+  // snapshots. Those files can be stale on long-lived hosts and reintroduce
+  // deleted tenants/accounts after a clean DB reset.
+  if (!restoredSnapshot && !persistenceProvider) {
     restoreSessionsFromFile();
   }
 
@@ -2304,7 +2787,10 @@ export async function initializeStore(): Promise<void> {
     try {
       await restoreRosterTeamsFromProvider();
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore normalized roster data from PostgreSQL", error);
+      logger.warn("persistence.roster_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL roster restore failed during startup");
+      }
     }
   }
 
@@ -2312,7 +2798,10 @@ export async function initializeStore(): Promise<void> {
     try {
       await restoreOrgDataFromProvider();
     } catch (error) {
-      console.warn("[realtime-api] Failed to restore org data from PostgreSQL", error);
+      logger.warn("persistence.org_data_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL org data restore failed during startup");
+      }
     }
   }
 
@@ -2343,6 +2832,8 @@ export function resetAllData(scope?: TenantScope): void {
     organizationMembersBySchool.clear();
     localAuthAccountsBySchool.clear();
     gameOverridesBySchool.clear();
+    billingBySchool.clear();
+    processedStripeWebhookEvents.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -2359,8 +2850,134 @@ export function resetAllData(scope?: TenantScope): void {
   organizationMembersBySchool.delete(schoolId);
   localAuthAccountsBySchool.delete(schoolId);
   gameOverridesBySchool.delete(schoolId);
+  billingBySchool.delete(schoolId);
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
+}
+
+export function getBillingStateByScope(scope?: TenantScope): BillingState | null {
+  const schoolId = resolveSchoolId(scope);
+  const existing = billingBySchool.get(schoolId);
+  return existing ? { ...existing } : null;
+}
+
+export function findBillingStateByStripeCustomerId(stripeCustomerId: string): BillingState | null {
+  const normalized = String(stripeCustomerId ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  for (const state of billingBySchool.values()) {
+    if (state.stripeCustomerId === normalized) {
+      return { ...state };
+    }
+  }
+
+  return null;
+}
+
+export function findBillingStateByStripeSubscriptionId(stripeSubscriptionId: string): BillingState | null {
+  const normalized = String(stripeSubscriptionId ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  for (const state of billingBySchool.values()) {
+    if (state.stripeSubscriptionId === normalized) {
+      return { ...state };
+    }
+  }
+
+  return null;
+}
+
+export function ensureTrialBillingState(scope?: TenantScope, trialDays = 14): BillingState {
+  const schoolId = resolveSchoolId(scope);
+  const existing = billingBySchool.get(schoolId);
+  if (existing) {
+    return { ...existing };
+  }
+
+  const now = new Date();
+  const normalizedTrialDays = Number.isFinite(trialDays) ? Math.max(0, Math.floor(trialDays)) : 0;
+  const hasTrial = normalizedTrialDays > 0;
+  const end = new Date(now.getTime());
+  end.setUTCDate(end.getUTCDate() + normalizedTrialDays);
+
+  const created: BillingState = {
+    schoolId,
+    planId: hasTrial ? "trial" : "pro",
+    status: hasTrial ? "trialing" : "incomplete",
+    trialStartedAtIso: hasTrial ? now.toISOString() : undefined,
+    trialEndsAtIso: hasTrial ? end.toISOString() : undefined,
+    createdAtIso: now.toISOString(),
+    updatedAtIso: now.toISOString(),
+  };
+
+  billingBySchool.set(schoolId, created);
+  persistSessions();
+  return { ...created };
+}
+
+export function saveBillingState(state: Partial<BillingState>, scope?: TenantScope): BillingState {
+  const schoolId = resolveSchoolId(scope);
+  const nowIso = new Date().toISOString();
+  const existing = billingBySchool.get(schoolId);
+
+  const saved: BillingState = {
+    schoolId,
+    planId: String(state.planId ?? existing?.planId ?? "trial"),
+    status: (state.status ?? existing?.status ?? "trialing") as BillingSubscriptionStatus,
+    trialStartedAtIso: state.trialStartedAtIso ?? existing?.trialStartedAtIso,
+    trialEndsAtIso: state.trialEndsAtIso ?? existing?.trialEndsAtIso,
+    stripeCustomerId: state.stripeCustomerId ?? existing?.stripeCustomerId,
+    stripeSubscriptionId: state.stripeSubscriptionId ?? existing?.stripeSubscriptionId,
+    currentPeriodEndsAtIso: state.currentPeriodEndsAtIso ?? existing?.currentPeriodEndsAtIso,
+    couponCode: state.couponCode === undefined
+      ? existing?.couponCode
+      : (state.couponCode.trim() || undefined),
+    createdAtIso: existing?.createdAtIso ?? state.createdAtIso ?? nowIso,
+    updatedAtIso: nowIso,
+  };
+
+  billingBySchool.set(schoolId, saved);
+  persistSessions();
+  return { ...saved };
+}
+
+export function hasProcessedStripeWebhookEvent(eventId: string): boolean {
+  const normalized = String(eventId ?? "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return processedStripeWebhookEvents.has(normalized);
+}
+
+export function markProcessedStripeWebhookEvent(eventId: string): void {
+  const normalized = String(eventId ?? "").trim();
+  if (!normalized) {
+    return;
+  }
+
+  processedStripeWebhookEvents.set(normalized, new Date().toISOString());
+  persistSessions();
+}
+
+export function trimProcessedStripeWebhookEvents(maxEntries = 10_000): void {
+  const normalizedMax = Number.isFinite(maxEntries) ? Math.max(1, Math.floor(maxEntries)) : 10_000;
+  if (processedStripeWebhookEvents.size <= normalizedMax) {
+    return;
+  }
+
+  const entries = [...processedStripeWebhookEvents.entries()]
+    .sort(([, leftProcessedAt], [, rightProcessedAt]) => Date.parse(leftProcessedAt) - Date.parse(rightProcessedAt));
+  const toDeleteCount = entries.length - normalizedMax;
+  for (let index = 0; index < toDeleteCount; index += 1) {
+    const [eventId] = entries[index];
+    processedStripeWebhookEvents.delete(eventId);
+  }
+  persistSessions();
 }
 
 export function getOrganizationProfileByScope(scope?: TenantScope): OrganizationProfile | null {
@@ -2426,6 +3043,20 @@ export function recordLocalAuthLogin(accountId: string, scope?: TenantScope): Lo
     persistLocalAuthAccountsForSchool(schoolId, localAuthAccountsBySchool.get(schoolId) ?? []);
   }
   return saved;
+}
+
+export function deleteLocalAuthAccount(accountId: string, scope?: TenantScope): boolean {
+  const schoolId = resolveSchoolId(scope);
+  const accounts = localAuthAccountsBySchool.get(schoolId) ?? [];
+  const next = accounts.filter((account) => account.accountId !== accountId);
+  if (next.length === accounts.length) {
+    return false;
+  }
+
+  setLocalAuthAccountsForSchool(schoolId, next);
+  persistSessions();
+  persistLocalAuthAccountsForSchool(schoolId, next);
+  return true;
 }
 
 export function getGameOverrideMap(schoolId: string): Map<string, GameEditOverride> {
@@ -2519,6 +3150,7 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
     ruleInsights: [],
     aiInsights: [],
     aiRefreshInFlight: null,
+    aiStatus: defaultGameAiStatus(),
     lastAiRefreshAtMs: 0,
     lastAiEventCount: 0,
     lastAiFingerprint: "",
@@ -2639,6 +3271,34 @@ export function getGameAiContext(gameId: string, scope?: TenantScope): GameAiCon
     return null;
   }
   return sanitizeGameAiContext(session.aiContext);
+}
+
+export function getGameAiStatus(gameId: string, scope?: TenantScope): GameAiStatus | null {
+  const session = getSession(gameId, scope);
+  if (!session) {
+    return null;
+  }
+  return { ...session.aiStatus, model: LIVE_AI_MODEL };
+}
+
+export function getAiUsageTotals(scope?: TenantScope): AiUsageTotals {
+  const schoolId = scope ? resolveSchoolId(scope) : null;
+  const sessionsToCount = schoolId
+    ? [...sessions.values()].filter((session) => session.schoolId === schoolId)
+    : [...sessions.values()];
+
+  return sessionsToCount.reduce<AiUsageTotals>((acc, session) => {
+    acc.activeGames += 1;
+    acc.totalTokensUsed += Math.max(0, Math.floor(Number(session.aiStatus.totalTokensUsed ?? 0)));
+    acc.totalEstimatedCostUsd = Number(
+      (acc.totalEstimatedCostUsd + Math.max(0, Number(session.aiStatus.totalEstimatedCostUsd ?? 0))).toFixed(6)
+    );
+    return acc;
+  }, {
+    activeGames: 0,
+    totalTokensUsed: 0,
+    totalEstimatedCostUsd: 0,
+  });
 }
 
 export function updateGameAiSettings(
@@ -3213,6 +3873,7 @@ export async function refreshGameAiInsights(
   const forceRefresh = options?.force === true;
 
   if (!getOpenAiApiKey()) {
+    markAiFailure(session, "missing_api_key", "OPENAI_API_KEY is not configured", 503);
     return null;
   }
 
@@ -3283,7 +3944,7 @@ export async function refreshGameAiInsights(
     })
     .catch(() => {
       // Network error: keep existing insights and show rule-based fallback
-      console.warn("[realtime-api] AI insights fetch failed; showing rule-based insights");
+      markAiFailure(session, "network_error", "AI insights refresh failed unexpectedly", 503);
       return combineInsights(session);
     })
     .finally(() => {
@@ -3335,7 +3996,7 @@ export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
   };
 }
 
-export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope): {
+export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope, precondition?: EventMutationPrecondition): {
   state: GameState;
   insights: LiveInsight[];
 } {
@@ -3354,6 +4015,10 @@ export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope
     throw new Error(`Event not found: ${eventId}`);
   }
 
+  if (precondition?.expectedSequence !== undefined && event.sequence !== precondition.expectedSequence) {
+    throw new Error(`Event ${eventId} version mismatch: expected sequence ${precondition.expectedSequence}, actual ${event.sequence}`);
+  }
+
   session.eventsById.delete(eventId);
   session.eventIdsBySequence.delete(event.sequence);
   recomputeSession(session);
@@ -3365,7 +4030,7 @@ export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope
   };
 }
 
-export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, scope?: TenantScope): {
+export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, scope?: TenantScope, precondition?: EventMutationPrecondition): {
   event: GameEvent;
   state: GameState;
   insights: LiveInsight[];
@@ -3383,6 +4048,10 @@ export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, 
   const existing = session.eventsById.get(eventId);
   if (!existing) {
     throw new Error(`Event not found: ${eventId}`);
+  }
+
+  if (precondition?.expectedSequence !== undefined && existing.sequence !== precondition.expectedSequence) {
+    throw new Error(`Event ${eventId} version mismatch: expected sequence ${precondition.expectedSequence}, actual ${existing.sequence}`);
   }
 
   const parsed = parseGameEvent({

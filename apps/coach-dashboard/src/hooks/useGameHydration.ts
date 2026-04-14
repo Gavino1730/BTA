@@ -3,6 +3,13 @@ import { normalizeTeamColor } from "@bta/shared-schema";
 import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
 import { type GameState, type Insight, type BoxScoreFilter } from "../helpers/index.js";
 
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error ?? "unknown error");
+}
+
 /** Remove old game cache entries from localStorage, keeping the current game
  *  and at most `keepCount` of the most recent other games. Game IDs are
  *  date-prefixed (YYYY-MM-DD-slug) so alphabetical sort approximates age. */
@@ -41,7 +48,7 @@ interface ActiveSetupResponse {
     gameId?: string;
     myTeamId?: string;
     myTeamName?: string;
-    opponentName?: string;
+    clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
@@ -120,7 +127,8 @@ export function useGameHydration({
 
         setDashboardStatus("Recovered active game from server.");
         setGameId(active.gameId);
-      } catch {
+      } catch (error) {
+        console.warn("[coach-dashboard] reconcileGameId failed", summarizeError(error));
         // Keep local state when offline/unreachable.
       }
     }
@@ -171,7 +179,8 @@ export function useGameHydration({
           homeColor: normalizeTeamColor(payload.setup?.homeTeamColor) ?? current.homeColor,
           awayColor: normalizeTeamColor(payload.setup?.awayTeamColor) ?? current.awayColor,
         }));
-      } catch {
+      } catch (error) {
+        console.warn("[coach-dashboard] hydrateActiveSetupNames failed", summarizeError(error));
         // Keep current setup when active setup cannot be fetched.
       }
     }
@@ -241,11 +250,14 @@ export function useGameHydration({
               } else if (!active.gameId) {
                 endedGameIdsRef.current.add(gameId);
                 skipNextReconcileRef.current = true;
-                clearActiveGame("Cleared stale game session. Start a new game when ready.");
+                clearActiveGame("Cleared stale game session. Start a new game when ready.", { rotateConnectionCode: true });
                 return;
               }
             }
-          } catch { /* offline — fall through to cache */ }
+          } catch (error) {
+            console.warn("[coach-dashboard] active game recovery failed", summarizeError(error));
+            // offline — fall through to cache
+          }
           const cachedState = localStorage.getItem(`gameState-${gameId}`);
           if (cachedState) {
             try {
@@ -267,7 +279,8 @@ export function useGameHydration({
             }
           }
         }
-      } catch {
+      } catch (error) {
+        console.warn("[coach-dashboard] state hydration failed", summarizeError(error));
         const cachedState = localStorage.getItem(`gameState-${gameId}`);
         if (cachedState) {
           try {
@@ -301,7 +314,8 @@ export function useGameHydration({
             }
           }
         }
-      } catch {
+      } catch (error) {
+        console.warn("[coach-dashboard] insights hydration failed", summarizeError(error));
         const cachedInsights = localStorage.getItem(`gameInsights-${gameId}`);
         if (cachedInsights) {
           try {
@@ -316,7 +330,8 @@ export function useGameHydration({
       setIsLoading(false);
     }
 
-    hydrate().catch(() => {
+    hydrate().catch((error) => {
+      console.warn("[coach-dashboard] hydrate effect failed", summarizeError(error));
       setIsLoading(false);
     });
 

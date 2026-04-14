@@ -31,6 +31,8 @@ Describe the change and why it is needed.
 - [ ] `npm run build`
 - [ ] `npm run test`
 - [ ] `npm run validate:env` (if API/env behavior changed)
+- [ ] Invite create/resend flow validated (`emailDelivery` + warning behavior)
+- [ ] Billing checkout session flow validated in staging (tax/billing collection)
 
 ## Screenshots or logs (if relevant)
 

@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import type { GameEvent } from "@bta/shared-schema";
 import type { CoachAiSettings, GameAiContext, LocalAuthAccount, OrganizationMember, OrganizationProfile, RosterTeam } from "./store.js";
 import { normalizeSchoolId } from "./school-id.js";
+import { logger } from "./logger.js";
 
 export interface PersistedGameSessionRecord {
   schoolId: string;
@@ -66,7 +67,7 @@ export function normalizeEventForPersistence(event: GameEvent, schoolId: string,
 }
 
 export function createPostgresPersistenceProvider(options: PostgresPersistenceOptions): PersistenceProvider {
-  const tableName = sanitizeTableName(options.tableName ?? "realtime_snapshots");
+  const tableName = sanitizeTableName(options.tableName ?? "bta");
   const teamsTableName = `${tableName}_teams`;
   const playersTableName = `${tableName}_players`;
   const schoolsTableName = `${tableName}_schools`;
@@ -76,6 +77,11 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
   const orgMembersTableName = `${tableName}_org_members`;
   const localAuthTableName = `${tableName}_local_auth`;
   const pool = new Pool({ connectionString: options.connectionString });
+  pool.on("error", (error) => {
+    // Handle background/idle client disconnects so Node does not terminate
+    // from an unhandled EventEmitter "error" while preserving diagnostics.
+    logger.error("persistence.postgres_pool_error", { error });
+  });
   let schemaReady = false;
 
   async function ensureSchema(): Promise<void> {
@@ -536,6 +542,11 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        // Serialize concurrent replacePersistedSessions calls at the DB level.
+        // pg_advisory_xact_lock is released automatically at COMMIT/ROLLBACK.
+        // This prevents deadlocks when multiple node processes (or pooled connections)
+        // race to DELETE+INSERT the same rows.
+        await client.query("SELECT pg_advisory_xact_lock(847361290)");
         await setTenantContext(client, "*");
         await client.query(`DELETE FROM ${eventsTableName}`);
         await client.query(`DELETE FROM ${gamesTableName}`);
@@ -844,50 +855,36 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     },
     async loadOrgData(): Promise<OrgDataResult> {
       await ensureSchema();
-      await setTenantContext(pool, "*");
-
-      const [profileRows, memberRows, authRows] = await Promise.all([
-        pool.query<{
-          school_id: string;
-          organization_name: string;
-          organization_slug: string | null;
-          coach_name: string;
-          coach_email: string;
-          team_name: string | null;
-          season: string | null;
-          completed_at_iso: string | null;
-          created_at_iso: string;
-          updated_at_iso: string;
-        }>(`SELECT * FROM ${orgProfilesTableName} ORDER BY school_id`),
-        pool.query<{
-          school_id: string;
-          member_id: string;
-          organization_id: string;
-          auth_subject: string | null;
-          full_name: string;
-          email: string;
-          role: string;
-          status: string;
-          invited_at_iso: string | null;
-          joined_at_iso: string | null;
-          created_at_iso: string;
-          updated_at_iso: string;
-        }>(`SELECT * FROM ${orgMembersTableName} ORDER BY school_id, email`),
-        pool.query<{
-          school_id: string;
-          account_id: string;
-          organization_id: string | null;
-          email: string;
-          full_name: string;
-          password_hash: string;
-          password_salt: string;
-          role: string;
-          status: string;
-          created_at_iso: string;
-          updated_at_iso: string;
-          last_login_at_iso: string | null;
-        }>(`SELECT * FROM ${localAuthTableName} ORDER BY school_id, email`)
-      ]);
+      // Use a single dedicated client so all three queries share the connection
+      // that had app.school_id='*' set, preventing RLS from filtering rows on
+      // different pool connections.
+      const client = await pool.connect();
+      let profileRows: { rows: {
+        school_id: string; organization_name: string; organization_slug: string | null;
+        coach_name: string; coach_email: string; team_name: string | null;
+        season: string | null; completed_at_iso: string | null;
+        created_at_iso: string; updated_at_iso: string;
+      }[] };
+      let memberRows: { rows: {
+        school_id: string; member_id: string; organization_id: string;
+        auth_subject: string | null; full_name: string; email: string;
+        role: string; status: string; invited_at_iso: string | null;
+        joined_at_iso: string | null; created_at_iso: string; updated_at_iso: string;
+      }[] };
+      let authRows: { rows: {
+        school_id: string; account_id: string; organization_id: string | null;
+        email: string; full_name: string; password_hash: string; password_salt: string;
+        role: string; status: string; created_at_iso: string;
+        updated_at_iso: string; last_login_at_iso: string | null;
+      }[] };
+      try {
+        await setTenantContext(client, "*");
+        profileRows = await client.query(`SELECT * FROM ${orgProfilesTableName} ORDER BY school_id`);
+        memberRows = await client.query(`SELECT * FROM ${orgMembersTableName} ORDER BY school_id, email`);
+        authRows = await client.query(`SELECT * FROM ${localAuthTableName} ORDER BY school_id, email`);
+      } finally {
+        client.release();
+      }
 
       const profiles: Record<string, OrganizationProfile> = {};
       for (const row of profileRows.rows) {
@@ -1081,7 +1078,7 @@ function sanitizeTableName(input: string): string {
   const trimmed = input.trim().toLowerCase();
   const normalized = trimmed.replace(/[^a-z0-9_]/g, "");
   if (!normalized) {
-    return "realtime_snapshots";
+    return "bta";
   }
   return normalized;
 }

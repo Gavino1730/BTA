@@ -5,14 +5,15 @@ import {
   type RosterTeam,
   emptyBoxScoreTotals,
 } from "./helpers/index.js";
+import type { GameEvent } from "@bta/shared-schema";
 
 interface Props {
   teams: string[];
   boxScorePeriods: string[];
   boxScoreFilter: BoxScoreFilter;
   setBoxScoreFilter: React.Dispatch<React.SetStateAction<BoxScoreFilter>>;
+  filteredBoxScoreEvents: GameEvent[];
   boxScoreByTeam: Record<string, { totals: BoxScoreTeamTotals; players: Record<string, BoxScorePlayerLine> }>;
-  currentPeriod: string | undefined;
   displayTeamName: (teamId: string) => string;
   displayPlayerName: (teamId: string, playerId: string) => string;
   rosterTeams: RosterTeam[];
@@ -21,6 +22,8 @@ interface Props {
   vcSide: string;
   stateHomeTeamId: string | undefined;
   stateAwayTeamId: string | undefined;
+  deletingGameEventId: string | null;
+  deleteGameEvent: (eventId: string, expectedSequence: number) => Promise<void>;
 }
 
 export function BoxScoreSection({
@@ -28,8 +31,8 @@ export function BoxScoreSection({
   boxScorePeriods,
   boxScoreFilter,
   setBoxScoreFilter,
+  filteredBoxScoreEvents,
   boxScoreByTeam,
-  currentPeriod,
   displayTeamName,
   displayPlayerName,
   rosterTeams,
@@ -38,6 +41,8 @@ export function BoxScoreSection({
   vcSide,
   stateHomeTeamId,
   stateAwayTeamId,
+  deletingGameEventId,
+  deleteGameEvent,
 }: Props) {
   function contributionScore(line: BoxScorePlayerLine): number {
     const rebounds = line.reboundsDef + line.reboundsOff;
@@ -57,63 +62,93 @@ export function BoxScoreSection({
     );
   }
 
+  const correctionEvents = filteredBoxScoreEvents
+    .filter((event) => {
+      return event.type !== "period_transition" && event.type !== "possession_start" && event.type !== "possession_end";
+    })
+    .slice()
+    .sort((left, right) => right.sequence - left.sequence)
+    .slice(0, 12);
+
+  function eventActorLabel(event: GameEvent): string {
+    switch (event.type) {
+      case "substitution":
+        return `${displayPlayerName(event.teamId, event.playerOutId)} -> ${displayPlayerName(event.teamId, event.playerInId)}`;
+      case "timeout":
+        return displayTeamName(event.teamId);
+      case "turnover":
+        return event.playerId
+          ? displayPlayerName(event.teamId, event.playerId)
+          : displayTeamName(event.teamId);
+      case "shot_attempt":
+      case "free_throw_attempt":
+      case "rebound":
+      case "foul":
+      case "assist":
+      case "steal":
+      case "block":
+        return displayPlayerName(event.teamId, event.playerId);
+      default:
+        return displayTeamName(event.teamId);
+    }
+  }
+
+  function eventSummary(event: GameEvent): string {
+    switch (event.type) {
+      case "shot_attempt":
+        return `${event.made ? "Made" : "Missed"} ${event.points}PT FG`;
+      case "free_throw_attempt":
+        return `${event.made ? "Made" : "Missed"} FT (${event.attemptNumber}/${event.totalAttempts})`;
+      case "rebound":
+        return event.offensive ? "Offensive rebound" : "Defensive rebound";
+      case "turnover":
+        return `Turnover (${event.turnoverType.replace("_", " ")})`;
+      case "foul":
+        return `${event.foulType} foul`;
+      case "assist":
+        return `Assist -> ${displayPlayerName(event.teamId, event.scorerPlayerId)}`;
+      case "steal":
+        return "Steal";
+      case "block":
+        return "Block";
+      case "substitution":
+        return "Substitution";
+      case "timeout":
+        return `${event.timeoutType} timeout`;
+      default:
+        return event.type;
+    }
+  }
+
   return (
     <section className="card box-score-card">
       <div className="box-score-header">
         <h2>Box Score</h2>
-          {boxScorePeriods.length > 1 ? (
-            <div className="replay-scrubber" aria-label="Game timeline scrubber">
-              {boxScorePeriods.map((period, idx) => {
-                const isLivePeriod = period === currentPeriod;
-                const activeUpToIdx = boxScoreFilter.length > 0
-                  ? Math.max(...boxScoreFilter.map((f) => boxScorePeriods.indexOf(f)))
-                  : boxScorePeriods.length - 1;
-                const inRange = idx <= activeUpToIdx;
-                const isSelected = boxScoreFilter.length > 0 && idx === activeUpToIdx;
-                return (
-                  <>
-                    {idx > 0 && (
-                      <div
-                        key={`seg-${period}`}
-                        className={`replay-scrubber-segment${inRange ? " scrubber-segment-active" : ""}`}
-                      />
-                    )}
-                    <button
-                      key={period}
-                      type="button"
-                      className={`replay-scrubber-stop${isLivePeriod ? " scrubber-stop-live" : ""}${isSelected ? " scrubber-stop-selected" : inRange ? " scrubber-stop-active" : ""}`}
-                      title={`${boxScoreFilter.length > 0 && idx === activeUpToIdx ? "Showing up to " : "View up to "}${period}`}
-                      onClick={() => {
-                        const upTo = boxScorePeriods.slice(0, idx + 1);
-                        setBoxScoreFilter(upTo.length === boxScorePeriods.length ? [] : upTo);
-                      }}
-                    >
-                      <span className="scrubber-stop-dot" />
-                      <span className="scrubber-stop-label">{period}</span>
-                      {isLivePeriod && <span className="scrubber-live-pip" aria-label="Live" />}
-                    </button>
-                  </>
-                );
-              })}
-            </div>
-          ) : null}
-
-        <div className="box-score-filter-group" aria-label="Box score filter">
+        <div className="box-score-header-actions">
+          <div className="box-score-filter-group" aria-label="Box score filter">
+            <button
+              type="button"
+              className={`box-score-filter-chip${boxScoreFilter.length === 0 ? " box-score-filter-chip-active" : ""}`}
+              onClick={() => setBoxScoreFilter([])}
+            >Full Game</button>
+            {boxScorePeriods.map((period) => (
+              <button
+                key={period}
+                type="button"
+                className={`box-score-filter-chip${boxScoreFilter.includes(period) ? " box-score-filter-chip-active" : ""}`}
+                onClick={() => setBoxScoreFilter(prev =>
+                  prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
+                )}
+              >{period}</button>
+            ))}
+          </div>
           <button
             type="button"
-            className={`box-score-filter-chip${boxScoreFilter.length === 0 ? " box-score-filter-chip-active" : ""}`}
-            onClick={() => setBoxScoreFilter([])}
-          >Full Game</button>
-          {boxScorePeriods.map((period) => (
-            <button
-              key={period}
-              type="button"
-              className={`box-score-filter-chip${boxScoreFilter.includes(period) ? " box-score-filter-chip-active" : ""}`}
-              onClick={() => setBoxScoreFilter(prev =>
-                prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
-              )}
-            >{period}</button>
-          ))}
+            className="shell-nav-link box-score-print-btn"
+            onClick={() => window.print()}
+          >
+            Print / Save PDF
+          </button>
         </div>
       </div>
 
@@ -230,6 +265,41 @@ export function BoxScoreSection({
           </section>
         );
       })}
+
+      <section className="box-score-team-section">
+        <h3>Recent Stat Events</h3>
+        <div className="box-score-corrections">
+          {correctionEvents.length === 0 ? (
+            <p className="settings-section-desc">No recent events available for correction.</p>
+          ) : (
+            correctionEvents.map((event) => {
+              const isDeleting = deletingGameEventId === event.id;
+              return (
+                <div key={event.id} className="box-score-correction-row">
+                  <div>
+                    <p className="box-score-correction-title">{eventSummary(event)}</p>
+                    <p className="box-score-correction-meta">
+                      {displayTeamName(event.teamId)} | {eventActorLabel(event)} | {event.period} | Seq {event.sequence}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shell-nav-link"
+                    disabled={Boolean(deletingGameEventId)}
+                    onClick={() => {
+                      const ok = window.confirm("Undo this event? This will recalculate game stats.");
+                      if (!ok) return;
+                      void deleteGameEvent(event.id, event.sequence);
+                    }}
+                  >
+                    {isDeleting ? "Undoing..." : "Undo"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
     </section>
   );
 }

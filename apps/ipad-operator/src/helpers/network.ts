@@ -4,6 +4,21 @@ import { DEFAULT_COACH_DASHBOARD, DEFAULT_HOME_TEAM_COLOR, DEFAULT_AWAY_TEAM_COL
 import type { AppData, GameSetup, OperatorLinkResponse, OpponentTrackStat } from "../types.js";
 import { OPPONENT_TRACK_STAT_OPTIONS, DEFAULT_OPPONENT_TRACK_STATS } from "../types.js";
 
+const COACH_DASHBOARD_OVERRIDE_KEY = "operator-console:coach-dashboard-url";
+
+function resolveCoachDashboardBaseUrl(): string {
+  try {
+    const overrideValue = localStorage.getItem(COACH_DASHBOARD_OVERRIDE_KEY)?.trim() ?? "";
+    if (overrideValue) {
+      return overrideValue.replace(/\/+$/, "");
+    }
+  } catch {
+    // Fallback to env/runtime default below.
+  }
+
+  return DEFAULT_COACH_DASHBOARD.replace(/\/+$/, "");
+}
+
 export function normalizeConnectionId(value: string | null | undefined): string {
   return (value ?? "")
     .trim()
@@ -28,6 +43,56 @@ export function apiKeyHeader(setup: { apiKey?: string; schoolId?: string }): Rec
   return buildAuthHeaders(setup, { allowBearerToken: true });
 }
 
+export function operatorLinkHeaders(setup: { schoolId?: string }): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  const schoolId = setup.schoolId?.trim();
+  if (schoolId) {
+    headers["x-school-id"] = schoolId;
+  }
+  return headers;
+}
+
+export async function fetchOperatorLinkSnapshot(setup: {
+  apiUrl?: string;
+  connectionId?: string;
+  syncedConnectionId?: string;
+  schoolId?: string;
+}): Promise<{ connectionId: string; payload: OperatorLinkResponse } | null> {
+  const apiUrl = normalizeUrlBase(setup.apiUrl);
+  const connectionId = normalizeConnectionId(setup.syncedConnectionId || setup.connectionId);
+  if (!apiUrl || !connectionId) {
+    return null;
+  }
+
+  const endpoint = `${apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`;
+  const scopedResponse = await fetch(endpoint, {
+    headers: operatorLinkHeaders({ schoolId: setup.schoolId }),
+  }).catch(() => null);
+
+  if (scopedResponse?.ok) {
+    const payload = (await scopedResponse.json()) as OperatorLinkResponse;
+    return { connectionId, payload };
+  }
+
+  const shouldTryUnscoped = Boolean(setup.schoolId?.trim())
+    && (scopedResponse?.status === 400 || scopedResponse?.status === 401 || scopedResponse?.status === 404 || scopedResponse?.status === 409);
+  if (!shouldTryUnscoped) {
+    return null;
+  }
+
+  const unscopedResponse = await fetch(endpoint, {
+    headers: operatorLinkHeaders({}),
+  }).catch(() => null);
+  if (!unscopedResponse?.ok) {
+    return null;
+  }
+
+  const payload = (await unscopedResponse.json()) as OperatorLinkResponse;
+  return { connectionId, payload };
+}
+
 export function apiHeaders(setup: { apiKey?: string; schoolId?: string }): RequestInit {
   return { headers: apiKeyHeader(setup) };
 }
@@ -36,30 +101,6 @@ export function isConnectionReadyForStart(setup: { connectionId?: string; synced
   const connectionId = normalizeConnectionId(setup.connectionId);
   const syncedConnectionId = normalizeConnectionId(setup.syncedConnectionId);
   return Boolean(connectionId) && connectionId === syncedConnectionId;
-}
-
-export function isLegacyExportTargetReachableFromCurrentHost(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const appIsLocal = isLocalNetworkHost(window.location.hostname);
-    if (window.location.protocol === "https:" && parsed.protocol !== "https:") {
-      return false;
-    }
-    if (!appIsLocal && isLocalNetworkHost(parsed.hostname)) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function isLegacyStatsExportConfigured(setup: { apiUrl?: string; dashboardUrl?: string }): boolean {
-  const apiBase = normalizeUrlBase(setup.apiUrl);
-  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
-  if (!dashboardBase) return false;
-  if (dashboardBase === apiBase) return false;
-  return isLegacyExportTargetReachableFromCurrentHost(dashboardBase);
 }
 
 export function buildCoachViewUrl(
@@ -75,7 +116,7 @@ export function buildCoachViewUrl(
     schoolId?: string;
   }
 ): string {
-  const base = DEFAULT_COACH_DASHBOARD.replace(/\/$/, "");
+  const base = resolveCoachDashboardBaseUrl();
   const params = new URLSearchParams();
   const connId = normalizeConnectionId(setup.connectionId);
   const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
@@ -158,7 +199,6 @@ export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkR
       myTeamId: nextTeamId,
       opponent: snapshot.setup?.opponentName?.trim() || current.gameSetup.opponent,
       vcSide: nextSide,
-      dashboardUrl: snapshot.setup?.dashboardUrl?.trim() || current.gameSetup.dashboardUrl,
       homeTeamColor: normalizeTeamColor(snapshot.setup?.homeTeamColor) ?? current.gameSetup.homeTeamColor ?? DEFAULT_HOME_TEAM_COLOR,
       awayTeamColor: normalizeTeamColor(snapshot.setup?.awayTeamColor) ?? current.gameSetup.awayTeamColor ?? DEFAULT_AWAY_TEAM_COLOR,
       startingLineup: safeStartingLineup,

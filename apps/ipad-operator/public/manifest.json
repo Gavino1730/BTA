@@ -1,7 +1,7 @@
 {
-  "name": "Operator Console",
+  "name": "BTA Courtside Operator Console",
   "short_name": "Operator",
-  "description": "Basketball stats operator console",
+  "description": "Live basketball stat entry for the BTA Courtside platform.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1a1a2e",

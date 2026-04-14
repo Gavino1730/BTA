@@ -1,0 +1,660 @@
+/* ================================================================
+   LIVE GAME - End Game section
+   ================================================================ */
+.live-game-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+}
+
+.end-game-btn {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  min-height: 48px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  background: rgba(248,113,113,0.12);
+  border: 1.5px solid rgba(248,113,113,0.45);
+  color: var(--bta-danger);
+  transition: all 0.12s;
+}
+
+.end-game-btn:hover { background: rgba(248,113,113,0.2); }
+
+/* ================================================================
+   POST-GAME SCREEN
+   ================================================================ */
+.postgame-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background: var(--bta-bg-base);
+}
+
+.postgame-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 2rem 2rem 1.5rem;
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.postgame-header { text-align: center; }
+
+.postgame-eyebrow {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--bta-danger);
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.postgame-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: rgba(232,234,240,0.85);
+}
+
+.postgame-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.postgame-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.postgame-field-wide {
+  grid-column: span 2;
+}
+
+.postgame-field-label {
+  font-size: 0.67rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232,234,240,0.5);
+  font-weight: 700;
+}
+
+.postgame-input {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(20,22,43,0.8);
+  color: var(--bta-text-primary);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.postgame-input:focus {
+  border-color: rgba(79,140,255,0.45);
+}
+
+.postgame-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+.postgame-score {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+}
+
+.postgame-score-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.postgame-score-name {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: rgba(232,234,240,0.45);
+  text-transform: uppercase;
+}
+
+.postgame-score-input {
+  width: 100%;
+  max-width: 100px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 12px;
+  background: rgba(20,22,43,0.82);
+  color: var(--bta-text-primary);
+  font-size: 2.2rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  padding: 0.3rem 0.25rem;
+}
+
+.postgame-score-input:focus {
+  outline: none;
+  border-color: rgba(79,140,255,0.5);
+}
+
+.postgame-score-sep {
+  font-size: 1.4rem;
+  color: rgba(232,234,240,0.18);
+  font-weight: 300;
+}
+
+.coach-connect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.9rem 1.5rem;
+  min-height: 58px;
+  border-radius: 14px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: rgba(79,140,255,0.16);
+  border: 2px solid var(--bta-accent-violet);
+  color: var(--bta-accent-violet);
+  text-align: center;
+  text-decoration: none;
+}
+
+.coach-connect-btn:hover {
+  background: rgba(79,140,255,0.27);
+  box-shadow: 0 0 18px rgba(79,140,255,0.18);
+}
+
+.postgame-retry-btn {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  min-height: 42px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(232,234,240,0.55);
+  transition: all 0.12s;
+}
+
+.postgame-retry-btn:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: var(--bta-text-primary); }
+.postgame-retry-btn:disabled { opacity: 0.45; cursor: default; }
+
+.postgame-apply-btn {
+  width: 100%;
+  padding: 0.55rem 1rem;
+  min-height: 44px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(79,140,255,0.12);
+  border: 1px solid rgba(79,140,255,0.45);
+  color: var(--bta-make-text);
+  transition: all 0.12s;
+}
+
+.postgame-apply-btn:hover {
+  background: rgba(79,140,255,0.2);
+}
+
+.postgame-reset-btn,
+.postgame-discard-btn {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.postgame-reset-btn {
+  padding: 0.5rem 1rem;
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.45);
+  color: var(--bta-warning);
+}
+
+.postgame-reset-btn:hover {
+  background: rgba(251,191,36,0.2);
+}
+
+.postgame-discard-btn {
+  padding: 0.5rem 1rem;
+  background: rgba(248,113,113,0.12);
+  border: 1px solid rgba(248,113,113,0.45);
+  color: var(--bta-miss-text);
+}
+
+.postgame-discard-btn:hover {
+  background: rgba(248,113,113,0.2);
+}
+
+.postgame-new-btn {
+  width: 100%;
+  padding: 0.65rem 1.5rem;
+  min-height: 48px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(232,234,240,0.65);
+  transition: all 0.12s;
+}
+
+.postgame-new-btn:hover { background: rgba(255,255,255,0.1); color: var(--bta-text-primary); }
+
+.postgame-more-actions {
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  padding: 0.15rem;
+}
+
+.postgame-more-actions > summary {
+  list-style: none;
+  cursor: pointer;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(232,234,240,0.72);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border-radius: 10px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.postgame-more-actions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.postgame-more-actions > summary:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--bta-text-primary);
+}
+
+.postgame-more-actions[open] > summary {
+  margin-bottom: 0.5rem;
+  background: rgba(255,255,255,0.07);
+}
+
+.postgame-more-actions[open] > button {
+  margin-bottom: 0.45rem;
+}
+
+.postgame-more-actions[open] > button:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 820px) {
+  :root {
+    --live-bottom-nav-h: 134px;
+  }
+
+  .settings-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .team-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-actions {
+    justify-content: stretch;
+  }
+
+  .settings-actions .save-btn {
+    width: 100%;
+  }
+
+  .inline-notice {
+    width: calc(100vw - 1rem);
+    top: calc(env(safe-area-inset-top) + 0.45rem);
+    padding: 0.62rem 0.68rem;
+    font-size: 0.8rem;
+  }
+
+  .inline-notice-close {
+    min-height: 34px;
+    padding: 0.24rem 0.52rem;
+  }
+
+  .confirm-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .game-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
+  .left-panel,
+  .center-panel,
+  .right-panel {
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+
+  .left-panel,
+  .center-panel,
+  .right-panel {
+    overflow: visible;
+  }
+
+  .left-panel {
+    gap: 0.65rem;
+    padding: 1rem 0.85rem;
+  }
+
+  .shot-grid {
+    gap: 0.7rem;
+  }
+
+  .shot-grid-team-label {
+    font-size: 0.7rem;
+  }
+
+  .left-panel .circle {
+    max-width: 12rem;
+  }
+
+  .panel-foot {
+    padding-top: 0.35rem;
+  }
+
+  .live-game-actions {
+    gap: 0.3rem;
+    padding-top: 0.2rem;
+  }
+
+  .end-game-btn {
+    min-height: 44px;
+    padding-block: 0.5rem;
+  }
+
+  .coach-link-btn {
+    padding: 0.1rem;
+  }
+
+  .live-bottom-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    padding-inline: 0.75rem;
+  }
+
+  .live-nav-btn {
+    font-size: 0.84rem;
+  }
+
+  .live-nav-btn-end {
+    grid-column: span 2;
+  }
+
+  .score-device-id { font-size: 0.68rem; }
+
+  .pregame-screen,
+  .postgame-screen {
+    padding: 0.8rem;
+  }
+
+  .pregame-card,
+  .postgame-card {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+
+  .pregame-title {
+    font-size: 1.25rem;
+  }
+
+  .pregame-device-id,
+  .pregame-opponent-row,
+  .pregame-meta-row {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .pregame-device-copy-btn {
+    width: 100%;
+  }
+
+  .pregame-vs {
+    justify-self: center;
+  }
+
+  .lineup-setup-head,
+  .lineup-setup-actions {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .postgame-title {
+    font-size: 1rem;
+  }
+
+  .postgame-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .postgame-field-wide {
+    grid-column: span 1;
+  }
+}
+
+/* ================================================================
+   POSSESSION CHAIN PROMPT
+   Contextual sticky strip that appears after key events (shot, TO, etc.)
+   to suggest the next logical action — eliminates the need to hunt for buttons.
+   ================================================================ */
+
+.chain-prompt {
+  position: fixed;
+  bottom: 3.6rem; /* just above the live-bottom-nav */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem 0.6rem 1.1rem;
+  background: rgba(28, 27, 60, 0.97);
+  border: 1px solid rgba(120, 120, 200, 0.35);
+  border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.55);
+  max-width: min(96vw, 580px);
+  width: max-content;
+  backdrop-filter: blur(6px);
+  animation: chain-slide-up 0.18s ease-out;
+}
+
+@keyframes chain-slide-up {
+  from { opacity: 0; transform: translateX(-50%) translateY(14px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);    }
+}
+
+.chain-prompt-label {
+  font-size: 0.82rem;
+  color: rgba(232, 234, 240, 0.75);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chain-prompt-made {
+  font-weight: 700;
+  color: var(--bta-success);
+}
+
+.chain-prompt-actions {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.chain-btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(120, 120, 200, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, box-shadow 0.12s;
+  min-width: 56px;
+  text-align: center;
+}
+
+.chain-btn:active {
+  background: rgba(255,255,255,0.14);
+}
+
+.chain-btn-primary {
+  /* color and border-color set inline per team */
+  background: transparent;
+}
+
+.chain-btn-primary:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.chain-btn-secondary {
+  /* color and border-color set inline per team */
+  background: transparent;
+}
+
+.chain-btn-secondary:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.chain-btn-skip {
+  color: rgba(232, 234, 240, 0.45);
+  border-color: rgba(120, 120, 200, 0.2);
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.chain-btn-skip:hover {
+  color: rgba(232, 234, 240, 0.7);
+  background: rgba(255,255,255,0.05);
+}
+
+@media (max-width: 480px) {
+  .chain-prompt {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    width: calc(100vw - 1.5rem);
+    bottom: 3.4rem;
+  }
+  .chain-prompt-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Marketing theme alignment for operator controls and accents. */
+.add-btn,
+.start-btn,
+.save-btn,
+.submit-btn,
+.pregame-start-btn,
+.coach-connect-btn,
+.pregame-device-copy-btn,
+.pregame-lineup-btn,
+.lineup-save-btn,
+.postgame-apply-btn,
+.confirm-btn-primary,
+.summary-ai-refresh-btn,
+.toggle-btn.active {
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-secondary) 58%, var(--accent-primary));
+  color: color-mix(in srgb, var(--accent-secondary) 66%, #f7f8fc);
+}
+
+.add-btn:hover,
+.start-btn:hover,
+.save-btn:hover,
+.submit-btn:hover:not(:disabled),
+.pregame-start-btn:hover:not(:disabled),
+.coach-connect-btn:hover,
+.pregame-device-copy-btn:hover,
+.pregame-lineup-btn:hover,
+.lineup-save-btn:hover,
+.postgame-apply-btn:hover,
+.summary-ai-refresh-btn:hover {
+  background: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+  border-color: var(--accent-secondary);
+}
+
+.team-abbr-badge,
+.r-num,
+.pregame-lineup-count,
+.pregame-lineup-number,
+.lineup-player-num,
+.lineup-player-badge,
+.pregame-eyebrow,
+.pregame-lineup-title,
+.settings-badge {
+  color: var(--accent-secondary);
+}
+
+.lineup-player-badge {
+  background: var(--accent-primary);
+}
+
+.live-nav-btn {
+  border-color: rgba(74, 88, 143, 0.8);
+  background: rgba(21, 26, 48, 0.88);
+}
+
+.live-nav-btn:hover {
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+  background: color-mix(in srgb, var(--accent-primary) 22%, rgba(21, 26, 48, 0.88));
+}
+
+.period-btn.period-on,
+.modal-subtype-btn.active,
+.bonus-chip,
+.center-toggle-btn.open,
+.pregame-lineup-btn.lineup-required {
+  border-color: color-mix(in srgb, var(--accent-warning) 70%, var(--accent-secondary));
+  color: color-mix(in srgb, var(--accent-warning) 88%, #f7f8fc);
+  background: color-mix(in srgb, var(--accent-warning) 16%, transparent);
+}
+

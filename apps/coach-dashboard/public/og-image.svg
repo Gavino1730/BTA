@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="BTA Courtside">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0c1a2a" />
+      <stop offset="100%" stop-color="#132f4d" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect x="64" y="64" width="1072" height="502" rx="18" fill="none" stroke="#2d5a87" stroke-width="2" />
+  <text x="96" y="194" fill="#c9ddf3" font-size="34" font-family="Segoe UI, Arial, sans-serif">BTA Courtside</text>
+  <text x="96" y="286" fill="#ffffff" font-size="64" font-weight="700" font-family="Segoe UI, Arial, sans-serif">Live Bench Intelligence</text>
+  <text x="96" y="352" fill="#d4e7f8" font-size="36" font-family="Segoe UI, Arial, sans-serif">for High School Basketball Programs</text>
+  <text x="96" y="456" fill="#9fc2e5" font-size="28" font-family="Segoe UI, Arial, sans-serif">Momentum. Lineup impact. Next-call timing.</text>
+</svg>

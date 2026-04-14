@@ -90,55 +90,6 @@ function normalizeUrlBase(url: string | undefined): string {
   return (url ?? "").trim().replace(/\/+$/, "");
 }
 
-function isLocalNetworkHost(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase();
-  return normalized === "localhost"
-    || normalized === "0.0.0.0"
-    || normalized === "::1"
-    || normalized === "[::1]"
-    || /^127(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^10(?:\.\d{1,3}){3}$/.test(normalized)
-    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalized)
-    || /^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(normalized)
-    || normalized.endsWith(".local")
-    || !normalized.includes(".");
-}
-
-function isLegacyExportTargetReachableFromCurrentHost(
-  url: string,
-  currentProtocol = "http:",
-  currentHostname = "localhost",
-): boolean {
-  try {
-    const parsed = new URL(url);
-    const appIsLocal = isLocalNetworkHost(currentHostname);
-
-    if (currentProtocol === "https:" && parsed.protocol !== "https:") {
-      return false;
-    }
-
-    if (!appIsLocal && isLocalNetworkHost(parsed.hostname)) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isLegacyStatsExportConfigured(
-  setup: { apiUrl?: string; dashboardUrl?: string },
-  currentProtocol = "http:",
-  currentHostname = "localhost",
-): boolean {
-  const apiBase = normalizeUrlBase(setup.apiUrl);
-  const dashboardBase = normalizeUrlBase(setup.dashboardUrl);
-  if (!dashboardBase) return false;
-  if (dashboardBase === apiBase) return false;
-  return isLegacyExportTargetReachableFromCurrentHost(dashboardBase, currentProtocol, currentHostname);
-}
-
 function parseActiveGameIdFromConflictResponse(bodyText: string): string | null {
   if (!bodyText) {
     return null;
@@ -270,44 +221,6 @@ describe("computeScores", () => {
     // it just takes whatever array is given (app passes allEventObjs including pending).
     const pending = shot({ teamId: "home", playerId: "h1", made: true, points: 3 });
     expect(computeScores([pending]).home).toBe(3);
-  });
-});
-
-describe("legacy dashboard export detection", () => {
-  it("skips legacy export when the dashboard URL matches the realtime API", () => {
-    expect(isLegacyStatsExportConfigured({
-      apiUrl: "http://localhost:4000",
-      dashboardUrl: "http://localhost:4000/",
-    })).toBe(false);
-  });
-
-  it("keeps legacy export enabled when a separate endpoint is configured", () => {
-    expect(isLegacyStatsExportConfigured({
-      apiUrl: "http://localhost:4000",
-      dashboardUrl: "https://stats.example.com",
-    })).toBe(true);
-  });
-
-  it("skips legacy export on hosted deployments when URL targets localhost/private hosts", () => {
-    expect(isLegacyStatsExportConfigured(
-      {
-        apiUrl: "https://api.example.com",
-        dashboardUrl: "http://localhost:4000",
-      },
-      "https:",
-      "operator.example.com",
-    )).toBe(false);
-  });
-
-  it("skips legacy export on hosted HTTPS when endpoint is non-HTTPS", () => {
-    expect(isLegacyStatsExportConfigured(
-      {
-        apiUrl: "https://api.example.com",
-        dashboardUrl: "http://stats.example.com",
-      },
-      "https:",
-      "operator.example.com",
-    )).toBe(false);
   });
 });
 
@@ -529,7 +442,6 @@ describe("coach code sync snapshot", () => {
       myTeamId: string;
       opponent: string;
       vcSide: "home" | "away";
-      dashboardUrl: string;
       startingLineup?: string[];
       homeTeamColor?: string;
       awayTeamColor?: string;
@@ -544,7 +456,7 @@ describe("coach code sync snapshot", () => {
     current: SyncState,
     snapshot: {
       connectionId: string;
-      setup?: { gameId?: string; myTeamId?: string; opponentName?: string; vcSide?: "home" | "away"; homeTeamColor?: string; awayTeamColor?: string; dashboardUrl?: string };
+      setup?: { gameId?: string; myTeamId?: string; opponentName?: string; vcSide?: "home" | "away"; homeTeamColor?: string; awayTeamColor?: string };
       teams?: SyncTeam[];
     },
   ): SyncState {
@@ -564,7 +476,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: nextTeamId,
         opponent: snapshot.setup?.opponentName ?? current.gameSetup.opponent,
         vcSide: snapshot.setup?.vcSide ?? current.gameSetup.vcSide,
-        dashboardUrl: snapshot.setup?.dashboardUrl ?? current.gameSetup.dashboardUrl,
         homeTeamColor: snapshot.setup?.homeTeamColor ?? current.gameSetup.homeTeamColor,
         awayTeamColor: snapshot.setup?.awayTeamColor ?? current.gameSetup.awayTeamColor,
         startingLineup,
@@ -586,7 +497,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "",
         opponent: "",
         vcSide: "home",
-        dashboardUrl: "http://localhost:4000",
         startingLineup: ["p1"],
       },
     };
@@ -598,7 +508,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "vc-varsity",
         opponentName: "Opponent Team",
         vcSide: "away",
-        dashboardUrl: "http://localhost:5173/live",
       },
       teams: [
         {
@@ -639,7 +548,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "vc-varsity",
         opponent: "Opponent Team",
         vcSide: "home",
-        dashboardUrl: "http://localhost:4000",
         startingLineup: ["p1", "p2", "missing-player"],
       },
     };
@@ -670,7 +578,6 @@ describe("coach code sync snapshot", () => {
         myTeamId: "vc-varsity",
         opponent: "Opponent Team",
         vcSide: "home",
-        dashboardUrl: "http://localhost:4000",
       },
     };
 

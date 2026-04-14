@@ -383,6 +383,25 @@ export function applyEvent(current: GameState, event: GameEvent): GameState {
     }
     case "substitution": {
       const activeLineup = ensureLineupState(state, event.teamId);
+      // If no starting lineup was configured, auto-seed from the most statistically
+      // active players recorded so far for this team. This makes sub tracking
+      // self-correcting without requiring a pre-configured starting lineup.
+      if (activeLineup.length === 0) {
+        const teamPlayerStats = Object.values(state.playerStatsByTeam[event.teamId] ?? {});
+        const byActivity = teamPlayerStats
+          .sort((a, b) => {
+            const sa = a.points + a.fgAttempts + a.ftAttempts + a.reboundsOff + a.reboundsDef + a.assists + a.steals + a.blocks + a.turnovers + a.fouls;
+            const sb = b.points + b.fgAttempts + b.ftAttempts + b.reboundsOff + b.reboundsDef + b.assists + b.steals + b.blocks + b.turnovers + b.fouls;
+            return sb - sa;
+          })
+          .map(p => p.playerId);
+        // The outgoing player was definitely on court; fill remaining spots from
+        // the most active teammates, excluding the incoming player.
+        const seed = [event.playerOutId, ...byActivity.filter(id => id !== event.playerOutId && id !== event.playerInId)];
+        for (const pid of seed.slice(0, 5)) {
+          activeLineup.push(pid);
+        }
+      }
       const withoutOutgoing = activeLineup.filter((playerId) => playerId !== event.playerOutId);
       if (!withoutOutgoing.includes(event.playerInId)) {
         withoutOutgoing.push(event.playerInId);

@@ -23,6 +23,7 @@ htmlcov/
 artifacts/
 .railway/
 test_output/
+.playwright-mcp/
 docs/_build/
 site/
 

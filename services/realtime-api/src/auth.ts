@@ -18,13 +18,6 @@ const AUTH_TEST_MODE = process.env.BTA_AUTH_TEST_MODE === "1";
 const NODE_ENV = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
 const LOCAL_AUTH_SECRET = process.env.BTA_LOCAL_AUTH_SECRET?.trim()
   || process.env.BTA_AUTH_SECRET?.trim()
-  || process.env.BTA_API_KEY?.trim()
-  || (JWT_JWKS_URI && JWT_ISSUER && JWT_AUDIENCE
-    // Derive a stable secret from JWT config so operator tokens work even when no
-    // explicit local-auth secret is configured. Stable across restarts as long as
-    // the JWT provider config doesn't change.
-    ? createHmac("sha256", JWT_JWKS_URI).update(`${JWT_ISSUER}:${JWT_AUDIENCE}`).digest("hex")
-    : "")
   || (NODE_ENV !== "production" ? "bta-local-auth-dev-secret" : "");
 
 const jwtEnabled = AUTH_TEST_MODE || Boolean(JWT_ISSUER && JWT_AUDIENCE && JWT_JWKS_URI);
@@ -118,7 +111,7 @@ export function issueLocalAuthToken(input: {
     email,
     name: input.name?.trim() || undefined,
     schoolId: input.schoolId?.trim().toLowerCase() || undefined,
-    role: input.role?.trim().toLowerCase() || "owner",
+    role: input.role?.trim().toLowerCase() || "viewer",
     authType: "local",
     iat: nowSeconds,
     exp: nowSeconds + (durationHours * 60 * 60),

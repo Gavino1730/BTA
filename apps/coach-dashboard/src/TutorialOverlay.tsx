@@ -3,27 +3,27 @@ import { useState } from "react";
 const STEPS = [
   {
     title: "Welcome",
-    body: "Your real-time coaching dashboard. Follow the live game feed, manage lineups, and get AI-powered insights — all in one place.",
+    body: "Your live coaching command center. Track games in real time, manage roster and team operations, and keep staff aligned from one dashboard.",
     icon: "📊",
   },
   {
     title: "Live Score & Feed",
-    body: "The Live tab shows the real-time scoreboard, period, and play-by-play feed as the operator logs events. Everything updates instantly over Wi-Fi.",
+    body: "The Live view shows score, period, and play-by-play as the iPad operator logs events. Updates stream in instantly when connected.",
     icon: "📡",
   },
   {
-    title: "Lineups & Fouls",
-    body: "See who's currently on the court, each player's foul count, and substitution history. The lineup panel highlights players with 3+ fouls automatically.",
+    title: "Roster & Team Settings",
+    body: "Use Settings to maintain your roster, configure AI context, and manage member access. Invite staff and monitor invite delivery status directly in Members.",
     icon: "🔄",
   },
   {
     title: "AI Insights",
-    body: "The AI tab delivers GPT-powered mid-game analysis: scoring trends, lineup effectiveness, and opponent tendencies based on the current game flow.",
+    body: "AI panels layer on top of your live data with trend summaries and recommendations, while rules-based insights stay available for reliability.",
     icon: "🤖",
   },
   {
-    title: "Settings",
-    body: "Configure your Realtime API connection, optional legacy export URL, and AI preferences. You can also re-run this tutorial any time from the ? button.",
+    title: "Onboarding & Help",
+    body: "Complete account and school setup first, then pair your operator using the 6-digit code in Live Pairing. You can re-open this tutorial anytime from the help entry point.",
     icon: "⚙️",
   },
 ];

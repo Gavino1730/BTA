@@ -2,7 +2,13 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { UnifiedCoachApp } from "./UnifiedCoachApp.js";
 import "../../shared-ui/courtside-theme.css";
-import "./styles.css";
+import "../../shared-ui/components.css";
+// App-specific styles — split from the former monolithic styles.css
+import "./styles/base.css";       // tokens, reset, globals, header, shared components
+import "./styles/stats.css";      // StatsOverview, Games, Trends, Players pages
+import "./styles/live.css";       // Scoreboard, AI Insights, Forms, Roster Builder
+import "./styles/shell.css";      // Coach Navbar, Loading Spinner, Sub-nav, Idle screen
+import "./styles/marketing.css";  // mkt-* pages: Auth, Settings, Landing, Features
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

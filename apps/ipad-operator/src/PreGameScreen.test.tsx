@@ -11,7 +11,6 @@ const baseAppData: AppData = {
     apiUrl: "http://localhost:4000",
     opponent: "Rivals",
     vcSide: "home",
-    dashboardUrl: "http://localhost:5173",
   },
 };
 

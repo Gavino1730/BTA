@@ -54,6 +54,17 @@ export function PreGameScreen({
   const hasSyncedConnection = isConnectionReadyForStart(appData.gameSetup);
   const hasTenantScope = Boolean(appData.gameSetup.schoolId?.trim());
   const canStart = hasSyncedConnection && hasTenantScope && !!appData.gameSetup.myTeamId;
+  const startDisabledHint = !canStart
+    ? !hasConnectionId
+      ? "Enter the 6-digit connection code to begin setup."
+      : !hasSyncedConnection
+        ? "Tap Sync Now to pull team, roster, and game setup from coach."
+        : !hasTenantScope
+          ? "Waiting for school scope from coach sync."
+          : !appData.gameSetup.myTeamId
+            ? "Select your team in Advanced Settings."
+            : "Finish setup to enable Start Game."
+    : null;
   const lineupLockedMessage = lineupLockedByLiveGame
     ? "Lineup is locked because this game is already live on another device."
     : "";
@@ -124,6 +135,9 @@ export function PreGameScreen({
                 });
               }}
               placeholder="Enter 6-digit coach code"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={6}
               aria-label="Connection code"
             />
           </div>
@@ -137,6 +151,29 @@ export function PreGameScreen({
           >
             Sync Now
           </button>
+        </div>
+
+        <div className="pregame-device-name-section">
+          <div className="pregame-device-name-field">
+            <label className="pregame-device-label">Device Name</label>
+            <p className="pregame-device-name-hint">A label for this device shown to the coach on the Manage Operators screen.</p>
+            <input
+              className="pregame-device-name-input"
+              value={appData.gameSetup.deviceName ?? ""}
+              onChange={(event) => {
+                onPersist({
+                  ...appData,
+                  gameSetup: {
+                    ...appData.gameSetup,
+                    deviceName: event.target.value || undefined,
+                  },
+                });
+              }}
+              placeholder="e.g. iPad 1, Scorer's Table"
+              autoComplete="off"
+              aria-label="Device name"
+            />
+          </div>
         </div>
         <p className="pregame-settings-hint">{connectionSyncStatus}</p>
         {lineupSyncStatus && (
@@ -158,10 +195,6 @@ export function PreGameScreen({
             </span>
           </div>
         </div>
-
-        {!hasConnectionId && (
-          <p className="pregame-error">Enter the coach connection code above to sync your team and game setup.</p>
-        )}
 
         {myTeam && !showLineupSetup && (
           <button
@@ -234,6 +267,9 @@ export function PreGameScreen({
           }}>
           Start Game
         </button>
+        {startDisabledHint && (
+          <p className="pregame-start-hint">{startDisabledHint}</p>
+        )}
 
         <div className="pregame-settings-callout">
           <button

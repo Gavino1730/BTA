@@ -25,11 +25,21 @@ interface PresenceStatus {
   }>;
 }
 
+export interface FinishedGameSummary {
+  gameId: string;
+  finishedAtIso: string;
+  myTeamName: string;
+  opponentName: string;
+  myScore: number;
+  oppScore: number;
+}
+
 export interface UseCoachSocketOptions {
   connectionId: string;
+  setupNames: { myTeamName: string; opponentName: string; vcSide: "home" | "away" };
   gameIdRef: MutableRefObject<string>;
   endedGameIdsRef: MutableRefObject<Set<string>>;
-  clearActiveGame: (statusMessage: string) => void;
+  clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
   setGameId: (updater: string | ((current: string) => string)) => void;
   setState: (updater: GameState | null | ((current: GameState | null) => GameState | null)) => void;
   setServerConnected: (connected: boolean) => void;
@@ -39,11 +49,13 @@ export interface UseCoachSocketOptions {
   setDashboardStatus: (status: string) => void;
   setInsights: (insights: Insight[]) => void;
   setRosterTeamsFromRemote: (teams: RosterTeam[]) => void;
+  setLastFinishedGameSummary: (summary: FinishedGameSummary | null) => void;
 }
 
 /** Manages the Socket.io connection lifecycle for the coach dashboard. */
 export function useCoachSocket({
   connectionId,
+  setupNames,
   gameIdRef,
   endedGameIdsRef,
   clearActiveGame,
@@ -56,6 +68,7 @@ export function useCoachSocket({
   setDashboardStatus,
   setInsights,
   setRosterTeamsFromRemote,
+  setLastFinishedGameSummary,
 }: UseCoachSocketOptions): void {
   // Keep a stable ref to clearActiveGame so the socket event handlers
   // always call the latest version — the socket effect only re-runs when
@@ -69,6 +82,9 @@ export function useCoachSocket({
   useEffect(() => {
     const authSession = readStoredAuthSession();
     const schoolId = resolveActiveSchoolId();
+    const lastStateSyncAtRef = { current: 0 };
+    const activeOperatorGameIdRef = { current: "" };
+    const latestStateRef: { current: GameState | null } = { current: null };
     const socket = io(apiBase, {
       auth: {
         ...(schoolId ? { schoolId } : {}),
@@ -134,6 +150,8 @@ export function useCoachSocket({
       setConnectedOperators(nextOperators);
       const activeGameId = status.gameId;
       if (status.online && activeGameId) {
+        activeOperatorGameIdRef.current = activeGameId;
+        lastStateSyncAtRef.current = Date.now();
         if (endedGameIdsRef.current.has(activeGameId)) {
           setDashboardStatus("Game ended. Start a new game when ready.");
           return;
@@ -141,6 +159,17 @@ export function useCoachSocket({
         setGameId((current) => (current === activeGameId ? current : activeGameId));
         socket.emit("join:game", activeGameId);
       } else {
+        activeOperatorGameIdRef.current = "";
+        const hasLiveGame = Boolean(gameIdRef.current);
+        const recentlySyncedLiveState = Date.now() - lastStateSyncAtRef.current < 15000;
+        if (hasLiveGame && recentlySyncedLiveState) {
+          // Presence can lag briefly behind event/state fanout. If we just
+          // received live game state, keep the nav badge in Live mode.
+          setDeviceConnected(true);
+          setConnectedOperatorCount(1);
+          return;
+        }
+
         // Only reset to "waiting" state when no game has been launched by the coach.
         // If the coach already has a game open, keep it — the operator may just be
         // between actions or not yet connected.
@@ -158,16 +187,23 @@ export function useCoachSocket({
       if (endedGameIdsRef.current.has(nextState.gameId)) {
         return;
       }
-      // Only accept state for the game this dashboard is tracking. Ignore
-      // broadcasts for other games the socket may have inadvertently joined
-      // (e.g. from a stale school-room broadcast or previous session).
+      // Prefer the operator-advertised active game during reconnect/transition.
+      // This avoids dropping the first game:state packet due to React state lag.
       const currentGameId = gameIdRef.current;
-      if (currentGameId && nextState.gameId !== currentGameId) {
+      const expectedGameId = activeOperatorGameIdRef.current || currentGameId;
+      if (expectedGameId && nextState.gameId !== expectedGameId) {
         return;
       }
       stopPoll();
+      lastStateSyncAtRef.current = Date.now();
+      setDeviceConnected(true);
+      setConnectedOperatorCount(1);
       setGameId((current) => (current === nextState.gameId ? current : nextState.gameId));
-      setState((current) => mergeGameState(current, nextState));
+      setState((current) => {
+        const merged = mergeGameState(current, nextState);
+        latestStateRef.current = merged;
+        return merged;
+      });
       setDashboardStatus("Live state synced");
     });
 
@@ -181,7 +217,26 @@ export function useCoachSocket({
       }
 
       endedGameIdsRef.current.add(submittedGameId);
-      if (gameIdRef.current === submittedGameId) {
+      const activeGameId = gameIdRef.current;
+      const stateGameId = latestStateRef.current?.gameId ?? "";
+      const operatorGameId = activeOperatorGameIdRef.current;
+      const shouldClearActive = activeGameId === submittedGameId
+        || stateGameId === submittedGameId
+        || operatorGameId === submittedGameId;
+
+      if (shouldClearActive) {
+        const snapshot = latestStateRef.current;
+        const homeScore = snapshot?.homeTeamId ? (snapshot.scoreByTeam[snapshot.homeTeamId] ?? 0) : 0;
+        const awayScore = snapshot?.awayTeamId ? (snapshot.scoreByTeam[snapshot.awayTeamId] ?? 0) : 0;
+        const vcIsAway = setupNames.vcSide === "away";
+        setLastFinishedGameSummary({
+          gameId: submittedGameId,
+          finishedAtIso: new Date().toISOString(),
+          myTeamName: setupNames.myTeamName || "Your Team",
+          opponentName: setupNames.opponentName || snapshot?.opponentName || "Opponent",
+          myScore: vcIsAway ? awayScore : homeScore,
+          oppScore: vcIsAway ? homeScore : awayScore,
+        });
         clearActiveGameRef.current("Game ended. Start a new game when ready.");
       }
     });
@@ -204,5 +259,5 @@ export function useCoachSocket({
       socket.off("roster:teams");
       socket.disconnect();
     };
-  }, [connectionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectionId, setLastFinishedGameSummary, setupNames.myTeamName, setupNames.opponentName, setupNames.vcSide]); // eslint-disable-line react-hooks/exhaustive-deps
 }

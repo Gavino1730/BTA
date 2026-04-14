@@ -1,6 +1,6 @@
-# Contributing to BTA Platform
+# Contributing to BTA Courtside
 
-Thanks for helping improve BTA.
+Thanks for helping improve BTA Courtside.
 
 ## Before you start
 

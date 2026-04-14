@@ -11,25 +11,35 @@
     "services/*"
   ],
   "scripts": {
-    "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && npm run build -w @bta/insight-engine && npm run build -w @bta/realtime-api && npm run build -w @bta/coach-dashboard && npm run build -w @bta/ipad-operator",
+    "build": "npm run build -w @bta/shared-schema && npm run build -w @bta/game-state && npm run build -w @bta/insight-engine && npm run build -w @bta/realtime-api && npm run build -w @bta/coach-dashboard && npm run build -w @bta/ipad-operator && npm run build -w @bta/marketing-site",
     "test": "npm run test --workspaces --if-present",
     "dev:api": "npm run dev -w @bta/realtime-api",
     "start:api": "npm run start -w @bta/realtime-api",
     "dev:coach": "npm run dev -w @bta/coach-dashboard",
     "dev:operator": "npm run dev -w @bta/ipad-operator",
+    "dev:marketing": "npm run dev -w @bta/marketing-site",
     "dev:stats": "npm run dev:coach",
     "dev:all": "concurrently --restart-tries -1 --restart-after 2000 --names api,operator,coach --prefix-colors cyan,green,yellow \"npm run dev:api\" \"npm run dev:operator\" \"npm run dev:coach\"",
     "game-day": "node scripts/run-ps.mjs scripts/game-day.ps1",
     "smoke-test": "node scripts/run-ps.mjs scripts/smoke-test.ps1",
+    "test:e2e": "playwright test",
+    "test:e2e:ios": "playwright test --project=ios-webkit",
+    "stress-test": "node scripts/stress-test.mjs",
+    "test:full-sim": "node scripts/full-sim.mjs",
     "audit:ui": "node scripts/ui-audit.mjs",
+    "check:silent-errors": "node scripts/check-silent-errors.mjs",
+    "check:critical-backlog": "node scripts/check-critical-backlog.mjs",
+    "seo:sitemap": "node scripts/generate-sitemap.mjs",
+    "capture:site": "node scripts/site-capture.mjs",
     "validate:env": "npm run validate:env -w @bta/realtime-api"
   },
   "devDependencies": {
-    "@types/node": "^22.15.19",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^22.19.17",
     "concurrently": "^9.2.1",
     "playwright": "^1.58.2",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3",
-    "vitest": "^3.1.2"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }

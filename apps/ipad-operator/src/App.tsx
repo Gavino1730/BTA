@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TutorialOverlay from "./TutorialOverlay.js";
 import IpadTipsPage from "./IpadTipsPage.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { PreGameScreen } from "./PreGameScreen.js";
 import { PostGameScreen } from "./PostGameScreen.js";
+import { GameFinishedScreen } from "./GameFinishedScreen.js";
 import { GameSummaryModal } from "./GameSummaryModal.js";
 import { ModalRouter, ChainPromptBar } from "./ModalRouter.js";
 import { ScoringPanel } from "./ScoringPanel.js";
@@ -24,6 +25,7 @@ import {
 import type {
   AppData,
   ChainPrompt,
+  FeedbackTone,
   Modal,
   OperatorAlert,
   Team,
@@ -57,6 +59,7 @@ function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsV
   const h = hash.replace(/^#\/?/, "");
   if (h === "settings/game-setup") return { view: "settings", settingsView: "game-setup" };
   if (h === "settings/ipad-tips") return { view: "settings", settingsView: "ipad-tips" };
+  if (h === "settings/sound") return { view: "settings", settingsView: "sound" };
   if (h.startsWith("settings")) return { view: "settings", settingsView: "menu" };
   return { view: "game", settingsView: "menu" };
 }
@@ -67,22 +70,124 @@ function viewToHash(v: "game" | "settings", sv: SettingsView): string {
   return "#game";
 }
 
-export function App() {
-  const { triggerFeedback, unlockFeedbackAudio } = useFeedback();
-  const operatorId = useMemo(() => getOrCreateOperatorId(), []);
+function inferFeedbackToneFromTarget(target: HTMLElement): FeedbackTone {
+  const control = target.closest("button, [role='button'], .menu-card, .summary-player-row.clickable") as HTMLElement | null;
+  if (!control) {
+    return "tap";
+  }
+  const className = typeof control.className === "string" ? control.className.toLowerCase() : "";
+  const text = (control.textContent ?? "").trim().toLowerCase();
 
+  if (className.includes("modal-close") || className.includes("clock-numpad") || className.includes("chain-btn-skip")) {
+    return "modal";
+  }
+  if (
+    className.includes("delete") ||
+    className.includes("danger") ||
+    className.includes("undo") ||
+    className.includes("-alert") ||
+    /\b(delete|clear|undo|discard|remove|reset)\b/.test(text)
+  ) {
+    return "danger";
+  }
+  if (
+    className.includes("save") ||
+    className.includes("start") ||
+    className.includes("confirm") ||
+    className.includes("sync") ||
+    /\b(save|start|sync|submit|set)\b/.test(text)
+  ) {
+    return "confirm";
+  }
+  if (
+    className.includes("toggle") ||
+    className.includes("tt-btn") ||
+    className.includes("tab-btn") ||
+    className.includes("period-btn")
+  ) {
+    return "toggle";
+  }
+  return "tap";
+}
+
+export function App() {
   // ---- App data (teams, game setup) ----
   const [appData, setAppData] = useState<AppData>(loadAppData);
+  const { triggerFeedback, unlockFeedbackAudio } = useFeedback({
+    enabled: appData.gameSetup.soundEnabled ?? true,
+    profile: appData.gameSetup.soundProfile ?? "click",
+    volume: appData.gameSetup.soundVolume ?? 70,
+    hapticsEnabled: appData.gameSetup.hapticsEnabled ?? true,
+  });
+  const operatorId = useMemo(() => getOrCreateOperatorId(), []);
+  const [accessBlockedMessage, setAccessBlockedMessage] = useState<string | null>(null);
 
   function persistData(next: AppData) {
     setAppData(next);
     saveAppData(next);
   }
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkRoleAccess() {
+      const token = appData.gameSetup.apiKey?.trim();
+      if (!token) {
+        if (!cancelled) {
+          setAccessBlockedMessage(null);
+        }
+        return;
+      }
+
+      try {
+        const apiUrl = normalizeUrlBase(appData.gameSetup.apiUrl || DEFAULT_API);
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${token}`,
+        };
+        if (appData.gameSetup.schoolId?.trim()) {
+          headers["x-school-id"] = appData.gameSetup.schoolId.trim();
+        }
+        const response = await fetch(`${apiUrl}/api/auth/session`, { headers });
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json() as { user?: { role?: string } | null };
+        const role = String(payload.user?.role ?? "").trim().toLowerCase();
+        if (!cancelled) {
+          if (role === "player") {
+            setAccessBlockedMessage("Player accounts cannot use the Score Operator app. Use the coach dashboard for read-only views.");
+            return;
+          }
+
+          setAccessBlockedMessage(null);
+        }
+      } catch {
+        // Best-effort check only.
+      }
+    }
+
+    void checkRoleAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, [appData.gameSetup.apiKey, appData.gameSetup.apiUrl, appData.gameSetup.schoolId]);
+
   // ---- Navigation state ----
   const [view, setView] = useState<"game" | "settings">(() => parseViewFromHash(window.location.hash).view);
   const [settingsView, setSettingsView] = useState<SettingsView>(() => parseViewFromHash(window.location.hash).settingsView);
-  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips"]);
+  const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips", "sound"]);
+
+  if (accessBlockedMessage) {
+    return (
+      <main className="app-shell" style={{ display: "grid", minHeight: "100dvh", placeItems: "center", padding: 24 }}>
+        <section className="card" style={{ maxWidth: 640 }}>
+          <h2>Access Restricted</h2>
+          <p>{accessBlockedMessage}</p>
+        </section>
+      </main>
+    );
+  }
 
   function navigateView(nextView: "game" | "settings", nextSettingsView: SettingsView = "menu") {
     const hash = viewToHash(nextView, nextSettingsView);
@@ -102,6 +207,27 @@ export function App() {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  useEffect(() => {
+    function handleGlobalUiClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const control = target.closest("button, [role='button'], .menu-card, .summary-player-row.clickable") as (HTMLElement & { disabled?: boolean }) | null;
+      if (!control || control.disabled) {
+        return;
+      }
+      const tone = inferFeedbackToneFromTarget(target);
+      const vibrateMs = tone === "confirm" ? 10 : tone === "danger" ? 14 : tone === "toggle" ? 6 : 0;
+      triggerFeedback(tone, vibrateMs);
+    }
+
+    document.addEventListener("click", handleGlobalUiClick, true);
+    return () => {
+      document.removeEventListener("click", handleGlobalUiClick, true);
+    };
+  }, [triggerFeedback]);
 
   // ---- Game session state ----
   const gameId = appData.gameSetup.gameId;
@@ -146,14 +272,16 @@ export function App() {
   const [postGameAwayScoreInput, setPostGameAwayScoreInput] = useState("0");
 
   // ---- Game flow phase ----
-  const [gamePhase, setGamePhase] = useState<"pre-game" | "live" | "post-game">(() => {
+  const [gamePhase, setGamePhase] = useState<"pre-game" | "live" | "post-game" | "finished">(() => {
     const saved = localStorage.getItem("operator-console:phase");
-    if (saved === "live" || saved === "post-game" || saved === "pre-game") return saved as "pre-game" | "live" | "post-game";
+    if (saved === "live" || saved === "post-game" || saved === "pre-game" || saved === "finished") {
+      return saved as "pre-game" | "live" | "post-game" | "finished";
+    }
     // Legacy: if there are already events for this game, land in live view
     return loadPending(loadAppData().gameSetup.gameId).length > 0 ? "live" : "pre-game";
   });
 
-  function persistPhase(phase: "pre-game" | "live" | "post-game") {
+  function persistPhase(phase: "pre-game" | "live" | "post-game" | "finished") {
     setGamePhase(phase);
     localStorage.setItem("operator-console:phase", phase);
   }
@@ -165,6 +293,11 @@ export function App() {
   const [connectionSyncStatus, setConnectionSyncStatus] = useState(DEFAULT_CONNECTION_SYNC_STATUS);
   const [connectedOperatorCount, setConnectedOperatorCount] = useState(0);
   const { syncFromCoachCode } = useCoachSync({ appData, setAppData, setConnectionSyncStatus, showInlineNotice });
+
+  const handleGameSubmitted = useCallback(() => {
+    setSubmitStatus("success");
+    setSubmitMessage("Game has been submitted. This iPad is now in finished summary mode.");
+  }, []);
 
   useLineupSync({
     gamePhase,
@@ -188,6 +321,7 @@ export function App() {
     setConnectionSyncStatus,
     setConnectedOperatorCount,
     persistPhase,
+    onGameSubmitted: handleGameSubmitted,
     showInlineNotice,
   });
 
@@ -221,8 +355,6 @@ export function App() {
   const [showClockAdmin, setShowClockAdmin] = useState(false);
 
   // Ref for auto-save interval - always holds the latest values without re-registering the interval
-  const autoSaveCtx = useRef<{ run: () => void }>({ run: () => {} });
-
 
 
   // ---- Team identities ----
@@ -312,17 +444,19 @@ export function App() {
     possessionOverrideTeamId,
   });
 
-  // Keep the ref current so the interval always has the latest values
-  useEffect(() => {
-    autoSaveCtx.current.run = () => {
-      if (allEventObjs.length > 0 && appData.gameSetup.opponent?.trim() && navigator.onLine) {
-        void submitToDashboard();
-      }
-    };
-  });
+  const hasSchoolScope = Boolean(appData.gameSetup.schoolId?.trim());
+  const hasOfflineQueue = !online && pendingEvents.length > 0;
+
+  function handleQueueSyncPress() {
+    if (!hasSchoolScope) {
+      showInlineNotice("Waiting for school sync before submitting queued events. Open Settings > Game Setup and connect to coach.", "info", 3200);
+      return;
+    }
+    void reconnectAndResubmit();
+  }
 
   useEffect(() => {
-    if (gamePhase !== "post-game") return;
+    if (gamePhase !== "post-game" && gamePhase !== "finished") return;
     setPostGameNameInput(appData.gameSetup.gameId || "");
     setPostGameOpponentInput(appData.gameSetup.opponent || "");
     setPostGameDateInput(gameDate);
@@ -332,7 +466,7 @@ export function App() {
 
   const {
     startGame, endAndResetGame, endGame, handleNewGame,
-    submitToDashboard, applyPostGameEdits, resetGameStateFor,
+    applyPostGameEdits, resetGameStateFor,
     resetFromPostGame, discardFromPostGame, submitGameToRealtimeApi,
   } = useGameFlow({
     appData, setAppData, gameId, gameDate, setGameDate,
@@ -344,6 +478,11 @@ export function App() {
     setSubmitStatus, setSubmitMessage,
     showInlineNotice, requestConfirm,
   });
+
+  function hardResetOperatorSession() {
+    clearOperatorLocalCache();
+    window.location.reload();
+  }
 
   // ---- Event builder ----
   function base(seq: number) {
@@ -414,12 +553,15 @@ export function App() {
     confirmSubIn,
     handlePlayerQuickShot,
     handlePlayerQuickStat,
+    recordTeamRebound,
   } = useGameActions({
     modal, setModal, setChainPrompt, vcSideSetup, opponentSide, sequence,
     possessionTeamId: possessionTeamId ?? "", setPossessionOverrideTeamId, base, resolveTeamId,
     postEvent, saveEditedEvent, isOpponentStatEnabled, setActiveRosterPlayerId,
     showInlineNotice, homeTeamName, awayTeamName, timeoutRemaining, inOvertimeNow,
   });
+
+  const opponentHasRoster = (opponentSide === "home" ? homePlayers : awayPlayers).length > 0;
 
   const { handleClockInput, adjustClock, resetClockForPeriod } = useClockControls({
     clockEnabled: appData.gameSetup.clockEnabled ?? true,
@@ -511,11 +653,33 @@ export function App() {
         onSetSubmitMessage={setSubmitMessage}
         onApplyPostGameEdits={applyPostGameEdits}
         onSubmitGameToRealtimeApi={submitGameToRealtimeApi}
-        onSubmitToDashboard={submitToDashboard}
         onRequestConfirm={requestConfirm}
         onResetFromPostGame={resetFromPostGame}
         onDiscardFromPostGame={discardFromPostGame}
-        onHandleNewGame={handleNewGame}
+        onHandleNewGame={hardResetOperatorSession}
+        onMarkGameFinished={() => {
+          persistPhase("finished");
+          setSubmitStatus("success");
+          setSubmitMessage("Game submitted. This session is now locked to finished summary.");
+        }}
+        inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
+        confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
+      />
+    );
+  }
+
+  if (gamePhase === "finished") {
+    return (
+      <GameFinishedScreen
+        gameId={postGameNameInput || gameId}
+        gameDate={postGameDateInput || gameDate}
+        opponentName={postGameOpponentInput}
+        homeTeamName={homeTeamName}
+        awayTeamName={awayTeamName}
+        homeScore={scores.home}
+        awayScore={scores.away}
+        submitMessage={submitMessage || "Game has been submitted."}
+        onStartNewGame={hardResetOperatorSession}
         inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
         confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />
@@ -577,32 +741,19 @@ export function App() {
           chainPrompt={chainPrompt}
           vcSideSetup={vcSideSetup}
           opponentSide={opponentSide}
+          opponentHasRoster={opponentHasRoster}
           homeTeamName={homeTeamName}
           awayTeamName={awayTeamName}
           homeTeamColor={homeTeamColor}
           awayTeamColor={awayTeamColor}
           onDismiss={dismissChain}
           setModal={setModal}
+          recordTeamRebound={recordTeamRebound}
         />
       )}
       {showGameSummary && (
         <GameSummaryModal
           onClose={() => setShowGameSummary(false)}
-          onQuickAction={(action) => {
-            if (action === "plus2") {
-              setModal({ kind: "shot", teamId: vcSideSetup, points: 2, made: true, zone: defaultZoneForPoints(2) });
-              return;
-            }
-            if (action === "plus3") {
-              setModal({ kind: "shot", teamId: vcSideSetup, points: 3, made: true, zone: defaultZoneForPoints(3) });
-              return;
-            }
-            if (action === "turnover") {
-              setModal({ kind: "stat", stat: "turnover", teamId: vcSideSetup });
-              return;
-            }
-            setModal({ kind: "stat", stat: "foul", teamId: vcSideSetup });
-          }}
           onPlayerQuickShot={handlePlayerQuickShot}
           onPlayerQuickStat={handlePlayerQuickStat}
           period={period}
@@ -635,11 +786,24 @@ export function App() {
           awayTeamId={awayTeamId}
         />
       )}
-      {(!online || pendingEvents.length > 0) && (
-        <button className="offline-badge pending-badge" onClick={() => void reconnectAndResubmit()}>
-          {!online
-            ? `OFFLINE${pendingEvents.length > 0 ? ` | ${pendingEvents.length} unsaved` : ""} - Tap to reconnect`
-            : `${pendingEvents.length} pending upload - Tap to resubmit`}
+      {!hasSchoolScope && pendingEvents.length > 0 && (
+        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
+          {pendingEvents.length} queued locally - waiting for school sync
+        </button>
+      )}
+      {hasOfflineQueue && hasSchoolScope && (
+        <button className="offline-queue-banner" onClick={handleQueueSyncPress}>
+          Offline - {pendingEvents.length} event{pendingEvents.length === 1 ? "" : "s"} queued. Tap to retry sync.
+        </button>
+      )}
+      {!hasOfflineQueue && !online && (
+        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
+          OFFLINE - Tap to reconnect
+        </button>
+      )}
+      {hasSchoolScope && !hasOfflineQueue && online && pendingEvents.length > 0 && (
+        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
+          {pendingEvents.length} pending upload - Tap to resubmit
         </button>
       )}
 
@@ -741,7 +905,7 @@ export function App() {
           Summary
         </button>
         <button className="live-nav-btn live-nav-btn-secondary" onClick={() => navigateView("settings")} title="Settings">Settings</button>
-        <button className="live-nav-btn live-nav-btn-end" onClick={() => endGame()}>
+        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
           End Game
         </button>
       </div>

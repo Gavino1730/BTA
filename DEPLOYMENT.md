@@ -1,16 +1,13 @@
-# BTA Production Deployment Runbook
+# BTA Courtside Production Deployment Runbook
 
 This runbook defines the minimum safe production configuration for multi-organization deployment.
 
+Canonical release execution checklist: `RELEASE_CHECKLIST.md`.
+Use that file for preflight, rollout verification, and rollback procedures.
+
 ## Pre-Deploy Validation
 
-Run all checks from repo root:
-
-- `npm run validate:env`
-- `npm run test -w @bta/realtime-api`
-- `npm run build`
-
-Do not deploy if any command fails.
+See `RELEASE_CHECKLIST.md` section 1.
 
 ## Recommended Hosting Split
 
@@ -54,6 +51,17 @@ Choose at least one authentication path:
 - `DATABASE_URL` should be set for durable multi-instance persistence.
 - On Railway, prefer the Supabase **Session/Connection Pooler** / IPv4-compatible `DATABASE_URL`; direct IPv6-only database hosts can surface `ENETUNREACH` during startup.
 
+### Onboarding Email Delivery (Recommended)
+
+To ensure organization invites and onboarding account emails are actually delivered:
+
+- `RESEND_API_KEY`
+- `BTA_EMAIL_FROM` (recommended: `BTA Courtside <no-reply@btaintel.com>`)
+- Optional: `BTA_EMAIL_REPLY_TO` (recommended: `support@btaintel.com`)
+- Optional but recommended for invite links: `BTA_COACH_APP_URL`
+
+Without these values, invite/member onboarding still creates records, but transactional emails are reported as disabled.
+
 ### Data Retention
 
 - `BTA_DATA_RETENTION_DAYS` (default `180`)
@@ -65,6 +73,31 @@ Set `BTA_DATA_RETENTION_DAYS` to `0` or negative to disable pruning.
 
 - `BTA_SECURITY_METRICS_PUSH_URL` (HTTP endpoint for Prometheus text payload pushes)
 - `BTA_SECURITY_METRICS_PUSH_INTERVAL_MS` (default `10000`)
+
+### AI Budget Controls (Optional)
+
+- `BTA_OPENAI_MAX_TOKENS_PER_GAME` (hard cap for total model tokens used per game session)
+- `BTA_OPENAI_MAX_COST_PER_GAME_USD` (hard cap for estimated OpenAI spend per game session)
+- `BTA_AI_ALERT_TOKENS_THRESHOLD` (alert threshold for per-game token usage; emits telemetry and pushes metrics)
+- `BTA_AI_ALERT_COST_USD_THRESHOLD` (alert threshold for per-game estimated cost; emits telemetry and pushes metrics)
+
+## AI Degraded-Mode Contract (Coach-Facing)
+
+The live coaching experience is designed so AI is additive, not required.
+
+- Rules-based insights remain authoritative and continue to render even if OpenAI fails.
+- AI refresh failures do not blank the panel; the API keeps existing AI insights (if any) and always returns combined fallback insights.
+- Coach chat/refresh surfaces explicit status messages for common failures:
+  - `429`: AI temporarily rate-limited or game budget exhausted. Retry later or continue with rules-based calls.
+  - `503`: AI service unavailable or network/runtime error.
+  - `504`: upstream timeout.
+  - `401/403`: auth/role scope mismatch.
+- API tracks game-scoped AI health (`healthy`, `lastErrorCode`, `lastErrorStatus`, `lastErrorMessage`) and logs degraded events for operations triage.
+
+Operational expectations:
+
+- During incidents or spend throttling, coaches should continue to use rules-based calls and scoreboard/box score data without interruption.
+- Treat AI as best-effort guidance; no gameplay-critical workflow should depend on successful model responses.
 
 ## Security Observability
 
@@ -84,6 +117,14 @@ Monitor these counters for abuse/misconfiguration signals:
 - unauthorized socket attempts
 - forbidden write role attempts
 
+Also monitor AI spend telemetry:
+
+- `bta_ai_budget_exceeded_total`
+- `bta_ai_alert_cost_threshold_exceeded_total`
+- `bta_ai_alert_tokens_threshold_exceeded_total`
+- `bta_ai_total_tokens_used`
+- `bta_ai_total_estimated_cost_usd`
+
 If `BTA_SECURITY_METRICS_PUSH_URL` is configured, counters are also pushed at a throttled interval after security events.
 
 ## Multi-Organization Safety Checklist
@@ -97,14 +138,7 @@ If `BTA_SECURITY_METRICS_PUSH_URL` is configured, counters are also pushed at a 
 
 ## Rollout Sequence
 
-1. Deploy backend with new env vars set and validated.
-2. Verify `/health` and `npm run validate:env` in target environment.
-3. Verify read APIs with tenant-scoped requests.
-4. Verify write APIs with role-scoped JWT tokens.
-5. Verify socket connect for matching tenant and rejection for mismatched tenant.
-6. Verify `/admin/security-metrics` reports counters and increments on denied scenarios.
-7. Verify retention policy logs appear on startup and at interval.
-8. Verify Prometheus metrics endpoint returns expected counters and optional push target receives updates.
+Use the ordered rollout verification in `RELEASE_CHECKLIST.md` section 3.
 
 ## Optional DB Integration Test Setup
 
@@ -117,9 +151,29 @@ The RLS integration suite auto-skips when `BTA_TEST_DATABASE_URL` is not set.
 
 ## Rollback Guidance
 
-If deployment is blocked by validation in production:
+Use `RELEASE_CHECKLIST.md` section 4 for AI degradation rollback matrix and section 5 for release sign-off.
 
-- Fix missing JWT or API key configuration.
-- Ensure `BTA_REQUIRE_TENANT=1` remains enabled.
-- Ensure `ALLOWED_ORIGINS` includes all intended frontend origins.
-- If retention errors occur, temporarily set `BTA_DATA_RETENTION_DAYS=0` and investigate DB permissions.
+## Robots.txt Policy for SEO
+
+- The correct robots.txt is now selected at build time for Vercel deploys:
+  - Production: `robots.txt` (allows indexing)
+  - Preview: `robots-preview.txt` (disallows all, noindex)
+- The script `scripts/deploy-robots.mjs` copies the correct file based on `VERCEL_ENV` or `BTA_ROBOTS_PREVIEW`.
+- To override in local/dev, set `BTA_ROBOTS_PREVIEW=1` before build.
+- See also: `apps/coach-dashboard/package.json` (postbuild), `public/robots.txt`, `public/robots-preview.txt`.
+
+### Robots.txt Test
+
+To verify which robots.txt is active and its contents, run:
+
+    node scripts/test-robots.mjs
+
+You can override the mode locally:
+
+    # Preview mode (should Disallow all)
+    set BTA_ROBOTS_PREVIEW=1 ; npm run build -w @bta/coach-dashboard ; node scripts/test-robots.mjs
+
+    # Production mode (should Allow all)
+    set BTA_ROBOTS_PREVIEW=0 ; npm run build -w @bta/coach-dashboard ; node scripts/test-robots.mjs
+
+The script prints the detected environment and the contents of public/robots.txt.

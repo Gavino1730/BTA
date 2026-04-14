@@ -546,7 +546,7 @@ describe("server auth integration", () => {
     expect(body.members.some((member) => member.email === "dana@school.org" && member.authSubject === "analyst-user-1" && member.status === "active")).toBe(true);
   });
 
-  it("restricts member management to org owners and protects the last owner", async () => {
+  it("allows coach member management and protects the last owner", async () => {
     const ownerToken = makeTestToken({
       sub: "owner-guard-1",
       schoolId: "guard-school",
@@ -599,7 +599,7 @@ describe("server auth integration", () => {
       }
     });
 
-    const forbiddenUpdate = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
+    const coachManagedUpdate = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${assistantToken}`,
@@ -609,7 +609,7 @@ describe("server auth integration", () => {
       body: JSON.stringify({ role: "owner", fullName: "Assistant Coach" })
     });
 
-    expect(forbiddenUpdate.status).toBe(403);
+    expect(coachManagedUpdate.status).toBe(200);
 
     const ownerMembersRes = await fetch(`${API_BASE}/api/org/members`, {
       headers: {
@@ -633,7 +633,19 @@ describe("server auth integration", () => {
       body: JSON.stringify({ role: "coach", fullName: "Owner Guard" })
     });
 
-    expect(lastOwnerDemotion.status).toBe(400);
+    expect(lastOwnerDemotion.status).toBe(200);
+
+    const lastOwnerDemotionAttempt = await fetch(`${API_BASE}/api/org/members/${invited.member.memberId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${assistantToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "guard-school"
+      },
+      body: JSON.stringify({ role: "coach", fullName: "Assistant Coach" })
+    });
+
+    expect(lastOwnerDemotionAttempt.status).toBe(400);
 
     const selfDelete = await fetch(`${API_BASE}/api/org/members/${ownerMember?.memberId}`, {
       method: "DELETE",
@@ -644,6 +656,279 @@ describe("server auth integration", () => {
     });
 
     expect(selfDelete.status).toBe(400);
+  });
+
+  it("creates coach accounts and supports password reset", async () => {
+    const ownerToken = makeTestToken({
+      sub: "coach-account-owner-1",
+      schoolId: "coach-account-school",
+      role: "coach",
+      email: "owner@school.org",
+      name: "Owner Coach"
+    });
+
+    await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Coach Account School Athletics",
+        teamName: "Coach Account School",
+        season: "2026"
+      })
+    });
+
+    const createResponse = await fetch(`${API_BASE}/api/auth/coach-account`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Riley",
+        email: "assistant-riley@school.org",
+        role: "coach",
+        password: "TempPass123!"
+      })
+    });
+
+    expect(createResponse.status).toBe(201);
+
+    const loginBeforeReset = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "TempPass123!"
+      })
+    });
+
+    expect(loginBeforeReset.status).toBe(200);
+
+    const resetResponse = await fetch(`${API_BASE}/api/auth/coach-account/reset-password`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "UpdatedPass123!"
+      })
+    });
+
+    expect(resetResponse.status).toBe(200);
+
+    const oldPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "TempPass123!"
+      })
+    });
+
+    expect(oldPasswordLogin.status).toBe(401);
+
+    const updatedPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-riley@school.org",
+        password: "UpdatedPass123!"
+      })
+    });
+
+    expect(updatedPasswordLogin.status).toBe(200);
+  });
+
+  it("creates coach accounts with generated passwords and can grant complimentary access", async () => {
+    const ownerToken = makeTestToken({
+      sub: "coach-account-owner-free-1",
+      schoolId: "coach-account-free-school",
+      role: "owner",
+      email: "owner-free@school.org",
+      name: "Owner Free Coach"
+    });
+
+    await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-free-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Coach Free School Athletics",
+        teamName: "Coach Free School",
+        season: "2026"
+      })
+    });
+
+    const createResponse = await fetch(`${API_BASE}/api/auth/coach-account`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-free-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Free",
+        email: "assistant-free@school.org",
+        role: "coach",
+        generatePassword: true,
+        grantComplimentaryAccess: true
+      })
+    });
+
+    expect(createResponse.status).toBe(201);
+    const createBody = await createResponse.json() as {
+      temporaryPassword?: string;
+      complimentaryAccessGranted?: boolean;
+      billing?: { status?: string; planId?: string };
+    };
+
+    expect(createBody.temporaryPassword).toBeTruthy();
+    expect(createBody.temporaryPassword?.length).toBeGreaterThanOrEqual(8);
+    expect(createBody.complimentaryAccessGranted).toBe(true);
+    expect(createBody.billing?.status).toBe("active");
+    expect(createBody.billing?.planId).toBe("complimentary");
+
+    const loginResponse = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-free-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-free@school.org",
+        password: createBody.temporaryPassword,
+      })
+    });
+
+    expect(loginResponse.status).toBe(200);
+
+    const entitlementResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "x-school-id": "coach-account-free-school",
+      }
+    });
+
+    expect(entitlementResponse.status).toBe(200);
+    const entitlementBody = await entitlementResponse.json() as {
+      entitlement?: { status?: string; planId?: string; accessActive?: boolean };
+    };
+
+    expect(entitlementBody.entitlement?.status).toBe("active");
+    expect(entitlementBody.entitlement?.planId).toBe("complimentary");
+    expect(entitlementBody.entitlement?.accessActive).toBe(true);
+  });
+
+  it("supports self-service password reset request and confirm flow", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Reset Flow Coach",
+        email: "reset-flow@school.org",
+        password: "OldReset123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      user?: { schoolId?: string };
+    };
+    const schoolId = registerBody.user?.schoolId ?? "";
+    expect(schoolId).toBeTruthy();
+
+    const requestRes = await fetch(`${API_BASE}/api/auth/password-reset/request`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org" })
+    });
+
+    expect(requestRes.status).toBe(200);
+    const requestBody = await requestRes.json() as {
+      resetToken?: string;
+      resetPath?: string;
+      message?: string;
+    };
+    expect(requestBody.message).toBeTruthy();
+    expect(requestBody.resetToken).toBeTruthy();
+    expect(requestBody.resetPath).toContain("/reset-password?token=");
+
+    const oldPasswordLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org", password: "OldReset123!" })
+    });
+    expect(oldPasswordLogin.status).toBe(200);
+
+    const confirmRes = await fetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token: requestBody.resetToken, password: "NewReset456!" })
+    });
+
+    expect(confirmRes.status).toBe(200);
+
+    const staleTokenRes = await fetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token: requestBody.resetToken, password: "Another789!" })
+    });
+    expect(staleTokenRes.status).toBe(400);
+
+    const oldLoginAfterReset = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org", password: "OldReset123!" })
+    });
+    expect(oldLoginAfterReset.status).toBe(401);
+
+    const newLoginAfterReset = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId
+      },
+      body: JSON.stringify({ email: "reset-flow@school.org", password: "NewReset456!" })
+    });
+    expect(newLoginAfterReset.status).toBe(200);
   });
 
   it("exposes prometheus security metrics to authorized write role", async () => {
@@ -722,5 +1007,244 @@ describe("server auth integration", () => {
     });
 
     expect(connected).toBe(true);
+  });
+
+  it("blocks player role from mutation endpoints (write-role enforcement)", async () => {
+    const playerToken = makeTestToken({
+      sub: "player-user-1",
+      schoolId: "player-school",
+      role: "player"
+    });
+
+    const res = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${playerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-school"
+      },
+      body: JSON.stringify({ gameId: "player-block-game", homeTeamId: "home", awayTeamId: "away" })
+    });
+
+    expect(res.status).toBe(403);
+
+    const eventRes = await fetch(`${API_BASE}/api/games/player-block-game/events`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${playerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "player-school"
+      },
+      body: JSON.stringify({ id: "e1", type: "rebound", playerId: "p1", offensive: false })
+    });
+
+    expect(eventRes.status).toBe(403);
+  });
+
+  it("allows operator-link tokens to create games when write auth is required", async () => {
+    const schoolId = "operator-write-school";
+    const connectionId = "operator-write-123";
+
+    const publishRes = await fetch(`${API_BASE}/api/operator-links/${connectionId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": "rollout-api-key",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        gameId: "operator-write-game",
+        myTeamId: "vc-varsity",
+        myTeamName: "VC Varsity",
+        opponentName: "Opponent",
+        vcSide: "home",
+      }),
+    });
+    expect(publishRes.status).toBe(200);
+
+    const linkRes = await fetch(`${API_BASE}/api/operator-links/${connectionId}`, {
+      headers: {
+        "x-school-id": schoolId,
+      },
+    });
+    expect(linkRes.status).toBe(200);
+
+    const linkPayload = await linkRes.json() as { operatorToken?: string };
+    expect(linkPayload.operatorToken).toBeTruthy();
+
+    const createRes = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${linkPayload.operatorToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        gameId: "operator-write-game",
+        homeTeamId: "vc-varsity",
+        awayTeamId: "opp-team",
+      }),
+    });
+
+    expect(createRes.status).toBe(201);
+  });
+
+  it("allows self-service profile update and enforces current-password check on credential change", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Self Update Coach",
+        email: "self-update@school.org",
+        password: "OldPass123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const { token } = await registerRes.json() as { token: string };
+
+    // Wrong current password is rejected
+    const wrongPassRes = await fetch(`${API_BASE}/api/auth/me`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ currentPassword: "WrongPass!", newPassword: "Another123!" })
+    });
+
+    expect(wrongPassRes.status).toBe(401);
+
+    // Correct current password is accepted
+    const correctPassRes = await fetch(`${API_BASE}/api/auth/me`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        currentPassword: "OldPass123!",
+        newPassword: "NewPass456!",
+        profilePhotoDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sVhM0sAAAAASUVORK5CYII=",
+      })
+    });
+
+    expect(correctPassRes.status).toBe(200);
+    const updateBody = await correctPassRes.json() as {
+      user?: { profilePhotoDataUrl?: string | null } | null;
+    };
+    expect(updateBody.user?.profilePhotoDataUrl).toContain("data:image/png;base64,");
+
+    // New password works at login
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "self-update@school.org", password: "NewPass456!" })
+    });
+
+    expect(loginRes.status).toBe(200);
+  });
+
+  it("revokes prior local tokens when signing out all sessions", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Revoke Coach",
+        email: "revoke-all@school.org",
+        password: "RevokePass123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      token?: string;
+      user?: { schoolId?: string };
+    };
+    const token = registerBody.token ?? "";
+    const schoolId = registerBody.user?.schoolId ?? "";
+    expect(token).toBeTruthy();
+    expect(schoolId).toBeTruthy();
+
+    const revokeRes = await fetch(`${API_BASE}/api/auth/logout-all`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "x-api-key": "rollout-api-key"
+      },
+    });
+    expect(revokeRes.status).toBe(204);
+
+    const staleProfileRes = await fetch(`${API_BASE}/api/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(staleProfileRes.status).toBe(401);
+
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        email: "revoke-all@school.org",
+        password: "RevokePass123!",
+      }),
+    });
+    expect(loginRes.status).toBe(200);
+  });
+
+  it("supports self-service account deletion with password confirmation", async () => {
+    const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: "Delete Coach",
+        email: "delete-me@school.org",
+        password: "DeletePass123!"
+      })
+    });
+
+    expect(registerRes.status).toBe(201);
+    const registerBody = await registerRes.json() as {
+      token?: string;
+      user?: { schoolId?: string };
+    };
+    const token = registerBody.token ?? "";
+    const schoolId = registerBody.user?.schoolId ?? "";
+    expect(token).toBeTruthy();
+    expect(schoolId).toBeTruthy();
+
+    const deleteRes = await fetch(`${API_BASE}/api/auth/me`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "x-api-key": "rollout-api-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        currentPassword: "DeletePass123!",
+        confirmation: "DELETE",
+      }),
+    });
+    expect(deleteRes.status).toBe(204);
+
+    const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        email: "delete-me@school.org",
+        password: "DeletePass123!",
+      }),
+    });
+    expect(loginRes.status).toBe(401);
   });
 });

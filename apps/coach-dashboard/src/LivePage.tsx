@@ -11,7 +11,9 @@ import { SetupGameCard } from "./SetupGameCard.js";
 export function LivePage() {
   const {
     gameId, state, insights, isLoading, dashboardStatus,
+    lastFinishedGameSummary,
     activePage, setActivePage, boxScoreFilter, setBoxScoreFilter,
+    dismissFinishedGameSummary,
     clearActiveGame,
     rosterTeams,
     newGameMyTeamId, setNewGameMyTeamId,
@@ -23,22 +25,24 @@ export function LivePage() {
     connectionId, setConnectionId,
     operatorConsoleUrl,
     connectedOperatorCount, connectedOperators,
-    isEndingGame, isEndGamePromptOpen, endGameStatus,
+    isEndingGame, isSavingFinalizeDetails, isEndGamePromptOpen, endGameStatus,
+    finalizeGameName, finalizeGameDate, finalizeOpponent, finalizeVcScore, finalizeOppScore,
+    setFinalizeGameDate, setFinalizeOpponent, setFinalizeVcScore, setFinalizeOppScore,
     requestEndGameFromDashboard, cancelEndGamePrompt, discardGameFromDashboard,
-    endGameFromDashboard,
+    saveFinalizeDetailsFromDashboard, endGameFromDashboard,
     teams, aggregatedTeams, canonicalTeamId, teamColorById,
     getScoreboardLineup, displayTeamName, displayPlayerName,
     leadersByTeam, canonicalSideIds,
     lineupUnitStats, coachedTeamId, rotationContext,
     aiInsights, rulesInsights, hasGameStarted,
     aiRefreshError, isRefreshingAiInsights, refreshAiBenchCalls, prettifyInsightText,
-    boxScorePeriods, boxScoreByTeam, setupNames,
+    boxScorePeriods, filteredBoxScoreEvents, boxScoreByTeam, setupNames,
+    deleteGameEvent, deletingGameEventId,
     aiQuickQuestions, sendAiChat, isSendingAiChat,
     aiChatMessages, aiChatInput, setAiChatInput, aiChatStatus,
     aiSubSuggestionCards, aiFoulAlertCards, aiEfficiencyCards,
     promptPreviewStatus, historicalPromptContext, loadPromptPreview,
   } = useGameSession();
-
   const [liveSubPage, setLiveSubPage] = useState<"scoreboard" | "operators">("scoreboard");
   const [operatorCopyStatus, setOperatorCopyStatus] = useState("");
 
@@ -52,6 +56,9 @@ export function LivePage() {
       return bMs - aMs;
     });
   }, [connectedOperators]);
+
+  const vcTeamName = teams[0] ? displayTeamName(teams[0]) : "Your Team";
+  const opponentTeamName = teams[1] ? displayTeamName(teams[1]) : "Opponent";
 
   async function copyOperatorConsoleLink(): Promise<void> {
     try {
@@ -93,24 +100,44 @@ export function LivePage() {
         </div>
       )}
       {!gameId && activePage === "live" && liveSubPage === "scoreboard" && (
-        <SetupGameCard
-          rosterTeams={rosterTeams}
-          newGameMyTeamId={newGameMyTeamId}
-          setNewGameMyTeamId={setNewGameMyTeamId}
-          newGameOpponent={newGameOpponent}
-          setNewGameOpponent={setNewGameOpponent}
-          newGameVcSide={newGameVcSide}
-          setNewGameVcSide={setNewGameVcSide}
-          newGameOppColor={newGameOppColor}
-          setNewGameOppColor={setNewGameOppColor}
-          newGameStartingLineup={newGameStartingLineup}
-          setNewGameStartingLineup={setNewGameStartingLineup}
-          isLaunchingGame={isLaunchingGame}
-          launchGame={launchGame}
-          dashboardStatus={dashboardStatus}
-          connectionId={connectionId}
-          setConnectionId={setConnectionId}
-        />
+        <>
+          {lastFinishedGameSummary ? (
+            <section className="card settings-section-card finalize-game-finished-card" aria-label="Finished Game Summary">
+              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>Game Finished</p>
+              <h3 style={{ marginBottom: "0.5rem" }}>{lastFinishedGameSummary.myTeamName} vs {lastFinishedGameSummary.opponentName}</h3>
+              <p className="settings-section-desc">Game ID: {lastFinishedGameSummary.gameId}</p>
+              <p className="settings-section-desc">Finished at: {new Date(lastFinishedGameSummary.finishedAtIso).toLocaleString()}</p>
+              <div className="finalize-game-finished-score">
+                <span>{lastFinishedGameSummary.myTeamName}</span>
+                <strong>{lastFinishedGameSummary.myScore}</strong>
+                <span>-</span>
+                <strong>{lastFinishedGameSummary.oppScore}</strong>
+                <span>{lastFinishedGameSummary.opponentName}</span>
+              </div>
+              <div className="finalize-game-actions">
+                <button type="button" className="shell-nav-link" onClick={dismissFinishedGameSummary}>Dismiss</button>
+              </div>
+            </section>
+          ) : null}
+          <SetupGameCard
+            rosterTeams={rosterTeams}
+            newGameMyTeamId={newGameMyTeamId}
+            setNewGameMyTeamId={setNewGameMyTeamId}
+            newGameOpponent={newGameOpponent}
+            setNewGameOpponent={setNewGameOpponent}
+            newGameVcSide={newGameVcSide}
+            setNewGameVcSide={setNewGameVcSide}
+            newGameOppColor={newGameOppColor}
+            setNewGameOppColor={setNewGameOppColor}
+            newGameStartingLineup={newGameStartingLineup}
+            setNewGameStartingLineup={setNewGameStartingLineup}
+            isLaunchingGame={isLaunchingGame}
+            launchGame={launchGame}
+            dashboardStatus={dashboardStatus}
+            connectionId={connectionId}
+            setConnectionId={setConnectionId}
+          />
+        </>
       )}
       {!gameId && activePage === "live" && liveSubPage === "operators" && (
         <div className="idle-screen">
@@ -121,7 +148,7 @@ export function LivePage() {
       )}
       {gameId && activePage === "live" && liveSubPage === "scoreboard" && (
         <>
-          <section className="card settings-section-card">
+          <section className="card settings-section-card live-controls-card">
             <div className="stats-page-card-head">
               <div>
                 <h3>Live Game Controls</h3>
@@ -153,17 +180,78 @@ export function LivePage() {
             {endGameStatus ? <p className="settings-section-desc">{endGameStatus}</p> : null}
           </section>
           {isEndGamePromptOpen ? (
-            <section className="card settings-section-card" aria-label="End Game Confirmation">
-              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>End Game</p>
-              <h3 style={{ marginBottom: "0.5rem" }}>Save this game before closing?</h3>
-              <p className="settings-section-desc" style={{ marginBottom: "0.9rem" }}>
-                Save finalizes and submits this game to the API. Discard closes this live session without submitting.
-              </p>
-              <div style={{ display: "flex", gap: "0.6rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
-                <button type="button" className="shell-nav-link" onClick={cancelEndGamePrompt} disabled={isEndingGame}>Cancel</button>
-                <button type="button" className="shell-nav-link" onClick={discardGameFromDashboard} disabled={isEndingGame}>Discard</button>
-                <button type="button" className="shell-nav-link danger-btn" onClick={() => void endGameFromDashboard()} disabled={isEndingGame}>
-                  {isEndingGame ? "Saving..." : "Save & End"}
+            <section className="card settings-section-card finalize-game-card" aria-label="Finalize Game Details">
+              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>Game Over</p>
+              <h3 style={{ marginBottom: "0.5rem" }}>Finalize game details</h3>
+
+              <div className="finalize-game-grid">
+                <label className="finalize-game-field">
+                  <span className="finalize-game-label">Game Name</span>
+                  <input
+                    className="finalize-game-input"
+                    value={finalizeGameName}
+                    readOnly
+                    aria-readonly="true"
+                  />
+                </label>
+                <label className="finalize-game-field">
+                  <span className="finalize-game-label">Date</span>
+                  <input
+                    type="date"
+                    className="finalize-game-input"
+                    value={finalizeGameDate}
+                    onChange={event => setFinalizeGameDate(event.target.value)}
+                  />
+                </label>
+                <label className="finalize-game-field finalize-game-field-wide">
+                  <span className="finalize-game-label">Opponent</span>
+                  <input
+                    className="finalize-game-input"
+                    value={finalizeOpponent}
+                    onChange={event => setFinalizeOpponent(event.target.value)}
+                    placeholder="Opponent name"
+                  />
+                </label>
+              </div>
+
+              <div className="finalize-game-score-wrap">
+                <div className="finalize-game-score-team">
+                  <span className="finalize-game-score-name">{vcTeamName}</span>
+                  <input
+                    className="finalize-game-score-input"
+                    inputMode="numeric"
+                    value={finalizeVcScore}
+                    onChange={event => setFinalizeVcScore(event.target.value.replace(/[^0-9]/g, ""))}
+                  />
+                </div>
+                <div className="finalize-game-score-separator">-</div>
+                <div className="finalize-game-score-team">
+                  <span className="finalize-game-score-name">{opponentTeamName}</span>
+                  <input
+                    className="finalize-game-score-input"
+                    inputMode="numeric"
+                    value={finalizeOppScore}
+                    onChange={event => setFinalizeOppScore(event.target.value.replace(/[^0-9]/g, ""))}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="shell-nav-link shell-nav-link-active finalize-game-save-btn"
+                onClick={() => void saveFinalizeDetailsFromDashboard()}
+                disabled={isSavingFinalizeDetails || isEndingGame}
+              >
+                {isSavingFinalizeDetails ? "Saving..." : "Save Name/Date/Score Changes"}
+              </button>
+
+              {endGameStatus ? <p className="settings-section-desc finalize-game-status">{endGameStatus}</p> : null}
+
+              <div className="finalize-game-actions">
+                <button type="button" className="shell-nav-link" onClick={cancelEndGamePrompt} disabled={isSavingFinalizeDetails || isEndingGame}>Cancel</button>
+                <button type="button" className="shell-nav-link" onClick={() => void discardGameFromDashboard()} disabled={isSavingFinalizeDetails || isEndingGame}>Discard This Game</button>
+                <button type="button" className="shell-nav-link danger-btn" onClick={() => void endGameFromDashboard()} disabled={isSavingFinalizeDetails || isEndingGame}>
+                  {isEndingGame ? "Submitting..." : "Submit Game"}
                 </button>
               </div>
             </section>
@@ -187,8 +275,8 @@ export function LivePage() {
             boxScorePeriods={boxScorePeriods}
             boxScoreFilter={boxScoreFilter}
             setBoxScoreFilter={setBoxScoreFilter}
+            filteredBoxScoreEvents={filteredBoxScoreEvents}
             boxScoreByTeam={boxScoreByTeam}
-            currentPeriod={state?.currentPeriod}
             displayTeamName={displayTeamName}
             displayPlayerName={displayPlayerName}
             rosterTeams={rosterTeams}
@@ -197,11 +285,8 @@ export function LivePage() {
             vcSide={setupNames.vcSide}
             stateHomeTeamId={state?.homeTeamId}
             stateAwayTeamId={state?.awayTeamId}
-          />
-          <LineupUnitPanel
-            lineupUnitStats={lineupUnitStats}
-            coachedTeamId={coachedTeamId}
-            displayPlayerName={displayPlayerName}
+            deletingGameEventId={deletingGameEventId}
+            deleteGameEvent={deleteGameEvent}
           />
           <InsightsPanel
             gameId={gameId}
@@ -210,6 +295,7 @@ export function LivePage() {
             aiInsights={aiInsights}
             rulesInsights={rulesInsights}
             aiRefreshError={aiRefreshError}
+            aiHealthMessage=""
             isRefreshingAiInsights={isRefreshingAiInsights}
             refreshAiBenchCalls={refreshAiBenchCalls}
             prettifyInsightText={prettifyInsightText}
@@ -217,6 +303,11 @@ export function LivePage() {
           <RotationPanel
             rotationContext={rotationContext}
             displayTeamName={displayTeamName}
+            displayPlayerName={displayPlayerName}
+          />
+          <LineupUnitPanel
+            lineupUnitStats={lineupUnitStats}
+            coachedTeamId={coachedTeamId}
             displayPlayerName={displayPlayerName}
           />
         </>
@@ -245,7 +336,10 @@ export function LivePage() {
           ) : (
             <div className="operators-list">
               {orderedOperators.map((operator, index) => (
-                <div key={`${operator.deviceId ?? "unknown"}-${operator.lastSeenIso ?? index}`} className="operator-row">
+                <div
+                  key={operator.deviceId ?? operator.connectedAtIso ?? `${operator.deviceName ?? "unknown"}-${index}`}
+                  className="operator-row"
+                >
                   <div>
                     <p className="operator-device">{operator.deviceName || operator.deviceId || "Unknown device"}</p>
                     <p className="operator-meta">Game: {operator.gameId || "n/a"}</p>

@@ -1,0 +1,570 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const API_PORT = "4101";
+const API_BASE = `http://localhost:${API_PORT}`;
+
+function makeTestToken(payload: Record<string, unknown>): string {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `test.${encoded}`;
+}
+
+describe("server billing integration", () => {
+  let startServer: (overridePort?: number) => Promise<number>;
+  let stopServer: () => Promise<void>;
+
+  beforeAll(async () => {
+    process.env.BTA_AUTH_TEST_MODE = "1";
+    process.env.BTA_REQUIRE_TENANT = "1";
+    process.env.BTA_JWT_WRITE_REQUIRED = "1";
+    process.env.BTA_API_KEY = "billing-test-api-key";
+    process.env.BTA_LOCAL_AUTH_SECRET = "billing-local-auth-secret";
+    process.env.BTA_PAYWALL_ENABLED = "1";
+    process.env.BTA_STRIPE_TEST_MODE = "1";
+    process.env.BTA_STRIPE_SECRET_KEY = "stripe_test_secret_key";
+    process.env.BTA_STRIPE_WEBHOOK_SECRET = "whsec_test_bta";
+    process.env.BTA_STRIPE_PRICE_ID_MONTHLY = "price_monthly_test";
+    process.env.BTA_STRIPE_PRICE_ID_YEARLY = "price_yearly_test";
+    process.env.NODE_ENV = "test";
+    process.env.PORT = API_PORT;
+
+    vi.resetModules();
+    const serverModule = await import("./server.js");
+    startServer = serverModule.startServer;
+    stopServer = serverModule.stopServer;
+    await startServer();
+  });
+
+  afterAll(async () => {
+    await stopServer();
+
+    delete process.env.BTA_AUTH_TEST_MODE;
+    delete process.env.BTA_REQUIRE_TENANT;
+    delete process.env.BTA_JWT_WRITE_REQUIRED;
+    delete process.env.BTA_API_KEY;
+    delete process.env.BTA_LOCAL_AUTH_SECRET;
+    delete process.env.BTA_PAYWALL_ENABLED;
+    delete process.env.BTA_STRIPE_TEST_MODE;
+    delete process.env.BTA_STRIPE_SECRET_KEY;
+    delete process.env.BTA_STRIPE_WEBHOOK_SECRET;
+    delete process.env.BTA_STRIPE_PRICE_ID_MONTHLY;
+    delete process.env.BTA_STRIPE_PRICE_ID_YEARLY;
+    delete process.env.PORT;
+  });
+
+  it("supports coupon, checkout, webhook activation, and portal flow", async () => {
+    const schoolId = "billing-school-a";
+    const token = makeTestToken({
+      sub: "billing-coach-a",
+      schoolId,
+      role: "coach",
+      email: "coach-a@school.org",
+      name: "Coach A",
+    });
+
+    const entitlementBeforeResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(entitlementBeforeResponse.status).toBe(200);
+    const entitlementBefore = await entitlementBeforeResponse.json() as {
+      entitlement?: { paywallEnabled?: boolean; accessActive?: boolean; reason?: string; status?: string };
+    };
+    expect(entitlementBefore.entitlement?.paywallEnabled).toBe(true);
+    expect(entitlementBefore.entitlement?.accessActive).toBe(false);
+    expect(entitlementBefore.entitlement?.reason).toBe("inactive_subscription");
+
+    const premiumBlockedResponse = await fetch(`${API_BASE}/api/season-stats`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(premiumBlockedResponse.status).toBe(402);
+
+    const validateCouponResponse = await fetch(`${API_BASE}/api/billing/validate-coupon`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ couponCode: "SAVE10" }),
+    });
+    expect(validateCouponResponse.status).toBe(200);
+    const validateCouponPayload = await validateCouponResponse.json() as {
+      valid?: boolean;
+      percentOff?: number | null;
+    };
+    expect(validateCouponPayload.valid).toBe(true);
+    expect(validateCouponPayload.percentOff).toBe(10);
+
+    const applyCouponResponse = await fetch(`${API_BASE}/api/billing/apply-coupon`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ couponCode: "SAVE10" }),
+    });
+    expect(applyCouponResponse.status).toBe(200);
+
+    const checkoutResponse = await fetch(`${API_BASE}/api/billing/checkout-session`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ planCycle: "monthly" }),
+    });
+    expect(checkoutResponse.status).toBe(200);
+    const checkoutPayload = await checkoutResponse.json() as { url?: string; id?: string };
+    expect(checkoutPayload.id).toContain("cs_test_");
+    expect(checkoutPayload.url).toContain("checkout.stripe.com/test/session");
+
+    const webhookResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_school_a",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(webhookResponse.status).toBe(200);
+
+    const entitlementAfterResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(entitlementAfterResponse.status).toBe(200);
+    const entitlementAfter = await entitlementAfterResponse.json() as {
+      entitlement?: { accessActive?: boolean; reason?: string; status?: string };
+    };
+    expect(entitlementAfter.entitlement?.accessActive).toBe(true);
+    expect(entitlementAfter.entitlement?.status).toBe("active");
+    expect(entitlementAfter.entitlement?.reason).toBe("subscription_active");
+
+    const premiumAllowedResponse = await fetch(`${API_BASE}/api/season-stats`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(premiumAllowedResponse.status).toBe(200);
+
+    const portalResponse = await fetch(`${API_BASE}/api/billing/portal-session`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(portalResponse.status).toBe(200);
+    const portalPayload = await portalResponse.json() as { url?: string };
+    expect(portalPayload.url).toContain("billing.stripe.com/test/p/session");
+
+    const duplicateWebhookResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_school_a",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+          },
+        },
+      }),
+    });
+    expect(duplicateWebhookResponse.status).toBe(200);
+    const duplicatePayload = await duplicateWebhookResponse.json() as { duplicate?: boolean };
+    expect(duplicatePayload.duplicate).toBe(true);
+
+    const paymentFailedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_invoice_failed_school_a",
+        type: "invoice.payment_failed",
+        data: {
+          object: {
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(paymentFailedResponse.status).toBe(200);
+
+    const entitlementPastDueResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(entitlementPastDueResponse.status).toBe(200);
+    const entitlementPastDue = await entitlementPastDueResponse.json() as {
+      entitlement?: { accessActive?: boolean; status?: string };
+    };
+    expect(entitlementPastDue.entitlement?.accessActive).toBe(false);
+    expect(entitlementPastDue.entitlement?.status).toBe("past_due");
+  });
+
+  it("creates bootstrap checkout sessions without pre-existing tenant scope", async () => {
+    const bootstrapResponse = await fetch(`${API_BASE}/api/billing/bootstrap-checkout-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullName: "Bootstrap Coach",
+        email: "bootstrap@school.org",
+        schoolName: "Bootstrap High",
+        teamName: "Bootstrap Varsity",
+        planCycle: "monthly",
+      }),
+    });
+
+    expect(bootstrapResponse.status).toBe(200);
+    const bootstrapPayload = await bootstrapResponse.json() as { schoolId?: string; url?: string; id?: string };
+    expect(typeof bootstrapPayload.schoolId).toBe("string");
+    expect(bootstrapPayload.schoolId?.length ?? 0).toBeGreaterThan(0);
+    expect(bootstrapPayload.id).toContain("cs_test_bootstrap_");
+    expect(bootstrapPayload.url).toContain("checkout.stripe.com/test/session/bootstrap-");
+
+    const storeModule = await import("./store.js");
+    const bootstrapSchoolId = bootstrapPayload.schoolId ?? "";
+    expect(storeModule.getBillingStateByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+    expect(storeModule.getOrganizationProfileByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+
+    const token = makeTestToken({
+      sub: "bootstrap-coach",
+      schoolId: bootstrapSchoolId,
+      role: "coach",
+    });
+
+    const entitlementResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": bootstrapSchoolId,
+      },
+    });
+
+    expect(entitlementResponse.status).toBe(200);
+    const entitlementPayload = await entitlementResponse.json() as {
+      entitlement?: { reason?: string; accessActive?: boolean };
+    };
+    expect(entitlementPayload.entitlement?.accessActive).toBe(false);
+    expect(entitlementPayload.entitlement?.reason).toBe("inactive_subscription");
+    expect(storeModule.getBillingStateByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+    expect(storeModule.getOrganizationProfileByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+
+    const checkoutCompletedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_bootstrap_complete",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: {
+              schoolId: bootstrapSchoolId,
+              flow: "marketing-bootstrap",
+              fullName: "Bootstrap Coach",
+              email: "bootstrap@school.org",
+              schoolName: "Bootstrap High",
+              teamName: "Bootstrap Varsity",
+            },
+            customer: `cus_test_${bootstrapSchoolId}`,
+            subscription: `sub_test_${bootstrapSchoolId}`,
+          },
+        },
+      }),
+    });
+    expect(checkoutCompletedResponse.status).toBe(200);
+
+    expect(storeModule.getBillingStateByScope({ schoolId: bootstrapSchoolId })?.status).toBe("active");
+    expect(storeModule.getOrganizationProfileByScope({ schoolId: bootstrapSchoolId })?.organizationName).toBe("Bootstrap High");
+  });
+
+  it("rejects malformed webhook envelopes and ignores checkout events without school metadata", async () => {
+    const schoolId = "billing-school-envelope";
+    const token = makeTestToken({
+      sub: "billing-coach-envelope",
+      schoolId,
+      role: "coach",
+    });
+
+    const malformedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+          },
+        },
+      }),
+    });
+    expect(malformedResponse.status).toBe(400);
+    const malformedPayload = await malformedResponse.json() as { error?: string };
+    expect(malformedPayload.error).toBe("Invalid Stripe event envelope");
+
+    const missingMetadataResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_missing_school",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            customer: "cus_test_missing_school",
+            subscription: "sub_test_missing_school",
+            metadata: {},
+          },
+        },
+      }),
+    });
+    expect(missingMetadataResponse.status).toBe(200);
+
+    const entitlementResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(entitlementResponse.status).toBe(200);
+    const entitlementPayload = await entitlementResponse.json() as {
+      entitlement?: { accessActive?: boolean; reason?: string; status?: string };
+    };
+    expect(entitlementPayload.entitlement?.accessActive).toBe(false);
+    expect(entitlementPayload.entitlement?.status).toBe("incomplete");
+    expect(entitlementPayload.entitlement?.reason).toBe("inactive_subscription");
+  });
+
+  it("blocks bootstrap register until checkout completion webhook activates billing", async () => {
+    const bootstrapResponse = await fetch(`${API_BASE}/api/billing/bootstrap-checkout-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullName: "Pending Coach",
+        email: "pending-bootstrap@school.org",
+        schoolName: "Pending High",
+        teamName: "Pending Varsity",
+        planCycle: "monthly",
+      }),
+    });
+
+    expect(bootstrapResponse.status).toBe(200);
+    const bootstrapPayload = await bootstrapResponse.json() as { schoolId?: string };
+    const schoolId = bootstrapPayload.schoolId ?? "";
+    expect(schoolId.length).toBeGreaterThan(0);
+
+    const registerBeforeCheckout = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        fullName: "Pending Coach",
+        email: "pending-bootstrap@school.org",
+        password: "StrongPass123!",
+      }),
+    });
+
+    expect(registerBeforeCheckout.status).toBe(402);
+    const registerBeforePayload = await registerBeforeCheckout.json() as { error?: string };
+    expect(registerBeforePayload.error).toBe("Complete checkout before creating your account");
+
+    const completeCheckoutResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_pending_bootstrap_complete",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: {
+              schoolId,
+              flow: "marketing-bootstrap",
+              fullName: "Pending Coach",
+              email: "pending-bootstrap@school.org",
+              schoolName: "Pending High",
+              teamName: "Pending Varsity",
+            },
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(completeCheckoutResponse.status).toBe(200);
+
+    const registerAfterCheckout = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        fullName: "Pending Coach",
+        email: "pending-bootstrap@school.org",
+        password: "StrongPass123!",
+      }),
+    });
+
+    expect(registerAfterCheckout.status).toBe(201);
+  });
+
+  it("enforces paywall across premium endpoint matrix through activation lifecycle", async () => {
+    const schoolId = "billing-school-matrix";
+    const token = makeTestToken({
+      sub: "billing-coach-matrix",
+      schoolId,
+      role: "coach",
+      email: "coach-matrix@school.org",
+      name: "Coach Matrix",
+    });
+
+    const premiumRequests: Array<{ path: string; method?: "GET" | "POST"; body?: Record<string, unknown> }> = [
+      { path: "/api/season-stats" },
+      { path: "/api/notifications" },
+      { path: "/api/live-context" },
+      { path: "/api/leaderboards" },
+      { path: "/api/team-trends" },
+      { path: "/api/player-trends/Ava%20Lane" },
+      { path: "/api/player-comparison?players=Ava%20Lane&players=Nora%20Cruz" },
+      { path: "/api/advanced/team" },
+      { path: "/api/advanced/player/Ava%20Lane" },
+      { path: "/api/advanced/volatility" },
+      { path: "/api/comprehensive-insights" },
+      { path: "/api/ai/player-insights/Ava%20Lane" },
+      { path: "/api/ai/game-analysis/test-game-matrix" },
+      { path: "/api/season-analysis" },
+      { path: "/api/ai/player-analysis/Ava%20Lane" },
+      { path: "/api/advanced/game/test-game-matrix" },
+      { path: "/api/advanced/patterns" },
+      {
+        path: "/api/ai/chat",
+        method: "POST",
+        body: {
+          gameId: "test-game-matrix",
+          question: "What should we adjust now?",
+          history: [],
+        },
+      },
+      {
+        path: "/api/ai/analyze",
+        method: "POST",
+        body: {
+          gameId: "test-game-matrix",
+        },
+      },
+    ];
+
+    const requestHeaders = {
+      Authorization: `Bearer ${token}`,
+      "x-school-id": schoolId,
+    };
+
+    async function assertMatrixBlocked(expectedBlocked: boolean): Promise<void> {
+      for (const request of premiumRequests) {
+        const response = await fetch(`${API_BASE}${request.path}`, {
+          method: request.method ?? "GET",
+          headers: request.body
+            ? { ...requestHeaders, "Content-Type": "application/json" }
+            : requestHeaders,
+          body: request.body ? JSON.stringify(request.body) : undefined,
+        });
+
+        if (expectedBlocked) {
+          expect(response.status).toBe(402);
+          const payload = await response.json() as {
+            code?: string;
+            entitlement?: {
+              accessActive?: boolean;
+              reason?: string;
+            };
+          };
+          expect(payload.code).toBe("billing_required");
+          expect(payload.entitlement?.accessActive).toBe(false);
+          expect(payload.entitlement?.reason).toBe("inactive_subscription");
+        } else {
+          expect(response.status).not.toBe(402);
+        }
+      }
+    }
+
+    await assertMatrixBlocked(true);
+
+    const activateResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_school_matrix",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: { schoolId },
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(activateResponse.status).toBe(200);
+
+    await assertMatrixBlocked(false);
+
+    const paymentFailedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_invoice_failed_school_matrix",
+        type: "invoice.payment_failed",
+        data: {
+          object: {
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(paymentFailedResponse.status).toBe(200);
+
+    await assertMatrixBlocked(true);
+  });
+});

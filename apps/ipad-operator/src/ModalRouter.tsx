@@ -1,8 +1,6 @@
 import { computeCurrentLineup } from "./helpers/events.js";
-import { foulTypeLabel, turnoverTypeLabel } from "./helpers/labels.js";
 import type { ChainPrompt, EventEditContext, Modal, Player, RunningTotals } from "./types.js";
 import type { OpponentTrackStat, TeamSide } from "./types.js";
-import { FOUL_TYPE_OPTIONS, TURNOVER_TYPE_OPTIONS } from "./types.js";
 import type { GameEvent } from "@bta/shared-schema";
 
 // ── Shared sub-props ──
@@ -193,32 +191,6 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
             <button className="modal-close" onClick={closeModal}>X</button>
           </div>
           {editDelete(modal.editContext ?? null)}
-          {modal.stat === "foul" && (
-            <div className="modal-subtype-row">
-              {FOUL_TYPE_OPTIONS.map((foulType) => (
-                <button
-                  key={foulType}
-                  className={`modal-subtype-btn ${(modal.foulType ?? "personal") === foulType ? "active" : ""}`}
-                  onClick={() => setModal({ ...modal, foulType })}
-                >
-                  {foulTypeLabel(foulType)}
-                </button>
-              ))}
-            </div>
-          )}
-          {modal.stat === "turnover" && (
-            <div className="modal-subtype-row">
-              {TURNOVER_TYPE_OPTIONS.map((turnoverType) => (
-                <button
-                  key={turnoverType}
-                  className={`modal-subtype-btn ${(modal.turnoverType ?? "bad_pass") === turnoverType ? "active" : ""}`}
-                  onClick={() => setModal({ ...modal, turnoverType })}
-                >
-                  {turnoverTypeLabel(turnoverType)}
-                </button>
-              ))}
-            </div>
-          )}
           <div className="player-list">
             {isTrackedSelection ? (
               <>
@@ -620,15 +592,17 @@ export interface ChainPromptBarProps {
   chainPrompt: ChainPrompt | null;
   vcSideSetup: TeamSide;
   opponentSide: TeamSide;
+  opponentHasRoster: boolean;
   homeTeamName: string;
   awayTeamName: string;
   homeTeamColor: string;
   awayTeamColor: string;
   onDismiss: () => void;
   setModal: (m: Modal | null) => void;
+  recordTeamRebound: (side: TeamSide, offensive: boolean) => void;
 }
 
-export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, homeTeamName, awayTeamName, homeTeamColor, awayTeamColor, onDismiss, setModal }: ChainPromptBarProps) {
+export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, opponentHasRoster, homeTeamName, awayTeamName, homeTeamColor, awayTeamColor, onDismiss, setModal, recordTeamRebound }: ChainPromptBarProps) {
   if (!chainPrompt) return null;
   const myTeamName = vcSideSetup === "home" ? homeTeamName : awayTeamName;
   const oppTeamName = vcSideSetup === "home" ? awayTeamName : homeTeamName;
@@ -684,6 +658,10 @@ export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, homeTea
             onClick={() => {
               onDismiss();
               const rebStat = isMy ? "def_reb" : "off_reb";
+              if (!opponentHasRoster) {
+                recordTeamRebound(opponentSide, rebStat === "off_reb");
+                return;
+              }
               setModal({ kind: "stat", stat: rebStat, teamId: opponentSide });
             }}
           >

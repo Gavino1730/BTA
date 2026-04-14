@@ -1,58 +1,308 @@
+/* ============================================================
+   BTA Courtside — Unified Design Token System
+   Single source of truth for coach-dashboard + ipad-operator.
+   Marketing site aligns to the same values in its globals.css.
+
+   Canonical names use --bta-* prefix.
+   Legacy aliases below preserve backward compat during migration.
+   ============================================================ */
+
 :root {
-  /* Brand and accent */
-  --brand-primary: #c1121f;
-  --brand-primary-strong: #e5383b;
-  --brand-primary-deep: #8c1019;
-  --brand-accent: #ffd166;
-  --brand-accent-strong: #ffb703;
+  /* ──────────────────────────────────────────
+     BACKGROUNDS
+  ────────────────────────────────────────── */
+  --bta-bg-base:      #0d1020;
+  --bta-bg-elevated:  #151a30;
+  --bta-bg-panel:     #1c2340;
+  --bta-bg-panel-2:   #2b335a;
+  --bta-bg-overlay:   rgba(28, 35, 64, 0.84);
+  --bta-surface-1:    rgba(255, 255, 255, 0.045);
+  --bta-surface-2:    rgba(255, 255, 255, 0.075);
 
-  /* Core background stack */
-  --bg: #0c101a;
-  --bg-elevated: #141b2b;
-  --bg-layer-1: #1a2336;
-  --bg-layer-2: #202b42;
-  --surface: var(--bg-elevated);
-  --surface-2: rgba(255, 255, 255, 0.045);
-  --surface-3: rgba(255, 255, 255, 0.075);
+  /* ──────────────────────────────────────────
+     TEXT
+  ────────────────────────────────────────── */
+  --bta-text-primary:   #f7f8fc;
+  --bta-text-secondary: #d8ddf0;
+  --bta-text-tertiary:  #a5add0;
+  --bta-text-muted:     #666c8f;
 
-  /* Text and structure */
-  --text: #f4f6fb;
-  --text-muted: rgba(244, 246, 251, 0.68);
-  --text-dim: rgba(244, 246, 251, 0.45);
-  --border: rgba(255, 255, 255, 0.1);
-  --border-hi: rgba(255, 255, 255, 0.2);
+  /* ──────────────────────────────────────────
+     BRAND ACCENTS
+  ────────────────────────────────────────── */
+  --bta-accent-violet:       #6e5bff;
+  --bta-accent-violet-strong:#7a69ff;
+  --bta-accent-violet-dark:  #4636c9;
+  --bta-accent-violet-soft:  rgba(110, 91, 255, 0.16);
+  --bta-accent-cyan:         #46d7ff;
+  --bta-accent-cyan-strong:  #6de2ff;
+  --bta-accent-cyan-soft:    rgba(70, 215, 255, 0.16);
+  --bta-accent-glow:         rgba(70, 215, 255, 0.4);
+  --bta-accent-on:           #ffffff;
 
-  /* Status and semantic */
-  --color-success: #38d996;
-  --color-warning: #ffd166;
-  --color-danger: #f25f5c;
-  --color-info: #5ea8ff;
+  /* ──────────────────────────────────────────
+     SEMANTIC STATES
+  ────────────────────────────────────────── */
+  --bta-success:      #38e39f;
+  --bta-success-soft: rgba(56, 227, 159, 0.16);
+  --bta-warning:      #ffb84d;
+  --bta-warning-soft: rgba(255, 184, 77, 0.18);
+  --bta-danger:       #ff5d73;
+  --bta-danger-soft:  rgba(255, 93, 115, 0.16);
+  --bta-info:         #46d7ff;
 
-  /* Legacy aliases to reduce churn while migrating */
-  --teal: var(--brand-primary);
-  --teal-soft: rgba(193, 18, 31, 0.16);
-  --gold: var(--brand-accent);
-  --gold-soft: rgba(255, 209, 102, 0.2);
-  --red: var(--color-danger);
-  --red-soft: rgba(242, 95, 92, 0.16);
+  /* ──────────────────────────────────────────
+     BASKETBALL / GAME-STATE TOKENS
+     (make = shot made, miss = shot missed)
+  ────────────────────────────────────────── */
+  --bta-make-bg:          rgba(16, 185, 129, 0.22);
+  --bta-make-bg-strong:   rgba(16, 185, 129, 0.36);
+  --bta-make-bg-soft:     rgba(16, 185, 129, 0.10);
+  --bta-make-border:      rgba(16, 185, 129, 0.52);
+  --bta-make-text:        #6ee7b7;
+  --bta-make-text-soft:   #a7f3d0;
+  --bta-miss-bg:          rgba(239, 68, 68, 0.20);
+  --bta-miss-bg-strong:   rgba(239, 68, 68, 0.32);
+  --bta-miss-bg-soft:     rgba(239, 68, 68, 0.08);
+  --bta-miss-border:      rgba(239, 68, 68, 0.48);
+  --bta-miss-text:        #fca5a5;
+  --bta-miss-text-soft:   #fecaca;
 
-  /* Motion and shape */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-  --motion-fast: 120ms;
+  /* ──────────────────────────────────────────
+     BORDERS & RINGS
+  ────────────────────────────────────────── */
+  --bta-border-soft:   rgba(43, 51, 90, 0.92);
+  --bta-border-strong: rgba(74, 88, 143, 0.92);
+  --bta-ring:          rgba(70, 215, 255, 0.54);
+
+  /* ──────────────────────────────────────────
+     BORDER RADIUS
+  ────────────────────────────────────────── */
+  --bta-radius-xs:   0.25rem;   /* 4px  — chips, tags          */
+  --bta-radius-sm:   0.375rem;  /* 6px  — small controls       */
+  --bta-radius-md:   0.625rem;  /* 10px — cards, inputs        */
+  --bta-radius-lg:   0.875rem;  /* 14px — panels, modals       */
+  --bta-radius-xl:   1.125rem;  /* 18px — large surfaces       */
+  --bta-radius-full: 9999px;    /* pill badges, avatars        */
+
+  /* ──────────────────────────────────────────
+     SHADOWS
+  ────────────────────────────────────────── */
+  --bta-shadow-sm: 0 4px 12px rgba(5, 8, 22, 0.32);
+  --bta-shadow-md: 0 14px 34px rgba(5, 8, 22, 0.44);
+  --bta-shadow-lg: 0 28px 64px rgba(5, 8, 22, 0.52);
+  --bta-shadow-xl: 0 38px 96px rgba(4, 6, 16, 0.62);
+
+  /* ──────────────────────────────────────────
+     TYPOGRAPHY
+  ────────────────────────────────────────── */
+  --bta-font-body:    "Inter", "Segoe UI", system-ui, sans-serif;
+  --bta-font-display: "Syne", "Inter", system-ui, sans-serif;
+  --bta-font-mono:    "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  /* ──────────────────────────────────────────
+     MOTION
+  ────────────────────────────────────────── */
+  --bta-motion-fast:     120ms ease;
+  --bta-motion-standard: 180ms ease;
+  --bta-motion-slow:     300ms ease;
+
+  /* ──────────────────────────────────────────
+     Z-INDEX SCALE
+  ────────────────────────────────────────── */
+  --bta-z-base:    1;
+  --bta-z-overlay: 100;
+  --bta-z-modal:   200;
+  --bta-z-toast:   300;
+  --bta-z-badge:   9999;
+
+  /* ──────────────────────────────────────────
+     LEGACY ALIASES — backward compat
+     All point to canonical --bta-* values.
+     Migrate callsites to --bta-* over time.
+  ────────────────────────────────────────── */
+
+  /* Brand */
+  --brand-primary:        var(--bta-accent-violet);
+  --brand-primary-strong: var(--bta-accent-violet-strong);
+  --brand-primary-deep:   var(--bta-accent-violet-dark);
+  --brand-accent:         var(--bta-accent-cyan);
+  --brand-accent-strong:  var(--bta-accent-cyan-strong);
+
+  /* Backgrounds */
+  --bg:          var(--bta-bg-base);
+  --bg-elevated: var(--bta-bg-elevated);
+  --bg-layer-1:  var(--bta-bg-panel);
+  --bg-layer-2:  var(--bta-bg-panel-2);
+  --surface:     var(--bta-bg-elevated);
+  --surface-2:   var(--bta-surface-1);
+  --surface-3:   var(--bta-surface-2);
+
+  /* Text */
+  --text:      var(--bta-text-primary);
+  --text-muted:var(--bta-text-secondary);
+  --text-dim:  var(--bta-text-tertiary);
+
+  /* Borders */
+  --border:    var(--bta-border-soft);
+  --border-hi: var(--bta-border-strong);
+
+  /* Semantic */
+  --color-success: var(--bta-success);
+  --color-warning: var(--bta-warning);
+  --color-danger:  var(--bta-danger);
+  --color-info:    var(--bta-info);
+
+  /* Legacy accent aliases */
+  --teal:      var(--bta-accent-cyan);
+  --teal-soft: var(--bta-accent-cyan-soft);
+  --gold:      var(--bta-warning);
+  --gold-soft: var(--bta-warning-soft);
+  --red:       var(--bta-danger);
+  --red-soft:  var(--bta-danger-soft);
+
+  /* Shape + motion */
+  --radius-sm: var(--bta-radius-sm);
+  --radius-md: var(--bta-radius-md);
+  --radius-lg: var(--bta-radius-lg);
+  --radius-xl: var(--bta-radius-xl);
+  --motion-fast:     120ms;
   --motion-standard: 180ms;
-  --motion-slow: 280ms;
+  --motion-slow:     300ms;
 
   /* Typography */
-  --font-ui: "Bahnschrift", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Bahnschrift SemiCondensed", "Arial Narrow", "Trebuchet MS", sans-serif;
+  --font-ui:      var(--bta-font-body);
+  --font-display: var(--bta-font-display);
+  --font-mono:    var(--bta-font-mono);
 }
 
+/* ──────────────────────────────────────────
+   CONTROL TOKENS
+────────────────────────────────────────── */
+:root {
+  --control-bg:           rgba(255, 255, 255, 0.05);
+  --control-bg-hover:     rgba(255, 255, 255, 0.08);
+  --control-bg-active:    rgba(255, 255, 255, 0.11);
+  --control-border:       rgba(74, 88, 143, 0.58);
+  --control-border-hover: rgba(70, 215, 255, 0.54);
+  --control-ring:         var(--bta-ring);
+  --control-text:         var(--bta-text-primary);
+  --control-placeholder:  var(--bta-text-tertiary);
+  --control-disabled:     0.52;
+}
+
+/* ──────────────────────────────────────────
+   GLOBAL BASE
+────────────────────────────────────────── */
 html,
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-ui);
+  background: var(--bta-bg-base);
+  color: var(--bta-text-primary);
+  font-family: var(--bta-font-body);
+}
+
+/* ──────────────────────────────────────────
+   SHARED CONTROL BASELINE
+   Low-specificity (:where) so any component
+   can override without specificity battles.
+────────────────────────────────────────── */
+:where(button, input, textarea, select) {
+  font: inherit;
+  color: var(--control-text);
+  border-radius: var(--bta-radius-md);
+}
+
+:where(input, textarea, select) {
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  min-height: 42px;
+  width: 100%;
+  padding: 0.56rem 0.74rem;
+  outline: none;
+  transition:
+    border-color var(--bta-motion-fast),
+    box-shadow   var(--bta-motion-fast),
+    background   var(--bta-motion-fast);
+}
+
+:where(input, textarea, select):hover {
+  border-color: var(--control-border-hover);
+}
+
+:where(input, textarea, select):focus-visible {
+  border-color: var(--control-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-ring) 28%, transparent);
+}
+
+:where(input, textarea)::placeholder {
+  color: var(--control-placeholder);
+  opacity: 1;
+}
+
+:where(textarea) {
+  min-height: 96px;
+  resize: vertical;
+}
+
+:where(select) {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+:where(button) {
+  min-height: 40px;
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  padding: 0.5rem 0.84rem;
+  cursor: pointer;
+  transition:
+    background     var(--bta-motion-fast),
+    border-color   var(--bta-motion-fast),
+    transform      var(--bta-motion-fast);
+}
+
+:where(button:hover) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+:where(button:active) {
+  background: var(--control-bg-active);
+  transform: translateY(1px);
+}
+
+:where(button:focus-visible) {
+  border-color: var(--control-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-ring) 28%, transparent);
+}
+
+:where(button:disabled, input:disabled, textarea:disabled, select:disabled) {
+  opacity: var(--control-disabled);
+  cursor: not-allowed;
+}
+
+/* Autofill override for WebKit */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--bta-text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bta-bg-panel) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bta-motion-fast:     0.001ms;
+    --bta-motion-standard: 0.001ms;
+    --bta-motion-slow:     0.001ms;
+    --motion-fast:         0.001ms;
+    --motion-standard:     0.001ms;
+    --motion-slow:         0.001ms;
+  }
 }
