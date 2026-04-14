@@ -36,6 +36,7 @@ async function stopEntitlementServer(server: ServerModule): Promise<void> {
   await server.stopServer();
   delete process.env.BTA_AUTH_TEST_MODE;
   delete process.env.BTA_REQUIRE_TENANT;
+  delete process.env.BTA_JWT_AUTH_ENABLED;
   delete process.env.BTA_JWT_WRITE_REQUIRED;
   delete process.env.BTA_API_KEY;
   delete process.env.BTA_LOCAL_AUTH_SECRET;
@@ -51,6 +52,8 @@ describe("server billing entitlement integration", () => {
       await stopEntitlementServer(activeServer);
       activeServer = null;
     }
+
+    vi.restoreAllMocks();
   });
 
   it("returns 401 when requesting entitlement with invalid API key and JWT disabled", async () => {
@@ -118,6 +121,82 @@ describe("server billing entitlement integration", () => {
     const payload = await response.json() as { entitlement?: { status: string } };
     expect(payload.entitlement).toBeDefined();
     expect(payload.entitlement?.status).toBeDefined();
+  });
+
+  it("keeps entitlement tenant enforcement but suppresses missing scope telemetry noise", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    activeServer = await startEntitlementServer({
+      requireTenant: "1",
+      jwtWriteRequired: "0",
+    });
+
+    const response = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    expect(response.status).toBe(400);
+    const payload = await response.json() as { error?: string };
+    expect(payload.error).toBe("schoolId is required");
+
+    const missingTenantScopeWarnings = warnSpy.mock.calls
+      .map((call) => {
+        try {
+          return JSON.parse(String(call[0] ?? "")) as {
+            message?: string;
+            context?: { event?: string; path?: string };
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { message?: string; context?: { event?: string; path?: string } } => Boolean(entry))
+      .filter((entry) => entry.message === "security.event")
+      .filter((entry) => entry.context?.event === "missingTenantScope")
+      .filter((entry) => entry.context?.path === "/billing/entitlement");
+
+    expect(missingTenantScopeWarnings).toHaveLength(0);
+  });
+
+  it("still emits missing scope telemetry for unsuppressed guarded routes", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    activeServer = await startEntitlementServer({
+      requireTenant: "1",
+      jwtWriteRequired: "0",
+    });
+
+    const response = await fetch(`${API_BASE}/api/billing/portal-session`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    expect(response.status).toBe(400);
+    const payload = await response.json() as { error?: string };
+    expect(payload.error).toBe("schoolId is required");
+
+    const missingTenantScopeWarnings = warnSpy.mock.calls
+      .map((call) => {
+        try {
+          return JSON.parse(String(call[0] ?? "")) as {
+            message?: string;
+            context?: { event?: string; path?: string };
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { message?: string; context?: { event?: string; path?: string } } => Boolean(entry))
+      .filter((entry) => entry.message === "security.event")
+      .filter((entry) => entry.context?.event === "missingTenantScope")
+      .filter((entry) => entry.context?.path === "/billing/portal-session");
+
+    expect(missingTenantScopeWarnings.length).toBeGreaterThan(0);
   });
 
   it("returns 200 with default schoolId entitlement when no schoolId specified", async () => {

@@ -140,11 +140,11 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page auth-login-page">
       <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
       <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
 
-      <header className="auth-topbar">
+      <header className="auth-topbar auth-login-topbar">
         <button type="button" className="auth-topbar-link" onClick={onBackHome}>Back Home</button>
         <div className="auth-brand-lockup auth-brand-lockup-compact" aria-label="BTA Courtside">
           <img className="auth-brand-logo" src="/brand-logo.png" alt="BTA Courtside" />
@@ -156,8 +156,8 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
         <span className="auth-topbar-pill">Coach Access</span>
       </header>
 
-      <main className="auth-shell auth-shell-wide">
-        <section className="auth-card" aria-labelledby="coach-login-title">
+      <main className="auth-shell auth-shell-wide auth-login-shell">
+        <section className="auth-card auth-login-card" aria-labelledby="coach-login-title">
           <div className="auth-card-head">
             <p className="auth-kicker">Coach Login</p>
             <h2 id="coach-login-title">Sign in to your dashboard</h2>
@@ -209,7 +209,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
             </button>
           </form>
 
-          <p className="auth-status" aria-live="polite">{status}</p>
+          <p className="auth-status auth-login-status" aria-live="polite">{status}</p>
 
           <div className="auth-link-row">
             <button type="button" className="auth-secondary-button" onClick={onAcceptInvite}>Accept Team Invite</button>
@@ -217,7 +217,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
           </div>
         </section>
 
-        <section className="auth-hero-panel">
+        <section className="auth-hero-panel auth-login-hero-panel">
           <span className="auth-kicker">Unified Game-Day Workflow</span>
           <h1 className="auth-display-title">
             Run the bench-side dashboard
@@ -227,7 +227,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
             Sign in to the live coach workspace for synced stats, film context, secure account controls, and production-grade session handling.
           </p>
 
-          <div className="auth-metric-grid" aria-label="Product highlights">
+          <div className="auth-metric-grid auth-login-metric-grid" aria-label="Product highlights">
             <article className="auth-metric-card">
               <span>Live Feed</span>
               <strong>Realtime dashboard sync</strong>

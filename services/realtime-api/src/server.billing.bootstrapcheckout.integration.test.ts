@@ -24,7 +24,7 @@ async function startBootstrapServer(env: {
   process.env.BTA_STRIPE_TEST_MODE = env.stripeTestMode ?? "1";
   process.env.BTA_BILLING_TRIAL_DAYS = "14";
 
-    process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey ?? "sk_test_bootstrap_checkout";
+  process.env.BTA_STRIPE_SECRET_KEY = env.stripeSecretKey ?? "test_bootstrap_checkout_secret_key";
 
   const monthlyPriceId = env.stripePriceIdMonthly ?? "price_test_monthly";
     process.env.BTA_STRIPE_PRICE_ID_MONTHLY = monthlyPriceId ?? "";

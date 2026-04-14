@@ -68,11 +68,11 @@ function AuthRouteFrame({
   children,
 }: AuthRouteFrameProps) {
   return (
-    <div className="auth-page">
+    <div className="auth-page auth-flow-page">
       <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
       <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
 
-      <header className="auth-topbar">
+      <header className="auth-topbar auth-flow-topbar">
         {primaryAction}
         <div className="auth-brand-lockup" aria-label="BTA Courtside">
           <span className="auth-brand-badge">BTA</span>
@@ -84,8 +84,8 @@ function AuthRouteFrame({
         {secondaryAction ?? <span className="auth-topbar-pill">Coach Access</span>}
       </header>
 
-      <main className="auth-shell auth-shell-compact">
-        <section className="auth-hero-panel auth-hero-panel-compact">
+      <main className="auth-shell auth-shell-compact auth-flow-shell">
+        <section className="auth-hero-panel auth-hero-panel-compact auth-flow-hero-panel">
           <span className="auth-kicker">Secure Access</span>
           <h1 className="auth-display-title">
             {title}
@@ -226,7 +226,7 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
       primaryAction={<button type="button" className="auth-topbar-link" onClick={() => onNavigate(nextLoginPath)}>Back to Login</button>}
       secondaryAction={<span className="auth-topbar-pill">Invite Access</span>}
     >
-      <section className="auth-card" aria-labelledby="invite-accept-title">
+      <section className="auth-card auth-flow-card" aria-labelledby="invite-accept-title">
         <div className="auth-card-head">
           <p className="auth-kicker">Team Invite</p>
           <h2 id="invite-accept-title">Confirm invite details</h2>
@@ -346,7 +346,7 @@ export function EmailVerificationPage({ onNavigate }: RoutedPageProps) {
       primaryAction={<button type="button" className="auth-topbar-link" onClick={() => onNavigate(nextLoginPath)}>Back to Login</button>}
       secondaryAction={<span className="auth-topbar-pill">Email Verification</span>}
     >
-      <section className="auth-card" aria-labelledby="email-verify-title">
+      <section className="auth-card auth-flow-card" aria-labelledby="email-verify-title">
         <div className="auth-card-head">
           <p className="auth-kicker">Verification</p>
           <h2 id="email-verify-title">Confirm your verification details</h2>
@@ -715,15 +715,20 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         : "Subscription access is managed through Stripe checkout. Activate a plan to unlock full app access.";
 
   return (
-    <div className="stats-page policy-page">
-      <section className="stats-page-card policy-page-hero">
+    <div className="stats-page policy-page billing-page">
+      <section className="stats-page-card policy-page-hero billing-page-hero-card">
         <p className="stats-page-eyebrow">Preproduction</p>
         <h1>Billing</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
+        <div className="billing-hero-meta">
+          <span className="billing-hero-chip">Stripe Checkout</span>
+          <span className="billing-hero-chip">Org Entitlements</span>
+          <span className="billing-hero-chip">Promo Support</span>
+        </div>
       </section>
 
       {showPortal && (
-        <section className="stats-page-card policy-page-section">
+        <section className="stats-page-card policy-page-section billing-page-section">
           <h3 className="policy-section-heading">Manage Subscription</h3>
           <p className="stats-page-subcopy policy-section-body">{status}</p>
           <ul className="policy-section-list">
@@ -736,10 +741,10 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
 
       {showCheckout && (
         <>
-          <section className="stats-page-card policy-page-section">
+          <section className="stats-page-card policy-page-section billing-page-section billing-page-promo">
             <h3 className="policy-section-heading">Have a Promo Code?</h3>
             <p className="stats-page-subcopy policy-section-body">Enter your coupon code to get a discount on your first plan.</p>
-        <form onSubmit={(e) => void validateAndApplyCoupon(e)} className="coupon-form">
+            <form onSubmit={(e) => void validateAndApplyCoupon(e)} className="coupon-form">
               <div className="coupon-form-row">
                 <input
                   type="text"
@@ -757,7 +762,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                 <button
                   type="submit"
                   disabled={validatingCoupon || !couponCode.trim()}
-                  className="bta-btn bta-btn-primary bta-btn-sm"
+                  className="bta-btn bta-btn-primary bta-btn-sm billing-coupon-apply"
                 >
                   {validatingCoupon ? "Validating..." : "Apply"}
                 </button>
@@ -767,7 +772,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             </form>
           </section>
 
-          <section className="stats-page-card policy-page-section">
+          <section className="stats-page-card policy-page-section billing-page-section">
             <h3 className="policy-section-heading">{checkoutSectionTitle}</h3>
             <p className="stats-page-subcopy policy-section-body">{status}</p>
             <ul className="policy-section-list">
@@ -781,7 +786,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         </>
       )}
 
-      <section className="stats-page-card policy-page-section">
+      <section className="stats-page-card policy-page-section billing-page-section">
         <h3 className="policy-section-heading">Current Rollout</h3>
         <p className="stats-page-subcopy policy-section-body">This phase includes core checkout and subscription management.</p>
         <ul className="policy-section-list">
@@ -792,10 +797,10 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         </ul>
       </section>
 
-      <section className="stats-page-card policy-page-actions-wrap">
-        <div className="policy-page-actions">
+      <section className="stats-page-card policy-page-actions-wrap billing-page-actions-wrap">
+        <div className="policy-page-actions billing-page-actions">
           {showPortal && (
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void openPortal()}>
+            <button type="button" className="shell-nav-link shell-nav-link-active billing-cta-button billing-cta-button-primary" onClick={() => void openPortal()}>
               {submittingPortal ? "Opening Portal..." : "Manage Subscription"}
             </button>
           )}
@@ -803,7 +808,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             <>
               <button
                 type="button"
-                className="shell-nav-link shell-nav-link-active"
+                className="shell-nav-link shell-nav-link-active billing-cta-button billing-cta-button-primary"
                 onClick={() => void startCheckout("monthly")}
                 disabled={submittingCycle !== null}
               >
@@ -811,7 +816,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
               </button>
               <button
                 type="button"
-                className="shell-nav-link"
+                className="shell-nav-link billing-cta-button billing-cta-button-secondary"
                 onClick={() => void startCheckout("yearly")}
                 disabled={submittingCycle !== null}
               >

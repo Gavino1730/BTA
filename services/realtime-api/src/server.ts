@@ -1,5 +1,4 @@
-import cors from "cors";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, { type Request, type Response } from "express";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import path from "path";
@@ -93,159 +92,33 @@ import {
   resolveSocketTenant
 } from "./tenant-guards.js";
 import { logger } from "./logger.js";
+import { applySecurityMiddleware } from "./middleware/security.js";
+import {
+  ALLOWED_ORIGINS,
+  applyCors,
+  CorsNotAllowedError,
+  getSocketCorsConfig,
+  isCorsOriginAllowed
+} from "./middleware/cors.js";
+import { createAuthzMiddleware } from "./middleware/authz.js";
+import { createAuthContextMiddleware } from "./middleware/auth-context.js";
+import { createTenantScopeMiddleware } from "./middleware/tenant-scope.js";
+import { createBillingEntitlementMiddleware } from "./middleware/billing-entitlement.js";
+import { registerHttpErrorHandler } from "./middleware/http-error-handler.js";
+import { createRateLimitMiddleware, withAsyncRoute } from "./middleware/http-helpers.js";
+import { registerAdminRoutes, registerHealthRoute } from "./routes/system-routes.js";
+import { registerCoachCatchAllRoute, registerCoachStaticRoutes } from "./routes/coach-shell-routes.js";
+import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
+import { buildTeamAbbreviation, normalizeNameKey, normalizePersonName } from "./lib/text-helpers.js";
+
+export { isCorsOriginAllowed };
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.disable("x-powered-by");
-app.use((req, res, next) => {
-  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
-  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-  res.setHeader("Permissions-Policy", "accelerometer=(), autoplay=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()");
-  res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-
-  const forwardedProto = readHeaderValue(req.headers["x-forwarded-proto"]);
-  const isHttps = req.secure || forwardedProto === "https";
-  if (isHttps) {
-    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-  }
-
-  next();
-});
-
-app.use((req, res, next) => {
-  const inboundRequestId = readHeaderValue(req.headers["x-request-id"]);
-  const requestId = inboundRequestId && inboundRequestId.trim().length > 0
-    ? inboundRequestId.trim()
-    : randomBytes(8).toString("hex");
-  res.setHeader("x-request-id", requestId);
-  next();
-});
-
-// CORS whitelist: allow only known app origins and explicitly configured deployments.
-// Entries in ALLOWED_ORIGINS may use a single '*' wildcard (e.g. https://bta-coach-*.vercel.app).
-function normalizeOriginInput(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-
-  if (trimmed.includes("*")) {
-    return trimmed.replace(/\/+$/, "").toLowerCase();
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return "";
-    }
-    return parsed.origin.toLowerCase();
-  } catch {
-    return trimmed.replace(/\/+$/, "").toLowerCase();
-  }
-}
-
-function expandOriginAliases(origin: string): string[] {
-  if (origin.includes("*")) {
-    return [origin];
-  }
-
-  try {
-    const parsed = new URL(origin);
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return [origin];
-    }
-
-    if (hostname.startsWith("www.")) {
-      const apexHostname = hostname.slice(4);
-      if (apexHostname.split(".").length === 2) {
-        const apexUrl = new URL(parsed.toString());
-        apexUrl.hostname = apexHostname;
-        return [origin, apexUrl.toString()];
-      }
-      return [origin];
-    }
-
-    if (hostname.split(".").length === 2) {
-      const wwwUrl = new URL(parsed.toString());
-      wwwUrl.hostname = `www.${hostname}`;
-      return [origin, wwwUrl.toString()];
-    }
-  } catch {
-    return [origin];
-  }
-
-  return [origin];
-}
-
-const BASE_ALLOWED_ORIGINS = [
-  "http://localhost:5173",      // iPad operator dev
-  "http://localhost:5174",      // Coach dashboard dev
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-];
-const PROD_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
-const ALLOWED_ORIGINS = Array.from(
-  new Set([...BASE_ALLOWED_ORIGINS, ...PROD_ORIGINS].flatMap((origin) => expandOriginAliases(origin)))
-).map(normalizeOriginInput).filter(Boolean);
-
-class CorsNotAllowedError extends Error {
-  readonly statusCode = 403;
-  readonly code = "cors_not_allowed";
-
-  constructor(readonly origin?: string) {
-    super("CORS not allowed");
-    this.name = "CorsNotAllowedError";
-  }
-}
-
-export function isCorsOriginAllowed(origin: string, allowedOrigins: readonly string[] = ALLOWED_ORIGINS): boolean {
-  const normalizedOrigin = normalizeOriginInput(origin);
-  if (!normalizedOrigin) {
-    return false;
-  }
-
-  for (const rawPattern of allowedOrigins) {
-    const pattern = normalizeOriginInput(rawPattern);
-    if (!pattern) {
-      continue;
-    }
-
-    if (!pattern.includes("*")) {
-      if (normalizedOrigin === pattern) {
-        return true;
-      }
-    } else {
-      // Convert glob-style pattern (single * = any chars) to regex
-      const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".+") + "$");
-      if (re.test(normalizedOrigin)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // In development, allow localhost variants; in production use whitelist
-    if (process.env.NODE_ENV !== "production") {
-      callback(null, true);
-    } else if (!origin || isCorsOriginAllowed(origin)) {
-      callback(null, true);
-    } else {
-      logger.warn("cors.blocked_origin", { origin });
-      callback(new CorsNotAllowedError(origin));
-    }
-  },
-  credentials: true
-}));
+applySecurityMiddleware(app);
+applyCors(app);
 
 app.post("/api/billing/webhook", express.raw({ type: "application/json" }), withAsyncRoute(async (req, res) => {
   try {
@@ -291,6 +164,22 @@ app.post("/api/billing/webhook", express.raw({ type: "application/json" }), with
       const session = event.data.object as Stripe.Checkout.Session;
       const schoolId = normalizeSchoolId(session.metadata?.schoolId ?? session.client_reference_id ?? "");
       if (schoolId) {
+        const flow = sanitizeTextField(session.metadata?.flow, 64);
+        if (flow === "marketing-bootstrap") {
+          const schoolName = sanitizeTextField(session.metadata?.schoolName, 160);
+          if (schoolName) {
+            const existingProfile = getOrganizationProfileByScope({ schoolId });
+            if (!existingProfile?.organizationName) {
+              saveOrganizationProfile({
+                organizationName: schoolName,
+                teamName: sanitizeTextField(session.metadata?.teamName, 120) || schoolName,
+                coachName: sanitizeTextField(session.metadata?.fullName, 120),
+                coachEmail: sanitizeTextField(session.metadata?.email, 160).toLowerCase(),
+              }, { schoolId });
+            }
+          }
+        }
+
         saveBillingState({
           planId: "pro",
           status: "active",
@@ -379,67 +268,6 @@ app.post("/api/billing/webhook", express.raw({ type: "application/json" }), with
 }));
 
 app.use(express.json());
-
-type AsyncRouteHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
-
-function withAsyncRoute(handler: AsyncRouteHandler) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    void handler(req, res, next).catch(next);
-  };
-}
-
-// Simple rate limiter: scoped per route family and IP.
-const rateLimitState = new Map<string, { count: number; resetAt: number }>();
-
-function resolveClientIp(req: Request): string {
-  const forwardedFor = req.headers["x-forwarded-for"];
-  const firstForwarded = Array.isArray(forwardedFor)
-    ? forwardedFor[0]
-    : typeof forwardedFor === "string"
-      ? forwardedFor.split(",")[0]
-      : undefined;
-
-  const rawIp = (firstForwarded?.trim() || req.ip || req.socket.remoteAddress || "unknown").trim();
-  if (!rawIp) {
-    return "unknown";
-  }
-
-  return rawIp.startsWith("::ffff:") ? rawIp.slice(7) : rawIp;
-}
-
-function createRateLimitMiddleware(bucket: string, maxRequests: number, windowMs: number) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const ip = resolveClientIp(req);
-    const now = Date.now();
-    const key = `${bucket}:${ip}`;
-    const limit = rateLimitState.get(key) ?? { count: 0, resetAt: now + windowMs };
-
-    // Opportunistic cleanup so map size stays bounded under high IP churn.
-    if (rateLimitState.size > 5000) {
-      for (const [entryKey, value] of rateLimitState.entries()) {
-        if (value.resetAt <= now) {
-          rateLimitState.delete(entryKey);
-        }
-      }
-    }
-
-    if (now > limit.resetAt) {
-      limit.count = 0;
-      limit.resetAt = now + windowMs;
-    }
-
-    if (limit.count >= maxRequests) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((limit.resetAt - now) / 1000));
-      res.setHeader("Retry-After", String(retryAfterSeconds));
-      res.status(429).json({ error: "Too many requests" });
-      return;
-    }
-
-    limit.count++;
-    rateLimitState.set(key, limit);
-    next();
-  };
-}
 const eventRateLimiter = createRateLimitMiddleware("events", 100, 60000); // 100 events/min per IP
 const authRateLimiter = createRateLimitMiddleware("auth", 20, 15 * 60 * 1000); // 20 auth attempts/15 min per IP
 const PASSWORD_RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -473,19 +301,6 @@ const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>(
   "hot_hand",
   "defense"
 ]);
-
-function normalizePersonName(value: unknown): string {
-  return String(value ?? "").trim().replace(/\s+/g, " ");
-}
-
-function normalizeNameKey(value: unknown): string {
-  return normalizePersonName(value).toLowerCase();
-}
-
-function buildTeamAbbreviation(name: string): string {
-  const compact = name.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  return compact.slice(0, 4) || "TEAM";
-}
 
 function buildSchoolTeamId(name: string): string {
   const slug = buildOrganizationSlug(name);
@@ -605,6 +420,31 @@ function verifyPassword(password: string, passwordSalt: string, passwordHash: st
   } catch {
     return false;
   }
+}
+
+function toBooleanFlag(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function generateTemporaryPassword(length = 14): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+  const bytes = randomBytes(Math.max(length, 12));
+  let password = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    password += chars[bytes[i]! % chars.length];
+  }
+
+  // Ensure generated passwords always satisfy the minimum complexity expectations.
+  const withLower = /[a-z]/.test(password) ? password : `a${password.slice(1)}`;
+  const withUpper = /[A-Z]/.test(withLower) ? withLower : `A${withLower.slice(1)}`;
+  const withDigit = /\d/.test(withUpper) ? withUpper : `${withUpper.slice(0, withUpper.length - 1)}7`;
+  const withSpecial = /[^A-Za-z0-9]/.test(withDigit) ? withDigit : `${withDigit.slice(0, withDigit.length - 2)}!${withDigit.slice(-1)}`;
+  return withSpecial;
 }
 
 function normalizeMemberRole(value: unknown, fallback: OrganizationMember["role"] = "coach"): OrganizationMember["role"] {
@@ -1972,8 +1812,21 @@ function toIsoFromUnixSeconds(value: number | null | undefined): string | undefi
 
 function buildBillingEntitlement(schoolId: string): BillingEntitlementResponse {
   const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
-  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
+  const persistedState = getBillingStateByScope({ schoolId });
+
   const now = Date.now();
+  const defaultTrialEndsAtIso = normalizedTrialDays > 0
+    ? new Date(now + (normalizedTrialDays * 24 * 60 * 60 * 1000)).toISOString()
+    : undefined;
+
+  const state = persistedState ?? {
+    schoolId,
+    planId: normalizedTrialDays > 0 ? "trial" : "pro",
+    status: (normalizedTrialDays > 0 ? "trialing" : "incomplete") as BillingSubscriptionStatus,
+    trialEndsAtIso: defaultTrialEndsAtIso,
+    currentPeriodEndsAtIso: undefined,
+  };
+
   const trialEndsAtMs = state.trialEndsAtIso ? Date.parse(state.trialEndsAtIso) : NaN;
   const trialIsActive = normalizedTrialDays > 0 && Number.isFinite(trialEndsAtMs) && trialEndsAtMs > now;
 
@@ -2168,7 +2021,7 @@ async function createSubscriptionCheckoutSession(options: {
   req: Request;
   schoolId: string;
   planCycle: CheckoutPlanCycle;
-  customerId: string;
+  customerId?: string;
   discountPromotionCodeId?: string;
   flow: "coach-billing" | "marketing-bootstrap";
   customerEmail?: string;
@@ -2303,37 +2156,26 @@ async function handleUnifiedCheckout(options: {
     return;
   }
 
-  // Flow-specific: profile handling
-  if (flow === "marketing-bootstrap" && schoolName) {
-    const existingProfile = getOrganizationProfileByScope({ schoolId });
-    if (!existingProfile?.organizationName) {
-      saveOrganizationProfile({
-        organizationName: schoolName,
-        teamName: teamName || schoolName,
-        coachName: fullName,
-        coachEmail: email,
-      }, { schoolId });
-    }
-  }
-
-  // Ensure trial state (common logic)
-  const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
-  const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
-
-  // Ensure billing customer (common logic)
-  const profile = getOrganizationProfileByScope({ schoolId });
-  const customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
-    email: flow === "coach-billing" ? profile?.coachEmail : email,
-    name: flow === "coach-billing" ? profile?.coachName : fullName,
-  });
-
-  if (customerId !== state.stripeCustomerId) {
-    saveBillingState({ stripeCustomerId: customerId }, { schoolId });
-  }
-
-  // Flow-specific: coupon handling (coach-billing only)
+  // Flow-specific: billing preparation
+  let customerId: string | undefined;
+  let trialEndsAtIso: string | undefined;
   let discountPromotionCodeId: string | undefined;
+
   if (flow === "coach-billing") {
+    const normalizedTrialDays = Number.isFinite(BILLING_TRIAL_DAYS) ? Math.max(0, Math.floor(BILLING_TRIAL_DAYS)) : 0;
+    const state = ensureTrialBillingState({ schoolId }, normalizedTrialDays);
+    trialEndsAtIso = state.trialEndsAtIso;
+
+    const profile = getOrganizationProfileByScope({ schoolId });
+    customerId = await ensureBillingCustomer(schoolId, state.stripeCustomerId, {
+      email: profile?.coachEmail,
+      name: profile?.coachName,
+    });
+
+    if (customerId !== state.stripeCustomerId) {
+      saveBillingState({ stripeCustomerId: customerId }, { schoolId });
+    }
+
     const activeCouponCode = sanitizeTextField(state.couponCode, 80).toUpperCase();
     if (activeCouponCode) {
       const couponInfo = await resolveCouponInfoByCode(activeCouponCode);
@@ -2341,6 +2183,10 @@ async function handleUnifiedCheckout(options: {
         discountPromotionCodeId = couponInfo.promotionCodeId;
       }
     }
+  } else {
+    const existingState = getBillingStateByScope({ schoolId });
+    customerId = existingState?.stripeCustomerId;
+    trialEndsAtIso = existingState?.trialEndsAtIso;
   }
 
   // Create checkout session (common logic)
@@ -2359,7 +2205,7 @@ async function handleUnifiedCheckout(options: {
         schoolName: schoolName ?? "",
         teamName: teamName ?? "",
       } : undefined,
-      trialEndsAtIso: state.trialEndsAtIso,
+      trialEndsAtIso,
     });
 
     if (flow === "marketing-bootstrap") {
@@ -2544,15 +2390,19 @@ function shouldSuppressMissingTenantTelemetry(req: Request): boolean {
     return false;
   }
 
-  return req.path === "/roster-teams"
-    || req.path === "/games/active/state"
-    || req.path === "/games/active/setup"
-    || req.path === "/season-stats"
-    || req.path === "/leaderboards"
-    || req.path === "/games"
-    || req.path === "/advanced/team"
-    || req.path === "/advanced/patterns"
-    || req.path === "/advanced/volatility";
+  const normalizedPath = req.path.length > 1 ? req.path.replace(/\/+$/, "") : req.path;
+
+  return normalizedPath === "/roster-teams"
+    || normalizedPath === "/billing/entitlement"
+    || normalizedPath === "/api/billing/entitlement"
+    || normalizedPath === "/games/active/state"
+    || normalizedPath === "/games/active/setup"
+    || normalizedPath === "/season-stats"
+    || normalizedPath === "/leaderboards"
+    || normalizedPath === "/games"
+    || normalizedPath === "/advanced/team"
+    || normalizedPath === "/advanced/patterns"
+    || normalizedPath === "/advanced/volatility";
 }
 
 function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
@@ -2580,6 +2430,11 @@ function schoolScopeHasData(schoolId: string): boolean {
     || getOrganizationMembersByScope({ schoolId }).length
     || getPrimaryTeam(schoolId).teams.length
   );
+}
+
+function hasCompletedBootstrapCheckout(schoolId: string): boolean {
+  const state = getBillingStateByScope({ schoolId });
+  return Boolean(state && state.status === "active");
 }
 
 function allocateBootstrapSchoolId(seed: string): string {
@@ -2720,12 +2575,6 @@ function connectionRoom(schoolId: string, connectionId: string): string {
   return `school:${schoolId}:connection:${connectionId}`;
 }
 
-function hasValidApiKeyRequest(req: Request): boolean {
-  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
-  const candidate = Array.isArray(provided) ? provided[0] : provided;
-  return Boolean(API_KEY && candidate === API_KEY);
-}
-
 function parseExpectedEventSequence(req: Request): number | null | undefined {
   const rawHeader = readHeaderValue(req.headers["x-event-sequence"]);
   if (rawHeader === undefined) {
@@ -2740,148 +2589,39 @@ function parseExpectedEventSequence(req: Request): number | null | undefined {
   return parsed;
 }
 
-function isReadOnlyRequest(req: Request): boolean {
-  return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
-}
+const { requireApiKey, requireWriteRole } = createAuthzMiddleware({
+  apiKey: API_KEY,
+  isJwtAuthEnabled,
+  jwtWriteRequired: JWT_WRITE_REQUIRED,
+  hasWriteRole,
+  trackSecurityEvent,
+});
 
-async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const scopedReq = req as ScopedRequest;
-  if (scopedReq.authContext) {
-    next();
-    return;
-  }
+const { attachAuthContext } = createAuthContextMiddleware({
+  extractBearerToken,
+  verifyBearerToken,
+  isLocalAuthContextRevoked,
+  trackSecurityEvent,
+});
 
-  if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && isReadOnlyRequest(req)) {
-    next();
-    return;
-  }
+const { requireTenantScope } = createTenantScopeMiddleware({
+  isOptionalTenantScopeRequest,
+  shouldSuppressMissingTenantTelemetry,
+  resolveRequestSchoolId,
+});
 
-  if (!API_KEY && !isJwtAuthEnabled()) {
-    next();
-    return;
-  }
-
-  if (hasValidApiKeyRequest(req)) {
-    next();
-    return;
-  }
-
-  const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !isReadOnlyRequest(req)
-    ? "jwt-write-required"
-    : "missing-valid-credentials";
-  trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
-  res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
-}
-
-async function attachAuthContext(req: Request, _res: Response, next: NextFunction): Promise<void> {
-  const scopedReq = req as ScopedRequest;
-  if (scopedReq.authContext) {
-    next();
-    return;
-  }
-
-  const token = extractBearerToken(req.headers, undefined);
-  if (!token) {
-    next();
-    return;
-  }
-
-  const authContext = await verifyBearerToken(token);
-  if (authContext) {
-    if (isLocalAuthContextRevoked(authContext)) {
-      if (req.path !== "/api/auth/session") {
-        trackSecurityEvent("unauthorizedHttp", {
-          reason: "revoked-local-session",
-          path: req.path,
-          method: req.method,
-        });
-      }
-      next();
-      return;
-    }
-    scopedReq.authContext = authContext;
-  }
-
-  next();
-}
-
-function requireTenantScope(req: Request, res: Response, next: NextFunction): void {
-  const scopedReq = req as ScopedRequest;
-  const optionalTenantScope = isOptionalTenantScopeRequest(req);
-  const suppressMissingScopeTelemetry = optionalTenantScope || shouldSuppressMissingTenantTelemetry(req);
-  const resolved = resolveRequestSchoolId(req, {
-    suppressMissingScopeTelemetry,
-  });
-
-  if (optionalTenantScope && resolved.error === "schoolId is required") {
-    next();
-    return;
-  }
-
-  if (!resolved.schoolId) {
-    res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
-    return;
-  }
-
-  scopedReq.tenantSchoolId = resolved.schoolId;
-  next();
-}
-
-function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-  if (!isJwtAuthEnabled()) {
-    next();
-    return;
-  }
-
-  if (hasValidApiKeyRequest(req)) {
-    next();
-    return;
-  }
-
-  const scopedReq = req as ScopedRequest;
-  const role = scopedReq.authContext?.role?.trim().toLowerCase();
-  if (!hasWriteRole(role)) {
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: role ?? null });
-    res.status(403).json({ error: "Insufficient role for write access" });
-    return;
-  }
-
-  next();
-}
-
-function requireActiveBillingEntitlement(req: Request, res: Response, next: NextFunction): void {
-  if (!PAYWALL_ENABLED) {
-    next();
-    return;
-  }
-
-  const schoolId = getSchoolIdFromRequest(req);
-  const entitlement = buildBillingEntitlement(schoolId);
-  if (entitlement.accessActive) {
-    next();
-    return;
-  }
-
-  logger.warn("billing.paywall_denied", {
-    schoolId,
-    path: req.path,
-    method: req.method,
-    entitlementStatus: entitlement.status,
-    entitlementReason: entitlement.reason,
-  });
-
-  res.status(402).json({
-    error: "Active subscription required",
-    code: "billing_required",
-    entitlement,
-  });
-}
+const { requireActiveBillingEntitlement } = createBillingEntitlementMiddleware({
+  paywallEnabled: PAYWALL_ENABLED,
+  getSchoolIdFromRequest,
+  buildBillingEntitlement,
+  loggerWarn: (message, context) => {
+    logger.warn(message, context);
+  },
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: process.env.NODE_ENV !== "production" 
-    ? { origin: true, credentials: true }
-    : { origin: ALLOWED_ORIGINS, credentials: true },
+  cors: getSocketCorsConfig(),
   // Give sleeping devices (iPad screen-off, background tabs) more time before
   // the server declares them disconnected. Defaults are 25s/20s which is too
   // aggressive for iOS Safari's background network suspension.
@@ -3193,21 +2933,15 @@ const REMOVED_LEGACY_COACH_ROUTES = [
   "/settings",
 ];
 
-app.use(express.static(COACH_DIST, { index: false }));
-app.get(REMOVED_LEGACY_COACH_ROUTES, (_req, res) => {
-  res.status(404).json({ error: "Not found" });
+registerCoachStaticRoutes(app, {
+  coachDist: COACH_DIST,
+  removedLegacyCoachRoutes: REMOVED_LEGACY_COACH_ROUTES,
 });
 
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    uptime: Math.round(process.uptime()),
-    persistence: DATABASE_URL ? "postgres" : "file",
-    auth: {
-      apiKey: Boolean(API_KEY),
-      jwt: isJwtAuthEnabled(),
-    },
-  });
+registerHealthRoute(app, {
+  databaseUrl: DATABASE_URL,
+  apiKey: API_KEY,
+  isJwtAuthEnabled,
 });
 
 app.use(attachAuthContext);
@@ -3307,6 +3041,12 @@ app.post("/api/auth/register", authRateLimiter, (req, res) => {
   }
 
   const schoolId = schoolResolution.schoolId;
+
+  const isBootstrapRegistration = isPublicAuthBootstrapRequest(req);
+  if (PAYWALL_ENABLED && isBootstrapRegistration && !schoolScopeHasData(schoolId) && !hasCompletedBootstrapCheckout(schoolId)) {
+    res.status(402).json({ error: "Complete checkout before creating your account" });
+    return;
+  }
 
   if (!isValidEmail(email)) {
     res.status(400).json({ error: "Enter a valid email address" });
@@ -3783,8 +3523,11 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) 
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const fullName = sanitizeTextField(payload.fullName, 120);
   const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const password = String(payload.password ?? "").trim();
+  const requestedPassword = String(payload.password ?? "").trim();
   const requestedRole = normalizeStaffRole(payload.role, "coach");
+  const generatePassword = toBooleanFlag(payload.generatePassword);
+  const grantComplimentaryAccess = toBooleanFlag(payload.grantComplimentaryAccess);
+  const password = requestedPassword || (generatePassword ? generateTemporaryPassword() : "");
 
   if (!fullName || !email || !password) {
     res.status(400).json({ error: "fullName, email, and password are required" });
@@ -3803,6 +3546,11 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) 
 
   if (requestedRole === "owner" && actingMember.role !== "owner") {
     res.status(403).json({ error: "Only organization owners can create owner accounts" });
+    return;
+  }
+
+  if (grantComplimentaryAccess && actingMember.role !== "owner") {
+    res.status(403).json({ error: "Only organization owners can grant complimentary access" });
     return;
   }
 
@@ -3849,6 +3597,13 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) 
     joinedAtIso: existingMember?.joinedAtIso ?? nowIso,
   }, { schoolId });
 
+  const complimentaryBilling = grantComplimentaryAccess
+    ? saveBillingState({
+      planId: "complimentary",
+      status: "active",
+    }, { schoolId })
+    : null;
+
   res.status(201).json({
     message: "Coach account created",
     account: {
@@ -3858,6 +3613,14 @@ app.post("/api/auth/coach-account", requireApiKey, requireWriteRole, (req, res) 
       role: account.role,
       status: account.status,
     },
+    temporaryPassword: generatePassword && !requestedPassword ? password : undefined,
+    complimentaryAccessGranted: grantComplimentaryAccess,
+    billing: complimentaryBilling
+      ? {
+        status: complimentaryBilling.status,
+        planId: complimentaryBilling.planId,
+      }
+      : undefined,
     member,
     members: getOrganizationMembersByScope({ schoolId }),
   });
@@ -4057,136 +3820,30 @@ app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteR
   });
 });
 
-app.get("/api/onboarding/state", (req, res) => {
-  const schoolResolution = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
-  const schoolId = schoolResolution.schoolId;
-  if (!schoolId) {
-    if (schoolResolution.error && schoolResolution.error !== "schoolId is required") {
-      res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error });
-      return;
-    }
-
-    res.json({
-      completed: false,
-      hasAccount: false,
-      hasProfile: false,
-      hasTeam: false,
-      teamCount: 0,
-      account: null,
-      profile: null,
-      suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
-    });
-    return;
-  }
-
-  const profile = buildOnboardingProfileView(schoolId);
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  const suggestedCoach = buildSuggestedCoachIdentity((req as ScopedRequest).authContext);
-  const { teams, team } = getPrimaryTeam(schoolId);
-  const completed = Boolean((account?.organization.onboardingCompletedAtIso || profile?.completedAtIso) && team?.name?.trim());
-
-  res.json({
-    completed,
-    hasAccount: Boolean(account?.organization.organizationName && account?.primaryCoach.email),
-    hasProfile: Boolean(profile),
-    hasTeam: Boolean(team?.name?.trim()),
-    teamCount: teams.length,
-    account,
-    profile,
-    suggestedCoach,
-  });
-});
-
-app.get("/api/onboarding/account", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
-  res.json({
-    account: getOnboardingAccountStateByScope({ schoolId }),
-    suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
-    currentMember,
-  });
-});
-
-app.put("/api/onboarding/account", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
-  if (!requireOnboardingIdentity(payload, res)) {
-    return;
-  }
-
-  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload), { schoolId });
-  const member = ensureOwnerMembership(req, schoolId, account);
-  const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload), { schoolId });
-  res.json({ message: "Onboarding account saved", account, profile, member });
-});
-
-app.get("/api/onboarding/profile", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  res.json({ profile: buildOnboardingProfileView(schoolId), suggestedCoach: buildSuggestedCoachIdentity((req as ScopedRequest).authContext) });
-});
-
-app.put("/api/onboarding/profile", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
-  if (!requireOnboardingIdentity(payload, res)) {
-    return;
-  }
-
-  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload), { schoolId });
-  const member = ensureOwnerMembership(req, schoolId, account);
-  const saved = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload), { schoolId });
-  res.json({ message: "Onboarding profile saved", profile: saved, account, member });
-});
-
-app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const payload = withSuggestedOnboardingIdentity(req, (req.body ?? {}) as Record<string, unknown>);
-  if (!requireOnboardingIdentity(payload, res)) {
-    return;
-  }
-
-  const teamName = sanitizeTextField(payload.teamName ?? payload.name, 120);
-  if (!teamName) {
-    res.status(400).json({ error: "teamName is required" });
-    return;
-  }
-
-  const requestedAbbreviation = sanitizeTextField(payload.abbreviation, 12).toUpperCase();
-
-  const existing = getPrimaryTeam(schoolId).team;
-  const teamId = existing?.id ?? `team-${buildOrganizationSlug(teamName) || "primary"}`;
-  const currentPlayers = new Map((existing?.players ?? []).map((player) => [normalizeNameKey(player.name), player]));
-  const rosterPayload = Array.isArray(payload.roster) ? payload.roster : [];
-  const players = rosterPayload
-    .map((entry) => buildRosterPlayer(entry as Record<string, unknown>, teamId, currentPlayers.get(normalizeNameKey((entry as Record<string, unknown>).name))))
-    .filter((player): player is RosterPlayer => Boolean(player));
-
-  const savedTeams = upsertPrimaryTeam(schoolId, {
-    teamId,
-    name: teamName,
-    season: payload.season,
-    teamColor: payload.teamColor,
-    coachStyle: payload.coachStyle ?? existing?.coachStyle,
-    playingStyle: payload.playingStyle,
-    teamContext: payload.teamContext ?? existing?.teamContext,
-    abbreviation: requestedAbbreviation || existing?.abbreviation || buildTeamAbbreviation(teamName),
-  });
-
-  savedTeams[0]!.players = players;
-  const persistedTeams = persistSchoolTeams(schoolId, savedTeams);
-  const account = saveOnboardingAccountState(buildOnboardingAccountPayload(schoolId, payload, { complete: true }), { schoolId });
-  const member = ensureOwnerMembership(req, schoolId, account);
-  const profile = saveOrganizationProfile(buildOrganizationProfilePayload(schoolId, payload, { complete: true }), { schoolId });
-
-  res.status(201).json({
-    message: "Onboarding completed successfully",
-    completed: true,
-    account,
-    member,
-    profile,
-    team: { id: persistedTeams[0]?.id ?? teamId, name: persistedTeams[0]?.name ?? teamName },
-    playersLoaded: persistedTeams[0]?.players.length ?? 0,
-  });
+registerOnboardingRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  resolveRequestSchoolId,
+  getSchoolIdFromRequest,
+  getSuggestedCoachIdentity: (req) => buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
+  buildOnboardingProfileView,
+  getOnboardingAccountStateByScope,
+  getPrimaryTeam,
+  withSuggestedOnboardingIdentity,
+  requireOnboardingIdentity,
+  saveOnboardingAccountState,
+  buildOnboardingAccountPayload,
+  ensureAuthenticatedOrganizationMember,
+  ensureOwnerMembership,
+  saveOrganizationProfile,
+  buildOrganizationProfilePayload,
+  buildOrganizationSlug,
+  normalizeNameKey,
+  buildRosterPlayer,
+  upsertPrimaryTeam,
+  persistSchoolTeams,
+  sanitizeTextField,
+  buildTeamAbbreviation,
 });
 
 app.get("/api/org/members", (req, res) => {
@@ -6064,89 +5721,25 @@ io.on("connection", (socket) => {
 });
 
 // Factory reset — clears all game sessions and roster data for the selected school.
-app.get("/admin/security-metrics", requireApiKey, requireWriteRole, (_req, res) => {
-  res.json({ ...securityTelemetry });
+registerAdminRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSecurityTelemetry: () => securityTelemetry,
+  renderPrometheusSecurityMetrics,
+  getSchoolIdFromRequest,
+  resetAllData,
+  clearOperatorLinksForSchool,
 });
 
-app.get("/admin/security-metrics/prometheus", requireApiKey, requireWriteRole, (_req, res) => {
-  res.type("text/plain; version=0.0.4").send(renderPrometheusSecurityMetrics());
-});
-
-app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  resetAllData({ schoolId });
-  clearOperatorLinksForSchool(schoolId);
-  res.json({ ok: true, message: `All game sessions and roster data cleared for school ${schoolId}.` });
-});
-
-app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
-  const requestId = String(res.getHeader("x-request-id") ?? "").trim() || undefined;
-  const isCorsError = error instanceof CorsNotAllowedError || (error instanceof Error && error.message === "CORS not allowed");
-
-  if (isCorsError) {
-    if (!res.headersSent) {
-      res.status(403).json({
-        error: "CORS not allowed",
-        code: "cors_not_allowed",
-        requestId,
-      });
-    }
-    return;
-  }
-
-  const stripeLikeError = error as {
-    type?: string;
-    statusCode?: number;
-    message?: string;
-    param?: string;
-    requestId?: string;
-  };
-
-  const isStripeError = typeof stripeLikeError?.type === "string" && stripeLikeError.type.startsWith("Stripe");
-  const statusCode = Number(stripeLikeError?.statusCode);
-  const safeStatus = Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600
-    ? statusCode
-    : 500;
-
-  logger.error("http.unhandled_error", {
-    requestId,
-    path: req.path,
-    method: req.method,
-    isStripeError,
-    statusCode: safeStatus,
-    stripeType: stripeLikeError?.type,
-    stripeParam: stripeLikeError?.param,
-    stripeRequestId: stripeLikeError?.requestId,
-    error,
-  });
-
-  if (res.headersSent) {
-    return;
-  }
-
-  if (isStripeError) {
-    res.status(safeStatus).json({
-      error: stripeLikeError.message || "Billing request failed",
-      code: "stripe_request_failed",
-      requestId,
-    });
-    return;
-  }
-
-  res.status(500).json({
-    error: "Internal server error",
-    requestId,
-  });
+registerHttpErrorHandler(app, {
+  isCorsError: (error: unknown) => error instanceof CorsNotAllowedError || (error instanceof Error && error.message === "CORS not allowed"),
+  loggerError: (message, context) => {
+    logger.error(message, context);
+  },
 });
 
 // SPA fallback: serve index.html for any non-API route not matched above.
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(COACH_DIST, "index.html"), (err) => {
-    if (err) {
-      res.status(404).json({ error: "Not found" });
-    }
-  });
-});
+registerCoachCatchAllRoute(app, COACH_DIST);
 
 let serverStarted = false;
 

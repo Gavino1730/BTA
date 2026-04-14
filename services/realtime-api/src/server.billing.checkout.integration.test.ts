@@ -122,7 +122,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
     });
@@ -147,7 +147,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
     });
@@ -170,7 +170,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       stripePriceIdYearly: "price_test_yearly",
       requireTenant: "0",
@@ -196,7 +196,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
       jwtWriteRequired: "1",
@@ -221,7 +221,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
       jwtWriteRequired: "1",
@@ -244,7 +244,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
     });
@@ -293,7 +293,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       stripePriceIdYearly: "price_test_yearly",
       requireTenant: "0",
@@ -319,7 +319,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
     });
@@ -345,7 +345,7 @@ describe("server billing checkout-session integration", () => {
     activeServer = await startCheckoutSessionServer({
       paywallEnabled: "1",
       stripeTestMode: "1",
-      stripeSecretKey: "sk_test_checkout",
+      stripeSecretKey: "test_checkout_secret_key",
       stripePriceIdMonthly: "price_test_monthly",
       requireTenant: "0",
     });

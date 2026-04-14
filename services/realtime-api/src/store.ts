@@ -2509,9 +2509,51 @@ function persistRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): voi
     return;
   }
 
-  void persistenceProvider.replaceRosterTeamsForSchool(schoolId, teams).catch((error) => {
-    logger.warn("persistence.roster_teams_save_failed", { schoolId, error });
-  });
+  const normalizedSchoolId = normalizeSchoolId(schoolId);
+  queuedRosterPersistBySchool.set(normalizedSchoolId, cloneRosterTeamsForPersistence(teams));
+
+  if (rosterPersistInFlightBySchool.has(normalizedSchoolId)) {
+    return;
+  }
+
+  flushRosterTeamsPersistence(normalizedSchoolId);
+}
+
+const rosterPersistInFlightBySchool = new Set<string>();
+const queuedRosterPersistBySchool = new Map<string, RosterTeam[]>();
+
+function cloneRosterTeamsForPersistence(teams: RosterTeam[]): RosterTeam[] {
+  return teams.map((team) => ({
+    ...team,
+    focusInsights: Array.isArray(team.focusInsights) ? [...team.focusInsights] : team.focusInsights,
+    players: team.players.map((player) => ({ ...player })),
+  }));
+}
+
+function flushRosterTeamsPersistence(schoolId: string): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  const queuedTeams = queuedRosterPersistBySchool.get(schoolId);
+  if (!queuedTeams) {
+    return;
+  }
+
+  queuedRosterPersistBySchool.delete(schoolId);
+  rosterPersistInFlightBySchool.add(schoolId);
+
+  void persistenceProvider
+    .replaceRosterTeamsForSchool(schoolId, queuedTeams)
+    .catch((error) => {
+      logger.warn("persistence.roster_teams_save_failed", { schoolId, error });
+    })
+    .finally(() => {
+      rosterPersistInFlightBySchool.delete(schoolId);
+      if (queuedRosterPersistBySchool.has(schoolId)) {
+        flushRosterTeamsPersistence(schoolId);
+      }
+    });
 }
 
 let normalizedSessionsPersistInFlight = false;

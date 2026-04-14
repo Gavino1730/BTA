@@ -249,16 +249,21 @@ describe("server billing integration", () => {
     expect(bootstrapPayload.id).toContain("cs_test_bootstrap_");
     expect(bootstrapPayload.url).toContain("checkout.stripe.com/test/session/bootstrap-");
 
+    const storeModule = await import("./store.js");
+    const bootstrapSchoolId = bootstrapPayload.schoolId ?? "";
+    expect(storeModule.getBillingStateByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+    expect(storeModule.getOrganizationProfileByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+
     const token = makeTestToken({
       sub: "bootstrap-coach",
-      schoolId: bootstrapPayload.schoolId,
+      schoolId: bootstrapSchoolId,
       role: "coach",
     });
 
     const entitlementResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        "x-school-id": bootstrapPayload.schoolId ?? "",
+        "x-school-id": bootstrapSchoolId,
       },
     });
 
@@ -268,6 +273,37 @@ describe("server billing integration", () => {
     };
     expect(entitlementPayload.entitlement?.accessActive).toBe(false);
     expect(entitlementPayload.entitlement?.reason).toBe("inactive_subscription");
+    expect(storeModule.getBillingStateByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+    expect(storeModule.getOrganizationProfileByScope({ schoolId: bootstrapSchoolId })).toBeNull();
+
+    const checkoutCompletedResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_bootstrap_complete",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: {
+              schoolId: bootstrapSchoolId,
+              flow: "marketing-bootstrap",
+              fullName: "Bootstrap Coach",
+              email: "bootstrap@school.org",
+              schoolName: "Bootstrap High",
+              teamName: "Bootstrap Varsity",
+            },
+            customer: `cus_test_${bootstrapSchoolId}`,
+            subscription: `sub_test_${bootstrapSchoolId}`,
+          },
+        },
+      }),
+    });
+    expect(checkoutCompletedResponse.status).toBe(200);
+
+    expect(storeModule.getBillingStateByScope({ schoolId: bootstrapSchoolId })?.status).toBe("active");
+    expect(storeModule.getOrganizationProfileByScope({ schoolId: bootstrapSchoolId })?.organizationName).toBe("Bootstrap High");
   });
 
   it("rejects malformed webhook envelopes and ignores checkout events without school metadata", async () => {
@@ -328,6 +364,85 @@ describe("server billing integration", () => {
     expect(entitlementPayload.entitlement?.accessActive).toBe(false);
     expect(entitlementPayload.entitlement?.status).toBe("incomplete");
     expect(entitlementPayload.entitlement?.reason).toBe("inactive_subscription");
+  });
+
+  it("blocks bootstrap register until checkout completion webhook activates billing", async () => {
+    const bootstrapResponse = await fetch(`${API_BASE}/api/billing/bootstrap-checkout-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullName: "Pending Coach",
+        email: "pending-bootstrap@school.org",
+        schoolName: "Pending High",
+        teamName: "Pending Varsity",
+        planCycle: "monthly",
+      }),
+    });
+
+    expect(bootstrapResponse.status).toBe(200);
+    const bootstrapPayload = await bootstrapResponse.json() as { schoolId?: string };
+    const schoolId = bootstrapPayload.schoolId ?? "";
+    expect(schoolId.length).toBeGreaterThan(0);
+
+    const registerBeforeCheckout = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        fullName: "Pending Coach",
+        email: "pending-bootstrap@school.org",
+        password: "StrongPass123!",
+      }),
+    });
+
+    expect(registerBeforeCheckout.status).toBe(402);
+    const registerBeforePayload = await registerBeforeCheckout.json() as { error?: string };
+    expect(registerBeforePayload.error).toBe("Complete checkout before creating your account");
+
+    const completeCheckoutResponse = await fetch(`${API_BASE}/api/billing/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "evt_checkout_pending_bootstrap_complete",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            metadata: {
+              schoolId,
+              flow: "marketing-bootstrap",
+              fullName: "Pending Coach",
+              email: "pending-bootstrap@school.org",
+              schoolName: "Pending High",
+              teamName: "Pending Varsity",
+            },
+            customer: `cus_test_${schoolId}`,
+            subscription: `sub_test_${schoolId}`,
+          },
+        },
+      }),
+    });
+    expect(completeCheckoutResponse.status).toBe(200);
+
+    const registerAfterCheckout = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        fullName: "Pending Coach",
+        email: "pending-bootstrap@school.org",
+        password: "StrongPass123!",
+      }),
+    });
+
+    expect(registerAfterCheckout.status).toBe(201);
   });
 
   it("enforces paywall across premium endpoint matrix through activation lifecycle", async () => {

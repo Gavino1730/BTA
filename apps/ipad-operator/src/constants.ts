@@ -12,21 +12,22 @@ function resolveDefaultAppBase(hostname: string, origin: string, port: number): 
 
 function resolveRuntimeBase(base: string, pageHostname: string, pageProtocol: string): string {
   const trimmed = base.trim().replace(/\/+$/, "");
-  if (!trimmed) {
+  const normalizedHost = trimmed.replace(/api\.btainte1\.com/gi, "api.btaintel.com");
+  if (!normalizedHost) {
     return "";
   }
 
   try {
-    const parsed = new URL(trimmed);
+    const parsed = new URL(normalizedHost);
     if (pageProtocol === "https:" && parsed.protocol === "http:" && !isLocalNetworkHost(parsed.hostname)) {
       parsed.protocol = "https:";
     }
     return parsed.toString().replace(/\/+$/, "");
   } catch {
-    if (pageProtocol === "https:" && trimmed.startsWith("http://") && !isLocalNetworkHost(pageHostname)) {
-      return trimmed.replace(/^http:\/\//, "https://");
+    if (pageProtocol === "https:" && normalizedHost.startsWith("http://") && !isLocalNetworkHost(pageHostname)) {
+      return normalizedHost.replace(/^http:\/\//, "https://");
     }
-    return trimmed;
+    return normalizedHost;
   }
 }
 

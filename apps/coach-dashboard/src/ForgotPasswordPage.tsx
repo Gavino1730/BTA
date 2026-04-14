@@ -66,11 +66,11 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page auth-flow-page auth-forgot-page">
       <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
       <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
 
-      <header className="auth-topbar">
+      <header className="auth-topbar auth-flow-topbar">
         <button type="button" className="auth-topbar-link" onClick={() => onBackLogin(email.trim().toLowerCase() || undefined)}>Back to Login</button>
         <div className="auth-brand-lockup" aria-label="BTA Courtside">
           <span className="auth-brand-badge">BTA</span>
@@ -82,8 +82,8 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
         <button type="button" className="auth-topbar-link" onClick={onBackHome}>Home</button>
       </header>
 
-      <main className="auth-shell auth-shell-compact">
-        <section className="auth-hero-panel auth-hero-panel-compact">
+      <main className="auth-shell auth-shell-compact auth-flow-shell">
+        <section className="auth-hero-panel auth-hero-panel-compact auth-flow-hero-panel">
           <span className="auth-kicker">Account Recovery</span>
           <h1 className="auth-display-title">
             Reset access without breaking
@@ -94,7 +94,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
           </p>
         </section>
 
-        <section className="auth-card" aria-labelledby="forgot-password-title">
+        <section className="auth-card auth-flow-card" aria-labelledby="forgot-password-title">
           <div className="auth-card-head">
             <p className="auth-kicker">Forgot Password</p>
             <h2 id="forgot-password-title">Request reset instructions</h2>
@@ -120,7 +120,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome, onAcceptInvite, on
             </button>
           </form>
 
-          <p className="auth-status" aria-live="polite">{status}</p>
+          <p className="auth-status auth-flow-status" aria-live="polite">{status}</p>
 
           {expiresInMinutes && (
             <p className="auth-support-copy">Reset links expire in about {expiresInMinutes} minutes.</p>

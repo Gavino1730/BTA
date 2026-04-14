@@ -66,11 +66,11 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page auth-flow-page auth-reset-page">
       <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
       <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
 
-      <header className="auth-topbar">
+      <header className="auth-topbar auth-flow-topbar">
         <button type="button" className="auth-topbar-link" onClick={onBackForgot}>Back to Forgot Password</button>
         <div className="auth-brand-lockup" aria-label="BTA Courtside">
           <span className="auth-brand-badge">BTA</span>
@@ -82,8 +82,8 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
         <button type="button" className="auth-topbar-link" onClick={onBackLogin}>Back to Login</button>
       </header>
 
-      <main className="auth-shell auth-shell-compact">
-        <section className="auth-hero-panel auth-hero-panel-compact">
+      <main className="auth-shell auth-shell-compact auth-flow-shell">
+        <section className="auth-hero-panel auth-hero-panel-compact auth-flow-hero-panel">
           <span className="auth-kicker">Account Recovery</span>
           <h1 className="auth-display-title">
             Choose a new password and
@@ -94,7 +94,7 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
           </p>
         </section>
 
-        <section className="auth-card" aria-labelledby="reset-password-title">
+        <section className="auth-card auth-flow-card" aria-labelledby="reset-password-title">
           <div className="auth-card-head">
             <p className="auth-kicker">Reset Password</p>
             <h2 id="reset-password-title">Set a new password</h2>
@@ -140,7 +140,7 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
             </button>
           </form>
 
-          <p className="auth-status" aria-live="polite">{status}</p>
+          <p className="auth-status auth-flow-status" aria-live="polite">{status}</p>
 
           <div className="auth-link-row">
             <button type="button" className="auth-secondary-button" onClick={onBackForgot}>Request Another Reset</button>

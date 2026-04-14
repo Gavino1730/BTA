@@ -3,13 +3,13 @@
 ## Phase 1: Baseline and Contract Lock ✅ COMPLETE
 
 **Delivered:**
-- billing-constants.ts: Canonical Phase 1 scope (monthly-only, no trial, hosted Checkout)
+- billing-constants.ts: Canonical Phase 1 baseline at completion time (monthly-only, no trial, hosted Checkout)
 - BillingEntitlementStatus enum with 4-state lifecycle
 - ALLOWED_STATE_TRANSITIONS: Deterministic state machine
 - PREMIUM_FEATURE_MATRIX: 19 API endpoints mapped to paywall requirements
 - REQUIRED_WEBHOOK_EVENT_TYPES: Phase 1 webhook taxonomy
 - PHASE_1_CHECKOUT_CONFIG: Stripe session defaults
-- config-validation.ts: Enforces monthly-only requirement
+- config-validation.ts: Enforced monthly-only requirement at Phase 1 completion time
 - server.ts: Integrated billing constants with Stripe mode initialization
 - billing-constants.test.ts: 10 validation tests confirming scope lock
 
@@ -154,7 +154,7 @@ Two separate endpoints must be consolidated into one unified handler:
 - **Entitlement Computation:** server.ts buildBillingEntitlement()
 - **Paywall Enforcement:** Currently per-endpoint guards in server.ts (to be consolidated in Phase 4)
 - **Webhook Handling:** server.ts POST /api/webhooks/stripe (to be hardened in Phase 3)
-- **Stripe Config:** Monthly-only via BTA_STRIPE_PRICE_ID_MONTHLY (enforced in config-validation.ts)
+- **Stripe Config (Phase 1 baseline):** Monthly-only via BTA_STRIPE_PRICE_ID_MONTHLY (enforced in config-validation.ts at that time)
 
 ---
 

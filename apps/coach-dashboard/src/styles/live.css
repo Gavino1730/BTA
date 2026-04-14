@@ -1307,6 +1307,180 @@
   gap: 0.65rem;
 }
 
+/* Billing page visual refresh (scoped) */
+.billing-page {
+  position: relative;
+}
+
+.billing-page::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 50%;
+  width: min(980px, 95vw);
+  height: 380px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--bta-accent-cyan) 20%, transparent), transparent 58%),
+    radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--bta-accent-violet) 26%, transparent), transparent 62%);
+  filter: blur(4px);
+  opacity: 0.75;
+}
+
+.billing-page .stats-page-card {
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 22%, var(--bta-border-soft));
+  box-shadow: 0 16px 36px rgba(2, 8, 24, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.billing-page-hero-card {
+  padding: 1.35rem 1.45rem;
+  background:
+    linear-gradient(150deg, color-mix(in srgb, var(--bta-accent-violet) 20%, var(--bta-bg-elevated)) 0%, var(--bta-bg-elevated) 60%),
+    var(--bta-bg-elevated);
+}
+
+.billing-page-hero-card .stats-page-eyebrow {
+  color: color-mix(in srgb, var(--bta-accent-cyan) 80%, #ffffff 20%);
+}
+
+.billing-page-hero-card .stats-page-subtitle {
+  max-width: 62ch;
+  color: color-mix(in srgb, var(--bta-text-primary) 70%, transparent);
+}
+
+.billing-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+
+.billing-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--bta-accent-cyan) 32%, transparent);
+  background: color-mix(in srgb, var(--bta-accent-cyan) 10%, rgba(255, 255, 255, 0.03));
+  color: color-mix(in srgb, var(--bta-text-primary) 78%, transparent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.billing-page-section {
+  padding: 1.2rem 1.25rem;
+}
+
+.billing-page .policy-section-heading {
+  font-size: 1.28rem;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.35rem;
+}
+
+.billing-page .policy-section-body {
+  color: color-mix(in srgb, var(--bta-text-primary) 72%, transparent);
+}
+
+.billing-page .policy-section-list {
+  padding-left: 1.1rem;
+}
+
+.billing-page .policy-section-list li::marker {
+  color: color-mix(in srgb, var(--bta-accent-cyan) 70%, transparent);
+}
+
+.billing-page .coupon-form {
+  margin-top: 1rem;
+}
+
+.billing-page .coupon-form-row {
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.billing-page .coupon-input {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 35%, transparent);
+  background: color-mix(in srgb, var(--bta-accent-violet) 8%, var(--bta-bg-panel));
+  color: var(--bta-text-primary);
+  padding: 0.68rem 0.9rem;
+  font: inherit;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.billing-page .coupon-input::placeholder {
+  color: color-mix(in srgb, var(--bta-text-muted) 70%, transparent);
+}
+
+.billing-page .coupon-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bta-accent-cyan) 20%, transparent);
+}
+
+.billing-page .billing-coupon-apply {
+  min-height: 44px;
+  border-radius: 10px;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.billing-page-actions-wrap {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bta-accent-cyan) 7%, transparent) 0%, transparent 100%),
+    var(--bta-bg-elevated);
+}
+
+.billing-page-actions {
+  gap: 0.75rem;
+}
+
+.billing-page .billing-cta-button {
+  min-width: 192px;
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  min-height: 46px;
+  justify-content: center;
+}
+
+.billing-page .billing-cta-button-primary {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--bta-accent-cyan) 30%, var(--bta-accent-violet)) 0%, var(--bta-accent-violet) 100%);
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 25%, var(--bta-accent-violet));
+  color: #f8fbff;
+}
+
+.billing-page .billing-cta-button-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--bta-accent-cyan) 38%, var(--bta-accent-violet)) 0%, color-mix(in srgb, var(--bta-accent-violet) 88%, #ffffff 12%) 100%);
+}
+
+.billing-page .billing-cta-button-secondary {
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 25%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--bta-accent-cyan) 8%, rgba(255, 255, 255, 0.02));
+}
+
+@media (max-width: 760px) {
+  .billing-page-hero-card {
+    padding: 1.15rem 1rem;
+  }
+
+  .billing-page .coupon-form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .billing-page .billing-coupon-apply,
+  .billing-page .billing-cta-button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* AI Context two-column textarea grid */
 .settings-ai-grid {
   display: grid;

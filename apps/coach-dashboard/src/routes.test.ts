@@ -54,6 +54,10 @@ describe("coach route helpers", () => {
     expect(resolveRuntimeBase("http://api.btaintel.com", "www.btaintel.com", "https:")).toBe("https://api.btaintel.com");
   });
 
+  it("corrects known typoed api hostnames", () => {
+    expect(resolveRuntimeBase("https://api.btainte1.com", "dashboard.btaintel.com", "https:")).toBe("https://api.btaintel.com");
+  });
+
   it("keeps local-network http bases unchanged", () => {
     expect(resolveRuntimeBase("http://192.168.1.50:4000", "192.168.1.50", "https:")).toBe("http://192.168.1.50:4000");
   });

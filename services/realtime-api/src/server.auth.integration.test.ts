@@ -573,6 +573,89 @@ describe("server auth integration", () => {
     expect(updatedPasswordLogin.status).toBe(200);
   });
 
+  it("creates coach accounts with generated passwords and can grant complimentary access", async () => {
+    const ownerToken = makeTestToken({
+      sub: "coach-account-owner-free-1",
+      schoolId: "coach-account-free-school",
+      role: "owner",
+      email: "owner-free@school.org",
+      name: "Owner Free Coach"
+    });
+
+    await fetch(`${API_BASE}/api/onboarding/complete`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-free-school"
+      },
+      body: JSON.stringify({
+        organizationName: "Coach Free School Athletics",
+        teamName: "Coach Free School",
+        season: "2026"
+      })
+    });
+
+    const createResponse = await fetch(`${API_BASE}/api/auth/coach-account`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-free-school"
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Free",
+        email: "assistant-free@school.org",
+        role: "coach",
+        generatePassword: true,
+        grantComplimentaryAccess: true
+      })
+    });
+
+    expect(createResponse.status).toBe(201);
+    const createBody = await createResponse.json() as {
+      temporaryPassword?: string;
+      complimentaryAccessGranted?: boolean;
+      billing?: { status?: string; planId?: string };
+    };
+
+    expect(createBody.temporaryPassword).toBeTruthy();
+    expect(createBody.temporaryPassword?.length).toBeGreaterThanOrEqual(8);
+    expect(createBody.complimentaryAccessGranted).toBe(true);
+    expect(createBody.billing?.status).toBe("active");
+    expect(createBody.billing?.planId).toBe("complimentary");
+
+    const loginResponse = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "coach-account-free-school"
+      },
+      body: JSON.stringify({
+        email: "assistant-free@school.org",
+        password: createBody.temporaryPassword,
+      })
+    });
+
+    expect(loginResponse.status).toBe(200);
+
+    const entitlementResponse = await fetch(`${API_BASE}/api/billing/entitlement`, {
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "x-school-id": "coach-account-free-school",
+      }
+    });
+
+    expect(entitlementResponse.status).toBe(200);
+    const entitlementBody = await entitlementResponse.json() as {
+      entitlement?: { status?: string; planId?: string; accessActive?: boolean };
+    };
+
+    expect(entitlementBody.entitlement?.status).toBe("active");
+    expect(entitlementBody.entitlement?.planId).toBe("complimentary");
+    expect(entitlementBody.entitlement?.accessActive).toBe(true);
+  });
+
   it("supports self-service password reset request and confirm flow", async () => {
     const registerRes = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
