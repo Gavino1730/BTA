@@ -821,7 +821,7 @@
 }
 
 .mkt-brand-name {
-  font-family: var(--font-display, "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif);
+  font-family: var(--font-display, "Syne", "Inter", "Arial Narrow", sans-serif);
   text-transform: uppercase;
   letter-spacing: 0.045em;
 }
@@ -1312,6 +1312,12 @@
 
 /* Login page upgrade: scoped to coach sign-in only */
 .auth-login-page {
+  --auth-login-radius-lg: 14px;
+  --auth-login-radius-md: 10px;
+  --auth-login-radius-sm: 8px;
+  --auth-login-gap: 0.85rem;
+  --auth-login-panel-pad: clamp(1.02rem, 2.1vw, 1.32rem);
+  --auth-login-focus-ring: 0 0 0 3px rgba(53, 170, 255, 0.28);
   background:
     radial-gradient(120% 70% at 6% 0%, rgba(255, 179, 64, 0.14) 0%, transparent 58%),
     radial-gradient(95% 62% at 96% 0%, rgba(73, 211, 255, 0.17) 0%, transparent 62%),
@@ -1342,12 +1348,12 @@
 
 .auth-login-shell {
   grid-template-columns: minmax(340px, 0.84fr) minmax(440px, 1.16fr);
-  gap: 0.85rem;
+  gap: var(--auth-login-gap);
 }
 
 .auth-login-card,
 .auth-login-hero-panel {
-  border-radius: 14px;
+  border-radius: var(--auth-login-radius-lg);
   border-color: color-mix(in srgb, var(--bta-accent-cyan) 18%, var(--bta-border-soft));
 }
 
@@ -1393,11 +1399,13 @@
 .auth-login-card .auth-card-head h2 {
   font-size: clamp(1.95rem, 2.5vw, 2.7rem);
   letter-spacing: -0.024em;
+  text-wrap: balance;
 }
 
 .auth-login-card .auth-card-head p {
   max-width: 44ch;
   line-height: 1.55;
+  color: rgba(244, 246, 251, 0.72);
 }
 
 .auth-login-card .auth-form {
@@ -1420,7 +1428,7 @@
 
 .auth-login-card .auth-field input {
   min-height: 48px;
-  border-radius: 12px;
+  border-radius: var(--auth-login-radius-md);
   border-color: color-mix(in srgb, var(--bta-accent-violet) 22%, var(--bta-border-soft));
   background: linear-gradient(180deg, rgba(97, 112, 170, 0.16), rgba(42, 57, 99, 0.16));
   transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
@@ -1428,7 +1436,7 @@
 
 .auth-login-card .auth-field input:focus {
   border-color: color-mix(in srgb, var(--bta-accent-cyan) 48%, transparent);
-  box-shadow: 0 0 0 3px rgba(54, 191, 255, 0.22);
+  box-shadow: var(--auth-login-focus-ring);
   background: linear-gradient(180deg, rgba(115, 132, 197, 0.2), rgba(56, 74, 124, 0.2));
 }
 
@@ -1457,7 +1465,7 @@
 
 .auth-login-card .auth-primary-button {
   min-height: 48px;
-  border-radius: 10px;
+  border-radius: var(--auth-login-radius-md);
   background: linear-gradient(90deg, #5d52ff 0%, #3578ff 52%, #1eb7ff 100%);
   box-shadow: 0 14px 30px rgba(42, 138, 255, 0.36);
   text-transform: uppercase;
@@ -1470,7 +1478,7 @@
 }
 
 .auth-login-status {
-  border-radius: 8px;
+  border-radius: var(--auth-login-radius-sm);
   border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 25%, transparent);
   background: rgba(255, 255, 255, 0.04);
   padding: 0.68rem 0.75rem;
@@ -1485,7 +1493,7 @@
 .auth-login-card .auth-secondary-button {
   min-height: 38px;
   padding: 0.44rem 0.82rem;
-  border-radius: 999px;
+  border-radius: var(--auth-login-radius-sm);
   font-size: 0.78rem;
   letter-spacing: 0.01em;
 }
@@ -1512,7 +1520,7 @@
 
 .auth-login-hero-panel {
   gap: 0.9rem;
-  padding: clamp(1.05rem, 2.1vw, 1.35rem);
+  padding: var(--auth-login-panel-pad);
   background:
     radial-gradient(95% 80% at 6% -8%, rgba(87, 109, 255, 0.32), transparent 56%),
     radial-gradient(72% 84% at 96% 100%, rgba(73, 211, 255, 0.24), transparent 72%),
@@ -1562,6 +1570,7 @@
   letter-spacing: -0.02em;
   max-width: 14ch;
   text-transform: uppercase;
+  text-wrap: balance;
 }
 
 .auth-login-hero-panel .auth-display-title span {
@@ -1578,7 +1587,7 @@
 }
 
 .auth-login-snapshot-card {
-  border-radius: 10px;
+  border-radius: var(--auth-login-radius-md);
   border: 1px solid color-mix(in srgb, var(--bta-accent-cyan) 24%, transparent);
   background: linear-gradient(180deg, rgba(65, 97, 175, 0.26), rgba(16, 31, 70, 0.3));
   padding: 0.72rem;
@@ -1611,7 +1620,7 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: end;
   gap: 0.55rem;
-  border-radius: 8px;
+  border-radius: var(--auth-login-radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(7, 13, 28, 0.68);
   padding: 0.55rem 0.62rem;
