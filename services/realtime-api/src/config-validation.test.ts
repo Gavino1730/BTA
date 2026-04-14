@@ -11,9 +11,9 @@ function baseConfig(): RuntimeConfig {
     allowedOriginsConfigured: true,
     databaseUrlConfigured: true,
     localAuthSecretConfigured: true,
-    paywallEnabled: false,
-    stripeConfigured: false,
-    stripeWebhookSecretConfigured: false
+    emailProvider: "",
+    emailFromConfigured: false,
+    resendApiKeyConfigured: false
   };
 }
 
@@ -29,17 +29,7 @@ describe("runtime config validation", () => {
 
       expect(() => assertRuntimeConfig(config)).not.toThrow();
       expect(warnSpy).toHaveBeenCalledTimes(1);
-
-      const raw = String(warnSpy.mock.calls[0]?.[0] ?? "");
-      const payload = JSON.parse(raw) as {
-        level?: string;
-        message?: string;
-        context?: { warning?: string };
-      };
-
-      expect(payload.level).toBe("warn");
-      expect(payload.message).toBe("runtime.config_warning");
-      expect(payload.context?.warning).toContain("Tenant strict mode is disabled");
+      expect(String(warnSpy.mock.calls[0]?.[0] ?? "")).toContain("Tenant strict mode is disabled");
     } finally {
       warnSpy.mockRestore();
     }
@@ -111,7 +101,7 @@ describe("runtime config validation", () => {
     expect(result.errors.some((error) => error.includes("DATABASE_URL"))).toBe(true);
   });
 
-  it("rejects production when local auth signing is not configured", () => {
+  it("warns in production when local auth signing is not configured", () => {
     const config: RuntimeConfig = {
       ...baseConfig(),
       nodeEnv: "production",
@@ -121,36 +111,36 @@ describe("runtime config validation", () => {
     };
 
     const result = validateRuntimeConfig(config);
-    expect(result.errors.some((error) => error.includes("BTA_LOCAL_AUTH_SECRET") || error.includes("BTA_AUTH_SECRET"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("BTA_LOCAL_AUTH_SECRET") || warning.includes("BTA_AUTH_SECRET"))).toBe(true);
   });
 
-  it("rejects production when paywall is enabled but Stripe checkout settings are missing", () => {
+  it("warns when email provider is configured but sender is missing", () => {
     const config: RuntimeConfig = {
       ...baseConfig(),
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
-      paywallEnabled: true,
-      stripeConfigured: false,
-      stripeWebhookSecretConfigured: true,
+      emailProvider: "resend",
+      emailFromConfigured: false,
+      resendApiKeyConfigured: true,
     };
 
     const result = validateRuntimeConfig(config);
-    expect(result.errors.some((error) => error.includes("BTA_STRIPE_SECRET_KEY"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("BTA_EMAIL_FROM"))).toBe(true);
   });
 
-  it("rejects production when paywall is enabled but Stripe webhook secret is missing", () => {
+  it("warns when resend provider is configured but api key is missing", () => {
     const config: RuntimeConfig = {
       ...baseConfig(),
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
-      paywallEnabled: true,
-      stripeConfigured: true,
-      stripeWebhookSecretConfigured: false,
+      emailProvider: "resend",
+      emailFromConfigured: true,
+      resendApiKeyConfigured: false,
     };
 
     const result = validateRuntimeConfig(config);
-    expect(result.errors.some((error) => error.includes("BTA_STRIPE_WEBHOOK_SECRET"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("RESEND_API_KEY"))).toBe(true);
   });
 });

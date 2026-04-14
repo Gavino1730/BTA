@@ -2307,6 +2307,11 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// Keep /api probe tenant-agnostic so platform health checks can use it.
+app.get("/api", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.use(attachAuthContext);
 app.use("/api", requireTenantScope);
 app.use("/teams", requireTenantScope);
@@ -3609,13 +3614,13 @@ app.get("/api/operator-links/:connectionId", (req, res) => {
   // Always deliver the operator token to any caller that knows the connection ID —
   // this allows the iPad to bootstrap auth on first sync without a prior credential.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { operatorToken, ...publicSetup } = setup;
+  const { operatorToken: setupOperatorToken, ...publicSetup } = setup;
   res.json({
     connectionId,
     schoolId,
     setup: publicSetup,
     teams: getRosterTeamsByScope({ schoolId }),
-    operatorToken,
+    operatorToken: setupOperatorToken,
   });
 });
 
@@ -4447,6 +4452,13 @@ app.delete("/admin/reset", requireApiKey, requireWriteRole, (req, res) => {
 
 // SPA fallback: serve index.html for any non-API route not matched above.
 app.get("*", (_req, res) => {
+  const requestPath = _req.path || "";
+  const looksLikeStaticAsset = requestPath.startsWith("/assets/") || /\.[a-z0-9]+$/i.test(requestPath);
+  if (looksLikeStaticAsset) {
+    res.status(404).type("text/plain").send("Not found");
+    return;
+  }
+
   res.sendFile(path.join(COACH_DIST, "index.html"), (err) => {
     if (err) {
       res.status(404).json({ error: "Not found" });
@@ -4531,6 +4543,30 @@ export async function stopServer(): Promise<void> {
   });
 }
 
+let shutdownInProgress = false;
+
+async function handleShutdownSignal(signal: NodeJS.Signals): Promise<void> {
+  if (shutdownInProgress) {
+    return;
+  }
+
+  shutdownInProgress = true;
+  console.log(`[realtime-api] Received ${signal}, shutting down gracefully...`);
+  try {
+    await stopServer();
+    process.exit(0);
+  } catch (error) {
+    console.error("[realtime-api] Graceful shutdown failed", error);
+    process.exit(1);
+  }
+}
+
 if (!process.env.VITEST) {
+  process.once("SIGTERM", () => {
+    void handleShutdownSignal("SIGTERM");
+  });
+  process.once("SIGINT", () => {
+    void handleShutdownSignal("SIGINT");
+  });
   void startServer();
 }

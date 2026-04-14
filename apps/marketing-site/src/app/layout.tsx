@@ -25,7 +25,7 @@ const monoFont = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BTA Courtside Intelligence | Live Basketball Operations Platform",
+  title: "BTA Courtside",
   description:
     "BTA Courtside Intelligence is premium basketball operations software for live stat keeping, game workflows, synced film review, and AI coaching insights.",
   icons: {
