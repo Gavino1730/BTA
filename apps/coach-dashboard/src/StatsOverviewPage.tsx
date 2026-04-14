@@ -195,7 +195,7 @@ export function StatsOverviewPage() {
         setGames(Array.isArray(gamesPayload) ? gamesPayload : []);
         setPatterns(patternsPayload);
         setVolatility(volatilityPayload);
-        setStatus("Overview, leaderboards, and trend features are synced.");
+        setStatus("Overview, leaderboards, and trends are synced.");
       } catch {
         if (!cancelled) {
           setStatus("Could not load the stats overview from the realtime API.");
@@ -233,7 +233,7 @@ export function StatsOverviewPage() {
       <section className="stats-page-hero">
         <div>
           <h1>Season Overview</h1>
-          <p className="stats-page-subtitle">The full season snapshot is back here now: record, efficiency, splits, recent form, and deeper leaderboards.</p>
+          <p className="stats-page-subtitle">Your full season snapshot: record, efficiency, splits, recent form, and leaderboards.</p>
         </div>
         <p className="stats-page-status">{status}</p>
       </section>
@@ -349,7 +349,7 @@ export function StatsOverviewPage() {
               <strong>{formatNumber(recentOppPpg)}</strong>
             </div>
           </div>
-          <div className="stats-focus-panel" style={{ marginTop: "1rem" }}>
+          <div className="stats-focus-panel stats-focus-panel-overview-gap">
             <strong>{formatNumber(patterns?.home_avg_score)}</strong>
             <span>Average home score</span>
             <p className="stats-page-subcopy">
@@ -359,7 +359,7 @@ export function StatsOverviewPage() {
         </section>
       </section>
 
-      <section className="stats-page-grid four-column" style={{ marginBottom: "1rem" }}>
+      <section className="stats-page-grid four-column stats-overview-leaders-gap">
         <PlayerLeaders title="Top Scorers" statKey="pts" players={leaderboards?.pts ?? []} />
         <PlayerLeaders title="Top Rebounders" statKey="reb" players={leaderboards?.reb ?? []} />
         <PlayerLeaders title="Top Assist Leaders" statKey="asst" players={leaderboards?.asst ?? []} />

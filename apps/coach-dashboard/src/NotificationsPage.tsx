@@ -337,7 +337,7 @@ export function NotificationsPage({ onNavigate }: Props) {
       <section className="stats-page-hero compact">
         <div>
           <h1>Notifications</h1>
-          <p className="stats-page-subtitle">Recent alerts and activity snapshots for game-day operations.</p>
+          <p className="stats-page-subtitle">Recent alerts and activity for game-day operations.</p>
         </div>
         {status && <p className="stats-page-status">{status}</p>}
       </section>
@@ -356,8 +356,7 @@ export function NotificationsPage({ onNavigate }: Props) {
           <p className="stats-empty-copy">{loadError}</p>
           <button
             type="button"
-            className="shell-nav-link"
-            style={{ marginTop: "0.65rem" }}
+            className="shell-nav-link notifications-retry-btn"
             onClick={() => setRetryKey((value) => value + 1)}
           >
             Retry
@@ -367,29 +366,29 @@ export function NotificationsPage({ onNavigate }: Props) {
 
       {!isLoading && !loadError && (
         <>
-          <section className="stats-page-grid notifications-grid" style={{ marginBottom: "1rem" }}>
+          <section className="stats-page-grid notifications-grid notifications-section-gap">
             <section className="stats-page-card notifications-alert-card">
               <div className="stats-page-card-head">
                 <h3>Alert Center</h3>
                 <span className="stats-page-status">{unreadCount} unread of {notificationItems.length}</span>
               </div>
               {notificationItems.length > 0 && (
-                <section className="stats-filter-bar notifications-toolbar" style={{ marginTop: "0.2rem", marginBottom: "0.75rem" }}>
-                  <label className="stats-filter-field short notifications-filter" style={{ minWidth: "180px" }}>
+                <section className="stats-filter-bar notifications-toolbar notifications-toolbar-spacing">
+                  <label className="stats-filter-field short notifications-filter notifications-filter-min">
                     <span>View</span>
                     <select value={readStatusFilter} onChange={(event) => setReadStatusFilter(event.target.value as ReadStatusFilter)}>
-                      <option value="all">All Notifications</option>
-                      <option value="unread">Unread Only</option>
+                      <option value="all">All notifications</option>
+                      <option value="unread">Unread only</option>
                     </select>
                   </label>
-                  <div className="settings-form-footer notifications-actions" style={{ marginTop: "0.25rem", justifyContent: "flex-end", width: "100%" }}>
+                  <div className="settings-form-footer notifications-actions notifications-actions-wrap">
                     <button
                       type="button"
                       className="shell-nav-link shell-nav-link-active"
                       onClick={markAllVisibleAsRead}
                       disabled={visibleNotificationItems.length === 0}
                     >
-                      Mark Visible as Read
+                      Mark visible as read
                     </button>
                     <button
                       type="button"
@@ -397,7 +396,7 @@ export function NotificationsPage({ onNavigate }: Props) {
                       onClick={clearReadState}
                       disabled={readNotificationIds.length === 0}
                     >
-                      Clear Read State
+                      Clear read state
                     </button>
                   </div>
                 </section>
@@ -407,7 +406,7 @@ export function NotificationsPage({ onNavigate }: Props) {
                 <p className="stats-empty-copy">
                   {notificationItems.length > 0 && readStatusFilter === "unread"
                     ? "No unread alerts right now."
-                    : "No alerts yet. Start a live game to generate operational notifications."}
+                    : "No alerts yet. Start a live game to generate notifications."}
                 </p>
               ) : (
                 <div className="stats-game-list notifications-list">
@@ -426,8 +425,7 @@ export function NotificationsPage({ onNavigate }: Props) {
                         <span className="notification-time">{item.timestampLabel}</span>
                         <button
                           type="button"
-                          className="shell-nav-link notification-toggle-btn"
-                          style={{ marginTop: "0.35rem" }}
+                          className="shell-nav-link notification-toggle-btn notification-toggle-gap"
                           onClick={() => toggleRead(item.id)}
                         >
                           {isRead ? "Mark Unread" : "Mark Read"}

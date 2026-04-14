@@ -38,13 +38,13 @@ export function FinalCta(): JSX.Element {
           className="relative mx-auto max-w-2xl"
         >
           <p className="mb-3 text-[13px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
-            Build under pressure, with control
+            Perform under pressure with control
           </p>
           <h2 className="font-display text-5xl leading-[0.98] text-[var(--text-primary)] md:text-6xl">
-            Bring your stats, film, and coaching intelligence into one live command center.
+            Bring stats, film, and coaching intelligence into one live command center.
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-[var(--text-secondary)]">
-            Start your subscription, create your coach account, and launch your workspace today without waiting on a demo call.
+            Start your subscription, create your coach account, and launch today, no demo call required.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button size="lg" onClick={() => window.location.assign("/get-started")}>Get Started Now</Button>

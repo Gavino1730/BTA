@@ -196,7 +196,7 @@ html {
   background: radial-gradient(120% 120% at 50% -10%, rgba(110, 91, 255, 0.1), transparent 64%);
 }
 
-.section-shell[data-tone="beta"]::before {
+.section-shell[data-tone="pulse"]::before {
   background: radial-gradient(140% 110% at 80% 0%, rgba(70, 215, 255, 0.08), transparent 60%);
 }
 

@@ -152,6 +152,11 @@
   min-width: 0;
 }
 
+.coach-nav-actions .connection-pill-copy {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 .coach-nav-actions .connection-pill-status {
   font-size: 0.78rem;
   letter-spacing: 0.07em;

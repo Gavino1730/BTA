@@ -11,8 +11,8 @@ export function WhyDifferent(): JSX.Element {
     <section className="mx-auto w-[min(1200px,92vw)] space-y-10 py-20">
       <SectionHeader
         eyebrow="Why BTA Courtside"
-        title="One operating system instead of disconnected game-day tools"
-        description="When stats, film, and insights run in the same flow, decisions get faster and review gets sharper."
+        title="One system instead of disconnected game-day tools"
+        description="When stats, film, and insights run together, decisions get faster and review gets sharper."
       />
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -28,9 +28,9 @@ export function WhyDifferent(): JSX.Element {
               className="mt-4 space-y-2"
             >
               {[
-                "Stats captured in one tool, film clipped in another",
-                "Manual exports delay review and halftime decisions",
-                "Insights arrive too late to change the game",
+                "Stats are captured in one tool and clips in another",
+                "Manual exports slow review and halftime decisions",
+                "Insights arrive too late to impact the game",
               ].map((item) => (
                 <motion.li
                   key={item}
@@ -63,9 +63,9 @@ export function WhyDifferent(): JSX.Element {
             className="relative mt-4 space-y-2 text-base text-[var(--text-secondary)]"
           >
             {[
-              "Single event stream powers live stats, dashboard context, and clip links",
-              "Operators and coaches work from the same truth in real time",
-              "AI prompts are tied directly to possessions and lineup state",
+              "One event stream powers stats, dashboard context, and clip links",
+              "Operators and coaches work from the same live truth",
+              "AI prompts map directly to possessions and lineup state",
             ].map((item) => (
               <motion.li
                 key={item}

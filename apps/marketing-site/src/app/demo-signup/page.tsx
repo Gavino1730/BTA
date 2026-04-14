@@ -23,7 +23,7 @@ export default function DemoSignupPage(): JSX.Element {
       keyMetrics={[
         { label: "Session Length", value: "45-60 Min", detail: "Live workflow walkthrough with Q&A" },
         { label: "Attendees", value: "3-8 Staff", detail: "Coaches, operators, analysts, admins" },
-        { label: "Output", value: "Pilot Plan", detail: "Operational fit and next-step rollout guidance" },
+        { label: "Output", value: "Launch Plan", detail: "Operational fit and next-step rollout guidance" },
       ]}
       sections={[
         {
@@ -32,7 +32,7 @@ export default function DemoSignupPage(): JSX.Element {
           points: [
             "Current game-day workflow mapping: tools, roles, pain points, and timing bottlenecks.",
             "Staff responsibility map for operators, bench coaches, analysts, and program leads.",
-            "Priority outcomes for pilot success, such as cleaner corrections or faster review turnaround.",
+            "Priority outcomes for launch readiness, such as cleaner corrections or faster review turnaround.",
           ],
           note: "This phase ensures the demo targets your constraints, not ours.",
         },
@@ -47,14 +47,14 @@ export default function DemoSignupPage(): JSX.Element {
           note: "We focus on decision quality and staff confidence, not feature checklists.",
         },
         {
-          title: "Pilot Readiness",
+          title: "Launch Readiness",
           intro: "Every demo ends with a practical next-step plan.",
           points: [
-            "Suggested pilot roster and role assignments for first live events.",
+            "Suggested rollout roster and role assignments for first live events.",
             "Implementation sequence covering setup, training, and first-game support checkpoints.",
             "Success metrics and review cadence for deciding full rollout timing.",
           ],
-          note: "If there is not a clear pilot path, we will say so directly.",
+          note: "If there is not a clear rollout path, we will say so directly.",
         },
       ]}
     />

@@ -15,7 +15,7 @@ export default function ContactPage(): JSX.Element {
     <ContentPage
       eyebrow="Contact"
       title="Talk with the BTA Courtside team"
-      summary="Whether you are evaluating pilots, planning a multi-team rollout, or troubleshooting game-day workflow reliability, we route your inquiry to the right specialist quickly."
+      summary="Whether you are evaluating rollout options, planning a multi-team launch, or troubleshooting game-day workflow reliability, we route your inquiry to the right specialist quickly."
       primaryCta={{ label: "Email Support", href: "mailto:support@btaintel.com" }}
       secondaryCta={{ label: "Request Demo", href: "/demo-signup" }}
       variant="pulse"
@@ -27,7 +27,7 @@ export default function ContactPage(): JSX.Element {
       ]}
       sections={[
         {
-          title: "Sales and Pilots",
+          title: "Sales and Rollout",
           intro: "For program evaluations, procurement, and rollout planning.",
           points: [
             "Email: support@btaintel.com",

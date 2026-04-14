@@ -103,8 +103,8 @@ export function LivePage() {
         <>
           {lastFinishedGameSummary ? (
             <section className="card settings-section-card finalize-game-finished-card" aria-label="Finished Game Summary">
-              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>Game Finished</p>
-              <h3 style={{ marginBottom: "0.5rem" }}>{lastFinishedGameSummary.myTeamName} vs {lastFinishedGameSummary.opponentName}</h3>
+              <p className="eyebrow finalize-game-eyebrow">Game Finished</p>
+              <h3 className="finalize-game-title">{lastFinishedGameSummary.myTeamName} vs {lastFinishedGameSummary.opponentName}</h3>
               <p className="settings-section-desc">Game ID: {lastFinishedGameSummary.gameId}</p>
               <p className="settings-section-desc">Finished at: {new Date(lastFinishedGameSummary.finishedAtIso).toLocaleString()}</p>
               <div className="finalize-game-finished-score">
@@ -181,8 +181,8 @@ export function LivePage() {
           </section>
           {isEndGamePromptOpen ? (
             <section className="card settings-section-card finalize-game-card" aria-label="Finalize Game Details">
-              <p className="eyebrow" style={{ marginBottom: "0.45rem" }}>Game Over</p>
-              <h3 style={{ marginBottom: "0.5rem" }}>Finalize game details</h3>
+              <p className="eyebrow finalize-game-eyebrow">Game Over</p>
+              <h3 className="finalize-game-title">Finalize game details</h3>
 
               <div className="finalize-game-grid">
                 <label className="finalize-game-field">

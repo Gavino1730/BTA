@@ -49,7 +49,7 @@ export default function BillingRefundPolicyPage(): JSX.Element {
           id: "trials-promotions",
           title: "Trials and Promotional Offers",
           paragraphs: [
-            "BTA Courtside may offer free trials, pilot pricing, beta access, or promotional discounts. Eligibility, duration, conversion behavior, and limitations are determined by offer terms at the time of activation.",
+            "BTA Courtside may offer free trials, introductory pricing, limited-time access, or promotional discounts. Eligibility, duration, conversion behavior, and limitations are determined by offer terms at the time of activation.",
             "Offers may be modified or discontinued at any time to the extent permitted by law.",
           ],
           bullets: [

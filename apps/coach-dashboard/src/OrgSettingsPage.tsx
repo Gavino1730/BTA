@@ -318,7 +318,7 @@ export function OrgSettingsPage({ onNavigate }: Props) {
       <section className="stats-page-hero compact">
         <div>
           <h1>Organization Settings</h1>
-          <p className="stats-page-subtitle">Manage organization profile and staff access controls in one place.</p>
+          <p className="stats-page-subtitle">Manage your organization profile and staff access in one place.</p>
         </div>
         {status && <p className="stats-page-status">{status}</p>}
       </section>
