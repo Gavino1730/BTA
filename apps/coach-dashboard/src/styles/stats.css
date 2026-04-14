@@ -57,6 +57,41 @@
   padding: 0.5rem 0;
 }
 
+.stats-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.2rem 0;
+}
+
+.stats-empty-state-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.stats-empty-state-eyebrow {
+  margin: 0;
+  color: var(--bta-accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.72rem;
+}
+
+.stats-empty-state-title {
+  margin: 0;
+  color: var(--bta-text-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.stats-empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .stats-page-status {
   color: rgba(232,234,240,0.45);
   font-size: 0.8rem;

@@ -1,4 +1,5 @@
 import { type FormEvent, useMemo, useState, useEffect } from "react";
+import { EmptyState } from "./EmptyState.js";
 import { apiBase, apiKeyHeader, fetchBillingEntitlement, fetchBillingPortalUrl, validateCoupon, applyCoupon, type BillingEntitlement } from "./platform.js";
 
 interface RoutedPageProps {
@@ -588,13 +589,17 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponStatus, setCouponStatus] = useState("");
   const [couponError, setCouponError] = useState("");
+  const [billingLoadFailed, setBillingLoadFailed] = useState(false);
+  const [billingRefreshKey, setBillingRefreshKey] = useState(0);
 
   useEffect(() => {
     const loadBilling = async () => {
       setLoading(true);
+      setBillingLoadFailed(false);
       const entitlement = await fetchBillingEntitlement();
       setBillingEntitlement(entitlement);
       if (!entitlement) {
+        setBillingLoadFailed(true);
         setStatus("Could not load billing state. You can still retry checkout or open billing portal when available.");
       } else if (entitlement.status === "active") {
         setStatus("Your subscription is active. Use the button below to manage your plan through Stripe.");
@@ -610,7 +615,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       setLoading(false);
     };
     void loadBilling();
-  }, []);
+  }, [billingRefreshKey]);
 
   async function validateAndApplyCoupon(e?: React.FormEvent) {
     if (e) {
@@ -727,7 +732,35 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         </div>
       </section>
 
-      {showPortal && (
+      {billingLoadFailed && (
+        <section className="stats-page-card policy-page-section billing-page-section">
+          <EmptyState
+            title="Billing details unavailable"
+            message={status}
+            actions={(
+              <>
+                <button
+                  type="button"
+                  className="shell-nav-link shell-nav-link-active"
+                  onClick={() => setBillingRefreshKey((value) => value + 1)}
+                  disabled={loading}
+                >
+                  {loading ? "Trying Again..." : "Try Again"}
+                </button>
+                <button
+                  type="button"
+                  className="shell-nav-link"
+                  onClick={() => onNavigate("/stats/settings")}
+                >
+                  Back to Settings
+                </button>
+              </>
+            )}
+          />
+        </section>
+      )}
+
+      {!billingLoadFailed && showPortal && (
         <section className="stats-page-card policy-page-section billing-page-section">
           <h3 className="policy-section-heading">Manage Subscription</h3>
           <p className="stats-page-subcopy policy-section-body">{status}</p>
@@ -739,7 +772,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         </section>
       )}
 
-      {showCheckout && (
+      {!billingLoadFailed && showCheckout && (
         <>
           <section className="stats-page-card policy-page-section billing-page-section billing-page-promo">
             <h3 className="policy-section-heading">Have a Promo Code?</h3>
