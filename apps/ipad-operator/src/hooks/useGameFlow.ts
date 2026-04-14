@@ -150,6 +150,21 @@ export function useGameFlow({
     return Boolean(headers.Authorization || headers["x-api-key"]);
   }
 
+  function buildLegacyDashboardApiUrl(rawDashboardUrl: string, apiPath: string): string | null {
+    const trimmed = rawDashboardUrl.trim();
+    if (!trimmed) return null;
+
+    try {
+      const parsed = new URL(trimmed);
+      // Legacy export endpoints are served at the dashboard origin under /api.
+      return new URL(apiPath, `${parsed.origin}/`).toString();
+    } catch {
+      const sanitized = trimmed.replace(/[?#].*$/, "").replace(/\/+$/, "");
+      if (!sanitized) return null;
+      return `${sanitized}${apiPath}`;
+    }
+  }
+
   async function startGame(newGameId?: string) {
     let latest = loadAppData();
     const gid = newGameId ?? latest.gameSetup.gameId;
@@ -385,8 +400,19 @@ export function useGameFlow({
       payload.gameId = appData.gameSetup.statsGameId;
     }
 
+    const ingestUrl = buildLegacyDashboardApiUrl(dashboardUrl, "/api/ingest-game");
+    if (!ingestUrl) {
+      setSubmitMessage("Legacy stats export URL is invalid. Update Settings > Game Setup.");
+      showInlineNotice(
+        "Legacy stats export URL is invalid. Update Settings > Game Setup > Legacy Stats Export URL and retry.",
+        "error"
+      );
+      setSubmitStatus("error");
+      return false;
+    }
+
     try {
-      const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
+      const res = await fetch(ingestUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
         body: JSON.stringify(payload),
@@ -499,11 +525,14 @@ export function useGameFlow({
     const dashboardUrl = appData.gameSetup.dashboardUrl?.trim();
     const savedStatsGameId = appData.gameSetup.statsGameId;
     if (dashboardUrl && savedStatsGameId != null) {
+      const deleteUrl = buildLegacyDashboardApiUrl(dashboardUrl, `/api/games/${savedStatsGameId}`);
       try {
-        await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
-          method: "DELETE",
-          headers: apiKeyHeader(appData.gameSetup),
-        });
+        if (deleteUrl) {
+          await fetch(deleteUrl, {
+            method: "DELETE",
+            headers: apiKeyHeader(appData.gameSetup),
+          });
+        }
       } catch { /* keep discarding locally */ }
     }
 
