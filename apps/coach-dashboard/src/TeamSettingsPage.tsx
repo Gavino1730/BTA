@@ -20,8 +20,11 @@ function normalizeSettingsSection(value: string | null | undefined, fallback: Se
 
   return fallback;
 }
+function navigateWithinCoachApp(path: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
 
-function navigateWithinCoachApp(path: string) {
   if (window.location.pathname === path) {
     window.dispatchEvent(new PopStateEvent("popstate"));
     return;
@@ -30,7 +33,6 @@ function navigateWithinCoachApp(path: string) {
   window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
-
 interface TeamDto {
   id: string;
   name: string;
@@ -190,7 +192,11 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
   );
 }
 
-export function TeamSettingsPage() {
+interface TeamSettingsPageProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
   const activeSchoolId = resolveActiveSchoolId();
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
@@ -202,13 +208,17 @@ export function TeamSettingsPage() {
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    if (typeof window === "undefined") {
+      return "pairing";
+    }
+
     const fromQuery = new URLSearchParams(window.location.search).get("section")
       ?? new URLSearchParams(window.location.search).get("tab");
     if (fromQuery) {
       return normalizeSettingsSection(fromQuery, "pairing");
     }
 
-    const saved = localStorage.getItem("coach:settings-section");
+    const saved = window.localStorage.getItem("coach:settings-section");
     return normalizeSettingsSection(saved, "pairing");
   });
   const [copyConfirmed, setCopyConfirmed] = useState(false);
@@ -330,6 +340,10 @@ export function TeamSettingsPage() {
   }, [connectionCode]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("section") ?? params.get("tab");
     if (!requested) {
@@ -736,7 +750,13 @@ export function TeamSettingsPage() {
           <button
             type="button"
             className="shell-nav-link"
-            onClick={() => navigateWithinCoachApp("/billing")}
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate("/billing");
+                return;
+              }
+              navigateWithinCoachApp("/billing");
+            }}
           >
             Open Billing
           </button>
@@ -1209,7 +1229,13 @@ export function TeamSettingsPage() {
                   <button
                     type="button"
                     className="shell-nav-link"
-                    onClick={() => navigateWithinCoachApp("/billing")}
+                    onClick={() => {
+                      if (onNavigate) {
+                        onNavigate("/billing");
+                        return;
+                      }
+                      navigateWithinCoachApp("/billing");
+                    }}
                   >
                     Open Billing Page
                   </button>
@@ -1232,7 +1258,13 @@ export function TeamSettingsPage() {
                 <button
                   type="button"
                   className="shell-nav-link shell-nav-link-active"
-                  onClick={() => navigateWithinCoachApp("/billing")}
+                  onClick={() => {
+                    if (onNavigate) {
+                      onNavigate("/billing");
+                      return;
+                    }
+                    navigateWithinCoachApp("/billing");
+                  }}
                   disabled={billingLoading}
                 >
                   Open Billing Page
