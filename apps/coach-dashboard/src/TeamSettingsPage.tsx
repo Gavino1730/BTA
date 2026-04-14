@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
+import { EmptyState } from "./EmptyState.js";
 import {
   apiBase,
   apiKeyHeader,
@@ -19,6 +20,17 @@ function normalizeSettingsSection(value: string | null | undefined, fallback: Se
 
   return fallback;
 }
+
+function navigateWithinCoachApp(path: string) {
+  if (window.location.pathname === path) {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    return;
+  }
+
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 interface TeamDto {
   id: string;
   name: string;
@@ -201,6 +213,8 @@ export function TeamSettingsPage() {
   const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
   const [billingStatus, setBillingStatus] = useState("Open Billing to manage your plan, payment method, and invoices.");
   const [billingLoading, setBillingLoading] = useState(false);
+  const [billingLoadFailed, setBillingLoadFailed] = useState(false);
+  const [billingRefreshKey, setBillingRefreshKey] = useState(0);
   const [connectionCode, setConnectionCode] = useState(() => {
     if (typeof window === "undefined") {
       return generateConnectionCode();
@@ -318,6 +332,7 @@ export function TeamSettingsPage() {
 
     async function loadBillingSummary() {
       setBillingLoading(true);
+      setBillingLoadFailed(false);
       setBillingStatus("Loading billing status...");
       try {
         const entitlement = await fetchBillingEntitlement();
@@ -327,6 +342,7 @@ export function TeamSettingsPage() {
 
         setBillingEntitlement(entitlement);
         if (!entitlement) {
+          setBillingLoadFailed(true);
           setBillingStatus("Could not load billing status. Open Billing to retry.");
         } else if (entitlement.accessActive) {
           setBillingStatus("Your subscription is active. Open Billing to manage your subscription details.");
@@ -340,6 +356,7 @@ export function TeamSettingsPage() {
       } catch {
         if (!cancelled) {
           setBillingEntitlement(null);
+          setBillingLoadFailed(true);
           setBillingStatus("Could not load billing status. Open Billing to retry.");
         }
       } finally {
@@ -353,7 +370,7 @@ export function TeamSettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSection]);
+  }, [activeSection, billingRefreshKey]);
   async function saveOrganizationProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!profile?.organizationName?.trim() || !profile.coachName?.trim() || !profile.coachEmail?.trim()) {
@@ -1146,32 +1163,54 @@ export function TeamSettingsPage() {
               <p className="settings-section-desc">Manage your subscription, payment method, invoices, and plan access.</p>
             </div>
           </div>
-          <p className="stats-page-subcopy" style={{ marginTop: 0 }}>
-            {billingStatus}
-          </p>
-          {billingEntitlement ? (
-            <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>
-              Current status: <strong>{billingEntitlement.status}</strong>
-              {" · "}
-              {billingEntitlement.accessActive ? "Access active" : "Access limited"}
-            </p>
-          ) : null}
-          <div className="settings-form-footer" style={{ marginTop: "1rem" }}>
-            <button
-              type="button"
-              className="shell-nav-link shell-nav-link-active"
-              onClick={() => {
-                if (onNavigate) {
-                  onNavigate("/billing");
-                  return;
-                }
-                window.location.assign("/billing");
-              }}
-              disabled={billingLoading}
-            >
-              Open Billing Page
-            </button>
-          </div>
+          {billingLoadFailed ? (
+            <EmptyState
+              title="Billing status unavailable"
+              message={billingStatus}
+              actions={(
+                <>
+                  <button
+                    type="button"
+                    className="shell-nav-link shell-nav-link-active"
+                    onClick={() => setBillingRefreshKey((value) => value + 1)}
+                    disabled={billingLoading}
+                  >
+                    {billingLoading ? "Trying Again..." : "Try Again"}
+                  </button>
+                  <button
+                    type="button"
+                    className="shell-nav-link"
+                    onClick={() => navigateWithinCoachApp("/billing")}
+                  >
+                    Open Billing Page
+                  </button>
+                </>
+              )}
+            />
+          ) : (
+            <>
+              <p className="stats-page-subcopy" style={{ marginTop: 0 }}>
+                {billingStatus}
+              </p>
+              {billingEntitlement ? (
+                <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>
+                  Current status: <strong>{billingEntitlement.status}</strong>
+                  {" · "}
+                  {billingEntitlement.accessActive ? "Access active" : "Access limited"}
+                </p>
+              ) : null}
+              <div className="settings-form-footer" style={{ marginTop: "1rem" }}>
+                <button
+                  type="button"
+                  className="shell-nav-link shell-nav-link-active"
+                  onClick={() => navigateWithinCoachApp("/billing")}
+                  disabled={billingLoading}
+                >
+                  Open Billing Page
+                </button>
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>
