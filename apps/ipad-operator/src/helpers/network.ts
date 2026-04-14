@@ -103,6 +103,10 @@ export function isConnectionReadyForStart(setup: { connectionId?: string; synced
   return Boolean(connectionId) && connectionId === syncedConnectionId;
 }
 
+export function isLegacyStatsExportConfigured(setup: { dashboardUrl?: string }): boolean {
+  return Boolean(setup.dashboardUrl?.trim());
+}
+
 export function buildCoachViewUrl(
   gameId: string,
   setup: {

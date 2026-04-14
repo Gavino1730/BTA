@@ -82,6 +82,8 @@ import {
   resolveRequestTenant,
   resolveSocketTenant
 } from "./tenant-guards.js";
+import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
+import { registerOrgMembersRoutes } from "./routes/org-members-routes.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -616,6 +618,28 @@ function requireOrganizationOwner(req: Request, res: Response): OrganizationMemb
     return null;
   }
   return currentMember;
+}
+
+function requireOrganizationManager(req: Request, res: Response): OrganizationMember | null {
+  const schoolId = getSchoolIdFromRequest(req);
+  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+  if (!currentMember) {
+    res.status(403).json({ error: "Organization membership required" });
+    return null;
+  }
+
+  if (currentMember.role === "player") {
+    res.status(403).json({ error: "Organization manager role required" });
+    return null;
+  }
+
+  return currentMember;
+}
+
+function normalizeMemberRole(value: unknown, fallback: OrganizationMember["role"] = "coach"): OrganizationMember["role"] {
+  return value === "owner" || value === "coach" || value === "analyst" || value === "player"
+    ? value
+    : fallback;
 }
 
 function withSuggestedOnboardingIdentity(req: Request, payload: Record<string, unknown>): Record<string, unknown> {
@@ -2790,173 +2814,238 @@ app.post("/api/onboarding/complete", requireApiKey, requireWriteRole, (req, res)
   });
 });
 
-app.get("/api/org/members", (req, res) => {
+app.post("/api/auth/coach-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
-  res.json({
-    organization: account?.organization ?? null,
-    currentMember,
-    members: getOrganizationMembersByScope({ schoolId }),
-  });
-});
-
-app.post("/api/org/members", requireApiKey, requireWriteRole, async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingOwner = requireOrganizationOwner(req, res);
-  if (!actingOwner) {
-    return;
-  }
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  if (!account) {
-    res.status(400).json({ error: "Complete onboarding before adding organization members" });
+  const actingMember = requireOrganizationManager(req, res);
+  if (!actingMember) {
     return;
   }
 
   const payload = (req.body ?? {}) as Record<string, unknown>;
   const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const fullName = sanitizeTextField(payload.fullName, 120);
-  const role = payload.role === "owner" || payload.role === "coach" || payload.role === "analyst"
-    ? payload.role
-    : "coach";
-  if (!email || !fullName) {
-    res.status(400).json({ error: "fullName and email are required" });
+  const password = String(payload.password ?? "").trim();
+
+  if (!email || !password) {
+    res.status(400).json({ error: "email and password are required" });
     return;
   }
 
-  const member = saveOrganizationMember({
-    organizationId: account.organization.organizationId,
-    fullName,
-    email,
-    role,
-    status: "invited",
-    invitedAtIso: new Date().toISOString(),
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  if (!account || account.role === "player") {
+    res.status(404).json({ error: "Coach account not found" });
+    return;
+  }
+
+  if (account.role === "owner" && actingMember.role !== "owner") {
+    res.status(403).json({ error: "Only organization owners can reset owner passwords" });
+    return;
+  }
+
+  const nextCredentials = hashPassword(password);
+  const savedAccount = saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: nextCredentials.passwordHash,
+    passwordSalt: nextCredentials.passwordSalt,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
   }, { schoolId });
 
-  pruneExpiredInvitationTokens();
-  for (const [token, invitation] of invitationTokens.entries()) {
-    if (invitation.schoolId === schoolId && invitation.memberId === member.memberId) {
-      invitationTokens.delete(token);
-    }
-  }
-
-  const inviteToken = randomBytes(24).toString("hex");
-  const createdAt = Date.now();
-  const organizationName = account.organization.organizationName || buildOnboardingProfileView(schoolId)?.organizationName || schoolId;
-  const invitation: InvitationTokenRecord = {
-    token: inviteToken,
-    schoolId,
-    memberId: member.memberId,
-    email: member.email,
-    fullName: member.fullName,
-    role: member.role,
-    organizationName,
-    createdAt,
-    expiresAt: createdAt + INVITATION_TOKEN_TTL_MS,
-  };
-  invitationTokens.set(inviteToken, invitation);
-
-  let emailDelivery: { delivered: boolean; skipped: boolean; provider: string; reason?: string } | null = null;
-  try {
-    emailDelivery = await deliverInvitationEmail(req, invitation);
-  } catch (error) {
-    console.warn("[realtime-api] Failed to deliver invitation email", error);
-    emailDelivery = {
-      delivered: false,
-      skipped: false,
-      provider: "error",
-      reason: error instanceof Error ? error.message : "Invitation email delivery failed",
-    };
-  }
-
-  res.status(201).json({
-    member,
-    members: getOrganizationMembersByScope({ schoolId }),
-    emailDelivery,
-    invitePath: buildInvitePath(schoolId, inviteToken),
-    ...(EXPOSE_INVITATION_TOKEN ? { inviteToken } : {}),
-    invitedBy: actingOwner.email,
+  res.json({
+    message: "Coach password reset",
+    account: {
+      accountId: savedAccount.accountId,
+      email: savedAccount.email,
+      fullName: savedAccount.fullName,
+      role: savedAccount.role,
+      status: savedAccount.status,
+    },
   });
 });
 
-app.put("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/auth/player-account", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  const actingOwner = requireOrganizationOwner(req, res);
-  if (!actingOwner) {
-    return;
-  }
-
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  if (!account) {
-    res.status(400).json({ error: "Complete onboarding before updating organization members" });
-    return;
-  }
-
-  const memberId = sanitizeTextField(req.params.memberId, 80);
-  const existing = getOrganizationMembersByScope({ schoolId }).find((member) => member.memberId === memberId);
-  if (!existing) {
-    res.status(404).json({ error: "Organization member not found" });
+  const actingMember = requireOrganizationManager(req, res);
+  if (!actingMember) {
     return;
   }
 
   const payload = (req.body ?? {}) as Record<string, unknown>;
-  const fullName = sanitizeTextField(payload.fullName ?? existing.fullName, 120);
-  const role = payload.role === "owner" || payload.role === "coach" || payload.role === "analyst"
-    ? payload.role
-    : existing.role;
-  const status = payload.status === "active" || payload.status === "invited"
-    ? payload.status
-    : existing.status;
+  const playerName = normalizePersonName(payload.playerName);
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const password = String(payload.password ?? "").trim();
 
-  const ownerCount = getOrganizationMembersByScope({ schoolId }).filter((member) => member.role === "owner").length;
-  if (existing.role === "owner" && role !== "owner" && ownerCount <= 1) {
-    res.status(400).json({ error: "At least one organization owner is required" });
+  if (!playerName || !email || !password) {
+    res.status(400).json({ error: "playerName, email, and password are required" });
     return;
   }
 
-  const member = saveOrganizationMember({
-    memberId,
-    organizationId: account.organization.organizationId,
-    authSubject: existing.authSubject,
-    email: existing.email,
-    invitedAtIso: existing.invitedAtIso,
-    joinedAtIso: existing.joinedAtIso,
-    fullName,
-    role,
-    status,
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address" });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  if (getLocalAuthAccountByEmail(email, { schoolId })) {
+    res.status(409).json({ error: "An account with that email already exists" });
+    return;
+  }
+
+  const teams = getRosterTeamsByScope({ schoolId });
+  const record = findPlayerRecord(teams, playerName);
+  if (!record) {
+    res.status(404).json({ error: "Player not found on roster" });
+    return;
+  }
+
+  const { passwordHash, passwordSalt } = hashPassword(password);
+  const account = saveLocalAuthAccount({
+    email,
+    fullName: sanitizeTextField(payload.fullName, 120) || record.player.name,
+    passwordHash,
+    passwordSalt,
+    organizationId: actingMember.organizationId,
+    role: "player",
+    status: "active",
   }, { schoolId });
 
-  res.json({ member, members: getOrganizationMembersByScope({ schoolId }), actingMember: actingOwner });
+  const member = saveOrganizationMember({
+    organizationId: actingMember.organizationId,
+    authSubject: account.accountId,
+    fullName: account.fullName,
+    email: account.email,
+    role: "player",
+    status: "active",
+    joinedAtIso: new Date().toISOString(),
+  }, { schoolId });
+
+  if (record.player.email !== account.email) {
+    const nextTeams = teams.map((team, teamIndex) => teamIndex === record.teamIndex
+      ? {
+        ...team,
+        players: team.players.map((player, playerIndex) => playerIndex === record.playerIndex
+          ? { ...player, email: account.email }
+          : player),
+      }
+      : team);
+    persistSchoolTeams(schoolId, nextTeams);
+  }
+
+  res.status(201).json({
+    message: "Player account created",
+    account: {
+      accountId: account.accountId,
+      email: account.email,
+      fullName: account.fullName,
+      role: account.role,
+      status: account.status,
+    },
+    member,
+  });
 });
 
-app.delete("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {
+app.post("/api/auth/player-account/reset-password", requireApiKey, requireWriteRole, (req, res) => {
   const schoolId = getSchoolIdFromRequest(req);
-  const actingOwner = requireOrganizationOwner(req, res);
-  if (!actingOwner) {
+  const actingMember = requireOrganizationManager(req, res);
+  if (!actingMember) {
     return;
   }
 
-  const memberId = sanitizeTextField(req.params.memberId, 80);
-  const members = getOrganizationMembersByScope({ schoolId });
-  const target = members.find((member) => member.memberId === memberId);
-  if (!target) {
-    res.status(404).json({ error: "Organization member not found" });
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  const password = String(payload.password ?? "").trim();
+
+  if (!email || !password) {
+    res.status(400).json({ error: "email and password are required" });
     return;
   }
 
-  const ownerCount = members.filter((member) => member.role === "owner").length;
-  if (target.role === "owner" && ownerCount <= 1) {
-    res.status(400).json({ error: "At least one organization owner is required" });
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
     return;
   }
 
-  if (target.memberId === actingOwner.memberId) {
-    res.status(400).json({ error: "Owners cannot remove themselves" });
+  const account = getLocalAuthAccountByEmail(email, { schoolId });
+  if (!account || account.role !== "player") {
+    res.status(404).json({ error: "Player account not found" });
     return;
   }
 
-  deleteOrganizationMember(memberId, { schoolId });
-  res.json({ message: "Organization member removed", members: getOrganizationMembersByScope({ schoolId }) });
+  const nextCredentials = hashPassword(password);
+  const savedAccount = saveLocalAuthAccount({
+    accountId: account.accountId,
+    organizationId: account.organizationId,
+    email: account.email,
+    fullName: account.fullName,
+    passwordHash: nextCredentials.passwordHash,
+    passwordSalt: nextCredentials.passwordSalt,
+    role: account.role,
+    status: account.status,
+    lastLoginAtIso: account.lastLoginAtIso,
+  }, { schoolId });
+
+  res.json({
+    message: "Player password reset",
+    account: {
+      accountId: savedAccount.accountId,
+      email: savedAccount.email,
+      fullName: savedAccount.fullName,
+      role: savedAccount.role,
+      status: savedAccount.status,
+    },
+  });
+});
+
+registerOnboardingRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  resolveRequestSchoolId,
+  getSchoolIdFromRequest,
+  getSuggestedCoachIdentity: (req) => buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
+  buildOnboardingProfileView,
+  getOnboardingAccountStateByScope,
+  getPrimaryTeam,
+  withSuggestedOnboardingIdentity,
+  requireOnboardingIdentity,
+  saveOnboardingAccountState,
+  buildOnboardingAccountPayload,
+  ensureAuthenticatedOrganizationMember,
+  ensureOwnerMembership,
+  saveOrganizationProfile,
+  buildOrganizationProfilePayload,
+  buildOrganizationSlug,
+  normalizeNameKey,
+  buildRosterPlayer,
+  upsertPrimaryTeam,
+  persistSchoolTeams,
+  sanitizeTextField,
+  buildTeamAbbreviation,
+});
+
+registerOrgMembersRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getOnboardingAccountStateByScope,
+  ensureAuthenticatedOrganizationMember,
+  requireOrganizationManager,
+  getOrganizationMembersByScope,
+  sanitizeTextField,
+  normalizeMemberRole,
+  saveOrganizationMember,
+  deleteOrganizationMember,
 });
 
 app.get("/api/teams", (req, res) => {

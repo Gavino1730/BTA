@@ -1,0 +1,138 @@
+/* Unified BTA design tokens shared by marketing-site, coach-dashboard, and ipad-operator. */
+:root {
+  /* Background */
+  --bta-bg-base: #0c101a;
+  --bta-bg-elevated: #131828;
+  --bta-bg-panel: #1c2340;
+  --bta-bg-panel-2: #2b335a;
+  --bta-bg-overlay: rgba(28, 35, 64, 0.82);
+  --bta-surface-1: rgba(255, 255, 255, 0.045);
+  --bta-surface-2: rgba(255, 255, 255, 0.075);
+
+  /* Text */
+  --bta-text-primary: #f4f6fb;
+  --bta-text-secondary: #d8ddf0;
+  --bta-text-tertiary: #a5add0;
+  --bta-text-muted: #666c8f;
+
+  /* Accent */
+  --bta-accent-violet: #6e5bff;
+  --bta-accent-violet-strong: #7a69ff;
+  --bta-accent-violet-dark: #4636c9;
+  --bta-accent-violet-soft: rgba(110, 91, 255, 0.16);
+  --bta-accent-cyan: #46d7ff;
+  --bta-accent-cyan-strong: #6de2ff;
+  --bta-accent-cyan-soft: rgba(70, 215, 255, 0.16);
+  --bta-accent-success: #38e39f;
+  --bta-accent-danger: #ff5d73;
+  --bta-accent-warning: #ffb84d;
+  --bta-accent-glow: rgba(70, 215, 255, 0.4);
+  --bta-accent-on: #ffffff;
+
+  /* Semantic aliases */
+  --bta-success: var(--bta-accent-success);
+  --bta-warning: var(--bta-accent-warning);
+  --bta-danger: var(--bta-accent-danger);
+  --bta-info: var(--bta-accent-cyan);
+  --bta-success-soft: rgba(56, 227, 159, 0.16);
+  --bta-warning-soft: rgba(255, 184, 77, 0.18);
+  --bta-danger-soft: rgba(255, 93, 115, 0.16);
+
+  /* Basketball game-state */
+  --bta-make-bg: rgba(16, 185, 129, 0.22);
+  --bta-make-bg-strong: rgba(16, 185, 129, 0.36);
+  --bta-make-bg-soft: rgba(16, 185, 129, 0.1);
+  --bta-make-border: rgba(16, 185, 129, 0.52);
+  --bta-make-text: #6ee7b7;
+  --bta-make-text-soft: #a7f3d0;
+  --bta-miss-bg: rgba(239, 68, 68, 0.2);
+  --bta-miss-bg-strong: rgba(239, 68, 68, 0.32);
+  --bta-miss-bg-soft: rgba(239, 68, 68, 0.08);
+  --bta-miss-border: rgba(239, 68, 68, 0.48);
+  --bta-miss-text: #fca5a5;
+  --bta-miss-text-soft: #fecaca;
+
+  /* Border */
+  --bta-border-soft: #2b335a;
+  --bta-border-strong: #4a588f;
+  --bta-ring: rgba(70, 215, 255, 0.54);
+
+  /* Radius */
+  --bta-radius-xs: 0.25rem;
+  --bta-radius-sm: 0.375rem;
+  --bta-radius-md: 0.625rem;
+  --bta-radius-lg: 1rem;
+  --bta-radius-xl: 1.125rem;
+  --bta-radius-full: 9999px;
+
+  /* Shadow */
+  --bta-shadow-sm: 0 4px 12px rgba(5, 8, 22, 0.32);
+  --bta-shadow-md: 0 14px 34px rgba(5, 8, 22, 0.44);
+  --bta-shadow-lg: 0 28px 64px rgba(5, 8, 22, 0.52);
+  --bta-shadow-xl: 0 38px 96px rgba(4, 6, 16, 0.62);
+
+  /* Typography */
+  --bta-font-body: "Inter", system-ui, sans-serif;
+  --bta-font-display: "Syne", "Inter", sans-serif;
+  --bta-font-mono: "JetBrains Mono", monospace;
+
+  /* Motion and layering */
+  --bta-motion-fast: 120ms ease;
+  --bta-motion-standard: 180ms ease;
+  --bta-motion-slow: 300ms ease;
+  --bta-z-base: 1;
+  --bta-z-overlay: 100;
+  --bta-z-modal: 200;
+  --bta-z-toast: 300;
+  --bta-z-badge: 9999;
+
+  /* Legacy aliases for gradual migration */
+  --brand-primary: var(--bta-accent-violet);
+  --brand-primary-strong: var(--bta-accent-violet-strong);
+  --brand-primary-deep: var(--bta-accent-violet-dark);
+  --brand-accent: var(--bta-accent-cyan);
+  --brand-accent-strong: var(--bta-accent-cyan-strong);
+  --bg: var(--bta-bg-base);
+  --bg-elevated: var(--bta-bg-elevated);
+  --bg-layer-1: var(--bta-bg-panel);
+  --bg-layer-2: var(--bta-bg-panel-2);
+  --surface: var(--bta-bg-elevated);
+  --surface-2: var(--bta-surface-1);
+  --surface-3: var(--bta-surface-2);
+  --text: var(--bta-text-primary);
+  --text-muted: var(--bta-text-secondary);
+  --text-dim: var(--bta-text-tertiary);
+  --border: var(--bta-border-soft);
+  --border-hi: var(--bta-border-strong);
+  --color-success: var(--bta-success);
+  --color-warning: var(--bta-warning);
+  --color-danger: var(--bta-danger);
+  --color-info: var(--bta-info);
+  --teal: var(--bta-accent-cyan);
+  --teal-soft: var(--bta-accent-cyan-soft);
+  --gold: var(--bta-warning);
+  --gold-soft: var(--bta-warning-soft);
+  --red: var(--bta-danger);
+  --red-soft: var(--bta-danger-soft);
+  --radius-sm: var(--bta-radius-sm);
+  --radius-md: var(--bta-radius-md);
+  --radius-lg: var(--bta-radius-lg);
+  --radius-xl: var(--bta-radius-xl);
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-slow: 300ms;
+  --font-ui: var(--bta-font-body);
+  --font-display: var(--bta-font-display);
+  --font-mono: var(--bta-font-mono);
+
+  /* Shared control defaults */
+  --control-bg: rgba(255, 255, 255, 0.05);
+  --control-bg-hover: rgba(255, 255, 255, 0.08);
+  --control-bg-active: rgba(255, 255, 255, 0.11);
+  --control-border: rgba(74, 88, 143, 0.58);
+  --control-border-hover: rgba(70, 215, 255, 0.54);
+  --control-ring: var(--bta-ring);
+  --control-text: var(--bta-text-primary);
+  --control-placeholder: var(--bta-text-tertiary);
+  --control-disabled: 0.52;
+}

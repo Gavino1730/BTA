@@ -8,8 +8,8 @@
    ─────────────────────────────────────────────────────────────────────────── */
 @layer base, layout, components, utilities;
 
-/* ── Coach Dashboard token overrides (layered on top of courtside-theme.css) ── */
-/* courtside-theme.css is imported first in main.tsx and defines all --bta-* tokens.    Legacy variable names used throughout this file are aliased here to --bta-* values.    Migrate callsites to --bta-* over time. */
+/* ── Coach Dashboard token overrides (layered on top of @bta/ui-tokens) ── */
+/* @bta/ui-tokens/tokens.css is imported first in main.tsx and defines all --bta-* tokens.    Legacy variable names used throughout this file are aliased here to --bta-* values.    Migrate callsites to --bta-* over time. */
 :root {
   /* Brand & accent */
   --accent-primary:        var(--bta-accent-violet);
@@ -32,34 +32,6 @@
   --text:       var(--bta-text-primary);
   --text-muted: rgba(244, 246, 251, 0.68);
   --text-dim:   rgba(244, 246, 251, 0.45);
-}
-
-/* Always-on brand marker with explicit image sizing. */
-.global-brand-badge {
-  position: fixed;
-  top: calc(env(safe-area-inset-top) + 0.5rem);
-  left: calc(env(safe-area-inset-left) + 0.55rem);
-  z-index: 9999;
-  pointer-events: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.24rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.13);
-  background: rgba(8,12,24,0.62);
-  backdrop-filter: blur(8px);
-  color: rgba(232,234,240,0.66);
-  font-size: 0.56rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-
-.global-brand-badge img {
-  height: 0.76rem;
-  width: auto;
-  display: block;
 }
 
 /* ---- Lineup Unit +/- Card ---- */

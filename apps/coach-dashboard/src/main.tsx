@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { UnifiedCoachApp } from "./UnifiedCoachApp.js";
-import "../../shared-ui/courtside-theme.css";
+import "@bta/ui-tokens/tokens.css";
 import "../../shared-ui/components.css";
 // App-specific styles — split from the former monolithic styles.css
 import "./styles/base.css";       // tokens, reset, globals, header, shared components

@@ -685,7 +685,7 @@
 }
 
 .setup-page h1 {
-  font-family: var(--font-display, "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif);
+  font-family: var(--font-display, "Syne", "Inter", "Arial Narrow", sans-serif);
   color: var(--text, #f4f6fb);
 }
 
