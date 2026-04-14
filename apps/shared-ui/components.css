@@ -1,7 +1,7 @@
 /* ============================================================
    BTA Shared Component Styles
    Consumed by coach-dashboard and ipad-operator.
-   Requires courtside-theme.css to be loaded first (for --bta-* tokens).
+  Requires @bta/ui-tokens/tokens.css to be loaded first (for --bta-* tokens).
    ============================================================ */
 
 /* ──────────────────────────────────────────

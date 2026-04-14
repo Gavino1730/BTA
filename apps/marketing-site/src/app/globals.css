@@ -1,50 +1,12 @@
 @import "tailwindcss";
+@import "@bta/ui-tokens/tokens.css";
 
 /* ============================================================
    BTA Marketing Site — Design Tokens
-   Values are kept in sync with apps/shared-ui/courtside-theme.css.
-   The --bta-* canonical names are defined here too so components
-   can reference them directly without importing the shared file.
+  Canonical --bta-* tokens come from @bta/ui-tokens/tokens.css.
+  This file maps local aliases and shadcn semantic vars to --bta-*.
    ============================================================ */
 :root {
-  /* ── Canonical --bta-* tokens (aligned with courtside-theme.css) ── */
-  --bta-bg-base:      #0d1020;
-  --bta-bg-elevated:  #151a30;
-  --bta-bg-panel:     #1c2340;
-  --bta-bg-panel-2:   #2b335a;
-  --bta-bg-overlay:   rgba(28, 35, 64, 0.84);
-
-  --bta-text-primary:   #f7f8fc;
-  --bta-text-secondary: #d8ddf0;
-  --bta-text-tertiary:  #a5add0;
-  --bta-text-muted:     #666c8f;
-
-  --bta-accent-violet:       #6e5bff;
-  --bta-accent-violet-dark:  #4636c9;
-  --bta-accent-cyan:         #46d7ff;
-  --bta-accent-glow:         rgba(70, 215, 255, 0.4);
-  --bta-accent-on:           #ffffff;
-  --bta-success:             #38e39f;
-  --bta-warning:             #ffb84d;
-  --bta-danger:              #ff5d73;
-
-  --bta-border-soft:   #2b335a;
-  --bta-border-strong: #4a588f;
-  --bta-ring:          rgba(70, 215, 255, 0.5);
-
-  --bta-shadow-md: 0 14px 34px rgba(5, 8, 22, 0.44);
-  --bta-shadow-lg: 0 28px 64px rgba(5, 8, 22, 0.52);
-  --bta-shadow-xl: 0 38px 96px rgba(4, 6, 16, 0.62);
-
-  --bta-radius-sm:   0.5rem;
-  --bta-radius-md:   0.8rem;
-  --bta-radius-lg:   1.1rem;
-  --bta-radius-xl:   1.5rem;
-
-  --bta-font-body:    "Inter", "Segoe UI", system-ui, sans-serif;
-  --bta-font-display: "Syne", "Inter", system-ui, sans-serif;
-  --bta-font-mono:    "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-
   /* ── Marketing-site local aliases (component callsites use these) ── */
   --bg-base:      var(--bta-bg-base);
   --bg-elevated:  var(--bta-bg-elevated);

@@ -109,6 +109,7 @@ import { createRateLimitMiddleware, withAsyncRoute } from "./middleware/http-hel
 import { registerAdminRoutes, registerHealthRoute } from "./routes/system-routes.js";
 import { registerCoachCatchAllRoute, registerCoachStaticRoutes } from "./routes/coach-shell-routes.js";
 import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
+import { registerOrgMembersRoutes } from "./routes/org-members-routes.js";
 import { buildTeamAbbreviation, normalizeNameKey, normalizePersonName } from "./lib/text-helpers.js";
 
 export { isCorsOriginAllowed };
@@ -3846,126 +3847,18 @@ registerOnboardingRoutes(app, {
   buildTeamAbbreviation,
 });
 
-app.get("/api/org/members", (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  const currentMember = ensureAuthenticatedOrganizationMember(req, schoolId);
-  res.json({
-    organization: account?.organization ?? null,
-    currentMember,
-    members: getOrganizationMembersByScope({ schoolId }),
-  });
-});
-
-app.post("/api/org/members", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingMember = requireOrganizationManager(req, res);
-  if (!actingMember) {
-    return;
-  }
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  if (!account) {
-    res.status(400).json({ error: "Complete onboarding before adding organization members" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  const fullName = sanitizeTextField(payload.fullName, 120);
-  const role = normalizeMemberRole(payload.role, "coach");
-  if (!email || !fullName) {
-    res.status(400).json({ error: "fullName and email are required" });
-    return;
-  }
-
-  const member = saveOrganizationMember({
-    organizationId: actingMember.organizationId || account.organization.organizationId,
-    fullName,
-    email,
-    role,
-    status: "invited",
-    invitedAtIso: new Date().toISOString(),
-  }, { schoolId });
-
-  res.status(201).json({ member, members: getOrganizationMembersByScope({ schoolId }) });
-});
-
-app.put("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingMember = requireOrganizationManager(req, res);
-  if (!actingMember) {
-    return;
-  }
-
-  const account = getOnboardingAccountStateByScope({ schoolId });
-  if (!account) {
-    res.status(400).json({ error: "Complete onboarding before updating organization members" });
-    return;
-  }
-
-  const memberId = sanitizeTextField(req.params.memberId, 80);
-  const existing = getOrganizationMembersByScope({ schoolId }).find((member) => member.memberId === memberId);
-  if (!existing) {
-    res.status(404).json({ error: "Organization member not found" });
-    return;
-  }
-
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const fullName = sanitizeTextField(payload.fullName ?? existing.fullName, 120);
-  const role = normalizeMemberRole(payload.role, existing.role);
-  const status = payload.status === "active" || payload.status === "invited"
-    ? payload.status
-    : existing.status;
-
-  const ownerCount = getOrganizationMembersByScope({ schoolId }).filter((member) => member.role === "owner").length;
-  if (existing.role === "owner" && role !== "owner" && ownerCount <= 1) {
-    res.status(400).json({ error: "At least one organization owner is required" });
-    return;
-  }
-
-  const member = saveOrganizationMember({
-    memberId,
-    organizationId: actingMember.organizationId || account.organization.organizationId,
-    authSubject: existing.authSubject,
-    email: existing.email,
-    invitedAtIso: existing.invitedAtIso,
-    joinedAtIso: existing.joinedAtIso,
-    fullName,
-    role,
-    status,
-  }, { schoolId });
-
-  res.json({ member, members: getOrganizationMembersByScope({ schoolId }), actingMember });
-});
-
-app.delete("/api/org/members/:memberId", requireApiKey, requireWriteRole, (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  const actingMember = requireOrganizationManager(req, res);
-  if (!actingMember) {
-    return;
-  }
-
-  const memberId = sanitizeTextField(req.params.memberId, 80);
-  const members = getOrganizationMembersByScope({ schoolId });
-  const target = members.find((member) => member.memberId === memberId);
-  if (!target) {
-    res.status(404).json({ error: "Organization member not found" });
-    return;
-  }
-
-  const ownerCount = members.filter((member) => member.role === "owner").length;
-  if (target.role === "owner" && ownerCount <= 1) {
-    res.status(400).json({ error: "At least one organization owner is required" });
-    return;
-  }
-
-  if (target.memberId === actingMember.memberId) {
-    res.status(400).json({ error: "Members cannot remove themselves" });
-    return;
-  }
-
-  deleteOrganizationMember(memberId, { schoolId });
-  res.json({ message: "Organization member removed", members: getOrganizationMembersByScope({ schoolId }) });
+registerOrgMembersRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getSchoolIdFromRequest,
+  getOnboardingAccountStateByScope,
+  ensureAuthenticatedOrganizationMember,
+  requireOrganizationManager,
+  getOrganizationMembersByScope,
+  sanitizeTextField,
+  normalizeMemberRole,
+  saveOrganizationMember,
+  deleteOrganizationMember,
 });
 
 app.get("/api/billing/entitlement", requireApiKey, (req, res) => {

@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App.js";
 import { initSupabaseSessionRefresh } from "./supabase/client.js";
-import "../../shared-ui/courtside-theme.css";
+import "@bta/ui-tokens/tokens.css";
 import "../../shared-ui/components.css";
 // App-specific styles — split from the former monolithic styles.css
 import "./styles/base.css";     // layer declaration, reset, iPad globals

@@ -8,8 +8,8 @@
    ─────────────────────────────────────────────────────────────────────────── */
 @layer base, layout, components, utilities;
 
-/* ── Coach Dashboard token overrides (layered on top of courtside-theme.css) ── */
-/* courtside-theme.css is imported first in main.tsx and defines all --bta-* tokens.    Legacy variable names used throughout this file are aliased here to --bta-* values.    Migrate callsites to --bta-* over time. */
+/* ── Coach Dashboard token overrides (layered on top of @bta/ui-tokens) ── */
+/* @bta/ui-tokens/tokens.css is imported first in main.tsx and defines all --bta-* tokens.    Legacy variable names used throughout this file are aliased here to --bta-* values.    Migrate callsites to --bta-* over time. */
 :root {
   /* Brand & accent */
   --accent-primary:        var(--bta-accent-violet);

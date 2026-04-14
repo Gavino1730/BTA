@@ -23,7 +23,7 @@
   }
 }
 
-/* ── iPad Operator token overrides (layered on top of courtside-theme.css) ── */
+/* ── iPad Operator token overrides (layered on top of @bta/ui-tokens) ── */
 :root {
   font-family: var(--bta-font-body);
   background: var(--bta-bg-base);

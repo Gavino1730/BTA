@@ -166,7 +166,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
             </p>
           </div>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <form className="auth-form auth-login-form" onSubmit={handleSubmit}>
             <label className="auth-field">
               <span>Coach Email</span>
               <input
@@ -209,11 +209,13 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
             </button>
           </form>
 
-          <p className="auth-status auth-login-status" aria-live="polite">{status}</p>
+          <div className="auth-login-assist">
+            <p className="auth-status auth-login-status" aria-live="polite">{status}</p>
 
-          <div className="auth-link-row">
-            <button type="button" className="auth-secondary-button" onClick={onAcceptInvite}>Accept Team Invite</button>
-            <button type="button" className="auth-secondary-button" onClick={onVerifyEmail}>Verify Email</button>
+            <div className="auth-link-row auth-login-quick-links">
+              <button type="button" className="auth-secondary-button" onClick={onAcceptInvite}>Accept Team Invite</button>
+              <button type="button" className="auth-secondary-button" onClick={onVerifyEmail}>Verify Email</button>
+            </div>
           </div>
         </section>
 
