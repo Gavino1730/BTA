@@ -24,6 +24,31 @@ export const DEFAULT_SCHOOL_ID = (import.meta.env.VITE_SCHOOL_ID || "")
   .toString()
   .trim();
 
+const JWT_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export function extractBearerTokenValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(/^Bearer\s+/i, "").trim() || undefined;
+}
+
+export function isBearerTokenLike(value: string | undefined): boolean {
+  const token = extractBearerTokenValue(value);
+  if (!token) {
+    return false;
+  }
+
+  if (token.startsWith("bta.")) {
+    return true;
+  }
+
+  const jwtParts = token.split(".");
+  return jwtParts.length === 3 && jwtParts.every((part) => JWT_SEGMENT_PATTERN.test(part) && part.length > 0);
+}
+
 export function buildAuthHeaders(
   setup: { apiKey?: string; schoolId?: string },
   options?: { withJson?: boolean; allowBearerToken?: boolean }
@@ -37,8 +62,9 @@ export function buildAuthHeaders(
     headers["Content-Type"] = "application/json";
   }
   if (setup.apiKey) {
-    if (options?.allowBearerToken && setup.apiKey.startsWith("bta.")) {
-      headers["Authorization"] = `Bearer ${setup.apiKey}`;
+    const bearerToken = extractBearerTokenValue(setup.apiKey);
+    if (options?.allowBearerToken && isBearerTokenLike(setup.apiKey) && bearerToken) {
+      headers["Authorization"] = `Bearer ${bearerToken}`;
     } else {
       headers["x-api-key"] = setup.apiKey;
     }

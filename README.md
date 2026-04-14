@@ -1,16 +1,6 @@
-# BTA Courtside
+# BTA Platform
 
-BTA Courtside is a realtime basketball intelligence platform for high school programs, with deterministic game-state replay, live operator capture, coach-facing dashboards, and rules-based AI insights.
-
-BTA stands for Beyond the Arc.
-
-## Recent updates (unreleased)
-
-- Organization member invite APIs now report email delivery status and warning details for disabled/failed delivery states.
-- Coach dashboard member management now shows invite delivery outcomes and supports resend email for invited members.
-- iPad operator settings now focus on operator-managed configuration, with team/opponent setup owned by the coach dashboard.
-- Billing checkout session creation now uses a standardized professional checkout option set.
-- Marketing site branding now references `brand-icon.png` in top nav and footer.
+Realtime basketball platform for high school programs, with deterministic game-state replay, live operator capture, coach-facing dashboards, and rules-based AI insights.
 
 ## What this repo includes
 
@@ -66,22 +56,19 @@ npm run dev:all
 - `npm run dev:coach`: Start coach dashboard (port 5173)
 - `npm run dev:operator`: Start iPad operator app (port 5174)
 - `npm run smoke-test`: Run smoke test script
-- `npm run stress-test`: Run API stress simulation script
-- `npm run test:full-sim`: Run full simulation (E2E fake game + stress test)
 - `npm run audit:ui`: Run UI audit script
 - `npm run validate:env`: Validate API environment configuration
 
-### Full Simulation Options
+## Transactional email
 
-Use `npm run test:full-sim -- --help` to see options.
+The realtime API can now send transactional emails for coach invites and self-service password resets.
 
-Examples:
+- Set `BTA_EMAIL_PROVIDER=resend` to enable delivery through Resend.
+- Set `RESEND_API_KEY` with your Resend API key.
+- Set `BTA_EMAIL_FROM` to the verified sender address, for example `BTA <no-reply@yourdomain.com>`.
+- Optionally set `COACH_DASHBOARD_ORIGIN` so invite and reset links always point at the correct deployed coach app origin.
 
-```bash
-npm run test:full-sim -- --games 8 --events 80 --concurrency 4
-npm run test:full-sim -- --attempts 3 --retry-delay-ms 1000 --wait-timeout-ms 240000 --games 4 --events 60 --concurrency 2
-npm run test:full-sim -- --report-json artifacts/full-sim-last.json --games 2 --events 10 --concurrency 2
-```
+When email delivery is not configured, the API still creates invite/reset tokens in non-production environments so you can test the flow locally.
 
 ## Reliability guardrails
 

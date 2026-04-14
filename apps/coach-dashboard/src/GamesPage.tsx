@@ -22,13 +22,6 @@ interface GameTeamStats {
 interface PlayerStat {
   name?: string;
   number?: string | number;
-  pts?: number;
-  fg?: number;
-  fga?: number;
-  fg3?: number;
-  fg3a?: number;
-  ft?: number;
-  fta?: number;
   fg_made?: number;
   fg_att?: number;
   fg3_made?: number;
@@ -55,7 +48,6 @@ interface GameSummary {
   opp_score: number;
   team_stats?: GameTeamStats;
   player_stats?: PlayerStat[];
-  coach_notes?: string;
 }
 
 interface LiveInsightItem {
@@ -88,7 +80,6 @@ type StatKey = (typeof STAT_COLS)[number]["key"];
 interface EditPlayerRow {
   name: string;
   number: string;
-  pts?: number;
   fg_made: number; fg_att: number;
   fg3_made: number; fg3_att: number;
   ft_made: number; ft_att: number;
@@ -98,13 +89,10 @@ interface EditPlayerRow {
 }
 
 function emptyRow(): EditPlayerRow {
-  return { name: "", number: "", pts: undefined, fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0, ft_made: 0, ft_att: 0, oreb: 0, dreb: 0, asst: 0, stl: 0, blk: 0, to: 0, fouls: 0, plus_minus: 0 };
+  return { name: "", number: "", fg_made: 0, fg_att: 0, fg3_made: 0, fg3_att: 0, ft_made: 0, ft_att: 0, oreb: 0, dreb: 0, asst: 0, stl: 0, blk: 0, to: 0, fouls: 0, plus_minus: 0 };
 }
 
 function rowPts(r: EditPlayerRow): number {
-  if (Number.isFinite(r.pts)) {
-    return Math.max(0, Number(r.pts));
-  }
   return ((r.fg_made - r.fg3_made) * 2) + (r.fg3_made * 3) + r.ft_made;
 }
 function rowReb(r: EditPlayerRow): number {
@@ -114,10 +102,9 @@ function rowReb(r: EditPlayerRow): number {
 function toEditRow(p: PlayerStat): EditPlayerRow {
   return {
     name: String(p.name ?? ""), number: String(p.number ?? ""),
-    pts: Number.isFinite(Number(p.pts)) ? Number(p.pts) : undefined,
-    fg_made: Number(p.fg_made ?? p.fg ?? 0), fg_att: Number(p.fg_att ?? p.fga ?? 0),
-    fg3_made: Number(p.fg3_made ?? p.fg3 ?? 0), fg3_att: Number(p.fg3_att ?? p.fg3a ?? 0),
-    ft_made: Number(p.ft_made ?? p.ft ?? 0), ft_att: Number(p.ft_att ?? p.fta ?? 0),
+    fg_made: Number(p.fg_made ?? 0), fg_att: Number(p.fg_att ?? 0),
+    fg3_made: Number(p.fg3_made ?? 0), fg3_att: Number(p.fg3_att ?? 0),
+    ft_made: Number(p.ft_made ?? 0), ft_att: Number(p.ft_att ?? 0),
     oreb: Number(p.oreb ?? 0), dreb: Number(p.dreb ?? 0),
     asst: Number(p.asst ?? 0), stl: Number(p.stl ?? 0), blk: Number(p.blk ?? 0),
     to: Number(p.to ?? 0), fouls: Number(p.fouls ?? 0), plus_minus: Number(p.plus_minus ?? 0),
@@ -223,52 +210,6 @@ function computeRecordAfterGame(games: GameSummary[], gameId: string | number): 
   return null;
 }
 
-function formatBoxScoreForClipboard(input: {
-  gameId: string | number;
-  date: string;
-  location: string;
-  opponent: string;
-  teamName: string;
-  vcScore: number;
-  oppScore: number;
-  resultCode: string;
-  teamStats: Required<GameTeamStats>;
-  playerRows: EditPlayerRow[];
-  coachNotes: string;
-}): string {
-  const locationLabel = input.location === "away" ? "Away" : input.location === "neutral" ? "Neutral" : "Home";
-  const lines: string[] = [
-    `${input.teamName} ${input.vcScore} - ${input.oppScore} ${input.opponent}`,
-    `Result: ${input.resultCode} | ${locationLabel} | ${formatDateDisplay(input.date)} | Game #${input.gameId}`,
-    "",
-    "Team Stats",
-    `FG ${input.teamStats.fg}/${input.teamStats.fga} (${formatPct(pctValue(input.teamStats.fg, input.teamStats.fga))})`,
-    `3PT ${input.teamStats.fg3}/${input.teamStats.fg3a} (${formatPct(pctValue(input.teamStats.fg3, input.teamStats.fg3a))})`,
-    `FT ${input.teamStats.ft}/${input.teamStats.fta} (${formatPct(pctValue(input.teamStats.ft, input.teamStats.fta))})`,
-    `REB ${input.teamStats.reb} (OR ${input.teamStats.oreb}, DR ${input.teamStats.dreb})`,
-    `AST ${input.teamStats.asst} | TO ${input.teamStats.to} | STL ${input.teamStats.stl} | BLK ${input.teamStats.blk} | PF ${input.teamStats.fouls}`,
-    "",
-    "Player Stats",
-  ];
-
-  const players = input.playerRows.filter((row) => row.name.trim().length > 0);
-  if (players.length === 0) {
-    lines.push("No player stats recorded.");
-  } else {
-    for (const row of players) {
-      lines.push(
-        `${row.number ? `#${row.number} ` : ""}${row.name}: ${rowPts(row)} pts, ${rowReb(row)} reb, ${row.asst} ast, FG ${row.fg_made}/${row.fg_att}, 3PT ${row.fg3_made}/${row.fg3_att}, FT ${row.ft_made}/${row.ft_att}`
-      );
-    }
-  }
-
-  if (input.coachNotes.trim()) {
-    lines.push("", "Coach Notes", input.coachNotes.trim());
-  }
-
-  return lines.join("\n");
-}
-
 function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initialMode = "view" }: { game: GameSummary; games: GameSummary[]; teamName: string; onClose: () => void; onSaved: (g: GameSummary) => void; onDeleted: (gameId: string | number) => void; initialMode?: "view" | "edit" }) {
   const [mode, setMode] = useState<"view" | "edit">(initialMode);
   const [date, setDate] = useState(game.date ?? "");
@@ -281,10 +222,8 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
       ? game.player_stats.map(toEditRow)
       : [emptyRow()]
   );
-  const [coachNotes, setCoachNotes] = useState(game.coach_notes ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [copyStatus, setCopyStatus] = useState("");
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [boxMode, setBoxMode] = useState<"basic" | "advanced">("basic");
@@ -380,15 +319,10 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
   }, [game.gameId]);
 
   function setField(i: number, key: keyof EditPlayerRow, val: string) {
-    const scoringKeys: Array<keyof EditPlayerRow> = ["fg_made", "fg3_made", "ft_made"];
     setRows(prev => prev.map((r, idx) => {
       if (idx !== i) return r;
       if (key === "name" || key === "number") return { ...r, [key]: val };
-      const next = { ...r, [key]: Math.max(key === "plus_minus" ? -99 : 0, parseInt(val, 10) || 0) };
-      if (scoringKeys.includes(key)) {
-        next.pts = undefined;
-      }
-      return next;
+      return { ...r, [key]: Math.max(key === "plus_minus" ? -99 : 0, parseInt(val, 10) || 0) };
     }));
   }
 
@@ -402,7 +336,6 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
         opp_score: Number(oppScore) || 0,
         team_stats: ts,
         player_stats: namedRows.map(r => ({ ...r, reb: rowReb(r), pts: rowPts(r) })),
-        coach_notes: coachNotes.trim() || undefined,
       };
       const res = await fetch(`${apiBase}/api/games/${encodeURIComponent(String(game.gameId))}`, {
         method: "PUT",
@@ -448,42 +381,6 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
     }
   }
 
-  async function handleCopyBoxScore() {
-    const text = formatBoxScoreForClipboard({
-      gameId: game.gameId,
-      date,
-      location,
-      opponent,
-      teamName: ourTeamName,
-      vcScore: Number(vcScore) || 0,
-      oppScore: Number(oppScore) || 0,
-      resultCode,
-      teamStats: ts,
-      playerRows: rows,
-      coachNotes,
-    });
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
-      }
-      setCopyStatus("Box score copied.");
-      window.setTimeout(() => setCopyStatus(""), 1800);
-    } catch {
-      setCopyStatus("Could not copy. Please try again.");
-    }
-  }
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -503,29 +400,24 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
             <h2 style={{ margin: "0.2rem 0 0" }}>{location === "away" ? "@" : "vs"} {opponent}</h2>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="button" onClick={onClose} className="bta-btn bta-btn-ghost bta-btn-sm">Close</button>
+            <button type="button" onClick={onClose} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "var(--text-muted)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>Close</button>
             {!isEditing && (
-              <button type="button" onClick={() => void handleCopyBoxScore()} className="bta-btn bta-btn-secondary bta-btn-sm">
-                Copy Box Score
-              </button>
-            )}
-            {!isEditing && (
-              <button type="button" onClick={() => setMode("edit")} className="bta-btn bta-btn-primary bta-btn-sm">
+              <button type="button" onClick={() => setMode("edit")} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1rem", cursor: "pointer", fontWeight: 600 }}>
                 Edit
               </button>
             )}
             {!isEditing && (
-              <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="bta-btn bta-btn-danger bta-btn-sm">
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} style={{ background: "transparent", border: "1px solid rgba(248,113,113,0.25)", color: "rgba(248,113,113,0.95)", borderRadius: 8, padding: "0.45rem 1rem", cursor: deleting ? "default" : "pointer", fontWeight: 600, opacity: deleting ? 0.75 : 1 }}>
                 {deleting ? "Deleting..." : "Delete Game"}
               </button>
             )}
             {isEditing && (
-              <button type="button" onClick={() => setMode("view")} className="bta-btn bta-btn-secondary bta-btn-sm">
+              <button type="button" onClick={() => setMode("view")} style={{ background: "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer" }}>
                 Back to View
               </button>
             )}
             {isEditing && (
-              <button type="button" onClick={() => void handleSave()} disabled={saving} className="bta-btn bta-btn-primary bta-btn-sm">
+              <button type="button" onClick={() => void handleSave()} disabled={saving} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 8, padding: "0.45rem 1.1rem", cursor: saving ? "default" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             )}
@@ -533,9 +425,8 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
         </div>
 
         <div style={{ padding: "1.1rem 1.4rem" }}>
-          {copyStatus && <p className={copyStatus.startsWith("Could not") ? "bta-status bta-status-error" : "bta-status bta-status-success"} style={{ marginBottom: "0.75rem" }}>{copyStatus}</p>}
-          {saveError && <p className="bta-status bta-status-error" style={{ marginBottom: "0.75rem" }}>{saveError}</p>}
-          {deleteError && <p className="bta-status bta-status-error" style={{ marginBottom: "0.75rem" }}>{deleteError}</p>}
+          {saveError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{saveError}</p>}
+          {deleteError && <p style={{ color: "var(--red)", marginBottom: "0.75rem" }}>{deleteError}</p>}
 
           {isEditing ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.65rem", marginBottom: "1rem" }}>
@@ -672,37 +563,7 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
                   </div>
                 </article>
               </section>
-
-              {/* Coach Notes (visible to players) */}
-              {coachNotes.trim() && (
-                <section style={{ margin: "1.1rem 0 0" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.55rem" }}>
-                    <h3 style={{ margin: 0, fontSize: "1rem" }}>Coach Notes</h3>
-                    <span style={{ fontSize: "0.71rem", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Visible to players</span>
-                  </div>
-                  <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.9rem 1rem", whiteSpace: "pre-wrap", lineHeight: 1.65, color: "var(--text)", fontSize: "0.9rem" }}>
-                    {coachNotes}
-                  </div>
-                </section>
-              )}
             </>
-          )}
-
-          {/* Coach Notes edit field */}
-          {isEditing && (
-            <div style={{ margin: "0 0 1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
-                <span style={{ fontSize: "0.72rem", textTransform: "uppercase", color: "var(--text-muted)" }}>Coach Notes <em style={{ fontStyle: "normal", opacity: 0.7 }}>(visible to players)</em></span>
-                <span style={{ fontSize: "0.7rem", color: coachNotes.length > 1900 ? "var(--red)" : "var(--text-muted)" }}>{coachNotes.length}/2000</span>
-              </div>
-              <textarea
-                value={coachNotes}
-                onChange={e => setCoachNotes(e.target.value.slice(0, 2000))}
-                placeholder="Add game notes, strategy reminders, or feedback for your players..."
-                rows={5}
-                style={{ ...inputSt, resize: "vertical", minHeight: 100, fontFamily: "inherit", lineHeight: 1.6 }}
-              />
-            </div>
           )}
 
           {mismatch && <p style={{ color: "var(--red)", fontSize: "0.83rem", marginBottom: "0.75rem" }}>Player totals ({playerPts}) don't match team score ({vcScore}).</p>}
@@ -713,12 +574,12 @@ function GameModal({ game, games, teamName, onClose, onSaved, onDeleted, initial
             <div style={{ display: "flex", gap: "0.45rem" }}>
               {!isEditing && (
                 <>
-                  <button type="button" onClick={() => setBoxMode("basic")} className={`bta-btn bta-btn-sm ${boxMode === "basic" ? "bta-btn-primary" : "bta-btn-ghost"}`}>Basic Stats</button>
-                  <button type="button" onClick={() => setBoxMode("advanced")} className={`bta-btn bta-btn-sm ${boxMode === "advanced" ? "bta-btn-primary" : "bta-btn-ghost"}`}>Advanced Stats</button>
+                  <button type="button" onClick={() => setBoxMode("basic")} style={{ background: boxMode === "basic" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Basic Stats</button>
+                  <button type="button" onClick={() => setBoxMode("advanced")} style={{ background: boxMode === "advanced" ? "var(--teal-soft)" : "transparent", border: "1px solid var(--border-hi)", color: "var(--text)", borderRadius: 7, padding: "0.34rem 0.7rem", cursor: "pointer", fontSize: "0.8rem" }}>Advanced Stats</button>
                 </>
               )}
               {isEditing && (
-                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} className="bta-btn bta-btn-primary bta-btn-sm">+ Add Row</button>
+                <button type="button" onClick={() => setRows(p => [...p, emptyRow()])} style={{ background: "var(--teal)", border: "none", color: "#fff", borderRadius: 7, padding: "0.38rem 0.8rem", cursor: "pointer", fontSize: "0.83rem" }}>+ Add Row</button>
               )}
             </div>
           </div>
@@ -805,47 +666,32 @@ function compareGamesMostRecent(left: GameSummary, right: GameSummary): number {
   return String(right.gameId).localeCompare(String(left.gameId));
 }
 
-function openSettingsPage(): void {
-  window.history.pushState({}, "", "/stats/settings");
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
 export function GamesPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [games, setGames] = useState<GameSummary[]>([]);
   const [query, setQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("");
-  const [retryKey, setRetryKey] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading games...");
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
-  const teamName = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
+  const teamName = useMemo(() => formatSchoolNameFromId(activeSchoolId), [activeSchoolId]);
 
   function loadGames() {
-    setIsLoading(true);
-    setLoadError("");
+    if (!activeSchoolId) {
+      setGames([]);
+      setStatus("Waiting for school context before loading games.");
+      return () => { /* no-op */ };
+    }
+
     setStatus("Loading games...");
     let cancelled = false;
     fetch(`${apiBase}/api/games`, { headers: apiKeyHeader() })
       .then(r => r.ok ? r.json() as Promise<GameSummary[]> : Promise.reject(new Error("Games API failed")))
-      .then(payload => {
-        if (!cancelled) {
-          setGames(Array.isArray(payload) ? payload : []);
-          setStatus("");
-          setIsLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStatus("Could not load games.");
-          setLoadError("Could not load games from the realtime API.");
-          setIsLoading(false);
-        }
-      });
+      .then(payload => { if (!cancelled) { setGames(Array.isArray(payload) ? payload : []); setStatus(""); } })
+      .catch(() => { if (!cancelled) setStatus("Could not load games."); });
     return () => { cancelled = true; };
   }
 
-  useEffect(loadGames, [retryKey]);
+  useEffect(loadGames, [activeSchoolId]);
 
   const filteredGames = useMemo(() => {
     return [...games]
@@ -885,31 +731,6 @@ export function GamesPage() {
         {status && <p className="stats-page-status">{status}</p>}
       </section>
 
-      {isLoading && (
-        <section className="stats-page-card">
-          <div className="loading-indicator">
-            <div className="loading-spinner" />
-            <p className="loading-text">Loading game history...</p>
-          </div>
-        </section>
-      )}
-
-      {!isLoading && loadError && (
-        <section className="stats-page-card">
-          <p className="stats-empty-copy">{loadError}</p>
-          <button
-            type="button"
-            className="shell-nav-link"
-            style={{ marginTop: "0.65rem" }}
-            onClick={() => setRetryKey((value) => value + 1)}
-          >
-            Retry
-          </button>
-        </section>
-      )}
-
-      {!isLoading && !loadError && (
-      <>
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
           <span>Search opponent</span>
@@ -929,16 +750,6 @@ export function GamesPage() {
       {filteredGames.length === 0 ? (
         <section className="stats-page-card">
           <p className="stats-empty-copy">No games match the current filters.</p>
-          {games.length === 0 && (
-            <button
-              type="button"
-              className="shell-nav-link"
-              style={{ marginTop: "0.6rem" }}
-              onClick={openSettingsPage}
-            >
-              Add players in Settings
-            </button>
-          )}
         </section>
       ) : (
         <section className="stats-game-grid">
@@ -1008,8 +819,6 @@ export function GamesPage() {
             );
           })}
         </section>
-      )}
-      </>
       )}
     </div>
   );

@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+import re, sys, pathlib
+args = sys.argv[1:]
+show_line = False
+while args and args[0].startswith('-'):
+    if args[0] == '-n':
+        show_line = True
+        args = args[1:]
+    else:
+        print(f'unsupported option: {args[0]}', file=sys.stderr)
+        sys.exit(2)
+if len(args) < 2:
+    print('usage: rg [-n] PATTERN PATH...', file=sys.stderr)
+    sys.exit(2)
+pattern = re.compile(args[0])
+for path_str in args[1:]:
+    path = pathlib.Path(path_str)
+    with path.open() as f:
+        for i, line in enumerate(f, 1):
+            if pattern.search(line):
+                line = line.rstrip('\n')
+                if show_line:
+                    print(f'{path}:{i}:{line}')
+                else:
+                    print(f'{path}:{line}')

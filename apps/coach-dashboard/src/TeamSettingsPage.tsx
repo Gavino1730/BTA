@@ -1,16 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession } from "./platform.js";
-
-type SettingsSection = "pairing" | "roster" | "profile" | "ai" | "members";
-type MemberFilter = "all" | "pending" | "active";
-
-function normalizeSettingsSection(value: string | null | undefined, fallback: SettingsSection): SettingsSection {
-  if (value === "pairing" || value === "roster" || value === "profile" || value === "ai" || value === "members") {
-    return value;
-  }
-
-  return fallback;
-}
+import { apiBase, apiKeyHeader, generateConnectionCode, normalizeConnectionCode, resolveActiveSchoolId } from "./platform.js";
 
 interface TeamDto {
   id: string;
@@ -76,100 +65,17 @@ function roleToApi(appRole: AppMemberRole): string {
   return "coach";
 }
 
-function roleLabel(role: AppMemberRole): string {
-  if (role === "admin") return "Admin";
-  if (role === "operator") return "Operator";
-  if (role === "player") return "Player";
-  return "Coach";
-}
-
-function isValidEmail(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
-}
-
-function buildInviteCopy(name: string, email: string, role: AppMemberRole, tempPassword: string): string {
-  const greetingName = name.trim() || "teammate";
-  const emailText = email.trim() || "[email]";
-  const lines = [
-    `Hi ${greetingName},`,
-    "",
-    "You've been invited to BTA Courtside.",
-    `Role: ${roleLabel(role)}`,
-    `Sign-in email: ${emailText}`,
-  ];
-
-  if (tempPassword.trim()) {
-    lines.push(`Temporary password: ${tempPassword.trim()}`);
-    lines.push("Please sign in and change your password after first login.");
-  } else {
-    lines.push("Use your invite email to complete access setup from the login flow.");
-  }
-
-  lines.push("", "- BTA Courtside Team Admin");
-  return lines.join("\n");
-}
-
 interface OrganizationMemberDto {
   memberId: string;
   fullName: string;
   email: string;
   role: AppMemberRole;
   status: "active" | "invited";
-  tempPassword?: string;
 }
 
 interface OrganizationMembersResponse {
   currentMember?: { memberId: string; fullName: string; email: string; role: string; status: string } | null;
   members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
-}
-
-type InviteEmailStatus = "sent" | "disabled" | "failed";
-
-interface InviteEmailDelivery {
-  status: InviteEmailStatus;
-  providerId?: string;
-}
-
-interface InviteMutationResponse {
-  members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
-  emailDelivery?: InviteEmailDelivery;
-  warning?: string;
-}
-
-function buildInviteDeliveryStatus(email: string, emailDelivery?: InviteEmailDelivery, warning?: string): string {
-  if (warning?.trim()) {
-    return warning;
-  }
-
-  if (emailDelivery?.status === "sent") {
-    return `Invite email sent to ${email}.`;
-  }
-  if (emailDelivery?.status === "disabled") {
-    return `Member invited, but email delivery is disabled. Copy invite details for ${email}.`;
-  }
-  if (emailDelivery?.status === "failed") {
-    return `Member invited, but invite email failed for ${email}. Use Copy Invite Again and retry.`;
-  }
-
-  return "Organization member invited.";
-}
-
-function mapApiMembers(
-  members: { memberId: string; fullName: string; email: string; role: string; status: string }[] | undefined
-): OrganizationMemberDto[] {
-  return Array.isArray(members)
-    ? members.map((member) => ({
-      ...member,
-      role: roleFromApi(member.role),
-      status: member.status as "active" | "invited",
-      tempPassword: "",
-    }))
-    : [];
 }
 
 interface RosterPlayerDto {
@@ -198,7 +104,6 @@ interface RosterEditRow {
   notes: string;
   email: string;
   phone: string;
-  tempPassword: string;
   isNew?: boolean;
   showExpanded?: boolean;
 }
@@ -255,13 +160,8 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
   );
 }
 
-interface TeamSettingsPageProps {
-  initialSection?: SettingsSection;
-  onNavigate?: (path: string) => void;
-}
-
-export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPageProps) {
-  const currentSeason = String(new Date().getFullYear());
+export function TeamSettingsPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
   const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
@@ -269,18 +169,12 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppMemberRole>("coach");
-  const [inviteTempPassword, setInviteTempPassword] = useState("");
-  const [memberFilter, setMemberFilter] = useState<MemberFilter>("all");
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
-  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string; tempPassword: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
-  const [newPlayerExpanded, setNewPlayerExpanded] = useState(false);
-  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
-    const fallback = initialSection ?? "pairing";
-    if (typeof window === "undefined") {
-      return fallback;
-    }
-
-    return normalizeSettingsSection(window.localStorage.getItem("coach:settings-section"), fallback);
+  const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
+  const [activeSection, setActiveSection] = useState<"pairing" | "roster" | "profile" | "ai" | "members">(() => {
+    const saved = localStorage.getItem("coach:settings-section");
+    if (saved === "pairing" || saved === "roster" || saved === "profile" || saved === "ai" || saved === "members") return saved;
+    return "pairing";
   });
   const [copyConfirmed, setCopyConfirmed] = useState(false);
   const [playingStyle, setPlayingStyle] = useState("");
@@ -301,6 +195,11 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Select or sign in to a school before loading team settings.");
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -343,7 +242,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
           setCustomPrompt(aiPayload.customPrompt ?? primary?.customPrompt ?? "");
           const rawCurrent = membersPayload.currentMember;
           setCurrentMember(rawCurrent ? { ...rawCurrent, role: roleFromApi(rawCurrent.role), status: (rawCurrent.status as "active" | "invited") } : null);
-          setMembers(mapApiMembers(membersPayload.members));
+          setMembers(Array.isArray(membersPayload.members) ? membersPayload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
           if (rosterResponse.ok) {
             const rosterPayload = await rosterResponse.json() as RosterPlayerDto[];
             setRoster(
@@ -361,7 +260,6 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                     notes: p.notes ?? "",
                     email: p.email ?? "",
                     phone: p.phone ?? "",
-                    tempPassword: "",
                   }))
                 : []
             );
@@ -381,7 +279,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -391,25 +289,10 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
     window.localStorage.setItem("coach-bound-connection-id", connectionCode);
   }, [connectionCode]);
 
-  useEffect(() => {
-    if (!initialSection) {
-      return;
-    }
-
-    setActiveSection(initialSection);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("coach:settings-section", initialSection);
-    }
-  }, [initialSection]);
-
   async function saveOrganizationProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const authSession = readStoredAuthSession();
-    const coachName = profile?.coachName?.trim() || authSession?.fullName?.trim() || "";
-    const coachEmail = profile?.coachEmail?.trim() || authSession?.email?.trim().toLowerCase() || "";
-
-    if (!profile?.organizationName?.trim() || !coachName || !coachEmail) {
-      setStatus("Organization details are incomplete. Update your name and email in My Account first.");
+    if (!profile?.organizationName?.trim() || !profile.coachName?.trim() || !profile.coachEmail?.trim()) {
+      setStatus("Organization, coach name, and coach email are required.");
       return;
     }
 
@@ -422,8 +305,8 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
         headers: apiKeyHeader(true),
         body: JSON.stringify({
           organizationName: profile.organizationName.trim(),
-          coachName,
-          coachEmail,
+          coachName: profile.coachName.trim(),
+          coachEmail: profile.coachEmail.trim(),
           teamName: team?.name?.trim() || profile.teamName?.trim() || undefined,
           season: team?.season?.trim() || profile.season?.trim() || undefined,
         }),
@@ -517,77 +400,33 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
       setStatus("Invite name and email are required.");
       return;
     }
-    if (!isValidEmail(inviteEmail)) {
-      setStatus("Enter a valid invite email address.");
-      return;
-    }
-    if (inviteTempPassword.trim() && inviteTempPassword.trim().length < 8) {
-      setStatus("Temporary password must be at least 8 characters.");
-      return;
-    }
 
     setSaving(true);
     setStatus("Sending organization invite...");
 
     try {
-      const response = inviteTempPassword.trim()
-        ? await fetch(`${apiBase}/api/auth/coach-account`, {
-          method: "POST",
-          headers: apiKeyHeader(true),
-          body: JSON.stringify({
-            fullName: inviteName.trim(),
-            email: inviteEmail.trim(),
-            role: roleToApi(inviteRole),
-            password: inviteTempPassword.trim(),
-          }),
-        })
-        : await fetch(`${apiBase}/api/org/members`, {
-          method: "POST",
-          headers: apiKeyHeader(true),
-          body: JSON.stringify({
-            fullName: inviteName.trim(),
-            email: inviteEmail.trim(),
-            role: roleToApi(inviteRole),
-          }),
-        });
+      const response = await fetch(`${apiBase}/api/org/members`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({
+          fullName: inviteName.trim(),
+          email: inviteEmail.trim(),
+          role: roleToApi(inviteRole),
+        }),
+      });
 
       if (!response.ok) {
-        const payload = await response.json() as { error?: string };
-        throw new Error(payload.error || "Invite failed");
+        throw new Error("Invite failed");
       }
 
-      const payload = await response.json() as InviteMutationResponse;
-      setMembers(mapApiMembers(payload.members));
+      const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
+      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
       setInviteName("");
       setInviteEmail("");
       setInviteRole("coach");
-      setInviteTempPassword("");
-      setStatus(inviteTempPassword.trim() ? "Coach account created." : buildInviteDeliveryStatus(inviteEmail.trim(), payload.emailDelivery, payload.warning));
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not invite organization member.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function resendInvite(member: OrganizationMemberDto) {
-    setSaving(true);
-    setStatus(`Resending invite to ${member.fullName}...`);
-
-    try {
-      const response = await fetch(`${apiBase}/api/org/members/${encodeURIComponent(member.memberId)}/resend-invite`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-      });
-
-      const payload = await response.json().catch(() => ({})) as InviteMutationResponse & { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not resend invite.");
-      }
-
-      setStatus(buildInviteDeliveryStatus(member.email, payload.emailDelivery, payload.warning));
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not resend invite.");
+      setStatus("Organization member invited.");
+    } catch {
+      setStatus("Could not invite organization member.");
     } finally {
       setSaving(false);
     }
@@ -613,7 +452,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
       }
 
       const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
-      setMembers(mapApiMembers(payload.members));
+      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
       setStatus("Organization member updated.");
     } catch {
       setStatus("Could not update organization member.");
@@ -623,11 +462,6 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
   }
 
   async function removeMember(member: OrganizationMemberDto) {
-    const confirmRemove = window.confirm(`Remove ${member.fullName} from the organization? This cannot be undone.`);
-    if (!confirmRemove) {
-      return;
-    }
-
     setSaving(true);
     setStatus(`Removing ${member.fullName}...`);
 
@@ -642,7 +476,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
       }
 
       const payload = await response.json() as { members?: { memberId: string; fullName: string; email: string; role: string; status: string }[] };
-      setMembers(mapApiMembers(payload.members));
+      setMembers(Array.isArray(payload.members) ? payload.members.map((m) => ({ ...m, role: roleFromApi(m.role), status: (m.status as "active" | "invited") })) : []);
       setStatus("Organization member removed.");
     } catch {
       setStatus("Could not remove organization member.");
@@ -685,117 +519,12 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
 
       setRoster((current) => [
         ...current,
-        { key: `new-${Date.now()}`, originalName: name, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim(), tempPassword: "" },
+        { key: `new-${Date.now()}`, originalName: name, name, number: newPlayer.number.trim(), position: newPlayer.position.trim(), grade: newPlayer.grade.trim(), height: newPlayer.height.trim(), weight: newPlayer.weight.trim(), role: newPlayer.role.trim(), notes: newPlayer.notes.trim(), email: newPlayer.email.trim(), phone: newPlayer.phone.trim() },
       ]);
-      if (newPlayer.email.trim() && newPlayer.tempPassword.trim()) {
-        const accountResponse = await fetch(`${apiBase}/api/auth/player-account`, {
-          method: "POST",
-          headers: apiKeyHeader(true),
-          body: JSON.stringify({
-            playerName: name,
-            fullName: name,
-            email: newPlayer.email.trim(),
-            password: newPlayer.tempPassword.trim(),
-          }),
-        });
-        if (!accountResponse.ok) {
-          const payload = await accountResponse.json() as { error?: string };
-          throw new Error(payload.error || "Could not create player account");
-        }
-      }
-
-      setNewPlayer({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "", tempPassword: "" });
-      setStatus(newPlayer.email.trim() ? `${name} added and player login configured.` : `${name} added to roster.`);
+      setNewPlayer({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
+      setStatus(`${name} added to roster.`);
     } catch {
       setStatus("Could not add player.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function configurePlayerAccount(row: RosterEditRow) {
-    const playerName = row.name.trim();
-    const email = row.email.trim();
-    const password = row.tempPassword.trim();
-    if (!playerName || !email || !password) {
-      setStatus("Player name, school email, and temporary password are required.");
-      return;
-    }
-    if (!isValidEmail(email)) {
-      setStatus("Enter a valid player email address.");
-      return;
-    }
-    if (password.length < 8) {
-      setStatus("Temporary password must be at least 8 characters.");
-      return;
-    }
-
-    setSaving(true);
-    setStatus(`Configuring login for ${playerName}...`);
-    try {
-      const response = await fetch(`${apiBase}/api/auth/player-account`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          playerName,
-          fullName: playerName,
-          email,
-          password,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: string };
-        throw new Error(payload.error || "Could not configure player login");
-      }
-
-      setRoster((current) => current.map((entry) => entry.key === row.key ? { ...entry, tempPassword: "" } : entry));
-      setStatus(`Player login configured for ${playerName}.`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not configure player login.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function resetPlayerPassword(row: RosterEditRow) {
-    const playerName = row.name.trim();
-    const email = row.email.trim();
-    const password = row.tempPassword.trim();
-    if (!playerName || !email || !password) {
-      setStatus("Player name, school email, and temporary password are required.");
-      return;
-    }
-    if (!isValidEmail(email)) {
-      setStatus("Enter a valid player email address.");
-      return;
-    }
-    if (password.length < 8) {
-      setStatus("Temporary password must be at least 8 characters.");
-      return;
-    }
-
-    setSaving(true);
-    setStatus(`Resetting password for ${playerName}...`);
-    try {
-      const response = await fetch(`${apiBase}/api/auth/player-account/reset-password`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: string };
-        throw new Error(payload.error || "Could not reset player password");
-      }
-
-      setRoster((current) => current.map((entry) => entry.key === row.key ? { ...entry, tempPassword: "" } : entry));
-      setStatus(`Password reset for ${playerName}.`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not reset player password.");
     } finally {
       setSaving(false);
     }
@@ -845,7 +574,6 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
         notes: row.notes?.trim() || "",
         email: row.email?.trim() || "",
         phone: row.phone?.trim() || "",
-        tempPassword: row.tempPassword,
       } : entry));
       setStatus(`${name} saved.`);
     } catch {
@@ -860,11 +588,6 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
     const originalName = row.originalName.trim() || name;
     if (!name) {
       setRoster((current) => current.filter((r) => r.key !== row.key));
-      return;
-    }
-
-    const confirmRemove = window.confirm(`Remove ${name} from the roster? This cannot be undone.`);
-    if (!confirmRemove) {
       return;
     }
 
@@ -890,91 +613,20 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
     }
   }
 
-  async function setCoachPassword(member: OrganizationMemberDto) {
-    const email = member.email.trim();
-    const fullName = member.fullName.trim();
-    const password = (member.tempPassword ?? "").trim();
-    if (!email || !fullName || !password) {
-      setStatus("Member name, email, and temporary password are required.");
-      return;
-    }
-
-    if (password.length < 8) {
-      setStatus("Temporary password must be at least 8 characters.");
-      return;
-    }
-
-    setSaving(true);
-    setStatus(`Setting password for ${fullName}...`);
-
-    try {
-      const resetResponse = await fetch(`${apiBase}/api/auth/coach-account/reset-password`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (resetResponse.ok) {
-        setMembers((current) => current.map((entry) => entry.memberId === member.memberId ? { ...entry, tempPassword: "" } : entry));
-        setStatus(`Password reset for ${fullName}.`);
-        return;
-      }
-
-      const resetPayload = await resetResponse.json() as { error?: string };
-      if (resetResponse.status !== 404) {
-        throw new Error(resetPayload.error || "Could not reset member password");
-      }
-
-      const createResponse = await fetch(`${apiBase}/api/auth/coach-account`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          fullName,
-          email,
-          role: roleToApi(member.role),
-          password,
-        }),
-      });
-
-      const createPayload = await createResponse.json() as {
-        error?: string;
-        members?: { memberId: string; fullName: string; email: string; role: string; status: string }[];
-      };
-      if (!createResponse.ok) {
-        throw new Error(createPayload.error || "Could not create coach account");
-      }
-
-      setMembers(mapApiMembers(createPayload.members));
-      setStatus(`Coach account created for ${fullName}.`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not set member password.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   const SECTIONS = [
     { key: "pairing", label: "Live Pairing" },
     { key: "roster", label: "Roster" },
-    { key: "profile", label: "Organization" },
+    { key: "profile", label: "Profile" },
     { key: "ai", label: "AI Context" },
     { key: "members", label: "Members" },
   ] as const;
-
-  const invitedMembersCount = members.filter((member) => member.status === "invited").length;
-  const activeMembersCount = members.filter((member) => member.status === "active").length;
-  const visibleMembers = memberFilter === "pending"
-    ? members.filter((member) => member.status === "invited")
-    : memberFilter === "active"
-      ? members.filter((member) => member.status === "active")
-      : members;
 
   return (
     <div className="stats-page">
       <section className="stats-page-hero compact">
         <div>
           <h1>Settings</h1>
-          <p className="stats-page-subtitle">Manage your program, team configuration, AI context, and access. Personal profile lives in My Account.</p>
+          <p className="stats-page-subtitle">Manage your program, roster, AI context, and team access.</p>
         </div>
         <p className="stats-page-status">{status}</p>
       </section>
@@ -1073,9 +725,9 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                         type="button"
                         className="settings-roster-expand-btn"
                         onClick={() => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, showExpanded: !r.showExpanded } : r))}
-                        title="More player details"
+                        title="Edit AI context (role &amp; notes)"
                       >
-                        {row.showExpanded ? "▴ Details" : "▾ Details"}
+                        {row.showExpanded ? "▲" : "▼"} AI
                       </button>
                       <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void savePlayer(row)}>Save</button>
                       <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void removePlayer(row)}>Remove</button>
@@ -1112,16 +764,6 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                         />
                       </label>
                       <label className="stats-filter-field">
-                        <span>Temporary Password</span>
-                        <input
-                          className="settings-roster-input"
-                          type="password"
-                          value={row.tempPassword}
-                          onChange={(e) => setRoster((cur) => cur.map((r) => r.key === row.key ? { ...r, tempPassword: e.target.value } : r))}
-                          placeholder="Set temporary password"
-                        />
-                      </label>
-                      <label className="stats-filter-field">
                         <span>Phone</span>
                         <input
                           className="settings-roster-input"
@@ -1150,14 +792,6 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                           rows={2}
                         />
                       </label>
-                      <div className="settings-form-footer">
-                        <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving || !row.name.trim() || !row.email.trim() || !row.tempPassword.trim()} onClick={() => void configurePlayerAccount(row)}>
-                          Create Login
-                        </button>
-                        <button type="button" className="shell-nav-link" disabled={saving || !row.email.trim() || !row.tempPassword.trim()} onClick={() => void resetPlayerPassword(row)}>
-                          Reset Password
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -1167,92 +801,58 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
 
           <form className="settings-add-player-form" onSubmit={addPlayer}>
             <h4 className="settings-sub-heading">Add Player</h4>
-            <div className="settings-roster-row-card">
-              <div className="settings-roster-row-main">
-                <div className="settings-roster-row-fields">
-                  <input
-                    className="settings-roster-input settings-roster-input-num"
-                    value={newPlayer.number}
-                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, number: e.target.value }))}
-                    placeholder="#"
-                    aria-label="Jersey number"
-                  />
-                  <input
-                    className="settings-roster-input settings-roster-input-name"
-                    value={newPlayer.name}
-                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, name: e.target.value }))}
-                    placeholder="Player name"
-                    aria-label="Player name"
-                  />
-                  <input
-                    className="settings-roster-input settings-roster-input-sm"
-                    value={newPlayer.position}
-                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, position: e.target.value }))}
-                    placeholder="Pos"
-                    aria-label="Position"
-                  />
-                  <input
-                    className="settings-roster-input settings-roster-input-sm"
-                    value={newPlayer.grade}
-                    onChange={(e) => setNewPlayer((cur) => ({ ...cur, grade: e.target.value }))}
-                    placeholder="Yr"
-                    aria-label="Grade/Year"
-                  />
-                </div>
-                <div className="settings-roster-row-actions">
-                  <button
-                    type="button"
-                    className="settings-roster-expand-btn"
-                    onClick={() => setNewPlayerExpanded((v) => !v)}
-                    title="More player details"
-                  >
-                    {newPlayerExpanded ? "▴ Details" : "▾ Details"}
-                  </button>
-                  <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving || !newPlayer.name.trim()}>
-                    {saving ? "Adding..." : "Add"}
-                  </button>
-                </div>
-              </div>
-              {newPlayerExpanded && (
-                <div className="settings-roster-row-expanded">
-                  <div className="setup-grid">
-                    <label className="stats-filter-field">
-                      <span>Height</span>
-                      <input value={newPlayer.height} onChange={(e) => setNewPlayer((cur) => ({ ...cur, height: e.target.value }))} placeholder='6&apos;2"' />
-                    </label>
-                    <label className="stats-filter-field">
-                      <span>Weight</span>
-                      <input value={newPlayer.weight} onChange={(e) => setNewPlayer((cur) => ({ ...cur, weight: e.target.value }))} placeholder="185 lbs" />
-                    </label>
-                    <label className="stats-filter-field">
-                      <span>Email</span>
-                      <input type="email" value={newPlayer.email} onChange={(e) => setNewPlayer((cur) => ({ ...cur, email: e.target.value }))} placeholder="player@school.edu" />
-                    </label>
-                    <label className="stats-filter-field">
-                      <span>Temporary Password</span>
-                      <input type="password" value={newPlayer.tempPassword} onChange={(e) => setNewPlayer((cur) => ({ ...cur, tempPassword: e.target.value }))} placeholder="Set temporary password" />
-                    </label>
-                    <label className="stats-filter-field">
-                      <span>Phone</span>
-                      <input type="tel" value={newPlayer.phone} onChange={(e) => setNewPlayer((cur) => ({ ...cur, phone: e.target.value }))} placeholder="503-555-0100" />
-                    </label>
-                    <label className="stats-filter-field">
-                      <span>Role / Description</span>
-                      <input value={newPlayer.role} onChange={(e) => setNewPlayer((cur) => ({ ...cur, role: e.target.value }))} placeholder="Primary ball handler, shoots 3s" />
-                    </label>
-                    <label className="stats-filter-field stats-filter-field-full">
-                      <span>Notes</span>
-                      <textarea
-                        className="settings-roster-textarea"
-                        value={newPlayer.notes}
-                        onChange={(e) => setNewPlayer((cur) => ({ ...cur, notes: e.target.value }))}
-                        placeholder="Injuries, tendencies, rotation notes..."
-                        rows={2}
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
+            <div className="setup-grid">
+              <label className="stats-filter-field">
+                <span>Name *</span>
+                <input value={newPlayer.name} onChange={(e) => setNewPlayer((cur) => ({ ...cur, name: e.target.value }))} placeholder="Player name" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Jersey #</span>
+                <input value={newPlayer.number} onChange={(e) => setNewPlayer((cur) => ({ ...cur, number: e.target.value }))} placeholder="0" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Position</span>
+                <input value={newPlayer.position} onChange={(e) => setNewPlayer((cur) => ({ ...cur, position: e.target.value }))} placeholder="PG" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Grade</span>
+                <input value={newPlayer.grade} onChange={(e) => setNewPlayer((cur) => ({ ...cur, grade: e.target.value }))} placeholder="11" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Height</span>
+                <input value={newPlayer.height} onChange={(e) => setNewPlayer((cur) => ({ ...cur, height: e.target.value }))} placeholder='6&apos;2"' />
+              </label>
+              <label className="stats-filter-field">
+                <span>Weight</span>
+                <input value={newPlayer.weight} onChange={(e) => setNewPlayer((cur) => ({ ...cur, weight: e.target.value }))} placeholder="185 lbs" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Email</span>
+                <input type="email" value={newPlayer.email} onChange={(e) => setNewPlayer((cur) => ({ ...cur, email: e.target.value }))} placeholder="player@school.edu" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Phone</span>
+                <input type="tel" value={newPlayer.phone} onChange={(e) => setNewPlayer((cur) => ({ ...cur, phone: e.target.value }))} placeholder="503-555-0100" />
+              </label>
+              <label className="stats-filter-field">
+                <span>Role / Description</span>
+                <input value={newPlayer.role} onChange={(e) => setNewPlayer((cur) => ({ ...cur, role: e.target.value }))} placeholder="Primary ball handler, shoots 3s" />
+              </label>
+              <label className="stats-filter-field stats-filter-field-full">
+                <span>Notes</span>
+                <textarea
+                  className="settings-roster-textarea"
+                  value={newPlayer.notes}
+                  onChange={(e) => setNewPlayer((cur) => ({ ...cur, notes: e.target.value }))}
+                  placeholder="Injuries, tendencies, rotation notes..."
+                  rows={2}
+                />
+              </label>
+            </div>
+            <div className="settings-form-footer">
+              <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving || !newPlayer.name.trim()}>
+                {saving ? "Adding..." : "Add to Roster"}
+              </button>
             </div>
           </form>
         </section>
@@ -1265,7 +865,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
             <div className="stats-page-card-head">
               <div>
                 <h3>Organization</h3>
-                <p className="settings-section-desc">Your school or athletic program details. Personal identity is managed separately.</p>
+                <p className="settings-section-desc">Your school or athletic program details.</p>
               </div>
               <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>Save</button>
             </div>
@@ -1275,21 +875,26 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                 <input
                   value={profile?.organizationName ?? ""}
                   onChange={(event) => setProfile((current) => ({ ...(current ?? {}), organizationName: event.target.value }))}
-                  placeholder="School or athletic program"
+                  placeholder="Your School Athletics"
                 />
               </label>
-            </div>
-            <div className="stats-page-subcopy" style={{ marginTop: "0.9rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
-              <span>
-                Primary contact: <strong>{profile?.coachName?.trim() || readStoredAuthSession()?.fullName || "Not set"}</strong>
-                {" · "}
-                <strong>{profile?.coachEmail?.trim() || readStoredAuthSession()?.email || "No email"}</strong>
-              </span>
-              {onNavigate ? (
-                <button type="button" className="shell-nav-link" onClick={() => onNavigate("/account")}>
-                  Manage in My Account
-                </button>
-              ) : null}
+              <label className="stats-filter-field">
+                <span>Coach Name</span>
+                <input
+                  value={profile?.coachName ?? ""}
+                  onChange={(event) => setProfile((current) => ({ ...(current ?? {}), coachName: event.target.value }))}
+                  placeholder="Coach Name"
+                />
+              </label>
+              <label className="stats-filter-field">
+                <span>Coach Email</span>
+                <input
+                  type="email"
+                  value={profile?.coachEmail ?? ""}
+                  onChange={(event) => setProfile((current) => ({ ...(current ?? {}), coachEmail: event.target.value }))}
+                  placeholder="coach@school.org"
+                />
+              </label>
             </div>
           </form>
 
@@ -1306,24 +911,24 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                 <span>Team Name</span>
                 <input
                   value={team?.name ?? ""}
-                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), name: event.target.value }))}
-                  placeholder="Varsity basketball"
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), name: event.target.value }))}
+                  placeholder="Varsity Boys Basketball"
                 />
               </label>
               <label className="stats-filter-field">
                 <span>Abbreviation</span>
                 <input
                   value={team?.abbreviation ?? ""}
-                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), abbreviation: event.target.value.toUpperCase().slice(0, 12) }))}
-                  placeholder="TEAM"
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), abbreviation: event.target.value.toUpperCase().slice(0, 12) }))}
+                  placeholder="VC"
                 />
               </label>
               <label className="stats-filter-field">
                 <span>Season</span>
                 <input
                   value={team?.season ?? ""}
-                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), season: event.target.value }))}
-                  placeholder={currentSeason}
+                  onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), season: event.target.value }))}
+                  placeholder="2026"
                 />
               </label>
               <label className="stats-filter-field setup-color-field">
@@ -1332,7 +937,7 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                   <input
                     type="color"
                     value={team?.teamColor || "#1d4ed8"}
-                    onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "varsity-boys", name: "" }), teamColor: event.target.value }))}
+                    onChange={(event) => setTeam((current) => ({ ...(current ?? { id: "primary-team", name: "" }), teamColor: event.target.value }))}
                     aria-label="Team color"
                   />
                   <div className="setup-color-preview">
@@ -1388,29 +993,12 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
               <p className="settings-section-desc">
                 {currentMember ? `Signed in as ${currentMember.fullName} · ${currentMember.role}` : "Manage staff access to the coach dashboard."}
               </p>
-              <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>
-                {activeMembersCount} active · {invitedMembersCount} pending invite{invitedMembersCount === 1 ? "" : "s"}
-              </p>
             </div>
-            <label className="stats-filter-field short" style={{ minWidth: "170px" }}>
-              <span>View</span>
-              <select value={memberFilter} onChange={(event) => setMemberFilter(event.target.value as MemberFilter)}>
-                <option value="all">All Members</option>
-                <option value="pending">Pending Invites</option>
-                <option value="active">Active Members</option>
-              </select>
-            </label>
           </div>
-
-          <section className="stats-filter-bar" style={{ marginBottom: "0.85rem" }}>
-            <p className="stats-page-subcopy" style={{ margin: 0 }}>
-              Invite flow: add member details, choose role, then send invite. When email delivery is configured, the invite email is sent automatically.
-            </p>
-          </section>
 
           {members.length > 0 && (
             <div className="settings-members-list">
-              {visibleMembers.map((member) => (
+              {members.map((member) => (
                 <div key={member.memberId} className="settings-member-row">
                   <div className="settings-member-info">
                     <div className="settings-member-avatar">{member.fullName.charAt(0).toUpperCase()}</div>
@@ -1436,68 +1024,11 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                       <option value="admin">Admin</option>
                       <option value="coach">Coach</option>
                       <option value="operator">Operator</option>
+                      <option value="player">Player</option>
                     </select>
-                    <span className={`settings-status-badge settings-status-${member.status}`}>
-                      {member.status === "invited" ? "invited - pending" : member.status}
-                    </span>
-                    {member.role !== "player" && (
-                      <input
-                        type="password"
-                        className="settings-member-password-input"
-                        value={member.tempPassword}
-                        onChange={(event) => setMembers((current) => current.map((entry) => entry.memberId === member.memberId ? { ...entry, tempPassword: event.target.value } : entry))}
-                        placeholder="Temporary password (min 8)"
-                        aria-label={`Temporary password for ${member.fullName}`}
-                        disabled={currentMember?.role !== "admin"}
-                      />
-                    )}
+                    <span className={`settings-status-badge settings-status-${member.status}`}>{member.status}</span>
                     {currentMember?.role === "admin" && (
                       <>
-                        {member.status === "invited" && (
-                          <button
-                            type="button"
-                            className="shell-nav-link"
-                            disabled={saving}
-                            onClick={() => {
-                              void resendInvite(member);
-                            }}
-                          >
-                            Resend Email Invite
-                          </button>
-                        )}
-                        {member.status === "invited" && (
-                          <button
-                            type="button"
-                            className="shell-nav-link"
-                            onClick={() => {
-                              const message = buildInviteCopy(member.fullName, member.email, member.role, member.tempPassword ?? "");
-                              void navigator.clipboard?.writeText(message).then(() => {
-                                setStatus(`Invite message copied for ${member.fullName}.`);
-                              }).catch(() => {
-                                setStatus("Could not copy invite message right now.");
-                              });
-                            }}
-                          >
-                            Copy Invite Again
-                          </button>
-                        )}
-                        {member.status === "invited" && (
-                          <button
-                            type="button"
-                            className="shell-nav-link"
-                            disabled={saving}
-                            onClick={() => {
-                              void saveMember({ ...member, status: "active" });
-                            }}
-                          >
-                            Mark Active
-                          </button>
-                        )}
-                        {member.role !== "player" && (
-                          <button type="button" className="shell-nav-link" disabled={saving} onClick={() => void setCoachPassword(member)}>
-                            Set Password
-                          </button>
-                        )}
                         <button type="button" className="shell-nav-link shell-nav-link-active" disabled={saving} onClick={() => void saveMember(member)}>
                           Save
                         </button>
@@ -1517,11 +1048,11 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
             <div className="setup-grid">
               <label className="stats-filter-field">
                 <span>Full Name</span>
-                <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Full name" />
+                <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Assistant Coach Lee" />
               </label>
               <label className="stats-filter-field">
                 <span>Email</span>
-                <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@school.org" />
+                <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="coach2@school.org" />
               </label>
               <label className="stats-filter-field">
                 <span>Role</span>
@@ -1529,33 +1060,12 @@ export function TeamSettingsPage({ initialSection, onNavigate }: TeamSettingsPag
                   <option value="admin">Admin</option>
                   <option value="coach">Coach</option>
                   <option value="operator">Operator</option>
+                  <option value="player">Player</option>
                 </select>
               </label>
-              <label className="stats-filter-field">
-                <span>Temporary Password (optional)</span>
-                <input type="password" value={inviteTempPassword} onChange={(event) => setInviteTempPassword(event.target.value)} placeholder="Create account now" />
-              </label>
             </div>
-            <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
-              Invite emails send automatically when configured. Use Copy Invite Message for fallback delivery by text or manual email.
-            </p>
             <div className="settings-form-footer">
-              <button
-                type="button"
-                className="shell-nav-link"
-                disabled={!inviteEmail.trim()}
-                onClick={() => {
-                  const message = buildInviteCopy(inviteName, inviteEmail, inviteRole, inviteTempPassword);
-                  void navigator.clipboard?.writeText(message).then(() => {
-                    setStatus("Invite message copied. Paste it into your email or team chat.");
-                  }).catch(() => {
-                    setStatus("Could not copy invite message. You can still send the invite below.");
-                  });
-                }}
-              >
-                Copy Invite Message
-              </button>
-              <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>{inviteTempPassword.trim() ? "Create Account" : "Send Invite"}</button>
+              <button type="submit" className="shell-nav-link shell-nav-link-active" disabled={saving}>Send Invite</button>
             </div>
           </form>
         </section>

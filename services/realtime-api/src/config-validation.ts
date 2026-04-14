@@ -1,15 +1,3 @@
-import { logger } from "./logger.js";
-import { PHASE_1_VALID_PLAN_CYCLES, initializeStripeMode } from "./billing-constants.js";
-
-/**
- * Billing Scope:
- * - Hosted Stripe Checkout (monthly and yearly subscriptions)
- * - No free trial
- * - Hybrid account model (checkout before account finalization)
- *
- * See billing-constants.ts for full scope definition and state machine.
- */
-
 export interface RuntimeConfig {
   nodeEnv: string;
   requireTenant: boolean;
@@ -19,9 +7,9 @@ export interface RuntimeConfig {
   allowedOriginsConfigured: boolean;
   databaseUrlConfigured: boolean;
   localAuthSecretConfigured: boolean;
-  paywallEnabled: boolean;
-  stripeConfigured: boolean;
-  stripeWebhookSecretConfigured: boolean;
+  emailProvider: string;
+  emailFromConfigured: boolean;
+  resendApiKeyConfigured: boolean;
 }
 
 export interface RuntimeValidationResult {
@@ -31,6 +19,7 @@ export interface RuntimeValidationResult {
 
 export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
   const nodeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+  const emailProvider = (process.env.BTA_EMAIL_PROVIDER ?? "").trim().toLowerCase();
   return {
     nodeEnv,
     requireTenant: process.env.BTA_REQUIRE_TENANT !== "0",
@@ -42,15 +31,9 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     localAuthSecretConfigured: Boolean(
       process.env.BTA_LOCAL_AUTH_SECRET?.trim() || process.env.BTA_AUTH_SECRET?.trim()
     ),
-    paywallEnabled: process.env.BTA_PAYWALL_ENABLED === "1",
-    stripeConfigured: Boolean(
-      process.env.BTA_STRIPE_SECRET_KEY?.trim()
-      && (
-        process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim()
-        || process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim()
-      )
-    ),
-    stripeWebhookSecretConfigured: Boolean(process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim()),
+    emailProvider,
+    emailFromConfigured: Boolean(process.env.BTA_EMAIL_FROM?.trim()),
+    resendApiKeyConfigured: Boolean(process.env.RESEND_API_KEY?.trim()),
   };
 }
 
@@ -87,34 +70,21 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
   }
 
   if (!config.localAuthSecretConfigured) {
-    errors.push(
-      "Production requires a dedicated local auth signing secret. " +
-      "Set BTA_LOCAL_AUTH_SECRET (or legacy BTA_AUTH_SECRET) and do not reuse BTA_API_KEY for token signing."
+    warnings.push(
+      "BTA_LOCAL_AUTH_SECRET is not set; built-in email/password auth cannot issue signed local tokens. " +
+      "Set a dedicated BTA_LOCAL_AUTH_SECRET to enable local auth safely in production."
     );
   }
 
-  if (config.paywallEnabled && !config.stripeConfigured) {
-    errors.push(
-      "Paywall is enabled but Stripe is not fully configured. " +
-      "Set BTA_STRIPE_SECRET_KEY and at least one checkout price ID (BTA_STRIPE_PRICE_ID_MONTHLY or BTA_STRIPE_PRICE_ID_YEARLY)."
-    );
-  }
-
-  if (config.paywallEnabled && !config.stripeWebhookSecretConfigured) {
-    errors.push("Paywall is enabled but BTA_STRIPE_WEBHOOK_SECRET is missing.");
-  }
-
-    // Checkout requires at least one active price.
-    if (config.paywallEnabled) {
-      const stripePriceIdMonthly = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim();
-      const stripePriceIdYearly = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim();
-    
-      if (!stripePriceIdMonthly && !stripePriceIdYearly) {
-        errors.push(
-          "Paywall checkout requires at least one price ID (set BTA_STRIPE_PRICE_ID_MONTHLY and/or BTA_STRIPE_PRICE_ID_YEARLY)."
-        );
-      }
+  if (config.emailProvider) {
+    if (!config.emailFromConfigured) {
+      warnings.push("BTA_EMAIL_FROM is not set; transactional emails cannot be delivered.");
     }
+    if (config.emailProvider === "resend" && !config.resendApiKeyConfigured) {
+      warnings.push("RESEND_API_KEY is not set; Resend email delivery is disabled.");
+    }
+  }
+
   return { errors, warnings };
 }
 
@@ -133,9 +103,7 @@ export function assertRuntimeConfig(config: RuntimeConfig): void {
   const result = validateRuntimeConfig(config);
   if (result.warnings.length > 0) {
     for (const warning of result.warnings) {
-      logger.warn("runtime.config_warning", {
-        warning,
-      });
+      console.warn(`[realtime-api] ${warning}`);
     }
   }
   if (result.errors.length > 0) {

@@ -1,13 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, storeAuthSession, type AuthSessionPersistence } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId, storeAuthSession } from "./platform.js";
 
 interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
   onBackHome: () => void;
-  onCreateAccount: (email?: string) => void;
-  onForgotPassword: (email?: string) => void;
-  onAcceptInvite: () => void;
-  onVerifyEmail: () => void;
+  onCreateAccount: () => void;
+  onForgotPassword: () => void;
 }
 
 interface AuthUser {
@@ -29,17 +27,24 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword, onAcceptInvite, onVerifyEmail }: LoginPageProps) {
-  const initialEmail = typeof window === "undefined"
-    ? ""
-    : (new URLSearchParams(window.location.search).get("email") ?? "").trim().toLowerCase();
-  const [coachEmail, setCoachEmail] = useState(initialEmail);
+export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPassword }: LoginPageProps) {
+  const activeSchoolId = resolveActiveSchoolId();
+  const hasInviteLink = Boolean(new URLSearchParams(window.location.search).get("invite"));
+  const [coachEmail, setCoachEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
-  const [status, setStatus] = useState("Private preview only. Sign in with an approved coach account.");
+  const [status, setStatus] = useState(
+    hasInviteLink
+      ? "You were invited to this workspace. Sign in if you already have an account, or create one with the invited email."
+      : "Private preview only. Sign in with an approved coach account.",
+  );
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Waiting for school context before checking your session.");
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -70,10 +75,16 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     return () => {
       cancelled = true;
     };
-  }, [onSuccess]);
+  }, [activeSchoolId, onSuccess]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!activeSchoolId) {
+      setStatus("Cannot sign in until school context is available.");
+      return;
+    }
+
     const normalizedEmail = coachEmail.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
@@ -91,7 +102,6 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     setStatus("Signing in...");
 
     try {
-      const persistence: AuthSessionPersistence = rememberMe ? "local" : "session";
       const response = await fetch(`${apiBase}/api/auth/login`, {
         method: "POST",
         headers: apiKeyHeader(true),
@@ -113,7 +123,7 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
         role: payload.user.role,
         schoolId: payload.user.schoolId,
         lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
-      }, { persistence });
+      });
 
       setPassword("");
       setStatus(
@@ -129,158 +139,53 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     }
   }
 
-  function handleForgotPassword() {
-    const normalizedEmail = coachEmail.trim().toLowerCase();
-    onForgotPassword(normalizedEmail || undefined);
-  }
-
-  function handleCreateAccount() {
-    const normalizedEmail = coachEmail.trim().toLowerCase();
-    onCreateAccount(normalizedEmail || undefined);
-  }
-
   return (
-    <div className="auth-page auth-login-page">
-      <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
-      <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
-
-      <header className="auth-topbar auth-login-topbar">
-        <button type="button" className="auth-topbar-link" onClick={onBackHome}>Back Home</button>
-        <div className="auth-brand-lockup auth-brand-lockup-compact" aria-label="BTA Courtside">
-          <img className="auth-brand-logo" src="/brand-logo.png" alt="BTA Courtside" />
-          <div>
-            <p className="auth-brand-name">Courtside</p>
-            <p className="auth-brand-subtitle">Live Basketball Intelligence</p>
-          </div>
-        </div>
-        <span className="auth-topbar-pill">Coach Access</span>
+    <div className="marketing-page">
+      <header className="marketing-header marketing-header-tight">
+        <button type="button" className="shell-nav-link" onClick={onBackHome}>← Back Home</button>
+        <span className="marketing-coming-pill">Invite Only</span>
       </header>
 
-      <main className="auth-shell auth-shell-wide auth-login-shell">
-        <section className="auth-card auth-login-card" aria-labelledby="coach-login-title">
-          <div className="auth-card-head">
-            <p className="auth-kicker">Coach Login</p>
-            <h2 id="coach-login-title">Sign in to your dashboard</h2>
+      <main className="marketing-login-shell">
+        <section className="marketing-login-card stats-page-card">
+          <p className="stats-page-eyebrow">Coach access</p>
+          <h1>Sign in to your dashboard</h1>
+          <p className="stats-page-subtitle">
+            Sign in below, or use the temporary create-account flow to unlock your dashboard.
+          </p>
+
+          <div className="marketing-login-note">
+            <strong>{hasInviteLink ? "Invite detected" : "Temporary access enabled"}</strong>
             <p>
-              Use the same coach email tied to your organization. Keep this device signed in only if it is trusted.
+              {hasInviteLink
+                ? "Use the invited email address to create your account and finish joining this workspace."
+                : "If you do not have a coach login yet, create one first and then finish setup."}
             </p>
+            <button type="button" className="shell-nav-link" onClick={onCreateAccount}>
+              {hasInviteLink ? "Accept Invite" : "Create Account"}
+            </button>
           </div>
 
-          <form className="auth-form auth-login-form" onSubmit={handleSubmit}>
-            <label className="auth-field">
+          <form className="marketing-login-form" onSubmit={handleSubmit}>
+            <label className="stats-filter-field">
               <span>Coach Email</span>
-              <input
-                type="email"
-                value={coachEmail}
-                onChange={(event) => setCoachEmail(event.target.value)}
-                placeholder="coach@program.org"
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-              />
+              <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
             </label>
-
-            <label className="auth-field">
+            <label className="stats-filter-field">
               <span>Password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Your password"
-                autoComplete="current-password"
-              />
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
             </label>
 
-            <div className="auth-inline-row">
-              <label className="auth-checkbox">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(event) => setRememberMe(event.target.checked)}
-                />
-                <span>Remember me on this device</span>
-              </label>
-
-              <button type="button" className="auth-text-link" onClick={handleForgotPassword}>Forgot password?</button>
-            </div>
-
-            <button type="submit" className="auth-primary-button" disabled={busy}>
+            <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={busy}>
               {busy ? "Signing In..." : "Sign In"}
             </button>
           </form>
 
-          <div className="auth-login-assist">
-            <p className="auth-status auth-login-status" aria-live="polite">{status}</p>
-
-            <div className="auth-link-row auth-login-quick-links">
-              <button type="button" className="auth-secondary-button" onClick={onAcceptInvite}>Accept Team Invite</button>
-              <button type="button" className="auth-secondary-button" onClick={onVerifyEmail}>Verify Email</button>
-            </div>
-          </div>
-        </section>
-
-        <section className="auth-hero-panel auth-login-hero-panel" aria-label="Coach workspace overview">
-          <div className="auth-login-hero-header">
-            <span className="auth-kicker">Coach Workspace</span>
-            <div className="auth-login-ribbon-row" aria-hidden="true">
-              <span className="auth-login-ribbon">Live Stats</span>
-              <span className="auth-login-ribbon">Film Context</span>
-              <span className="auth-login-ribbon">Secure Sessions</span>
-            </div>
-            <h1 className="auth-display-title">
-              Run the sideline command desk
-              <span>without losing game tempo.</span>
-            </h1>
-            <p className="auth-hero-copy">
-              Keep your bench synced, your staff aligned, and your adjustments fast with one unified coach control room.
-            </p>
+          <div style={{ marginTop: "0.65rem" }}>
+            <button type="button" className="shell-nav-link" onClick={onForgotPassword}>Forgot password?</button>
           </div>
 
-          <article className="auth-login-snapshot-card" aria-label="Live snapshot preview">
-            <div className="auth-login-snapshot-head">
-              <strong>Live Preview</strong>
-              <span>Quarter 3 · 04:12</span>
-            </div>
-            <div className="auth-login-snapshot-scoreboard">
-              <div>
-                <p>Home</p>
-                <strong>64</strong>
-              </div>
-              <span>:</span>
-              <div>
-                <p>Away</p>
-                <strong>59</strong>
-              </div>
-            </div>
-            <div className="auth-login-snapshot-events">
-              <p>Momentum: 6-0 run in last 1:42</p>
-              <p>Lineup: 2-way wing unit on floor</p>
-              <div className="auth-login-tempo-track" aria-hidden="true">
-                <span className="auth-login-tempo-fill" style={{ width: "68%" }} />
-              </div>
-            </div>
-          </article>
-
-          <div className="auth-login-feature-grid" aria-label="Platform capabilities">
-            <article className="auth-login-feature-card">
-              <span>Realtime Sync</span>
-              <strong>Operator and dashboard stay aligned possession-by-possession.</strong>
-            </article>
-            <article className="auth-login-feature-card">
-              <span>Secure Sessions</span>
-              <strong>Use remembered or browser-session sign-in for trusted devices.</strong>
-            </article>
-            <article className="auth-login-feature-card">
-              <span>Account Recovery</span>
-              <strong>Email verification and password reset built into the same flow.</strong>
-            </article>
-          </div>
-
-          <div className="auth-side-note auth-login-cta-note">
-            <strong>New to BTA Courtside?</strong>
-            <p>Create your coach account, finish setup once, and return straight to live operations for future sign-ins.</p>
-            <button type="button" className="auth-secondary-button" onClick={handleCreateAccount}>Create Account</button>
-          </div>
+          <p className="stats-page-status">{status}</p>
         </section>
       </main>
     </div>

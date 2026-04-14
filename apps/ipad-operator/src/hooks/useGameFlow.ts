@@ -2,12 +2,14 @@ import type { GameEvent } from "@bta/shared-schema";
 import {
   apiKeyHeader,
   buildAiContextFromSetup,
-  fetchOperatorLinkSnapshot,
+  generateFreshGameId,
   generateGameId,
   isConnectionReadyForStart,
+  isLegacyStatsExportConfigured,
   mergeCoachLinkSnapshot,
   normalizeConnectionId,
 } from "../helpers/network.js";
+import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
 import type { AppData, GameSetup, OperatorLinkResponse, Team, TeamSide } from "../types.js";
 
@@ -30,7 +32,7 @@ export interface UseGameFlowInput {
   postGameHomeScoreInput: string;
   postGameAwayScoreInput: string;
   persistData: (next: AppData) => void;
-  persistPhase: (phase: "pre-game" | "live" | "post-game" | "finished") => void;
+  persistPhase: (phase: "pre-game" | "live" | "post-game") => void;
   resetTimeline: (gameIdToReset: string) => void;
   setSubmitStatus: React.Dispatch<React.SetStateAction<"idle" | "pending" | "success" | "error">>;
   setSubmitMessage: React.Dispatch<React.SetStateAction<string>>;
@@ -89,45 +91,58 @@ export function useGameFlow({
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
 
-  async function refreshOperatorAuthFromConnection(
-    current: AppData,
-    options?: { clearStaleToken?: boolean }
-  ): Promise<AppData> {
-    const clearedSetup = options?.clearStaleToken
-      ? { ...current.gameSetup, apiKey: undefined }
-      : current.gameSetup;
-    const connectionId = normalizeConnectionId(clearedSetup.syncedConnectionId || clearedSetup.connectionId);
+  function clearCachedOperatorAuth(current: AppData): AppData {
+    if (!current.gameSetup.apiKey) {
+      return current;
+    }
+
+    const next: AppData = {
+      ...current,
+      gameSetup: {
+        ...current.gameSetup,
+        apiKey: undefined,
+      },
+    };
+    saveAppData(next);
+    setAppData(next);
+    return next;
+  }
+
+  async function refreshOperatorAuthFromConnection(current: AppData): Promise<AppData> {
+    const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
     if (!connectionId) {
       return current;
     }
 
-    const baseData = options?.clearStaleToken
-      ? { ...current, gameSetup: clearedSetup }
-      : current;
-
-    if (options?.clearStaleToken && baseData.gameSetup.apiKey !== current.gameSetup.apiKey) {
-      saveAppData(baseData);
-      setAppData(baseData);
-    }
-
     try {
-      const snapshot = await fetchOperatorLinkSnapshot(clearedSetup);
-      if (!snapshot) {
-        return baseData;
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (current.gameSetup.schoolId?.trim()) {
+        headers["x-school-id"] = current.gameSetup.schoolId.trim();
       }
 
-      const payload = snapshot.payload as OperatorLinkResponse;
-      const next = mergeCoachLinkSnapshot(baseData, payload);
+      const response = await fetch(
+        `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
+        { headers },
+      );
+      if (!response.ok) {
+        if (response.status === 404) {
+          return clearCachedOperatorAuth(current);
+        }
+        return current;
+      }
+
+      const payload = (await response.json()) as OperatorLinkResponse;
+      const next = mergeCoachLinkSnapshot(current, payload);
       if (
-        next.gameSetup.apiKey !== baseData.gameSetup.apiKey
-        || next.gameSetup.schoolId !== baseData.gameSetup.schoolId
+        next.gameSetup.apiKey !== current.gameSetup.apiKey
+        || next.gameSetup.schoolId !== current.gameSetup.schoolId
       ) {
         saveAppData(next);
         setAppData(next);
       }
       return next;
     } catch {
-      return baseData;
+      return current;
     }
   }
 
@@ -174,7 +189,7 @@ export function useGameFlow({
       });
 
       if (res.status === 401) {
-        latest = await refreshOperatorAuthFromConnection(latest, { clearStaleToken: true });
+        latest = await refreshOperatorAuthFromConnection(latest);
         const retryHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
         if (hasWriteCredential(retryHeaders)) {
           res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
@@ -182,13 +197,6 @@ export function useGameFlow({
             headers: retryHeaders,
             body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
           });
-        } else {
-          showInlineNotice(
-            "Live session expired and could not auto-refresh. Tap Sync Now on Ready to Track, then retry Start Game.",
-            "warning",
-            7000,
-          );
-          return;
         }
       }
 
@@ -232,14 +240,6 @@ export function useGameFlow({
             6000,
           );
         } else {
-          if (res.status === 401) {
-            showInlineNotice(
-              "Live auth failed after auto-recovery. Re-sync the connection code on Ready to Track, then retry Start Game.",
-              "error",
-              8000,
-            );
-            return;
-          }
           showInlineNotice(
             `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
             "error"
@@ -269,7 +269,7 @@ export function useGameFlow({
       return;
     }
 
-    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId };
+    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined as number | undefined };
     if (serverOpponentName) mergedSetup.opponent = serverOpponentName;
     if (serverVcSide) mergedSetup.vcSide = serverVcSide;
     const nextData: AppData = { ...latest, gameSetup: mergedSetup };
@@ -283,21 +283,17 @@ export function useGameFlow({
 
   async function endAndResetGame() {
     const latest = loadAppData();
+    if (allEventObjs.length > 0 && latest.gameSetup.opponent?.trim()) {
+      const saved = await submitToDashboard({ opponent: latest.gameSetup.opponent });
+      if (!saved) return false;
+    }
     const newId = generateGameId(latest.gameSetup.opponent ?? "", gameDate);
     await startGame(newId);
     return true;
   }
 
-  async function endGame() {
+  function endGame() {
     setSubmitStatus("idle");
-    const apiSubmitted = await submitGameToRealtimeApi();
-    if (!apiSubmitted) {
-      showInlineNotice(
-        "Could not notify other devices that the game ended. You can retry with Submit Game in post-game.",
-        "warning",
-        6000,
-      );
-    }
     setSubmitMessage("Review game details, then tap Submit Game to publish stats to the dashboard.");
     persistPhase("post-game");
   }
@@ -307,7 +303,7 @@ export function useGameFlow({
     const newId = generateGameId(latest.gameSetup.opponent ?? "", new Date().toISOString().slice(0, 10));
     const nextData: AppData = {
       ...latest,
-      gameSetup: { ...latest.gameSetup, gameId: newId },
+      gameSetup: { ...latest.gameSetup, gameId: newId, statsGameId: undefined },
     };
     persistData(nextData);
     resetTimeline(newId);
@@ -315,6 +311,122 @@ export function useGameFlow({
     setSubmitStatus("idle");
     setSubmitMessage("Ready to publish final stats.");
     persistPhase("pre-game");
+  }
+
+  async function submitToDashboard(overrides?: { opponent?: string; date?: string; homeScore?: number; awayScore?: number }) {
+    const vcSide = appData.gameSetup.vcSide ?? "home";
+    const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
+    const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "";
+
+    if (!opponent) {
+      const message = "Enter the opponent name in Game Setup before submitting.";
+      setSubmitMessage(message);
+      showInlineNotice("Enter the opponent name in Game Setup (Settings > Game Setup) before submitting.", "warning");
+      return false;
+    }
+
+    const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
+    if (!vcTeam) {
+      const message = "Tracked team is not configured. Check Game Setup in Settings.";
+      setSubmitMessage(message);
+      showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
+      return false;
+    }
+
+    if (!isLegacyStatsExportConfigured(appData.gameSetup)) {
+      setSubmitStatus("success");
+      setSubmitMessage("Live stats are already available in the coach dashboard.");
+      setTimeout(() => {
+        setSubmitStatus("idle");
+        setSubmitMessage("Ready to publish final stats.");
+      }, 4000);
+      return true;
+    }
+
+    setSubmitStatus("pending");
+    setSubmitMessage(`Saving final stats to ${dashboardUrl}...`);
+
+    const effectiveDate = overrides?.date || gameDate;
+    const dateParts = new Date(effectiveDate + "T12:00:00").toLocaleDateString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+    });
+
+    const computedVcScore = scores[vcSide];
+    const computedOppScore = scores[oppSide];
+    const vcScore = vcSide === "home"
+      ? (overrides?.homeScore ?? computedVcScore)
+      : (overrides?.awayScore ?? computedVcScore);
+    const oppScore = vcSide === "home"
+      ? (overrides?.awayScore ?? computedOppScore)
+      : (overrides?.homeScore ?? computedOppScore);
+    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
+    const teamStats = computeTeamStats(allEventObjs, vcTeamId);
+
+    const rosterPayload = vcTeam.players.map(p => ({
+      number: parseInt(p.number, 10) || 0,
+      name: p.name,
+      position: p.position || undefined,
+      height: p.height || undefined,
+      grade: p.grade || undefined,
+    }));
+
+    const payload: Record<string, unknown> = {
+      date: dateParts,
+      opponent,
+      location: vcSide,
+      vc_score: vcScore,
+      opp_score: oppScore,
+      team_stats: teamStats,
+      player_stats: playerStats,
+      roster: rosterPayload,
+    };
+    if (appData.gameSetup.statsGameId != null) {
+      payload.gameId = appData.gameSetup.statsGameId;
+    }
+
+    try {
+      const res = await fetch(`${dashboardUrl}/api/ingest-game`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json().catch(() => ({})) as { message?: string; gameId?: number; error?: string };
+      if (res.ok) {
+        if (result.gameId != null && result.gameId !== appData.gameSetup.statsGameId) {
+          persistData({
+            ...appData,
+            gameSetup: { ...appData.gameSetup, statsGameId: result.gameId },
+          });
+        }
+        setSubmitStatus("success");
+        setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
+        setTimeout(() => {
+          setSubmitStatus("idle");
+          setSubmitMessage("Ready to publish final stats.");
+        }, 4000);
+        return true;
+      } else {
+        const errorMessage = result.error || result.message || `Request failed with status ${res.status}.`;
+        console.error("Dashboard ingest error:", errorMessage);
+        setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
+        showInlineNotice(
+          `Could not save final stats to the legacy stats export endpoint. ${errorMessage} Check Settings > Game Setup > Legacy Stats Export URL and make sure that service is running.`,
+          "error"
+        );
+        setSubmitStatus("error");
+        return false;
+      }
+    } catch (err) {
+      console.error("Could not reach Stats dashboard:", err);
+      setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
+      showInlineNotice(
+        `Could not reach the legacy stats export endpoint at ${dashboardUrl}. Start that service or update Settings > Game Setup > Legacy Stats Export URL, then retry.`,
+        "error"
+      );
+      setSubmitStatus("error");
+      return false;
+    }
   }
 
   // ---- Post-game helpers ----
@@ -351,14 +463,14 @@ export function useGameFlow({
 
   function resetFromPostGame() {
     const edits = applyPostGameEdits();
-    const baseId = edits.gameId || generateGameId(edits.opponent, edits.date);
-    const freshId = `${baseId}-reset-${Date.now().toString().slice(-4)}`;
+    const freshId = generateFreshGameId(edits.opponent || edits.gameId, edits.date, "reset");
     persistData({
       ...appData,
       gameSetup: {
         ...appData.gameSetup,
         gameId: freshId,
         opponent: edits.opponent,
+        statsGameId: undefined,
       },
     });
     resetGameStateFor(freshId);
@@ -384,14 +496,26 @@ export function useGameFlow({
       } catch { /* keep discarding locally */ }
     }
 
+    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim();
+    const savedStatsGameId = appData.gameSetup.statsGameId;
+    if (dashboardUrl && savedStatsGameId != null) {
+      try {
+        await fetch(`${dashboardUrl}/api/games/${savedStatsGameId}`, {
+          method: "DELETE",
+          headers: apiKeyHeader(appData.gameSetup),
+        });
+      } catch { /* keep discarding locally */ }
+    }
+
     const edits = applyPostGameEdits();
-    const freshId = generateGameId(edits.opponent, new Date().toISOString().slice(0, 10));
+    const freshId = generateFreshGameId(edits.opponent || edits.gameId, new Date().toISOString().slice(0, 10), "discard");
     persistData({
       ...appData,
       gameSetup: {
         ...appData.gameSetup,
         gameId: freshId,
         opponent: "",
+        statsGameId: undefined,
         syncedConnectionId: undefined,
       },
     });
@@ -420,6 +544,7 @@ export function useGameFlow({
     endAndResetGame,
     endGame,
     handleNewGame,
+    submitToDashboard,
     applyPostGameEdits,
     resetGameStateFor,
     resetFromPostGame,

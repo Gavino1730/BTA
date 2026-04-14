@@ -8,19 +8,35 @@ type MetaInput = {
   path: string;
 };
 
+const BRAND_TITLE = "BTA Courtside";
+
+function normalizePageTitle(rawTitle: string): string {
+  const firstSegment = rawTitle
+    .split("|")[0]
+    ?.replace(/\s+BTA Courtside$/i, "")
+    .trim();
+
+  if (!firstSegment || /^BTA Courtside$/i.test(firstSegment)) {
+    return BRAND_TITLE;
+  }
+
+  return `${firstSegment} | ${BRAND_TITLE}`;
+}
+
 export function buildPageMetadata({ title, description, path }: MetaInput): Metadata {
   const siteUrl = getSiteUrl();
   const canonicalPath = path.startsWith("/") ? path : `/${path}`;
   const canonicalUrl = `${siteUrl}${canonicalPath}`;
+  const normalizedTitle = normalizePageTitle(title);
 
   return {
-    title,
+    title: normalizedTitle,
     description,
     alternates: {
       canonical: canonicalPath,
     },
     openGraph: {
-      title,
+      title: normalizedTitle,
       description,
       type: "website",
       url: canonicalUrl,
@@ -35,7 +51,7 @@ export function buildPageMetadata({ title, description, path }: MetaInput): Meta
     },
     twitter: {
       card: "summary_large_image",
-      title,
+      title: normalizedTitle,
       description,
       images: ["/twitter-image"],
     },

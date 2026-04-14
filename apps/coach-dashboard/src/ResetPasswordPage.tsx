@@ -1,5 +1,5 @@
 import { type FormEvent, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader } from "./platform.js";
+import { apiBase, resolveActiveSchoolId } from "./platform.js";
 
 interface ResetPasswordPageProps {
   onBackLogin: () => void;
@@ -8,21 +8,26 @@ interface ResetPasswordPageProps {
 
 export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPageProps) {
   const tokenFromUrl = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
+  const schoolId = resolveActiveSchoolId();
   const [token, setToken] = useState(tokenFromUrl);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [complete, setComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(
     tokenFromUrl
-      ? "Enter a new password to complete your reset."
-      : "Missing reset token. Use Forgot Password to generate a reset link.",
+      ? "Enter a new password to finish resetting your account."
+      : "Paste the reset token from your email to continue.",
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedToken = token.trim();
     const nextPassword = password.trim();
+
+    if (!schoolId) {
+      setStatus("Open your school workspace link first so we can validate the reset token.");
+      return;
+    }
 
     if (!normalizedToken) {
       setStatus("Reset token is required.");
@@ -45,7 +50,10 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
     try {
       const response = await fetch(`${apiBase}/api/auth/password-reset/confirm`, {
         method: "POST",
-        headers: apiKeyHeader(true),
+        headers: {
+          "Content-Type": "application/json",
+          "x-school-id": schoolId,
+        },
         body: JSON.stringify({ token: normalizedToken, password: nextPassword }),
       });
 
@@ -56,7 +64,6 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
 
       setPassword("");
       setConfirmPassword("");
-      setComplete(true);
       setStatus(payload.message || "Password reset successful. You can now sign in.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not reset password.");
@@ -66,90 +73,40 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
   }
 
   return (
-    <div className="auth-page auth-flow-page auth-reset-page">
-      <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
-      <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
-
-      <header className="auth-topbar auth-flow-topbar">
-        <button type="button" className="auth-topbar-link" onClick={onBackForgot}>Back to Forgot Password</button>
-        <div className="auth-brand-lockup" aria-label="BTA Courtside">
-          <span className="auth-brand-badge">BTA</span>
-          <div>
-            <p className="auth-brand-name">Courtside</p>
-            <p className="auth-brand-subtitle">Password Reset Confirmation</p>
-          </div>
-        </div>
-        <button type="button" className="auth-topbar-link" onClick={onBackLogin}>Back to Login</button>
+    <div className="marketing-page">
+      <header className="marketing-header marketing-header-tight">
+        <button type="button" className="shell-nav-link" onClick={onBackForgot}>Back to Forgot Password</button>
+        <button type="button" className="shell-nav-link" onClick={onBackLogin}>Back to Login</button>
       </header>
 
-      <main className="auth-shell auth-shell-compact auth-flow-shell">
-        <section className="auth-hero-panel auth-hero-panel-compact auth-flow-hero-panel">
-          <span className="auth-kicker">Account Recovery</span>
-          <h1 className="auth-display-title">
-            Choose a new password and
-            <span>get back into the dashboard.</span>
-          </h1>
-          <p className="auth-hero-copy">
-            Reset tokens can arrive from the email link automatically or be pasted manually for controlled recovery and support workflows.
+      <main className="marketing-login-shell">
+        <section className="marketing-login-card stats-page-card">
+          <p className="stats-page-eyebrow">Account Recovery</p>
+          <h1>Reset Password</h1>
+          <p className="stats-page-subtitle">
+            Enter the token from your email and choose a new password.
           </p>
-        </section>
 
-        <section className="auth-card auth-flow-card" aria-labelledby="reset-password-title">
-          <div className="auth-card-head">
-            <p className="auth-kicker">Reset Password</p>
-            <h2 id="reset-password-title">Set a new password</h2>
-            <p>Use at least 8 characters. If you opened this page from email, the reset token should already be filled in for you.</p>
-          </div>
-
-          <form className="auth-form" onSubmit={handleSubmit}>
-            <label className="auth-field">
+          <form className="marketing-login-form" onSubmit={handleSubmit}>
+            <label className="stats-filter-field">
               <span>Reset Token</span>
-              <input
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                placeholder="Paste reset token"
-                autoComplete="one-time-code"
-                spellCheck={false}
-              />
+              <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste reset token" />
             </label>
-
-            <label className="auth-field">
+            <label className="stats-filter-field">
               <span>New Password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 8 characters"
-                autoComplete="new-password"
-              />
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" />
             </label>
-
-            <label className="auth-field">
+            <label className="stats-filter-field">
               <span>Confirm Password</span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Re-enter password"
-                autoComplete="new-password"
-              />
+              <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Re-enter password" />
             </label>
 
-            <button type="submit" className="auth-primary-button" disabled={busy}>
+            <button type="submit" className="shell-nav-link shell-nav-link-active marketing-submit" disabled={busy}>
               {busy ? "Resetting..." : "Reset Password"}
             </button>
           </form>
 
-          <p className="auth-status auth-flow-status" aria-live="polite">{status}</p>
-
-          <div className="auth-link-row">
-            <button type="button" className="auth-secondary-button" onClick={onBackForgot}>Request Another Reset</button>
-            {complete ? (
-              <button type="button" className="auth-secondary-button" onClick={onBackLogin}>Return to Login</button>
-            ) : (
-              <button type="button" className="auth-secondary-button" onClick={onBackLogin}>Back to Login</button>
-            )}
-          </div>
+          <p className="stats-page-status">{status}</p>
         </section>
       </main>
     </div>

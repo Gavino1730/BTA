@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
+import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
 import {
   buildPlayerGameHistory,
   type GamePlayerStat,
@@ -103,7 +103,7 @@ function ScoreTrend({ history, onSelectGame }: { history: PlayerGameHistoryRow[]
             type="button"
             onClick={() => onSelectGame(String(row.gameId))}
             className="player-trend-bar"
-            title={`${row.date || "No date"} vs ${row.opponent} • ${row.result} ${row.teamScore}-${row.oppScore} • ${row.pts} pts, ${row.reb} reb, ${row.asst} asst`}
+            title={`${row.date || "No date"} vs ${row.opponent} • ${row.result} ${row.teamScore}-${row.oppScore} • ${row.pts} pts, ${row.reb} reb, ${row.ast} ast`}
             style={{ display: "grid", gap: "0.35rem", justifyItems: "center", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
           >
             <strong style={{ fontSize: "0.85rem", color: "var(--text)" }}>{row.pts}</strong>
@@ -130,11 +130,6 @@ interface PlayerGameBoxScore {
   stat: GamePlayerStat;
 }
 
-function openSettingsPage(): void {
-  window.history.pushState({}, "", "/stats/settings");
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
 function findPlayerBoxScoreForGame(player: PlayerSummary, game: GameSummary): GamePlayerStat | null {
   const targetKeys = new Set(
     [player.playerId, player.full_name, player.name]
@@ -159,11 +154,12 @@ function findPlayerBoxScoreForGame(player: PlayerSummary, game: GameSummary): Ga
   return null;
 }
 
-function PlayerDetailModal({ player, history, games, teamName, onClose }: { player: PlayerSummary; history: PlayerGameHistoryRow[]; games: GameSummary[]; teamName: string; onClose: () => void }) {
+function PlayerDetailModal({ player, history, games, onClose }: { player: PlayerSummary; history: PlayerGameHistoryRow[]; games: GameSummary[]; onClose: () => void }) {
   const [advanced, setAdvanced] = useState<PlayerAdvancedPayload | null>(null);
   const [status, setStatus] = useState("Loading player details...");
   const [selectedGameId, setSelectedGameId] = useState("");
   const playerName = getPlayerDisplayName(player);
+  const schoolLabel = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
 
   const playerGameBoxScores = useMemo<PlayerGameBoxScore[]>(() => {
     return games
@@ -200,9 +196,6 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
         });
 
         if (!response.ok) {
-          if (await redirectToBillingIfRequired(response)) {
-            return;
-          }
           throw new Error("Advanced player request failed.");
         }
 
@@ -262,7 +255,7 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
           <div className="player-profile-hero">
             <div className="player-profile-avatar" aria-hidden="true">{playerName.slice(0, 1).toUpperCase()}</div>
             <div>
-              <p className="stats-page-eyebrow">{teamName || "Our Team"}</p>
+              <p className="stats-page-eyebrow">{schoolLabel} • Varsity</p>
               <h2 style={{ margin: 0 }}>{playerName}</h2>
               <p className="stats-page-subcopy" style={{ marginTop: "0.3rem" }}>
                 #{player.number ?? "-"} • {inferPosition(player.role)} • {getPlayerGamesPlayed(player)} GP
@@ -384,7 +377,7 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
               </div>
               <div>
                 <span>Trend Delta</span>
-                <strong style={{ color: trendDelta >= 0 ? "var(--bta-success)" : "var(--bta-danger)" }}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
+                <strong style={{ color: trendDelta >= 0 ? "#4ade80" : "#f87171" }}>{trendDelta >= 0 ? "+" : ""}{safeNum(trendDelta)}</strong>
               </div>
               <div>
                 <span>20+ Streak</span>
@@ -452,7 +445,7 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
                         <td><span className={`player-history-result ${row.result === "W" ? "win" : "loss"}`}>{row.result}</span> {row.teamScore}-{row.oppScore}</td>
                         <td>{row.pts}</td>
                         <td>{row.reb}</td>
-                        <td>{row.asst}</td>
+                        <td>{row.ast}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -531,30 +524,31 @@ function PlayerDetailModal({ player, history, games, teamName, onClose }: { play
 }
 
 export function PlayersPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [games, setGames] = useState<GameSummary[]>([]);
-  const [teamName, setTeamName] = useState("");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"ppg" | "apg" | "rpg" | "fg_pct" | "defense">("ppg");
   const [minimumGames, setMinimumGames] = useState("0");
-  const [retryKey, setRetryKey] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading players...");
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerSummary | null>(null);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setPlayers([]);
+      setGames([]);
+      setStatus("Waiting for school context before loading players.");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadPlayers() {
-      setIsLoading(true);
-      setLoadError("");
       setStatus("Loading players...");
 
-      const [playersResult, gamesResult, teamsResult] = await Promise.allSettled([
+      const [playersResult, gamesResult] = await Promise.allSettled([
         fetch(`${apiBase}/api/players`, { headers: apiKeyHeader() }),
         fetch(`${apiBase}/api/games`, { headers: apiKeyHeader() }),
-        fetch(`${apiBase}/api/teams`, { headers: apiKeyHeader() }),
       ]);
 
       if (cancelled) {
@@ -562,9 +556,7 @@ export function PlayersPage() {
       }
 
       if (playersResult.status !== "fulfilled" || !playersResult.value.ok) {
-        setLoadError("Could not load player summaries from the realtime API.");
         setStatus("Could not load player summaries from the realtime API.");
-        setIsLoading(false);
         return;
       }
 
@@ -579,21 +571,13 @@ export function PlayersPage() {
         setGames([]);
         setStatus("Player cards loaded. Previous game history is still syncing.");
       }
-
-      if (teamsResult.status === "fulfilled" && teamsResult.value.ok) {
-        const teamsPayload = await teamsResult.value.json() as { teams?: { name?: string }[] };
-        const firstName = teamsPayload.teams?.[0]?.name;
-        if (firstName) setTeamName(firstName);
-      }
-
-      setIsLoading(false);
     }
 
     void loadPlayers();
     return () => {
       cancelled = true;
     };
-  }, [retryKey]);
+  }, [activeSchoolId]);
 
   const filtered = useMemo(() => {
     const normalized = normalizePlayerLookupKey(query);
@@ -632,7 +616,6 @@ export function PlayersPage() {
           player={selectedPlayer}
           history={selectedHistory}
           games={games}
-          teamName={teamName}
           onClose={() => setSelectedPlayer(null)}
         />
       ) : null}
@@ -645,31 +628,6 @@ export function PlayersPage() {
         <p className="stats-page-status">{status}</p>
       </section>
 
-      {isLoading && (
-        <section className="stats-page-card">
-          <div className="loading-indicator">
-            <div className="loading-spinner" />
-            <p className="loading-text">Loading player summaries...</p>
-          </div>
-        </section>
-      )}
-
-      {!isLoading && loadError && (
-        <section className="stats-page-card">
-          <p className="stats-empty-copy">{loadError}</p>
-          <button
-            type="button"
-            className="shell-nav-link"
-            style={{ marginTop: "0.65rem" }}
-            onClick={() => setRetryKey((value) => value + 1)}
-          >
-            Retry
-          </button>
-        </section>
-      )}
-
-      {!isLoading && !loadError && (
-      <>
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
           <span>Search name or number</span>
@@ -699,16 +657,6 @@ export function PlayersPage() {
       {filtered.length === 0 ? (
         <section className="stats-page-card">
           <p className="stats-empty-copy">No players available for the current filters.</p>
-          {players.length === 0 && (
-            <button
-              type="button"
-              className="shell-nav-link"
-              style={{ marginTop: "0.6rem" }}
-              onClick={openSettingsPage}
-            >
-              Add players in Settings
-            </button>
-          )}
         </section>
       ) : (
         <section className="stats-game-grid">
@@ -774,8 +722,6 @@ export function PlayersPage() {
             );
           })}
         </section>
-      )}
-      </>
       )}
     </div>
   );

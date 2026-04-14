@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { isCorsOriginAllowed, startServer, stopServer } from "./server.js";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { startServer, stopServer } from "./server.js";
 
 /**
  * Realtime API server endpoint tests
@@ -20,6 +20,10 @@ beforeEach(() => {
   delete process.env.BTA_API_KEY;
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 async function resetSchool(schoolId: string): Promise<void> {
   await fetch(`${API_BASE}/admin/reset`, {
     method: "DELETE",
@@ -36,40 +40,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await stopServer();
-});
-
-describe("request tracing", () => {
-  it("normalizes exact origins when matching CORS allowlist", () => {
-    expect(isCorsOriginAllowed("https://www.btaintel.com", ["https://www.btaintel.com/"])).toBe(true);
-    expect(isCorsOriginAllowed("https://www.btaintel.com:443", ["https://www.btaintel.com"])).toBe(true);
-    expect(isCorsOriginAllowed("https://www.btaintel.com", ["https://btaintel.com"])).toBe(false);
-  });
-
-  it("supports wildcard origin entries after normalization", () => {
-    expect(isCorsOriginAllowed("https://bta-coach-dashboard-123.vercel.app", ["https://bta-coach-dashboard-*.vercel.app/"])).toBe(true);
-    expect(isCorsOriginAllowed("https://evil.com", ["https://bta-coach-dashboard-*.vercel.app/"])).toBe(false);
-  });
-
-  it("returns a generated x-request-id when one is not provided", async () => {
-    const response = await fetch(`${API_BASE}/health`);
-    expect(response.status).toBe(200);
-
-    const generated = response.headers.get("x-request-id");
-    expect(typeof generated).toBe("string");
-    expect(generated?.trim().length ?? 0).toBeGreaterThan(0);
-  });
-
-  it("echoes inbound x-request-id in response headers", async () => {
-    const requestId = "trace-test-123";
-    const response = await fetch(`${API_BASE}/health`, {
-      headers: {
-        "x-request-id": requestId,
-      },
-    });
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("x-request-id")).toBe(requestId);
-  });
 });
 
 describe("school tenancy", () => {
@@ -208,7 +178,8 @@ describe("operator pairing endpoints", () => {
         opponentName: "Central Christian",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
-        awayTeamColor: "#ef4444"
+        awayTeamColor: "#ef4444",
+        dashboardUrl: "http://localhost:5173/live"
       })
     });
 
@@ -268,39 +239,54 @@ describe("operator pairing endpoints", () => {
     expect(body.operatorToken?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("treats operator connection tokens as authenticated sessions", async () => {
-    await resetSchool("pairing-operator-session");
+  it("reissues a fresh operator token when the iPad re-syncs the operator link", async () => {
+    await resetSchool("pairing-refresh-token");
+    vi.useFakeTimers();
 
-    const putRes = await fetch(`${API_BASE}/api/operator-links/conn-operator-session`, {
+    vi.setSystemTime(new Date("2026-04-09T12:00:00.000Z"));
+    const putRes = await fetch(`${API_BASE}/api/operator-links/conn-refresh-1`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", "x-school-id": "pairing-operator-session" },
+      headers: { "Content-Type": "application/json", "x-school-id": "pairing-refresh-token" },
       body: JSON.stringify({
-        gameId: "operator-session-game",
+        gameId: "pairing-refresh-game",
         myTeamId: "vc-varsity",
         myTeamName: "Home Team Varsity",
         opponentName: "Central Christian",
-        vcSide: "home",
+        vcSide: "home"
       })
     });
     expect(putRes.status).toBe(200);
 
-    const linkRes = await fetch(`${API_BASE}/api/operator-links/conn-operator-session`);
-    expect(linkRes.status).toBe(200);
-    const linkBody = await linkRes.json() as { operatorToken?: string };
-    expect(typeof linkBody.operatorToken).toBe("string");
-    const operatorToken = linkBody.operatorToken ?? "";
-    expect(operatorToken.length).toBeGreaterThan(0);
+    const initialBody = await putRes.json() as { operatorToken?: string };
+    expect(typeof initialBody.operatorToken).toBe("string");
 
-    const sessionRes = await fetch(`${API_BASE}/api/auth/session`, {
-      headers: {
-        Authorization: `Bearer ${operatorToken}`,
-        "x-school-id": "pairing-operator-session",
-      },
+    vi.setSystemTime(new Date("2026-04-09T12:00:02.000Z"));
+    const getRes = await fetch(`${API_BASE}/api/operator-links/conn-refresh-1`, {
+      headers: { "x-school-id": "pairing-refresh-token" }
     });
-    expect(sessionRes.status).toBe(200);
-    const sessionBody = await sessionRes.json() as { authenticated?: boolean; user?: { role?: string } | null };
-    expect(sessionBody.authenticated).toBe(true);
-    expect(sessionBody.user?.role).toBe("operator");
+    expect(getRes.status).toBe(200);
+
+    const refreshedBody = await getRes.json() as { operatorToken?: string };
+    expect(typeof refreshedBody.operatorToken).toBe("string");
+    expect(refreshedBody.operatorToken).not.toBe(initialBody.operatorToken);
+
+    const createGameRes = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": "pairing-refresh-token",
+        Authorization: `Bearer ${refreshedBody.operatorToken ?? ""}`,
+      },
+      body: JSON.stringify({
+        gameId: "pairing-refresh-game",
+        homeTeamId: "vc-varsity",
+        awayTeamId: "team-central-christian",
+        opponentName: "Central Christian",
+        opponentTeamId: "team-central-christian",
+      })
+    });
+
+    expect(createGameRes.status).toBe(201);
   });
 
   it("rejects operator link lookup without school scope when connection code is ambiguous", async () => {
@@ -355,7 +341,8 @@ describe("operator pairing endpoints", () => {
         opponentName: "Central Christian",
         vcSide: "home",
         homeTeamColor: "#1d4ed8",
-        awayTeamColor: "#10b981"
+        awayTeamColor: "#10b981",
+        dashboardUrl: "http://localhost:5173/live"
       })
     });
     expect(initialPut.status).toBe(200);
@@ -448,10 +435,11 @@ describe("operator pairing endpoints", () => {
 });
 
 describe("unified stats endpoints", () => {
-  it("does not serve removed legacy stats dashboard routes", async () => {
+  it("redirects legacy stats dashboard pages to the coach workspace", async () => {
     const response = await fetch(`${API_BASE}/settings`, { redirect: "manual" });
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("http://localhost:5173/stats/settings");
   });
 
   it("serves season stats, players, and live context from realtime-api state", async () => {
@@ -553,7 +541,7 @@ describe("unified stats endpoints", () => {
     expect(liveContextBody.recentGames[0]?.opponent).toBe("OES");
   });
 
-  it("does not accept the removed legacy operator game registration route", async () => {
+  it("accepts the legacy operator game registration route", async () => {
     await resetSchool("legacy-game-route");
 
     const response = await fetch(`${API_BASE}/games`, {
@@ -568,7 +556,11 @@ describe("unified stats endpoints", () => {
       })
     });
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(201);
+
+    const body = await response.json() as { gameId: string; opponentName?: string };
+    expect(body.gameId).toBe("legacy-route-game");
+    expect(body.opponentName).toBe("OES");
   });
 
   it("blocks starting a second active game and returns the existing active game", async () => {
@@ -776,153 +768,6 @@ describe("unified stats endpoints", () => {
     expect(conflictBody.state?.gameId).toBe("2026-04-06-sequence-conflict");
   });
 
-  it("returns event_conflict when correction precondition sequence is stale", async () => {
-    await resetSchool("event-precondition-school");
-
-    const createResponse = await fetch(`${API_BASE}/api/games`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-school-id": "event-precondition-school" },
-      body: JSON.stringify({
-        gameId: "2026-04-10-precondition",
-        homeTeamId: "vc",
-        awayTeamId: "opp-a",
-        opponentName: "Opponent A",
-      })
-    });
-    expect(createResponse.status).toBe(201);
-
-    const eventPayload = {
-      id: "precondition-evt-1",
-      sequence: 1,
-      timestampIso: new Date().toISOString(),
-      period: "Q1",
-      clockSecondsRemaining: 470,
-      teamId: "vc",
-      operatorId: "op-1",
-      type: "shot_attempt",
-      playerId: "p1",
-      made: true,
-      points: 2,
-      zone: "paint",
-    };
-
-    const firstResponse = await fetch(`${API_BASE}/api/games/2026-04-10-precondition/events`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-school-id": "event-precondition-school" },
-      body: JSON.stringify(eventPayload)
-    });
-    expect(firstResponse.status).toBe(201);
-
-    const staleDelete = await fetch(`${API_BASE}/api/games/2026-04-10-precondition/events/precondition-evt-1`, {
-      method: "DELETE",
-      headers: {
-        "x-school-id": "event-precondition-school",
-        "x-event-sequence": "2",
-      },
-    });
-    expect(staleDelete.status).toBe(409);
-    const staleDeleteBody = await staleDelete.json() as {
-      code?: string;
-      error?: string;
-      event?: { id?: string; sequence?: number } | null;
-      state?: { gameId?: string } | null;
-    };
-    expect(staleDeleteBody.code).toBe("event_conflict");
-    expect(staleDeleteBody.error).toMatch(/version mismatch/i);
-    expect(staleDeleteBody.event?.id).toBe("precondition-evt-1");
-    expect(staleDeleteBody.event?.sequence).toBe(1);
-    expect(staleDeleteBody.state?.gameId).toBe("2026-04-10-precondition");
-
-    const validDelete = await fetch(`${API_BASE}/api/games/2026-04-10-precondition/events/precondition-evt-1`, {
-      method: "DELETE",
-      headers: {
-        "x-school-id": "event-precondition-school",
-        "x-event-sequence": "1",
-      },
-    });
-    expect(validDelete.status).toBe(200);
-  });
-
-  it("returns event_conflict for stale update precondition and succeeds on retry", async () => {
-    await resetSchool("event-update-precondition-school");
-
-    const createResponse = await fetch(`${API_BASE}/api/games`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-school-id": "event-update-precondition-school" },
-      body: JSON.stringify({
-        gameId: "2026-04-10-update-precondition",
-        homeTeamId: "vc",
-        awayTeamId: "opp-a",
-        opponentName: "Opponent A",
-      })
-    });
-    expect(createResponse.status).toBe(201);
-
-    const eventPayload = {
-      id: "precondition-evt-update-1",
-      sequence: 1,
-      timestampIso: new Date().toISOString(),
-      period: "Q1",
-      clockSecondsRemaining: 470,
-      teamId: "vc",
-      operatorId: "op-1",
-      type: "shot_attempt",
-      playerId: "p1",
-      made: true,
-      points: 2,
-      zone: "paint",
-    };
-
-    const createEventResponse = await fetch(`${API_BASE}/api/games/2026-04-10-update-precondition/events`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-school-id": "event-update-precondition-school" },
-      body: JSON.stringify(eventPayload)
-    });
-    expect(createEventResponse.status).toBe(201);
-
-    const staleUpdate = await fetch(`${API_BASE}/api/games/2026-04-10-update-precondition/events/precondition-evt-update-1`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "x-school-id": "event-update-precondition-school",
-        "x-event-sequence": "2",
-      },
-      body: JSON.stringify({
-        ...eventPayload,
-        made: false,
-      }),
-    });
-    expect(staleUpdate.status).toBe(409);
-    const staleUpdateBody = await staleUpdate.json() as {
-      code?: string;
-      error?: string;
-      event?: { id?: string; sequence?: number; made?: boolean } | null;
-      state?: { gameId?: string } | null;
-    };
-    expect(staleUpdateBody.code).toBe("event_conflict");
-    expect(staleUpdateBody.error).toMatch(/version mismatch/i);
-    expect(staleUpdateBody.event?.id).toBe("precondition-evt-update-1");
-    expect(staleUpdateBody.event?.sequence).toBe(1);
-    expect(staleUpdateBody.event?.made).toBe(true);
-    expect(staleUpdateBody.state?.gameId).toBe("2026-04-10-update-precondition");
-
-    const retryUpdate = await fetch(`${API_BASE}/api/games/2026-04-10-update-precondition/events/precondition-evt-update-1`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "x-school-id": "event-update-precondition-school",
-        "x-event-sequence": "1",
-      },
-      body: JSON.stringify({
-        ...eventPayload,
-        made: false,
-      }),
-    });
-    expect(retryUpdate.status).toBe(200);
-    const retryUpdateBody = await retryUpdate.json() as { event?: { made?: boolean } | null };
-    expect(retryUpdateBody.event?.made).toBe(false);
-  });
-
   it("supports legacy team settings and roster management routes", async () => {
     await resetSchool("compat-school");
 
@@ -995,7 +840,7 @@ describe("unified stats endpoints", () => {
     expect(playerBody.full_name).toBe("Jordan Bell");
     expect(playerBody.roster_info?.role).toBe("Primary ball handler");
 
-    const playerDeleteRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}`, {
+    const playerDeleteRes = await fetch(`${API_BASE}/api/roster/player/${encodeURIComponent("Jordan Bell")}`, {
       method: "DELETE",
       headers: { "x-school-id": "compat-school" }
     });
@@ -1006,18 +851,6 @@ describe("unified stats endpoints", () => {
       headers: { "x-school-id": "compat-school" }
     });
     expect(missingPlayerRes.status).toBe(404);
-
-    const removedRosterDeleteRes = await fetch(`${API_BASE}/api/roster/player/${encodeURIComponent("Jordan Bell")}`, {
-      method: "DELETE",
-      headers: { "x-school-id": "compat-school" }
-    });
-    expect(removedRosterDeleteRes.status).toBe(404);
-
-    const removedPostDeleteRes = await fetch(`${API_BASE}/api/player/${encodeURIComponent("Jordan Bell")}/delete`, {
-      method: "POST",
-      headers: { "x-school-id": "compat-school" }
-    });
-    expect(removedPostDeleteRes.status).toBe(404);
   });
 
   it("renames an existing roster player instead of creating a duplicate", async () => {
@@ -1240,7 +1073,7 @@ describe("unified stats endpoints", () => {
     expect(loginBody.currentMember?.role).toBe("owner");
   });
 
-  it("supports game edit and reset routes", async () => {
+  it("supports game edit and reset compatibility routes", async () => {
     await resetSchool("games-compat");
 
     await fetch(`${API_BASE}/config/roster-teams`, {
@@ -1353,7 +1186,7 @@ describe("unified stats endpoints", () => {
         gameId: "301",
         homeTeamId: "vc",
         awayTeamId: "opp",
-        opponentName: "Central High",
+        opponentName: "Central Catholic",
         opponentTeamId: "opp"
       })
     });
@@ -1405,7 +1238,7 @@ describe("unified stats endpoints", () => {
 
     expect(teamSummaryBody.summary.length).toBeGreaterThan(10);
     expect(playerInsightsBody.insights).toContain("Eli Carter");
-    expect(gameAnalysisBody.analysis).toContain("Central High");
+    expect(gameAnalysisBody.analysis).toContain("Central Catholic");
     expect(chatBody.reply.length).toBeGreaterThan(10);
   });
 });

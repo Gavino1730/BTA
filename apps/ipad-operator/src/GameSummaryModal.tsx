@@ -383,7 +383,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                   {summaryPeriodEditOpen ? (
                     <select
                       autoFocus
-                      className="summary-inline-select"
+                      className="summary-inline-select summary-period-control"
                       value={period}
                       onBlur={() => setSummaryPeriodEditOpen(false)}
                       onChange={e => {
@@ -396,7 +396,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                       ))}
                     </select>
                   ) : (
-                    <button className="summary-display-pill" onClick={() => setSummaryPeriodEditOpen(true)}>{period}</button>
+                    <button className="summary-display-pill summary-period-control" onClick={() => setSummaryPeriodEditOpen(true)}>{period}</button>
                   )}
                 </div>
                 <span className="summary-meta-divider">•</span>
@@ -429,7 +429,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                   {summaryMomentEditOpen ? (
                     <select
                       autoFocus
-                      className="summary-inline-select"
+                      className="summary-inline-select summary-moment-control"
                       value={gameMoment}
                       onBlur={() => setSummaryMomentEditOpen(false)}
                       onChange={e => {
@@ -443,7 +443,7 @@ export function GameSummaryModal(props: GameSummaryModalProps) {
                       ))}
                     </select>
                   ) : (
-                    <button className="summary-display-pill summary-display-pill-moment" onClick={() => setSummaryMomentEditOpen(true)}>
+                    <button className="summary-display-pill summary-display-pill-moment summary-moment-control" onClick={() => setSummaryMomentEditOpen(true)}>
                       {getGameMomentOptions(period).find((opt) => opt.value === gameMoment)?.label ?? "Set moment"}
                     </button>
                   )}

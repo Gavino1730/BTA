@@ -1,58 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiKeyHeader, fetchOperatorLinkSnapshot, operatorLinkHeaders } from "./network.js";
+import { describe, expect, it } from "vitest";
+import { generateFreshGameId, generateGameId } from "./network.js";
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-describe("operator link headers", () => {
-  it("omits bearer tokens when recovering auth from the coach link", () => {
-    expect(operatorLinkHeaders({ schoolId: "varsity-high", })).toEqual({
-      Accept: "application/json",
-      "x-school-id": "varsity-high",
-    });
+describe("generateFreshGameId", () => {
+  it("keeps the readable base game id", () => {
+    const fresh = generateFreshGameId("Wolves", "2026-04-08", "discard", 1712531730123);
+    expect(fresh.startsWith(`${generateGameId("Wolves", "2026-04-08")}-discard-`)).toBe(true);
   });
 
-  it("keeps bearer tokens on normal authenticated API requests", () => {
-    expect(apiKeyHeader({ apiKey: "bta.local-token", schoolId: "varsity-high" })).toEqual({
-      Authorization: "Bearer bta.local-token",
-      "x-school-id": "varsity-high",
-    });
-  });
-});
-
-describe("fetchOperatorLinkSnapshot", () => {
-  it("falls back to unscoped lookup when scoped school lookup fails", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: false, status: 404 })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ schoolId: "varsity-high", operatorToken: "bta.new-token" }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await fetchOperatorLinkSnapshot({
-      apiUrl: "https://api.example.com",
-      connectionId: "Conn-001",
-      schoolId: "stale-school",
-    });
-
-    expect(result?.connectionId).toBe("conn-001");
-    expect(result?.payload.schoolId).toBe("varsity-high");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+  it("produces a different id than the plain generated id", () => {
+    const base = generateGameId("Wolves", "2026-04-08");
+    const fresh = generateFreshGameId("Wolves", "2026-04-08", "discard", 1712531730123);
+    expect(fresh).not.toBe(base);
   });
 
-  it("returns null when no connection id is provided", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await fetchOperatorLinkSnapshot({
-      apiUrl: "https://api.example.com",
-      schoolId: "varsity-high",
-    });
-
-    expect(result).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("separates reset and discard id reasons", () => {
+    const reset = generateFreshGameId("Wolves", "2026-04-08", "reset", 1712531730123);
+    const discard = generateFreshGameId("Wolves", "2026-04-08", "discard", 1712531730123);
+    expect(reset).not.toBe(discard);
+    expect(reset.includes("-reset-")).toBe(true);
+    expect(discard.includes("-discard-")).toBe(true);
   });
 });

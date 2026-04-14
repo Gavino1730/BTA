@@ -389,7 +389,7 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
     const currentLineup = computeCurrentLineup(game.allEventObjs, game.resolveTeamId(modal.teamId), game.startingLineup, players);
 
     if (modal.playerOutId) {
-      const subInPlayers = currentLineup.bench;
+      const subInPlayers = currentLineup.bench.filter((player) => player.id !== modal.playerOutId);
       return (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -440,7 +440,7 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
   if (modal.kind === "sub2") {
     const allSub2Players = teamPlayers(modal.teamId, team);
     const sub2Lineup = computeCurrentLineup(game.allEventObjs, game.resolveTeamId(modal.teamId), game.startingLineup, allSub2Players);
-    const players = sub2Lineup.bench;
+    const players = sub2Lineup.bench.filter((player) => player.id !== modal.playerOutId);
     return (
       <div className="modal-overlay" onClick={closeModal}>
         <div className="modal" onClick={e => e.stopPropagation()}>

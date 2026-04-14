@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak } from "./stats-page-utils.js";
 
 interface TrendsPayload {
@@ -81,11 +81,6 @@ interface ComparisonPlayer {
 
 interface PlayerComparisonPayload {
   players?: ComparisonPlayer[];
-}
-
-function openSettingsPage(): void {
-  window.history.pushState({}, "", "/stats/settings");
-  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 function safeNum(value: number | undefined, digits = 1): string {
@@ -228,7 +223,7 @@ function PlayerTrendChart({ rows, playerName }: { rows: PlayerTrendRow[]; player
           return (
             <div key={row.id} style={{ display: "grid", gap: "0.3rem", justifyItems: "center" }}>
               <strong style={{ fontSize: "0.82rem" }}>{row.pts}</strong>
-              <div style={{ width: "100%", maxWidth: 42, height, borderRadius: 10, background: "linear-gradient(180deg, var(--bta-accent-violet), var(--bta-accent-violet-dark))" }} />
+              <div style={{ width: "100%", maxWidth: 42, height, borderRadius: 10, background: "linear-gradient(180deg, #4f8cff, #295ecf)" }} />
               <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center" }}>{row.opponent}</span>
             </div>
           );
@@ -287,23 +282,26 @@ function PlayerComparisonTable({ comparison }: { comparison: PlayerComparisonPay
 }
 
 export function TrendsPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [rows, setRows] = useState<TrendRow[]>([]);
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [comparePlayer, setComparePlayer] = useState("");
   const [playerRows, setPlayerRows] = useState<PlayerTrendRow[]>([]);
   const [comparison, setComparison] = useState<PlayerComparisonPayload | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState("Loading trends...");
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setRows([]);
+      setPlayers([]);
+      setStatus("Waiting for school context before loading trends.");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadTrends() {
-      setIsLoading(true);
-      setLoadError("");
       setStatus("Loading trends...");
       const [teamResult, playersResult] = await Promise.allSettled([
         fetch(`${apiBase}/api/team-trends`, { headers: apiKeyHeader() }),
@@ -315,14 +313,7 @@ export function TrendsPage() {
       }
 
       if (teamResult.status !== "fulfilled" || !teamResult.value.ok) {
-        if (teamResult.status === "fulfilled") {
-          if (await redirectToBillingIfRequired(teamResult.value)) {
-            return;
-          }
-        }
-        setLoadError("Could not load trends from the realtime API.");
         setStatus("Could not load trends from the realtime API.");
-        setIsLoading(false);
         return;
       }
 
@@ -353,17 +344,22 @@ export function TrendsPage() {
         const playersPayload = await playersResult.value.json() as PlayerSummary[];
         const nextPlayers = Array.isArray(playersPayload) ? playersPayload : [];
         setPlayers(nextPlayers);
+        if (!selectedPlayer && nextPlayers[0]) {
+          setSelectedPlayer(nextPlayers[0].full_name ?? nextPlayers[0].name ?? "");
+        }
+        if (!comparePlayer && nextPlayers[1]) {
+          setComparePlayer(nextPlayers[1].full_name ?? nextPlayers[1].name ?? "");
+        }
       }
 
       setStatus("Team and player trend features are synced.");
-      setIsLoading(false);
     }
 
     void loadTrends();
     return () => {
       cancelled = true;
     };
-  }, [retryKey]);
+  }, [activeSchoolId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -377,9 +373,6 @@ export function TrendsPage() {
       try {
         const response = await fetch(`${apiBase}/api/player-trends/${encodeURIComponent(selectedPlayer)}`, { headers: apiKeyHeader() });
         if (!response.ok) {
-          if (await redirectToBillingIfRequired(response)) {
-            return;
-          }
           throw new Error("Player trends request failed.");
         }
 
@@ -444,9 +437,6 @@ export function TrendsPage() {
         params.append("players", comparePlayer);
         const response = await fetch(`${apiBase}/api/player-comparison?${params.toString()}`, { headers: apiKeyHeader() });
         if (!response.ok) {
-          if (await redirectToBillingIfRequired(response)) {
-            return;
-          }
           throw new Error("Player comparison request failed.");
         }
 
@@ -511,36 +501,11 @@ export function TrendsPage() {
         {status && <p className="stats-page-status">{status}</p>}
       </section>
 
-      {isLoading && (
-        <section className="stats-page-card">
-          <div className="loading-indicator">
-            <div className="loading-spinner" />
-            <p className="loading-text">Loading trend lines and player form data...</p>
-          </div>
-        </section>
-      )}
-
-      {!isLoading && loadError && (
-        <section className="stats-page-card">
-          <p className="stats-empty-copy">{loadError}</p>
-          <button
-            type="button"
-            className="shell-nav-link"
-            style={{ marginTop: "0.65rem" }}
-            onClick={() => setRetryKey((value) => value + 1)}
-          >
-            Retry
-          </button>
-        </section>
-      )}
-
-      {!isLoading && !loadError && (
-      <>
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
           <span>Focus player</span>
           <select value={selectedPlayer} onChange={(event) => setSelectedPlayer(event.target.value)}>
-            <option value="">{playerOptions.length === 0 ? "No players yet" : "Select a player"}</option>
+            {playerOptions.length === 0 ? <option value="">No players yet</option> : null}
             {playerOptions.map((name) => (
               <option key={name} value={name}>{name}</option>
             ))}
@@ -593,16 +558,6 @@ export function TrendsPage() {
       {rows.length === 0 ? (
         <section className="stats-page-card">
           <p className="stats-empty-copy">No trend data available yet.</p>
-          {players.length === 0 && (
-            <button
-              type="button"
-              className="shell-nav-link"
-              style={{ marginTop: "0.6rem" }}
-              onClick={openSettingsPage}
-            >
-              Add players in Settings
-            </button>
-          )}
         </section>
       ) : (
         <>
@@ -689,8 +644,6 @@ export function TrendsPage() {
             </div>
           </section>
         </>
-      )}
-      </>
       )}
     </div>
   );

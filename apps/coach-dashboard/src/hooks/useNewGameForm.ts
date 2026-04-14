@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { normalizeTeamColor } from "@bta/shared-schema";
-import { apiBase, apiKeyHeader } from "../platform.js";
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "../platform.js";
 import { generateGameId, applyGameSessionToUrl } from "../helpers/index.js";
 import type { RosterTeam } from "../helpers/index.js";
 
@@ -39,6 +39,11 @@ export function useNewGameForm({
 
   async function launchGame(): Promise<void> {
     if (isLaunchingGame || newGameStartingLineup.length !== 5) {
+      return;
+    }
+
+    if (!resolveActiveSchoolId()) {
+      setDashboardStatus("Cannot launch game until school context is available.");
       return;
     }
 
@@ -119,7 +124,7 @@ export function useNewGameForm({
       );
 
       // Publish the operator link so the iPad can find this game via the connection code.
-      if (connectionId) {
+      if (connectionId && resolveActiveSchoolId()) {
         void fetch(`${apiBase}/api/operator-links/${encodeURIComponent(connectionId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json", ...apiKeyHeader() },

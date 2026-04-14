@@ -1,12 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { apiBase, apiKeyHeader, redirectToBillingIfRequired } from "./platform.js";
-
-function summarizeError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return String(error ?? "unknown error");
-}
+import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 
 interface RecommendationEntry {
   category?: string;
@@ -206,6 +199,7 @@ function playerDisplayLabel(player: PlayerSummary): string {
 }
 
 export function AiInsightsPage() {
+  const activeSchoolId = resolveActiveSchoolId();
   const [insights, setInsights] = useState<ComprehensiveInsightsPayload | null>(null);
   const [analysis, setAnalysis] = useState<SeasonAnalysis | null>(null);
   const [teamSummary, setTeamSummary] = useState("");
@@ -224,6 +218,11 @@ export function AiInsightsPage() {
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setStatus("Waiting for school context before loading AI insights.");
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -233,42 +232,21 @@ export function AiInsightsPage() {
         const [insightsRes, seasonRes, teamSummaryRes, playersRes, liveRes] = await Promise.all([
           fetch(`${apiBase}/api/comprehensive-insights`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/season-analysis`, { headers: apiKeyHeader() }),
-          fetch(`${apiBase}/api/ai/team-summary`, { headers: apiKeyHeader() }).catch(() => null),
+          fetch(`${apiBase}/api/ai/team-summary`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/players`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/live-context`, { headers: apiKeyHeader() }).catch(() => null),
         ]);
 
-        if (!insightsRes.ok || !seasonRes.ok || !playersRes.ok) {
-          const responses = [insightsRes, seasonRes, playersRes];
-          for (const response of responses) {
-            if (await redirectToBillingIfRequired(response)) {
-              return;
-            }
-          }
+        if (!insightsRes.ok || !seasonRes.ok || !teamSummaryRes.ok || !playersRes.ok) {
           throw new Error("Insights request failed");
         }
 
-        if (teamSummaryRes && !teamSummaryRes.ok) {
-          if (await redirectToBillingIfRequired(teamSummaryRes)) {
-            return;
-          }
-        }
-
-        if (liveRes && !liveRes.ok) {
-          if (await redirectToBillingIfRequired(liveRes)) {
-            return;
-          }
-        }
-
-        const [insightsPayload, seasonPayload, playersPayload] = await Promise.all([
+        const [insightsPayload, seasonPayload, teamSummaryPayload, playersPayload] = await Promise.all([
           insightsRes.json() as Promise<ComprehensiveInsightsPayload>,
           seasonRes.json() as Promise<SeasonAnalysis>,
+          teamSummaryRes.json() as Promise<{ summary?: string }>,
           playersRes.json() as Promise<PlayerSummary[]>,
         ]);
-        const teamSummaryPayload = (teamSummaryRes?.ok
-          ? (teamSummaryRes.json() as Promise<{ summary?: string }>)
-          : Promise.resolve(null));
-        const teamSummaryResult: { summary?: string } | null = await teamSummaryPayload;
 
         const livePayload = (liveRes?.ok
           ? (liveRes.json() as Promise<LiveContextPayload>)
@@ -279,7 +257,7 @@ export function AiInsightsPage() {
         if (!cancelled) {
           setInsights(sanitizeInsightsPayload(insightsPayload));
           setAnalysis(sanitizeSeasonAnalysis(seasonPayload));
-          setTeamSummary(sanitizeText(teamSummaryResult?.summary));
+          setTeamSummary(sanitizeText(teamSummaryPayload.summary));
           const nextPlayers = Array.isArray(playersPayload) ? playersPayload : [];
           setPlayers(nextPlayers);
           if (!selectedPlayer && nextPlayers.length > 0) {
@@ -292,9 +270,7 @@ export function AiInsightsPage() {
               fetch(`${apiBase}/api/games/${encodeURIComponent(live.sessionId)}/ai-context`, { headers: apiKeyHeader() })
                 .then((r) => r.ok ? r.json() as Promise<{ preGameNotes?: string }> : null)
                 .then((ctx) => { if (ctx?.preGameNotes) setPreGameNotes(sanitizeText(ctx.preGameNotes)); })
-                .catch((error) => {
-                  console.warn("[coach-dashboard] load pre-game ai-context failed", summarizeError(error));
-                });
+                .catch(() => {});
             }
           }
           setStatus("Ready.");
@@ -311,7 +287,7 @@ export function AiInsightsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeSchoolId]);
 
   // Scroll chat to bottom when messages arrive
   useEffect(() => {
@@ -319,6 +295,11 @@ export function AiInsightsPage() {
   }, [chatHistory]);
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      setPlayerInsight("");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadPlayerInsight() {
@@ -332,12 +313,7 @@ export function AiInsightsPage() {
         const response = await fetch(`${apiBase}/api/ai/player-insights/${encodeURIComponent(nameForApi)}`, {
           headers: apiKeyHeader(),
         });
-        if (!response.ok) {
-          if (await redirectToBillingIfRequired(response)) {
-            return;
-          }
-          throw new Error("Player insight request failed");
-        }
+        if (!response.ok) throw new Error("Player insight request failed");
         const payload = await response.json() as { insights?: string };
         if (!cancelled) {
           setPlayerInsight(sanitizeText(payload.insights) || "No player-specific insight available yet.");
@@ -351,7 +327,7 @@ export function AiInsightsPage() {
 
     void loadPlayerInsight();
     return () => { cancelled = true; };
-  }, [selectedPlayer]);
+  }, [activeSchoolId, selectedPlayer]);
 
   async function askAiQuestion(message: string) {
     const trimmed = message.trim();
@@ -374,12 +350,7 @@ export function AiInsightsPage() {
         }),
       });
 
-      if (!response.ok) {
-        if (await redirectToBillingIfRequired(response)) {
-          return;
-        }
-        throw new Error("AI chat failed");
-      }
+      if (!response.ok) throw new Error("AI chat failed");
 
       const payload = await response.json() as { reply?: string; suggestions?: string[] };
       const reply = sanitizeText(payload.reply) || "No answer available.";
@@ -403,12 +374,7 @@ export function AiInsightsPage() {
     setStatus("Refreshing season analysis...");
     try {
       const response = await fetch(`${apiBase}/api/season-analysis?force=true`, { headers: apiKeyHeader() });
-      if (!response.ok) {
-        if (await redirectToBillingIfRequired(response)) {
-          return;
-        }
-        throw new Error("Refresh failed");
-      }
+      if (!response.ok) throw new Error("Refresh failed");
       const payload = await response.json() as SeasonAnalysis;
       setAnalysis(sanitizeSeasonAnalysis(payload));
       setStatus("Season analysis refreshed.");
@@ -494,9 +460,7 @@ export function AiInsightsPage() {
                       headers: { "Content-Type": "application/json", ...apiKeyHeader() },
                       body: JSON.stringify({ preGameNotes: preGameNotes.trim() || "" }),
                     })
-                      .catch((error) => {
-                        console.warn("[coach-dashboard] save pre-game ai-context failed", summarizeError(error));
-                      })
+                      .catch(() => {})
                       .finally(() => setPreGameNotesSaving(false));
                   }}
                 >

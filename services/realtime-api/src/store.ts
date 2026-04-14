@@ -10,6 +10,7 @@ import {
   readFileSync,
   writeFileSync
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
   generateInsights,
@@ -981,13 +982,17 @@ function buildCoachAccountId(email: string, schoolId: string): string {
 }
 
 function buildLocalAuthAccountId(email: string, schoolId: string): string {
-  const localPart = email.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || schoolId;
-  return `acct-${localPart.slice(0, 48)}`;
+  const normalizedEmail = trimProfileField(email, 160).toLowerCase();
+  const localPart = normalizedEmail.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || schoolId;
+  const suffix = createHash("sha1").update(normalizedEmail || schoolId).digest("hex").slice(0, 10);
+  return `acct-${localPart.slice(0, 36)}-${suffix}`;
 }
 
 function buildOrganizationMemberId(email: string, organizationId: string): string {
-  const localPart = email.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || organizationId;
-  return `member-${localPart.slice(0, 48)}`;
+  const normalizedEmail = trimProfileField(email, 160).toLowerCase();
+  const localPart = normalizedEmail.split("@")[0]?.replace(/[^a-z0-9_-]/g, "") || organizationId;
+  const suffix = createHash("sha1").update(normalizedEmail || organizationId).digest("hex").slice(0, 10);
+  return `member-${localPart.slice(0, 34)}-${suffix}`;
 }
 
 function sanitizeOnboardingAccountState(
@@ -1090,8 +1095,13 @@ function sanitizeOrganizationMember(
 }
 
 function setOrganizationMembersForSchool(schoolId: string, members: OrganizationMember[]): OrganizationMember[] {
-  const normalized = members
-    .map((member) => ({ ...member, schoolId: normalizeSchoolId(member.schoolId ?? schoolId) }))
+  const dedupedByMemberId = new Map<string, OrganizationMember>();
+  for (const member of members) {
+    const normalizedMember = { ...member, schoolId: normalizeSchoolId(member.schoolId ?? schoolId) };
+    dedupedByMemberId.set(normalizedMember.memberId, normalizedMember);
+  }
+
+  const normalized = [...dedupedByMemberId.values()]
     .sort((left, right) => {
       if (left.role !== right.role) {
         return left.role === "owner" ? -1 : right.role === "owner" ? 1 : left.role.localeCompare(right.role);
@@ -1139,8 +1149,18 @@ function sanitizeLocalAuthAccount(
 }
 
 function setLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuthAccount[]): LocalAuthAccount[] {
-  const normalized = accounts
-    .map((account) => ({ ...account, schoolId: normalizeSchoolId(account.schoolId ?? schoolId) }))
+  const dedupedByAccountId = new Map<string, LocalAuthAccount>();
+  for (const account of accounts) {
+    const normalizedAccount = { ...account, schoolId: normalizeSchoolId(account.schoolId ?? schoolId) };
+    dedupedByAccountId.set(normalizedAccount.accountId, normalizedAccount);
+  }
+
+  const dedupedByEmail = new Map<string, LocalAuthAccount>();
+  for (const account of dedupedByAccountId.values()) {
+    dedupedByEmail.set(account.email, account);
+  }
+
+  const normalized = [...dedupedByEmail.values()]
     .sort((left, right) => left.email.localeCompare(right.email));
   localAuthAccountsBySchool.set(schoolId, normalized);
   return normalized;

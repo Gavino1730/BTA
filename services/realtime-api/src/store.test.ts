@@ -6,10 +6,15 @@ import {
   getGameAiStatus,
   getGameEvents,
   getGameInsights,
+  getLocalAuthAccountsByScope,
+  getOrganizationMembersByScope,
   getGameState,
   ingestEvent,
   patchGameLineup,
   refreshGameAiInsights,
+  resetAllData,
+  saveLocalAuthAccount,
+  saveOrganizationMember,
   submitGame,
   updateEvent
 } from "./store.js";
@@ -53,6 +58,62 @@ describe("store", () => {
     });
 
     expect(patched?.activeLineupsByTeam.home).toEqual(["h1", "h2", "h3", "h4", "h5"]);
+  });
+
+  it("generates distinct local auth account IDs for same local-part emails", () => {
+    const scope = { schoolId: "id-collision-local-auth" };
+    resetAllData(scope);
+
+    saveLocalAuthAccount(
+      {
+        email: "coach@alpha.example",
+        fullName: "Coach Alpha",
+        passwordHash: "hash-alpha",
+        passwordSalt: "salt-alpha",
+      },
+      scope,
+    );
+
+    saveLocalAuthAccount(
+      {
+        email: "coach@beta.example",
+        fullName: "Coach Beta",
+        passwordHash: "hash-beta",
+        passwordSalt: "salt-beta",
+      },
+      scope,
+    );
+
+    const accounts = getLocalAuthAccountsByScope(scope);
+    expect(accounts).toHaveLength(2);
+    expect(new Set(accounts.map((account) => account.accountId)).size).toBe(2);
+  });
+
+  it("generates distinct organization member IDs for same local-part emails", () => {
+    const scope = { schoolId: "id-collision-org-members" };
+    resetAllData(scope);
+
+    saveOrganizationMember(
+      {
+        email: "coach@alpha.example",
+        fullName: "Coach Alpha",
+        role: "coach",
+      },
+      scope,
+    );
+
+    saveOrganizationMember(
+      {
+        email: "coach@beta.example",
+        fullName: "Coach Beta",
+        role: "coach",
+      },
+      scope,
+    );
+
+    const members = getOrganizationMembersByScope(scope);
+    expect(members).toHaveLength(2);
+    expect(new Set(members.map((member) => member.memberId)).size).toBe(2);
   });
 
   it("creates a game and ingests event idempotently", () => {

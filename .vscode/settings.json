@@ -1,0 +1,7 @@
+{
+  "git.autoRepositoryDetection": false,
+  "git.openRepositoryInParentFolders": "never",
+  "git.scanRepositories": [
+    "/Users/ggalan/BTA"
+  ]
+}

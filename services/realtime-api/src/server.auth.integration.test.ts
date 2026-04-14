@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { io, type Socket } from "socket.io-client";
+import { clearTestEmailOutbox, readTestEmailOutbox } from "./email.js";
 
 const API_PORT = "4100";
 const API_BASE = `http://localhost:${API_PORT}`;
@@ -27,6 +28,10 @@ describe("server auth integration", () => {
     startServer = serverModule.startServer;
     stopServer = serverModule.stopServer;
     await startServer();
+  });
+
+  beforeEach(() => {
+    clearTestEmailOutbox();
   });
 
   afterAll(async () => {
@@ -122,6 +127,184 @@ describe("server auth integration", () => {
     });
 
     expect(response.status).toBe(403);
+  });
+
+  it("emails a password reset link and allows the token to reset the password", async () => {
+    const registerResponse = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        fullName: "Reset Coach",
+        email: "reset-coach@example.org",
+        password: "OldReset123!"
+      })
+    });
+
+    expect(registerResponse.status).toBe(201);
+    const registerBody = await registerResponse.json() as {
+      user?: { schoolId?: string };
+    };
+    const schoolId = registerBody.user?.schoolId ?? "";
+
+    const requestResponse = await fetch(`${API_BASE}/api/auth/password-reset/request`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({ email: "reset-coach@example.org" })
+    });
+
+    expect(requestResponse.status).toBe(200);
+    const requestBody = await requestResponse.json() as {
+      resetToken?: string;
+      resetPath?: string;
+    };
+    expect(requestBody.resetToken).toBeTruthy();
+    expect(requestBody.resetPath).toContain("/reset-password?");
+
+    const emails = readTestEmailOutbox();
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.to).toBe("reset-coach@example.org");
+    expect(emails[0]?.subject).toContain("Reset your BTA coach password");
+    expect(emails[0]?.text).toContain(requestBody.resetToken ?? "");
+
+    const confirmResponse = await fetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({ token: requestBody.resetToken, password: "NewReset456!" })
+    });
+
+    expect(confirmResponse.status).toBe(200);
+
+    const staleTokenResponse = await fetch(`${API_BASE}/api/auth/password-reset/confirm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({ token: requestBody.resetToken, password: "Another789!" })
+    });
+
+    expect(staleTokenResponse.status).toBe(400);
+
+    const oldLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({ email: "reset-coach@example.org", password: "OldReset123!" })
+    });
+    expect(oldLogin.status).toBe(401);
+
+    const newLogin = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({ email: "reset-coach@example.org", password: "NewReset456!" })
+    });
+    expect(newLogin.status).toBe(200);
+  });
+
+  it("emails invitations and activates invited members when they register from the invite link", async () => {
+    const ownerRegisterResponse = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        fullName: "Owner Coach",
+        email: "owner-coach@example.org",
+        password: "OwnerPass123!",
+        schoolName: "Invite High"
+      })
+    });
+
+    expect(ownerRegisterResponse.status).toBe(201);
+    const ownerRegisterBody = await ownerRegisterResponse.json() as {
+      token?: string;
+      user?: { schoolId?: string };
+    };
+    const ownerToken = ownerRegisterBody.token ?? "";
+    const schoolId = ownerRegisterBody.user?.schoolId ?? "";
+
+    const inviteResponse = await fetch(`${API_BASE}/api/org/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant-coach@example.org",
+        role: "coach"
+      })
+    });
+
+    expect(inviteResponse.status).toBe(201);
+    const inviteBody = await inviteResponse.json() as {
+      inviteToken?: string;
+      invitePath?: string;
+      member?: { status?: string };
+    };
+    expect(inviteBody.member?.status).toBe("invited");
+    expect(inviteBody.inviteToken).toBeTruthy();
+    expect(inviteBody.invitePath).toContain("/setup?");
+
+    const emails = readTestEmailOutbox();
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.to).toBe("assistant-coach@example.org");
+    expect(emails[0]?.subject).toContain("You're invited");
+    expect(emails[0]?.text).toContain(inviteBody.inviteToken ?? "");
+
+    const invitationLookupResponse = await fetch(`${API_BASE}/api/auth/invitations/${inviteBody.inviteToken}`, {
+      headers: {
+        "x-school-id": schoolId,
+      },
+    });
+    expect(invitationLookupResponse.status).toBe(200);
+
+    const invitedRegisterResponse = await fetch(`${API_BASE}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-school-id": schoolId,
+      },
+      body: JSON.stringify({
+        fullName: "Assistant Coach",
+        email: "assistant-coach@example.org",
+        password: "AssistantPass123!",
+        inviteToken: inviteBody.inviteToken,
+      })
+    });
+
+    expect(invitedRegisterResponse.status).toBe(201);
+    const invitedRegisterBody = await invitedRegisterResponse.json() as {
+      currentMember?: { status?: string; role?: string };
+    };
+    expect(invitedRegisterBody.currentMember?.status).toBe("active");
+    expect(invitedRegisterBody.currentMember?.role).toBe("coach");
+
+    const membersResponse = await fetch(`${API_BASE}/api/org/members`, {
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        "x-school-id": schoolId,
+      },
+    });
+    expect(membersResponse.status).toBe(200);
+    const membersBody = await membersResponse.json() as {
+      members?: Array<{ email?: string; status?: string }>;
+    };
+    expect(membersBody.members?.find((member) => member.email === "assistant-coach@example.org")?.status).toBe("active");
   });
 
   it("creates an isolated school workspace when a public user registers without a preset school id", async () => {

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, clearAuthSession, marketingBase, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, clearAuthSession, formatSchoolNameFromId, resolveActiveSchoolId, storeAuthSession } from "./platform.js";
 
 interface SetupPageProps {
   onComplete: () => void;
@@ -51,6 +51,17 @@ interface AuthSessionPayload {
   error?: string;
 }
 
+interface InvitationLookupPayload {
+  invitation?: {
+    email?: string;
+    fullName?: string;
+    role?: string;
+    organizationName?: string;
+    expiresAtIso?: string;
+  } | null;
+  error?: string;
+}
+
 const PROFILE_KEY = "bta.coach.setupProfile";
 
 function buildEmptyRosterRow(id: number): RosterRow {
@@ -58,17 +69,14 @@ function buildEmptyRosterRow(id: number): RosterRow {
 }
 
 export function SetupPage({ onComplete }: SetupPageProps) {
-  const authQuery = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-  const bootstrapSchoolId = (authQuery.get("schoolId") ?? "").trim();
-  const bootstrapEmail = (authQuery.get("email") ?? "").trim().toLowerCase();
-  const currentSeason = String(new Date().getFullYear());
-  const schoolPlaceholder = "School or program name";
+  const schoolPlaceholder = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
+  const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite")?.trim() ?? "", []);
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
-  const [coachEmail, setCoachEmail] = useState(bootstrapEmail);
+  const [coachEmail, setCoachEmail] = useState("");
   const [teamName, setTeamName] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
-  const [season, setSeason] = useState(currentSeason);
+  const [season, setSeason] = useState(String(new Date().getFullYear()));
   const [teamColor, setTeamColor] = useState("#1d4ed8");
   const [rows, setRows] = useState<RosterRow[]>([buildEmptyRosterRow(1)]);
   const [status, setStatus] = useState("Create your account and complete setup to unlock the unified coach workspace.");
@@ -79,8 +87,13 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [authSession, setAuthSession] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState("Create a coach account with email and password to secure this workspace.");
   const [authBusy, setAuthBusy] = useState(false);
+  const activeSchoolId = resolveActiveSchoolId();
 
   useEffect(() => {
+    if (!activeSchoolId) {
+      return;
+    }
+
     void (async () => {
       try {
         const [sessionResponse, accountResponse] = await Promise.all([
@@ -122,7 +135,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           setCoachName((current) => current || account.primaryCoach?.fullName || suggestedCoach?.coachName || "");
           setCoachEmail((current) => current || account.primaryCoach?.email || suggestedCoach?.coachEmail || "");
           setTeamName(account.organization?.teamName ?? "");
-          setSeason(account.organization?.season ?? currentSeason);
+          setSeason(account.organization?.season ?? String(new Date().getFullYear()));
           if (account.primaryCoach?.email && !authSession) {
             setAuthMode("login");
             setAuthStatus("Sign in with your coach email and password to continue onboarding.");
@@ -138,7 +151,47 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         // best effort prefill only
       }
     })();
-  }, []);
+  }, [activeSchoolId]);
+
+  useEffect(() => {
+    if (!activeSchoolId || !inviteToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/auth/invitations/${encodeURIComponent(inviteToken)}`, {
+          headers: {
+            "x-school-id": activeSchoolId,
+          },
+        });
+
+        const payload = await response.json() as InvitationLookupPayload;
+        if (!response.ok || !payload.invitation || cancelled) {
+          if (!cancelled) {
+            setAuthStatus(payload.error || "This invitation is no longer valid. Ask your organization owner to resend it.");
+          }
+          return;
+        }
+
+        setAuthMode("register");
+        setCoachEmail((current) => current || payload.invitation?.email || "");
+        setCoachName((current) => current || payload.invitation?.fullName || "");
+        setSchoolName((current) => current || payload.invitation?.organizationName || "");
+        setAuthStatus(`Invitation loaded for ${payload.invitation.email ?? "your coach account"}. Create your password to join this workspace.`);
+      } catch {
+        if (!cancelled) {
+          setAuthStatus("Could not load the invite details. Ask your organization owner to resend the invitation.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSchoolId, inviteToken]);
 
   const validRows = useMemo(() => {
     return rows
@@ -192,26 +245,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     }
 
     setAuthBusy(true);
-    setAuthStatus(authMode === "login" ? "Signing in..." : "Preparing secure account flow...");
+    setAuthStatus(authMode === "login" ? "Signing in..." : "Creating your secure coach account...");
 
     try {
-      if (authMode === "register" && !bootstrapSchoolId) {
-        setAuthStatus("Redirecting to Get Started...");
-        const query = new URLSearchParams();
-        if (normalizedEmail) {
-          query.set("email", normalizedEmail);
-        }
-        if (schoolName.trim()) {
-          query.set("schoolName", schoolName.trim());
-        }
-        if (teamName.trim()) {
-          query.set("teamName", teamName.trim());
-        }
-        const suffix = query.toString();
-        window.location.assign(`${marketingBase}/get-started${suffix ? `?${suffix}` : ""}`);
-        return;
-      }
-
       const response = await fetch(`${apiBase}/api/auth/${authMode === "login" ? "login" : "register"}`, {
         method: "POST",
         headers: apiKeyHeader(true),
@@ -219,7 +255,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           fullName: normalizedName,
           email: normalizedEmail,
           password: normalizedPassword,
-          schoolId: bootstrapSchoolId || undefined,
+          inviteToken: authMode === "register" && inviteToken ? inviteToken : undefined,
           schoolName: schoolName.trim() || undefined,
           teamName: teamName.trim() || undefined,
         }),
@@ -325,8 +361,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   }
 
   return (
-    <div className="marketing-page">
-      <div className="stats-page setup-page">
+    <div className="stats-page">
       <section className="stats-page-hero setup-hero">
         <div>
           <p className="stats-page-eyebrow">Coach onboarding</p>
@@ -344,11 +379,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           <div className="setup-section-head setup-section-head-inline">
             <div>
               <h3>Account Access</h3>
-              <p className="setup-section-copy">
-                {bootstrapSchoolId
-                  ? "Checkout complete. Create your coach account to finish onboarding."
-                  : "Checkout starts from Get Started on the public site. Return here after payment to create your account."}
-              </p>
+              <p className="setup-section-copy">Secure this workspace with an email/password coach account before finishing onboarding.</p>
             </div>
             <span className={`setup-auth-pill ${authSession ? "setup-auth-pill-active" : ""}`}>
               {authSession ? "Signed in" : "Step 1"}
@@ -391,11 +422,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                 <div className="setup-grid">
                   <label className="stats-filter-field">
                     <span>Coach Name</span>
-                    <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Head coach name" />
+                    <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Coach Taylor" />
                   </label>
                   <label className="stats-filter-field">
                     <span>Coach Email</span>
-                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.edu" />
+                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
                   </label>
                   <label className="stats-filter-field">
                     <span>Password</span>
@@ -416,9 +447,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     onClick={() => void handleAuthSubmit()}
                     disabled={authBusy}
                   >
-                    {authBusy
-                      ? (authMode === "login" ? "Signing In..." : (bootstrapSchoolId ? "Creating Account..." : "Redirecting To Get Started..."))
-                      : (authMode === "login" ? "Sign In" : (bootstrapSchoolId ? "Create Secure Account" : "Go To Get Started"))}
+                    {authBusy ? (authMode === "login" ? "Signing In..." : "Creating Account...") : (authMode === "login" ? "Sign In" : "Create Secure Account")}
                   </button>
                   <p className="stats-page-status">{authStatus}</p>
                 </div>
@@ -464,19 +493,19 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             </label>
             <label className="stats-filter-field">
               <span>Team Name *</span>
-              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Varsity basketball" required />
+              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Boys Varsity" required />
             </label>
             <label className="stats-filter-field">
               <span>Team Abbreviation</span>
               <input
                 value={teamAbbreviation}
                 onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
-                placeholder="TEAM"
+                placeholder="VCBV"
               />
             </label>
             <label className="stats-filter-field">
               <span>Season</span>
-              <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder={currentSeason} />
+              <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="2026" />
             </label>
             <label className="stats-filter-field setup-color-field">
               <span>Team Color</span>
@@ -583,7 +612,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           </button>
         </div>
       </form>
-      </div>
     </div>
   );
 }

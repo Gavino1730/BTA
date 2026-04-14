@@ -9,9 +9,9 @@ import {
   useGameMemos, useEndGame,
   type AggregatedTeam, type CanonicalSideIds, type RotationContext, type RosterLabels,
 } from "./hooks/index.js";
-import type { FinishedGameSummary } from "./hooks/useCoachSocket.js";
 import {
   type GameState, type BoxScoreFilter, type Insight,
+  generateGameId,
   ACTIVE_GAME_KEY,
 } from "./helpers/index.js";
 import type {
@@ -58,7 +58,6 @@ export interface GameSession {
   // Game identity
   gameId: string;
   setupNames: SetupNames;
-  lastFinishedGameSummary: FinishedGameSummary | null;
 
   // Game data
   state: GameState | null;
@@ -77,10 +76,7 @@ export interface GameSession {
   setBoxScoreFilter: Dispatch<SetStateAction<BoxScoreFilter>>;
 
   // Actions
-  dismissFinishedGameSummary: () => void;
-  clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
-  deleteGameEvent: (eventId: string, expectedSequence: number) => Promise<void>;
-  deletingGameEventId: string | null;
+  clearActiveGame: (statusMessage: string) => void;
 
   // Roster
   rosterTeams: RosterTeam[];
@@ -141,22 +137,11 @@ export interface GameSession {
 
   // End game
   isEndingGame: boolean;
-  isSavingFinalizeDetails: boolean;
   isEndGamePromptOpen: boolean;
   endGameStatus: string;
-  finalizeGameName: string;
-  finalizeGameDate: string;
-  finalizeOpponent: string;
-  finalizeVcScore: string;
-  finalizeOppScore: string;
-  setFinalizeGameDate: (value: string) => void;
-  setFinalizeOpponent: (value: string) => void;
-  setFinalizeVcScore: (value: string) => void;
-  setFinalizeOppScore: (value: string) => void;
   requestEndGameFromDashboard: () => void;
   cancelEndGamePrompt: () => void;
-  saveFinalizeDetailsFromDashboard: () => Promise<boolean>;
-  discardGameFromDashboard: () => Promise<void>;
+  discardGameFromDashboard: () => void;
   endGameFromDashboard: () => Promise<void>;
 
   // AI
@@ -293,12 +278,10 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     (() => { try { return JSON.parse(localStorage.getItem("coach-ended-game-ids") ?? "[]") as string[]; } catch { return []; } })()
   ));
   const [dashboardStatus, setDashboardStatus] = useState("Waiting for live game data");
-  const [lastFinishedGameSummary, setLastFinishedGameSummary] = useState<FinishedGameSummary | null>(null);
   const [activePage, setActivePageState] = useState<"live" | "ai">(
     () => (sessionStorage.getItem("coach:live-tab") as "live" | "ai" | null) ?? "live"
   );
   const [boxScoreFilter, setBoxScoreFilter] = useState<BoxScoreFilter>([]);
-  const [deletingGameEventId, setDeletingGameEventId] = useState<string | null>(null);
 
   const setActivePage = useCallback((page: "live" | "ai") => {
     setActivePageState(page);
@@ -389,14 +372,59 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameVcSide, setNewGameVcSide,
     newGameOppColor, setNewGameOppColor,
     newGameStartingLineup, setNewGameStartingLineup,
-    isLaunchingGame, launchGame, resetForm: resetNewGameForm,
+    isLaunchingGame, launchGame,
   } = useNewGameForm({ rosterTeams, endedGameIdsRef, connectionId, setGameId, setSetupNames, setDashboardStatus });
 
   useEffect(() => {
-    if (gameId) {
-      setLastFinishedGameSummary(null);
+    const schoolId = resolveActiveSchoolId();
+    if (!connectionId || !schoolId || !newGameMyTeamId) {
+      return;
     }
-  }, [gameId]);
+
+    const opponentName = newGameOpponent.trim();
+    if (!opponentName) {
+      return;
+    }
+
+    const selectedTeam = rosterTeams.find((team) => team.id === newGameMyTeamId);
+    if (!selectedTeam) {
+      return;
+    }
+
+    const rosterPlayerIds = new Set((selectedTeam.players ?? []).map((player) => player.id));
+    const selectedStartingLineup = [...new Set(newGameStartingLineup)]
+      .filter((playerId) => rosterPlayerIds.has(playerId))
+      .slice(0, 5);
+    const myTeamColor = selectedTeam.teamColor?.trim() || "#4f8cff";
+    const homeColor = newGameVcSide === "home" ? myTeamColor : newGameOppColor;
+    const awayColor = newGameVcSide === "away" ? myTeamColor : newGameOppColor;
+    const previewGameId = gameId || generateGameId(opponentName, new Date().toISOString().slice(0, 10));
+
+    void fetch(`${apiBase}/api/operator-links/${encodeURIComponent(connectionId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...apiKeyHeader() },
+      body: JSON.stringify({
+        gameId: previewGameId,
+        myTeamId: newGameMyTeamId,
+        myTeamName: selectedTeam.name ?? "",
+        opponentName,
+        vcSide: newGameVcSide,
+        homeTeamColor: homeColor,
+        awayTeamColor: awayColor,
+        dashboardUrl: window.location.href,
+        startingLineup: selectedStartingLineup,
+      }),
+    });
+  }, [
+    connectionId,
+    gameId,
+    newGameMyTeamId,
+    newGameOpponent,
+    newGameOppColor,
+    newGameStartingLineup,
+    newGameVcSide,
+    rosterTeams,
+  ]);
 
   // URL sync
   useEffect(() => {
@@ -415,7 +443,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     }
   }, [connectionId, gameId]);
 
-  const clearActiveGame = useCallback((statusMessage: string, options?: { rotateConnectionCode?: boolean }): void => {
+  const clearActiveGame = useCallback((statusMessage: string): void => {
     if (gameId) {
       endedGameIdsRef.current.add(gameId);
       try {
@@ -424,86 +452,23 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
         localStorage.setItem("coach-ended-game-ids", JSON.stringify(updated));
       } catch { /* ignore */ }
     }
-    if (options?.rotateConnectionCode) {
-      setConnectionId(generateConnectionCode());
-    }
     setGameId("");
     setState(null);
     setInsights([]);
     resetAiState();
-    resetNewGameForm();
     setBoxScoreFilter([]);
     setIsLoading(false);
     setActivePageState("live");
     sessionStorage.setItem("coach:live-tab", "live");
     setDashboardStatus(statusMessage);
-  }, [gameId, resetAiState, resetNewGameForm]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const dismissFinishedGameSummary = useCallback(() => {
-    setLastFinishedGameSummary(null);
-  }, []);
-
-  const deleteGameEvent = useCallback(async (eventId: string, expectedSequence: number): Promise<void> => {
-    if (!gameId || !eventId || !Number.isInteger(expectedSequence) || expectedSequence < 1) {
-      setDashboardStatus("Connect to a live game before correcting events.");
-      return;
-    }
-
-    setDeletingGameEventId(eventId);
-    setDashboardStatus("Applying stat correction...");
-
-    try {
-      const response = await fetch(`${apiBase}/api/games/${gameId}/events/${encodeURIComponent(eventId)}`, {
-        method: "DELETE",
-        headers: {
-          ...apiKeyHeader(),
-          "x-event-sequence": String(expectedSequence),
-        },
-      });
-
-      if (!response.ok) {
-        let detail = "";
-        try {
-          const payload = await response.json() as { error?: unknown; message?: unknown };
-          const text = typeof payload.error === "string"
-            ? payload.error
-            : typeof payload.message === "string"
-              ? payload.message
-              : "";
-          detail = text.trim();
-        } catch {
-          detail = "";
-        }
-        setDashboardStatus(detail ? `Correction failed: ${detail}` : `Correction failed (${response.status}).`);
-        return;
-      }
-
-      const payload = await response.json() as {
-        state?: GameState;
-        insights?: Insight[];
-      };
-
-      if (payload.state) {
-        setState(payload.state);
-      }
-      if (payload.insights) {
-        setInsights(payload.insights);
-      }
-
-      setDashboardStatus("Stat correction saved.");
-    } catch {
-      setDashboardStatus("Could not apply correction. Realtime API may be unavailable.");
-    } finally {
-      setDeletingGameEventId(null);
-    }
-  }, [gameId]);
+  }, [gameId, resetAiState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Socket hook
   useCoachSocket({
-    connectionId, setupNames, gameIdRef, endedGameIdsRef, clearActiveGame,
+    connectionId, gameIdRef, endedGameIdsRef, clearActiveGame,
     setGameId, setState, setServerConnected, setDeviceConnected,
     setConnectedOperatorCount, setConnectedOperators,
-    setDashboardStatus, setInsights, setRosterTeamsFromRemote, setLastFinishedGameSummary,
+    setDashboardStatus, setInsights, setRosterTeamsFromRemote,
   });
 
   // Hydration hook
@@ -516,26 +481,14 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
   // End game hook
   const {
     isEndingGame,
-    isSavingFinalizeDetails,
     isEndGamePromptOpen,
     endGameStatus,
-    finalizeGameName,
-    finalizeGameDate,
-    finalizeOpponent,
-    finalizeVcScore,
-    finalizeOppScore,
-    setFinalizeGameDate,
-    setFinalizeOpponent,
-    setFinalizeVcScore,
-    setFinalizeOppScore,
     requestEndGameFromDashboard,
     cancelEndGamePrompt,
-    saveFinalizeDetailsFromDashboard,
     discardGameFromDashboard,
     endGameFromDashboard,
   } = useEndGame({
-    gameId, state, setupNames, endedGameIdsRef, clearActiveGame, setDashboardStatus,
-    setLastFinishedGameSummary,
+    gameId, endedGameIdsRef, clearActiveGame, setDashboardStatus,
   });
 
   // Derived game data
@@ -582,17 +535,14 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     // Connection
     connectionId, setConnectionId, deviceId, operatorConsoleUrl,
     // Game identity
-    gameId, setupNames, lastFinishedGameSummary,
+    gameId, setupNames,
     // Game data
     state, insights, isLoading, serverConnected, deviceConnected,
     connectedOperatorCount, connectedOperators, dashboardStatus,
     // UI
     activePage, setActivePage, boxScoreFilter, setBoxScoreFilter,
     // Actions
-    dismissFinishedGameSummary,
     clearActiveGame,
-    deleteGameEvent,
-    deletingGameEventId,
     // Roster
     rosterTeams, setRosterTeams, expandedTeamId, setExpandedTeamId,
     editingPlayerId, setEditingPlayerId, editPlayerDraft, setEditPlayerDraft,
@@ -611,21 +561,10 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameStartingLineup, setNewGameStartingLineup, isLaunchingGame, launchGame,
     // End game
     isEndingGame,
-    isSavingFinalizeDetails,
     isEndGamePromptOpen,
     endGameStatus,
-    finalizeGameName,
-    finalizeGameDate,
-    finalizeOpponent,
-    finalizeVcScore,
-    finalizeOppScore,
-    setFinalizeGameDate,
-    setFinalizeOpponent,
-    setFinalizeVcScore,
-    setFinalizeOppScore,
     requestEndGameFromDashboard,
     cancelEndGamePrompt,
-    saveFinalizeDetailsFromDashboard,
     discardGameFromDashboard,
     endGameFromDashboard,
     // AI

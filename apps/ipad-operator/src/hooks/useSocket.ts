@@ -8,7 +8,7 @@ import {
   normalizeConnectionId,
 } from "../helpers/network.js";
 import { saveAppData } from "../helpers/storage.js";
-import { convertRosterTeamToAppTeam } from "../roster-sync.js";
+import { convertRosterTeamToAppTeam, extractBearerTokenValue, isBearerTokenLike } from "../roster-sync.js";
 import { DEFAULT_SCHOOL_ID } from "../constants.js";
 
 export interface SocketDeps {
@@ -80,8 +80,9 @@ export function useSocket({
     const payload = { connectionId, gameId, startingLineupByTeam, deviceName: gameSetup.deviceName?.trim() || undefined };
     const socketAuth: Record<string, string> = { schoolId: gameSetup.schoolId?.trim() || DEFAULT_SCHOOL_ID };
     if (gameSetup.apiKey) {
-      if (gameSetup.apiKey.startsWith("bta.")) {
-        socketAuth.token = gameSetup.apiKey;
+      const bearerToken = extractBearerTokenValue(gameSetup.apiKey);
+      if (isBearerTokenLike(gameSetup.apiKey) && bearerToken) {
+        socketAuth.token = bearerToken;
       } else {
         socketAuth.apiKey = gameSetup.apiKey;
       }
