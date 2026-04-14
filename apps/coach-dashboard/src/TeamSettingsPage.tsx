@@ -20,11 +20,8 @@ function normalizeSettingsSection(value: string | null | undefined, fallback: Se
 
   return fallback;
 }
-function navigateWithinCoachApp(path: string): void {
-  if (typeof window === "undefined") {
-    return;
-  }
 
+function navigateWithinCoachApp(path: string) {
   if (window.location.pathname === path) {
     window.dispatchEvent(new PopStateEvent("popstate"));
     return;
@@ -33,6 +30,7 @@ function navigateWithinCoachApp(path: string): void {
   window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
+
 interface TeamDto {
   id: string;
   name: string;
@@ -226,11 +224,7 @@ function FocusInsightsChips({ value, onChange }: { value: string; onChange: (nex
   );
 }
 
-interface TeamSettingsPageProps {
-  onNavigate?: (path: string) => void;
-}
-
-export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
+export function TeamSettingsPage() {
   const activeSchoolId = resolveActiveSchoolId();
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
@@ -242,17 +236,13 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
-    if (typeof window === "undefined") {
-      return "pairing";
-    }
-
     const fromQuery = new URLSearchParams(window.location.search).get("section")
       ?? new URLSearchParams(window.location.search).get("tab");
     if (fromQuery) {
       return normalizeSettingsSection(fromQuery, "pairing");
     }
 
-    const saved = window.localStorage.getItem("coach:settings-section");
+    const saved = localStorage.getItem("coach:settings-section");
     return normalizeSettingsSection(saved, "pairing");
   });
   const [copyConfirmed, setCopyConfirmed] = useState(false);
@@ -261,7 +251,7 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
   const [customPrompt, setCustomPrompt] = useState("");
   const [focusInsightsText, setFocusInsightsText] = useState("");
   const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
-  const [billingStatus, setBillingStatus] = useState("Open Billing to manage your plan, payment method, and invoices.");
+  const [billingStatus, setBillingStatus] = useState("Open Billing from Stripe to manage your plan, payment method, and invoices.");
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingLoadFailed, setBillingLoadFailed] = useState(false);
   const [billingRefreshKey, setBillingRefreshKey] = useState(0);
@@ -374,10 +364,6 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
   }, [connectionCode]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("section") ?? params.get("tab");
     if (!requested) {
@@ -411,21 +397,21 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
         setBillingEntitlement(entitlement);
         if (!entitlement) {
           setBillingLoadFailed(true);
-          setBillingStatus("Could not load billing status. Open Billing to retry.");
+          setBillingStatus("Could not load billing status. Open Billing from Stripe to retry.");
         } else if (entitlement.accessActive) {
-          setBillingStatus("Your subscription is active. Open Billing to manage your subscription details.");
+          setBillingStatus("Your subscription is active. Open Billing from Stripe to manage your subscription details.");
         } else if (entitlement.status === "past_due" || entitlement.status === "unpaid") {
-          setBillingStatus("Your account needs payment attention. Open Billing to restore full access.");
+          setBillingStatus("Your account needs payment attention. Open Billing from Stripe to restore full access.");
         } else if (entitlement.status === "canceled") {
-          setBillingStatus("Your subscription is canceled. Open Billing to reactivate access.");
+          setBillingStatus("Your subscription is canceled. Open Billing from Stripe to reactivate access.");
         } else {
-          setBillingStatus("No active subscription found. Open Billing to start your plan.");
+          setBillingStatus("No active subscription found. Open Billing from Stripe to start your plan.");
         }
       } catch {
         if (!cancelled) {
           setBillingEntitlement(null);
           setBillingLoadFailed(true);
-          setBillingStatus("Could not load billing status. Open Billing to retry.");
+          setBillingStatus("Could not load billing status. Open Billing from Stripe to retry.");
         }
       } finally {
         if (!cancelled) {
@@ -861,13 +847,7 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
           <button
             type="button"
             className="shell-nav-link"
-            onClick={() => {
-              if (onNavigate) {
-                onNavigate("/billing");
-                return;
-              }
-              navigateWithinCoachApp("/billing");
-            }}
+            onClick={() => navigateWithinCoachApp("/billing")}
           >
             Open Billing
           </button>
@@ -1354,15 +1334,9 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
                   <button
                     type="button"
                     className="shell-nav-link"
-                    onClick={() => {
-                      if (onNavigate) {
-                        onNavigate("/billing");
-                        return;
-                      }
-                      navigateWithinCoachApp("/billing");
-                    }}
+                    onClick={() => navigateWithinCoachApp("/billing")}
                   >
-                    Open Billing Page
+                    Open Billing from Stripe
                   </button>
                 </>
               )}
@@ -1383,16 +1357,10 @@ export function TeamSettingsPage({ onNavigate }: TeamSettingsPageProps) {
                 <button
                   type="button"
                   className="shell-nav-link shell-nav-link-active"
-                  onClick={() => {
-                    if (onNavigate) {
-                      onNavigate("/billing");
-                      return;
-                    }
-                    navigateWithinCoachApp("/billing");
-                  }}
+                  onClick={() => navigateWithinCoachApp("/billing")}
                   disabled={billingLoading}
                 >
-                  Open Billing Page
+                  Open Billing from Stripe
                 </button>
               </div>
             </>
