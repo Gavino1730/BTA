@@ -202,6 +202,12 @@ export function TeamSettingsPage() {
   const [roster, setRoster] = useState<RosterEditRow[]>([]);
   const [newPlayer, setNewPlayer] = useState<{ name: string; number: string; position: string; grade: string; height: string; weight: string; role: string; notes: string; email: string; phone: string }>({ name: "", number: "", position: "", grade: "", height: "", weight: "", role: "", notes: "", email: "", phone: "" });
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    const fromQuery = new URLSearchParams(window.location.search).get("section")
+      ?? new URLSearchParams(window.location.search).get("tab");
+    if (fromQuery) {
+      return normalizeSettingsSection(fromQuery, "pairing");
+    }
+
     const saved = localStorage.getItem("coach:settings-section");
     return normalizeSettingsSection(saved, "pairing");
   });
@@ -322,6 +328,20 @@ export function TeamSettingsPage() {
 
     window.localStorage.setItem("coach-bound-connection-id", connectionCode);
   }, [connectionCode]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("section") ?? params.get("tab");
+    if (!requested) {
+      return;
+    }
+
+    const nextSection = normalizeSettingsSection(requested, activeSection);
+    if (nextSection !== activeSection) {
+      setActiveSection(nextSection);
+      window.localStorage.setItem("coach:settings-section", nextSection);
+    }
+  }, [activeSection]);
 
   useEffect(() => {
     if (activeSection !== "billing") {
@@ -711,7 +731,16 @@ export function TeamSettingsPage() {
           <h1>Settings</h1>
           <p className="stats-page-subtitle">Manage your program, roster, AI context, and team access.</p>
         </div>
-        <p className="stats-page-status">{status}</p>
+        <div className="settings-header-actions">
+          <p className="stats-page-status">{status}</p>
+          <button
+            type="button"
+            className="shell-nav-link"
+            onClick={() => navigateWithinCoachApp("/billing")}
+          >
+            Open Billing
+          </button>
+        </div>
       </section>
 
       {/* Section tab nav */}
