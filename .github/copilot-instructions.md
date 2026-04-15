@@ -12,10 +12,14 @@ Prioritize safe, minimal, test-backed changes that preserve live game reliabilit
 ## Repo Map
 - apps/coach-dashboard: React + Vite live coach UI plus stats and analytics pages
 - apps/ipad-operator: React + Vite operator stat entry (offline-capable)
+- apps/marketing-site: Next.js public marketing site (App Router)
+- apps/shared-ui: Shared React UI components used across dashboard apps
 - packages/shared-schema: Canonical Zod event schema and shared types
 - packages/game-state: Deterministic game state engine and replay logic
+- packages/ui-tokens: Shared design token CSS
 - services/realtime-api: Express + Socket.io ingest/fanout service
 - services/insight-engine: Rules-based live insight generator (TypeScript)
+- skills/: Canonical Copilot skill files (stripe-best-practices, stripe-projects, upgrade-stripe)
 
 ## Canonical Commands
 Run commands from repo root unless noted.
@@ -26,6 +30,7 @@ Run commands from repo root unless noted.
 - Dev realtime API: npm run dev:api
 - Dev operator app: npm run dev:operator
 - Dev coach dashboard: npm run dev:coach
+- Dev marketing site: npm run dev:marketing
 - Dev stats routes/pages: npm run dev:stats (compatibility alias of dev:coach)
 - Start all apps/services: npm run dev:all
 - Smoke checks: npm run smoke-test
@@ -61,6 +66,7 @@ Run commands from repo root unless noted.
 - If changing API payloads, update both producers and consumers in the same change.
 - Avoid committing generated data artifacts unless the task explicitly requires fixture/data updates.
 - Treat the coach dashboard as the home for current stats routes/pages; prefer root-level scripts/config over duplicate app-local docs.
+- IMPROVEMENTS.md (repo root) is the canonical improvements tracker; do not create parallel tracker files.
 
 ## Link, Do Not Duplicate
 Use these docs for detailed procedures instead of repeating them in code comments or instructions:

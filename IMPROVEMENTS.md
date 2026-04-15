@@ -1,14 +1,8 @@
 # BTA Courtside — Improvements Backlog
 
-This file is now an index only.
+This is the canonical improvements and architecture notes tracker for the BTA platform.
 
-Canonical consolidated tracker: improvements/IMPROVEMENTS.md
-Use that file for all new and ongoing improvement planning.
-
-Recent completed work is tracked in:
-- improvements/IMPROVEMENTS.md -> Recently Completed
-
-Last updated: April 7, 2026.
+Last updated: April 14, 2026.
 
 ---
 
@@ -39,15 +33,17 @@ Last updated: April 7, 2026.
 
 ---
 
-### Pre-Production Blocklist (do not deploy without these)
+### Production Configuration Requirements
+
+These items must be confirmed active in the deployed environment. The platform is live — these are not blockers but operational verifications.
 
 | # | What | Why |
 |---|------|-----|
-| 1 | Set `DATABASE_URL` (Supabase) in Railway | File-backed data lost on dyno restart |
-| 2 | Set `ALLOWED_ORIGINS` explicitly | Startup now rejects production without explicit frontend origins |
-| 3 | Set `BTA_REQUIRE_TENANT=1` and `BTA_JWT_WRITE_REQUIRED=1` | Multi-org data isolation won't be enforced without these |
-| 4 | Run and pass the roster sync checklist | Cross-platform sync flow has never been formally verified |
-| 5 | Set `BTA_LOCAL_AUTH_SECRET` if using built-in email/password auth | Local auth token signing is intentionally decoupled from `BTA_API_KEY` |
+| 1 | `DATABASE_URL` (Supabase) set in Railway | File-backed data lost on dyno restart |
+| 2 | `ALLOWED_ORIGINS` explicitly set | Production startup rejects wildcard/missing origin |
+| 3 | `BTA_REQUIRE_TENANT=1` and `BTA_JWT_WRITE_REQUIRED=1` | Multi-org data isolation enforcement |
+| 4 | Roster sync cross-platform flow verified end-to-end | Has never been formally verified |
+| 5 | `BTA_LOCAL_AUTH_SECRET` set if using built-in email/password auth | Local auth token signing decoupled from `BTA_API_KEY` |
 
 ### High Priority (should be done before first real game)
 - Wire smoke test / UI audit into a staging CI step rather than manual-only.

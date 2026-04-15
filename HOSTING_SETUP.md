@@ -54,7 +54,6 @@ Minimum coach Vercel env vars:
 - `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
 - Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
-- Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
 
 The included `vercel.json` already handles:
 - monorepo install/build
@@ -86,23 +85,10 @@ Create a Vercel project for `apps/marketing-site` and set:
 
 You can bootstrap values from:
 - `apps/marketing-site/.env.example`
-- Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
-- Optional explicit tenant scope default (recommended to leave unset): `VITE_SCHOOL_ID=<school-id>`
-
-## 4b. Vercel — Marketing Site
-
-Create a Vercel project for `apps/marketing-site` and set:
-
-- `NEXT_PUBLIC_SITE_URL=https://btaintel.com`
-- `NEXT_PUBLIC_DASHBOARD_URL=https://dashboard.btaintel.com`
-- `NEXT_PUBLIC_API_BASE=https://api.btaintel.com`
-
-You can bootstrap values from:
-- `apps/marketing-site/.env.example`
 
 The included `vercel.json` already handles:
 - monorepo install/build
-- SPA rewrites to `index.html`
+- Next.js output routing
 - no-cache headers for `service-worker.js`
 
 ## 5. Domain layout

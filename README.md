@@ -6,8 +6,11 @@ Realtime basketball platform for high school programs, with deterministic game-s
 
 - `apps/coach-dashboard`: Coach UI for live game tracking, trends, and AI insights.
 - `apps/ipad-operator`: Operator entry app for game events and live capture.
+- `apps/marketing-site`: Next.js public marketing site.
+- `apps/shared-ui`: Shared React UI components used across dashboard apps.
 - `packages/shared-schema`: Canonical Zod event schema and shared contracts.
 - `packages/game-state`: Deterministic game-state engine and replay logic.
+- `packages/ui-tokens`: Shared design token CSS.
 - `services/realtime-api`: Express + Socket.io ingest/fanout backend.
 - `services/insight-engine`: Rules-based insight generation.
 
@@ -55,6 +58,7 @@ npm run dev:all
 - `npm run start:api`: Start built realtime API
 - `npm run dev:coach`: Start coach dashboard (port 5173)
 - `npm run dev:operator`: Start iPad operator app (port 5174)
+- `npm run dev:marketing`: Start marketing site (Next.js)
 - `npm run smoke-test`: Run smoke test script
 - `npm run audit:ui`: Run UI audit script
 - `npm run validate:env`: Validate API environment configuration

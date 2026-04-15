@@ -77,4 +77,4 @@ Pricing and billing UX parity - ??
 ## Notes
 
 - Keep this file short and current: remove completed items as they ship.
-- Technical implementation detail and owner/date tracking live in `improvements/IMPROVEMENTS.md`.
+- Technical implementation detail and owner/date tracking live in `IMPROVEMENTS.md`.
