@@ -784,6 +784,33 @@
   font-style: italic;
 }
 
+.ai-safety-note {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.35rem 0 0;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid rgba(59,130,246,0.6);
+  border-radius: 12px;
+  background: rgba(219, 234, 254, 0.14);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.ai-safety-note strong {
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-safety-note-caution {
+  border-left-color: rgba(245, 158, 11, 0.85);
+  background: rgba(251, 191, 36, 0.12);
+}
+
 .ai-chat-input-area {
   display: flex;
   flex-direction: column;

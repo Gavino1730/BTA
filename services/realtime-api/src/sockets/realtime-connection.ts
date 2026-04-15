@@ -69,7 +69,7 @@ export function registerRealtimeConnectionHandlers(io: Server, options: Register
       const hasValidKey = Boolean(options.apiKey && socketApiKey === options.apiKey);
       const hasValidWriteKey = Boolean(options.writeApiKey && socketApiKey === options.writeApiKey);
 
-      if (options.isJwtAuthEnabled() && options.jwtWriteRequired && !socket.data.authContext && !hasValidKey) {
+      if (options.isJwtAuthEnabled() && options.jwtWriteRequired && !socket.data.authContext && !hasValidKey && !hasValidWriteKey) {
         socket.emit("error", { error: "operator registration requires bearer auth" });
         return;
       }
@@ -77,7 +77,7 @@ export function registerRealtimeConnectionHandlers(io: Server, options: Register
       if (hasValidWriteKey) {
         // Explicit machine write key may register operators without a JWT role.
       } else if (!options.isJwtAuthEnabled()) {
-        socket.emit("error", { error: "operator registration requires write authorization configuration" });
+        socket.emit("error", { error: "insufficient role for operator registration" });
         return;
       } else if (!hasValidKey) {
         const role = typeof socket.data.authContext?.role === "string"

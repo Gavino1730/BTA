@@ -188,8 +188,10 @@ describe("server billing checkout-session integration", () => {
     });
 
     expect([200, 202, 201]).toContain(response.status);
-    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean };
+    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean; allowPromotionCodes?: boolean; promotionCodeEntry?: string };
     expect(payload).toBeDefined();
+    expect(payload.allowPromotionCodes).toBe(true);
+    expect(payload.promotionCodeEntry).toBe("stripe_checkout");
   });
 
   it("returns 403 when user has insufficient write role", async () => {
@@ -261,9 +263,10 @@ describe("server billing checkout-session integration", () => {
     });
 
     expect([200, 202, 201]).toContain(response.status); // Accept 200/201/202 for successful session creation
-    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean };
+    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean; allowPromotionCodes?: boolean };
     // At minimum, should return without error
     expect(payload).toBeDefined();
+    expect(payload.allowPromotionCodes).toBe(true);
   });
 
   it("returns 400 when schoolId cannot be resolved with required tenant", async () => {
@@ -311,8 +314,9 @@ describe("server billing checkout-session integration", () => {
     });
 
     expect([200, 202, 201]).toContain(response.status);
-    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean };
+    const payload = await response.json() as { url?: string; sessionId?: string; success?: boolean; allowPromotionCodes?: boolean };
     expect(payload).toBeDefined();
+    expect(payload.allowPromotionCodes).toBe(true);
   });
 
   it("creates billing state with trial period when first initializing", async () => {

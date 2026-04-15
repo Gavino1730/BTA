@@ -6,6 +6,7 @@ interface RegisterAiCompatibilityRoutesOptions {
   requireApiKey: Middleware;
   getSchoolIdFromRequest: (req: Request) => string;
   sanitizeTextField: (value: unknown, maxLength: number) => string;
+  buildAiSafetyMetadata: (value: unknown) => { safetyLabel: string; containsActionLikeContent: boolean; warningMessage?: string };
   getSeasonGames: (scope: { schoolId: string }) => Array<{ gameId: string }>;
   answerGameAiChat: (
     gameId: string,
@@ -37,23 +38,31 @@ export function registerAiCompatibilityRoutes(app: Express, options: RegisterAiC
     if (latestGame) {
       const ai = await options.answerGameAiChat(latestGame.gameId, message, history, { schoolId });
       if (ai?.answer) {
-        res.json({ reply: ai.answer, suggestions: ai.suggestions ?? [], usedHistoricalContext: ai.usedHistoricalContext ?? false });
+        res.json({
+          reply: ai.answer,
+          suggestions: ai.suggestions ?? [],
+          usedHistoricalContext: ai.usedHistoricalContext ?? false,
+          aiSafety: options.buildAiSafetyMetadata({ reply: ai.answer, suggestions: ai.suggestions ?? [] }),
+        });
         return;
       }
     }
 
+    const reply = `${options.buildTeamSummaryText(schoolId)} Coach question: ${message}`;
     res.json({
-      reply: `${options.buildTeamSummaryText(schoolId)} Coach question: ${message}`,
+      reply,
       suggestions: [
         "Which lineup gives us the best ball security?",
         "Who should absorb minutes if foul trouble increases?",
       ],
+      aiSafety: options.buildAiSafetyMetadata(reply),
     });
   });
 
   app.get("/api/ai/team-summary", (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
-    res.json({ summary: options.buildTeamSummaryText(schoolId) });
+    const summary = options.buildTeamSummaryText(schoolId);
+    res.json({ summary, aiSafety: options.buildAiSafetyMetadata(summary) });
   });
 
   app.post("/api/ai/analyze", (req, res) => {
@@ -65,9 +74,8 @@ export function registerAiCompatibilityRoutes(app: Express, options: RegisterAiC
       return;
     }
 
-    res.json({
-      analysis: `${options.buildTeamSummaryText(schoolId)} Requested analysis: ${query}`,
-    });
+    const analysis = `${options.buildTeamSummaryText(schoolId)} Requested analysis: ${query}`;
+    res.json({ analysis, aiSafety: options.buildAiSafetyMetadata(analysis) });
   });
 
   app.get("/api/ai/player-insights/:playerName", (req, res) => {
@@ -78,7 +86,7 @@ export function registerAiCompatibilityRoutes(app: Express, options: RegisterAiC
       return;
     }
 
-    res.json({ player: req.params.playerName, insights });
+    res.json({ player: req.params.playerName, insights, aiSafety: options.buildAiSafetyMetadata(insights) });
   });
 
   app.get("/api/ai/game-analysis/:gameId", (req, res) => {
@@ -89,7 +97,7 @@ export function registerAiCompatibilityRoutes(app: Express, options: RegisterAiC
       return;
     }
 
-    res.json({ gameId: req.params.gameId, analysis });
+    res.json({ gameId: req.params.gameId, analysis, aiSafety: options.buildAiSafetyMetadata(analysis) });
   });
 
   app.delete("/api/ai/team-summary", options.requireApiKey, (_req, res) => {

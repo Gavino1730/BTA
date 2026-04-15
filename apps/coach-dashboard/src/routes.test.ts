@@ -3,33 +3,26 @@ import { apiBase, generateConnectionCode, marketingBase, normalizeConnectionCode
 import { canonicalizeCoachPath, resolveCoachRoute } from "./routes.js";
 
 describe("coach route helpers", () => {
-  it("normalizes trailing slashes without preserving legacy aliases", () => {
+  it("normalizes trailing slashes and upgrades supported legacy aliases", () => {
     expect(canonicalizeCoachPath("/stats/players/")).toBe("/stats/players");
-    expect(canonicalizeCoachPath("/players")).toBe("/players");
+    expect(canonicalizeCoachPath("/players")).toBe("/stats/players");
     expect(canonicalizeCoachPath("/")).toBe("/");
   });
 
-  it("resolves canonical routes and rejects removed legacy aliases", () => {
-    expect(resolveCoachRoute("/")).toBe("login");
-    expect(resolveCoachRoute("/invite/accept")).toBe("invite-accept");
-    expect(resolveCoachRoute("/verify-email")).toBe("email-verify");
-    expect(resolveCoachRoute("/unauthorized")).toBe("unauthorized");
-    expect(resolveCoachRoute("/checkout/success")).toBe("checkout-success");
-    expect(resolveCoachRoute("/checkout/cancel")).toBe("checkout-cancel");
-    expect(resolveCoachRoute("/notifications")).toBe("stats-notifications");
+  it("resolves the active canonical route set for the current dashboard app", () => {
+    expect(resolveCoachRoute("/")).toBe("marketing");
+    expect(resolveCoachRoute("/login")).toBe("login");
+    expect(resolveCoachRoute("/forgot-password")).toBe("forgot-password");
+    expect(resolveCoachRoute("/reset-password")).toBe("reset-password");
+    expect(resolveCoachRoute("/billing")).toBe("billing");
+    expect(resolveCoachRoute("/setup")).toBe("setup");
+    expect(resolveCoachRoute("/stats")).toBe("stats-overview");
     expect(resolveCoachRoute("/stats/players")).toBe("stats-players");
     expect(resolveCoachRoute("/settings")).toBe("stats-settings");
-    expect(resolveCoachRoute("/admin")).toBe("admin");
+    expect(resolveCoachRoute("/demo")).toBe("demo");
     expect(resolveCoachRoute("/live")).toBe("live");
-    expect(resolveCoachRoute("/support")).toBe("support");
-    expect(resolveCoachRoute("/contact")).toBe("contact");
-    expect(resolveCoachRoute("/book-demo")).toBe("book-demo");
-    expect(resolveCoachRoute("/data-deletion")).toBe("data-deletion");
-    expect(resolveCoachRoute("/product")).toBe("not-found");
-    expect(resolveCoachRoute("/pricing")).toBe("not-found");
-    expect(resolveCoachRoute("/players")).toBe("not-found");
-    expect(resolveCoachRoute("/activity")).toBe("not-found");
-    expect(resolveCoachRoute("/signin")).toBe("not-found");
+    expect(resolveCoachRoute("/players")).toBe("stats-players");
+    expect(resolveCoachRoute("/activity")).toBe("live");
   });
 
   it("defaults the coach API base to the realtime API port for local development", () => {

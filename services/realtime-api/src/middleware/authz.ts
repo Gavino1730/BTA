@@ -70,8 +70,8 @@ export function createAuthzMiddleware(options: CreateAuthzMiddlewareOptions): {
     }
 
     if (!options.isJwtAuthEnabled()) {
-      options.trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "write-auth-misconfigured" });
-      res.status(503).json({ error: "Write authorization is not configured for this protected route" });
+      options.trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "missing-write-credential" });
+      res.status(403).json({ error: "Insufficient role for write access" });
       return;
     }
 

@@ -146,7 +146,7 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
     }
 
     const payload = (req.body ?? {}) as Record<string, unknown>;
-    const rawPlanCycle = options.sanitizeTextField(payload.planCycle, 20);
+    const rawPlanCycle = options.sanitizeTextField(payload.planCycle, 20).toLowerCase();
     const planCycle = !rawPlanCycle ? "monthly" : rawPlanCycle;
 
     if (planCycle !== "monthly" && planCycle !== "yearly") {
@@ -200,7 +200,7 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
     const email = options.sanitizeTextField(payload.email, 160).toLowerCase();
     const schoolName = options.sanitizeTextField(payload.schoolName, 120);
     const teamName = options.sanitizeTextField(payload.teamName, 120);
-    const planCycle = options.sanitizeTextField(payload.planCycle, 20) || "monthly";
+    const planCycle = options.sanitizeTextField(payload.planCycle, 20).toLowerCase() || "monthly";
 
     if (!fullName || !email || !options.isValidEmail(email)) {
       res.status(400).json({ error: "A valid full name and email are required" });

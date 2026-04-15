@@ -24,8 +24,68 @@ function normalizeNameKey(value: unknown): string {
 // Caches
 // ---------------------------------------------------------------------------
 
-export const seasonAnalysisBySchool = new Map<string, { generated_at: string; season_summary: string; per_game_analysis: unknown[] }>();
+export const seasonAnalysisBySchool = new Map<string, {
+  generated_at: string;
+  season_summary: string;
+  per_game_analysis: unknown[];
+  ai_safety: AiSafetyMetadata;
+}>();
 export const playerAnalysisCacheBySchool = new Map<string, Map<string, unknown>>();
+
+export interface AiSafetyMetadata {
+  safetyLabel: "standard" | "caution";
+  containsActionLikeContent: boolean;
+  warningMessage?: string;
+}
+
+const ACTION_MIMIC_PATTERNS = [
+  /\b(click|tap|press)\b.{0,40}\b(button|link|banner|prompt)\b/i,
+  /\b(authorize|approve|confirm)\b.{0,40}\b(payment|purchase|charge|subscription)\b/i,
+  /\benter\b.{0,40}\b(password|passcode|verification code|credit card|card number|bank account)\b/i,
+  /\b(send|wire|transfer)\b.{0,40}\b(money|payment|funds)\b/i,
+  /\burgent(ly)?\b/i,
+  /\bignore\b.{0,40}\bpolicy|warning|security/i,
+];
+
+function collectStrings(value: unknown, output: string[]): void {
+  if (typeof value === "string") {
+    output.push(value);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectStrings(entry, output);
+    }
+    return;
+  }
+
+  if (value && typeof value === "object") {
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      collectStrings(nested, output);
+    }
+  }
+}
+
+export function buildAiSafetyMetadata(value: unknown): AiSafetyMetadata {
+  const strings: string[] = [];
+  collectStrings(value, strings);
+  const combined = strings.join("\n");
+  const containsActionLikeContent = ACTION_MIMIC_PATTERNS.some((pattern) => pattern.test(combined));
+
+  if (!containsActionLikeContent) {
+    return {
+      safetyLabel: "standard",
+      containsActionLikeContent: false,
+    };
+  }
+
+  return {
+    safetyLabel: "caution",
+    containsActionLikeContent: true,
+    warningMessage: "AI-generated guidance may include action-like language. Verify requests for clicks, approvals, credentials, or payments independently.",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Math utilities
@@ -499,7 +559,7 @@ export function buildComprehensiveInsightsPayload(schoolId: string) {
   const earlyAvgAllowed = average(earlyAllowed);
   const players = getSeasonPlayers({ schoolId }).slice(0, 12);
 
-  return {
+  const payload = {
     team_trends: {
       recent_performance: {
         record: `${recentWins}-${recentLosses}`,
@@ -567,6 +627,11 @@ export function buildComprehensiveInsightsPayload(schoolId: string) {
         efficiency_grade: advanced?.impact.efficiency_grade ?? "C",
       };
     }),
+  };
+
+  return {
+    ...payload,
+    ai_safety: buildAiSafetyMetadata(payload),
   };
 }
 
@@ -657,7 +722,7 @@ export function buildPlayerInsightsText(schoolId: string, playerName: string): s
 export function buildSeasonAnalysisPayload(
   schoolId: string,
   force = false
-): { generated_at: string; season_summary: string; per_game_analysis: unknown[] } {
+): { generated_at: string; season_summary: string; per_game_analysis: unknown[]; ai_safety: AiSafetyMetadata } {
   if (!force) {
     const cached = seasonAnalysisBySchool.get(schoolId);
     if (cached) return cached;
@@ -744,7 +809,12 @@ export function buildSeasonAnalysisPayload(
     `FG: ${seasonStats.fg_pct.toFixed(1)}%, 3PT: ${seasonStats.fg3_pct.toFixed(1)}%, FT: ${seasonStats.ft_pct.toFixed(1)}%. ` +
     `${games.length} games played. ${seasonStats.win >= seasonStats.loss ? "Positive" : "Below .500"} season trajectory.`;
 
-  const result = { generated_at: new Date().toISOString(), season_summary: summary, per_game_analysis: perGameAnalysis };
+  const result = {
+    generated_at: new Date().toISOString(),
+    season_summary: summary,
+    per_game_analysis: perGameAnalysis,
+    ai_safety: buildAiSafetyMetadata({ season_summary: summary, per_game_analysis: perGameAnalysis }),
+  };
   seasonAnalysisBySchool.set(schoolId, result);
   return result;
 }
@@ -795,6 +865,7 @@ export function buildPlayerAnalysisPayload(schoolId: string, playerName: string)
     player: playerName,
     analysis,
     generated_at: new Date().toISOString(),
+    ai_safety: buildAiSafetyMetadata(analysis),
     stats_summary: {
       games: player.games,
       ppg: roundStat(player.ppg),

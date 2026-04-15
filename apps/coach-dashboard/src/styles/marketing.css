@@ -1503,10 +1503,10 @@
 }
 
 .auth-login-card .auth-secondary-button {
-  min-height: 38px;
-  padding: 0.44rem 0.82rem;
+  min-height: 44px;
+  padding: 0.58rem 0.92rem;
   border-radius: var(--auth-login-radius-sm);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   letter-spacing: 0.01em;
 }
 
@@ -1526,7 +1526,7 @@
   border-radius: 8px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
@@ -1757,10 +1757,10 @@
 .auth-login-cta-note .auth-secondary-button {
   width: 100%;
   justify-content: center;
-  min-height: 36px;
+  min-height: 44px;
   border-color: color-mix(in srgb, var(--bta-accent-cyan) 25%, transparent);
   border-radius: var(--auth-login-radius-sm);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -1896,10 +1896,10 @@
 }
 
 .auth-flow-card .auth-secondary-button {
-  min-height: 38px;
-  padding: 0.44rem 0.82rem;
+  min-height: 44px;
+  padding: 0.58rem 0.92rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .auth-flow-status,
@@ -2034,8 +2034,8 @@
   }
 
   .auth-login-quick-links .auth-secondary-button {
-    min-height: 40px;
-    font-size: 0.68rem;
+    min-height: 44px;
+    font-size: 0.72rem;
   }
 }
 

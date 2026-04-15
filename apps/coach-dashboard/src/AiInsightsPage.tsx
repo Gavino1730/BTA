@@ -8,6 +8,12 @@ interface RecommendationEntry {
   reason?: string;
 }
 
+interface AiSafetyMeta {
+  safetyLabel?: string;
+  containsActionLikeContent?: boolean;
+  warningMessage?: string;
+}
+
 interface PlayerInsightCard {
   name: string;
   role?: string;
@@ -46,6 +52,7 @@ interface ComprehensiveInsightsPayload {
   };
   recommendations?: RecommendationEntry[];
   player_insights?: PlayerInsightCard[];
+  ai_safety?: AiSafetyMeta;
 }
 
 interface SeasonGameAnalysisEntry {
@@ -66,6 +73,7 @@ interface SeasonAnalysis {
   generated_at?: string;
   season_summary?: string;
   per_game_analysis?: SeasonGameAnalysisEntry[];
+  ai_safety?: AiSafetyMeta;
 }
 
 interface PlayerSummary {
@@ -89,6 +97,7 @@ interface LiveContextPayload {
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  aiSafety?: AiSafetyMeta;
 }
 
 const MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
@@ -193,6 +202,28 @@ function formatNumber(value: number | undefined, digits = 1): string {
   return Number.isFinite(value) ? Number(value).toFixed(digits) : (0).toFixed(digits);
 }
 
+function sanitizeAiSafety(meta: AiSafetyMeta | null | undefined): AiSafetyMeta | undefined {
+  if (!meta) return undefined;
+
+  return {
+    safetyLabel: sanitizeText(meta.safetyLabel),
+    containsActionLikeContent: meta.containsActionLikeContent === true,
+    warningMessage: sanitizeText(meta.warningMessage),
+  };
+}
+
+function renderAiGuidance(meta: AiSafetyMeta | null | undefined) {
+  const safe = sanitizeAiSafety(meta);
+  if (!safe) return null;
+
+  return (
+    <div className={`ai-safety-note${safe.containsActionLikeContent ? " ai-safety-note-caution" : ""}`}>
+      <strong>{safe.containsActionLikeContent ? "AI guidance: caution" : "AI guidance"}</strong>
+      <span>{safe.warningMessage || "AI-generated summary for coaching context. Treat it as guidance, not an instruction to click, pay, or share credentials."}</span>
+    </div>
+  );
+}
+
 function playerDisplayLabel(player: PlayerSummary): string {
   const num = player.number ? `#${player.number} ` : "";
   return `${num}${player.full_name ?? player.name ?? "Unknown"}`;
@@ -203,9 +234,11 @@ export function AiInsightsPage() {
   const [insights, setInsights] = useState<ComprehensiveInsightsPayload | null>(null);
   const [analysis, setAnalysis] = useState<SeasonAnalysis | null>(null);
   const [teamSummary, setTeamSummary] = useState("");
+  const [teamSummarySafety, setTeamSummarySafety] = useState<AiSafetyMeta | undefined>(undefined);
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [playerInsight, setPlayerInsight] = useState("");
+  const [playerInsightSafety, setPlayerInsightSafety] = useState<AiSafetyMeta | undefined>(undefined);
   const [question, setQuestion] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [chatSuggestions, setChatSuggestions] = useState<string[]>([]);
@@ -244,7 +277,7 @@ export function AiInsightsPage() {
         const [insightsPayload, seasonPayload, teamSummaryPayload, playersPayload] = await Promise.all([
           insightsRes.json() as Promise<ComprehensiveInsightsPayload>,
           seasonRes.json() as Promise<SeasonAnalysis>,
-          teamSummaryRes.json() as Promise<{ summary?: string }>,
+          teamSummaryRes.json() as Promise<{ summary?: string; aiSafety?: AiSafetyMeta }>,
           playersRes.json() as Promise<PlayerSummary[]>,
         ]);
 
@@ -258,6 +291,7 @@ export function AiInsightsPage() {
           setInsights(sanitizeInsightsPayload(insightsPayload));
           setAnalysis(sanitizeSeasonAnalysis(seasonPayload));
           setTeamSummary(sanitizeText(teamSummaryPayload.summary));
+          setTeamSummarySafety(sanitizeAiSafety(teamSummaryPayload.aiSafety));
           const nextPlayers = Array.isArray(playersPayload) ? playersPayload : [];
           setPlayers(nextPlayers);
           if (!selectedPlayer && nextPlayers.length > 0) {
@@ -314,13 +348,15 @@ export function AiInsightsPage() {
           headers: apiKeyHeader(),
         });
         if (!response.ok) throw new Error("Player insight request failed");
-        const payload = await response.json() as { insights?: string };
+        const payload = await response.json() as { insights?: string; aiSafety?: AiSafetyMeta };
         if (!cancelled) {
           setPlayerInsight(sanitizeText(payload.insights) || "No player insight available yet.");
+          setPlayerInsightSafety(sanitizeAiSafety(payload.aiSafety));
         }
       } catch {
         if (!cancelled) {
           setPlayerInsight("No player insight available yet.");
+          setPlayerInsightSafety(undefined);
         }
       }
     }
@@ -352,9 +388,9 @@ export function AiInsightsPage() {
 
       if (!response.ok) throw new Error("AI chat failed");
 
-      const payload = await response.json() as { reply?: string; suggestions?: string[] };
+      const payload = await response.json() as { reply?: string; suggestions?: string[]; aiSafety?: AiSafetyMeta };
       const reply = sanitizeText(payload.reply) || "No answer available.";
-      setChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
+      setChatHistory((prev) => [...prev, { role: "assistant", content: reply, aiSafety: sanitizeAiSafety(payload.aiSafety) }]);
       setChatSuggestions(Array.isArray(payload.suggestions) ? payload.suggestions.map((item) => sanitizeText(item)) : []);
     } catch {
       setChatHistory((prev) => [...prev, { role: "assistant", content: "Could not get an answer right now. Try again shortly." }]);
@@ -513,6 +549,7 @@ export function AiInsightsPage() {
             <h3>Season Summary</h3>
             <span className="stats-page-status">{analysis?.generated_at ? new Date(analysis.generated_at).toLocaleDateString() : "Live"}</span>
           </div>
+          {renderAiGuidance(analysis?.ai_safety ?? teamSummarySafety)}
           <p className="stats-page-subcopy">{sanitizeText(analysis?.season_summary) || sanitizeText(teamSummary) || "No season summary yet."}</p>
         </section>
 
@@ -548,6 +585,7 @@ export function AiInsightsPage() {
               <div key={i} className={`ai-chat-bubble ai-chat-bubble-${msg.role}`}>
                 <span className="ai-chat-role">{msg.role === "user" ? "You" : "AI"}</span>
                 <p className="ai-chat-content">{msg.content}</p>
+                {msg.role === "assistant" ? renderAiGuidance(msg.aiSafety) : null}
               </div>
             ))}
             {chatLoading && (
@@ -600,6 +638,7 @@ export function AiInsightsPage() {
             <h3>Player Spotlight</h3>
             <span className="stats-page-status">Individual insight</span>
           </div>
+          {renderAiGuidance(playerInsightSafety)}
           <label className="stats-filter-field ai-player-select-field">
             <span>Select player</span>
             <select value={selectedPlayer} onChange={(e) => setSelectedPlayer(e.target.value)}>

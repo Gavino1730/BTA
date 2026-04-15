@@ -127,6 +127,7 @@ import {
   buildPlayerComparisonPayload,
   buildVolatilityPayload,
   buildComprehensiveInsightsPayload,
+  buildAiSafetyMetadata,
   buildTeamSummaryText,
   buildGameAnalysisText,
   buildPlayerInsightsText,
@@ -836,8 +837,8 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
   }
 
   if (!isJwtAuthEnabled()) {
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "write-auth-misconfigured" });
-    res.status(503).json({ error: "Write authorization is not configured for this protected route" });
+    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "missing-write-credential" });
+    res.status(403).json({ error: "Insufficient role for write access" });
     return;
   }
 
@@ -1210,6 +1211,7 @@ registerAiCompatibilityRoutes(app, {
   requireApiKey,
   getSchoolIdFromRequest,
   sanitizeTextField,
+  buildAiSafetyMetadata,
   getSeasonGames,
   answerGameAiChat,
   buildTeamSummaryText,
@@ -1425,7 +1427,7 @@ let serverStarted = false;
 // Warn if API key not set in production
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 if (NODE_ENV === "production" && !API_KEY) {
-  console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Event ingest endpoints are open to anyone.");
+  console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Read-protected API-key routes require JWT or BTA_WRITE_API_KEY.");
 }
 
 /**
