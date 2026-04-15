@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { AuthContext } from "../auth.js";
 import type {
+  CoachAiSettings,
   LocalAuthAccount,
   OnboardingAccountState,
   OrganizationMember,
@@ -20,7 +21,7 @@ interface TenantCompositionDependencies {
   buildOrganizationSlug: (value: string) => string;
   buildTeamAbbreviation: (value: string) => string;
   normalizeTeamColor: (value: unknown) => string | undefined;
-  sanitizeFocusInsights: (value: unknown) => string[] | undefined;
+  sanitizeFocusInsights: (value: unknown) => CoachAiSettings["focusInsights"] | undefined;
   getOrganizationProfileByScope: (scope: { schoolId: string }) => OrganizationProfile | null;
   getOnboardingAccountStateByScope: (scope: { schoolId: string }) => OnboardingAccountState | null;
   getOrganizationMembersByScope: (scope: { schoolId: string }) => OrganizationMember[];

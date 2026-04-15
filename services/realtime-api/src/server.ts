@@ -1,6 +1,7 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
@@ -220,22 +221,6 @@ app.use(express.json());
 const { eventRateLimiter, authRateLimiter } = createRealtimeApiRateLimiters();
 
 const tenantComposition = createTenantCompositionHelpers({
-  getPrimaryTeam,
-  persistSchoolTeams,
-  upsertPrimaryTeam,
-  buildOnboardingProfileView,
-  buildOnboardingCompletionSummary,
-  buildAuthSessionResponse,
-  buildSuggestedCoachIdentity,
-  resolveCurrentOrganizationMember,
-  ensureAuthenticatedOrganizationMember,
-  ensureOwnerMembership,
-  requireOrganizationOwner,
-  requireOrganizationManager,
-  normalizeMemberRole,
-  withSuggestedOnboardingIdentity,
-  activateKnownMemberForAccount,
-});
   ioEmitRosterTeams: (schoolId, teams) => {
     io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
   },
@@ -272,6 +257,7 @@ const BILLING_STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim() || u
 const BILLING_STRIPE_WEBHOOK_SECRET = process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim() || undefined;
 const BILLING_STRIPE_PRICE_ID_MONTHLY = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim() || undefined;
 const BILLING_STRIPE_PRICE_ID_YEARLY = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim() || undefined;
+const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
 
 function hasValidApiKeyRequest(req: Request): boolean {
   const provided = req.headers["x-api-key"] ?? req.query.apiKey;
@@ -582,7 +568,7 @@ registerAuthCoreRoutes(app, {
   pruneExpiredPasswordResetTokens,
   passwordResetTokens,
   generatePasswordResetToken: () => randomBytes(24).toString("hex"),
-  passwordResetTokenTtlMs: PASSWORD_RESET_TOKEN_TTL_MS,
+  passwordResetTokenTtlMs: passwordResetTokenTtlMs,
   deliverPasswordResetEmail,
   buildResetPath,
   exposePasswordResetToken: EXPOSE_PASSWORD_RESET_TOKEN,

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { Request } from "express";
+import type { EmailDeliveryResult } from "../email.js";
 import type {
   LocalAuthAccount,
   OnboardingAccountState,
@@ -35,7 +36,7 @@ interface AuthSessionDependencies {
     subject: string;
     text: string;
     html: string;
-  }) => Promise<{ delivered: boolean; reason?: string }>;
+  }) => Promise<EmailDeliveryResult>;
   sanitizeTextField: (value: unknown, maxLength: number) => string;
   getOnboardingAccountStateByScope: (scope: { schoolId: string }) => OnboardingAccountState | null;
   getOrganizationProfileByScope: (scope: { schoolId: string }) => OrganizationProfile | null;
@@ -49,11 +50,11 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
   buildInvitePath: (schoolId: string, token: string) => string;
   pruneExpiredPasswordResetTokens: (now?: number) => void;
   pruneExpiredInvitationTokens: (now?: number) => void;
-  deliverPasswordResetEmail: (req: Request, schoolId: string, account: LocalAuthAccount, token: string) => Promise<{ delivered: boolean; reason?: string }>;
+  deliverPasswordResetEmail: (req: Request, schoolId: string, account: LocalAuthAccount, token: string) => Promise<EmailDeliveryResult>;
   issueMemberInvitation: (req: Request, schoolId: string, member: OrganizationMember) => Promise<{
     inviteToken?: string;
     invitePath: string;
-    emailDelivery: { delivered: boolean; reason?: string };
+    emailDelivery: EmailDeliveryResult;
     warning?: string;
   }>;
 } {
@@ -98,7 +99,7 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
     schoolId: string,
     account: LocalAuthAccount,
     token: string,
-  ): Promise<{ delivered: boolean; reason?: string }> {
+  ): Promise<EmailDeliveryResult> {
     const resetPath = buildResetPath(schoolId, token);
     const resetUrl = buildAbsoluteCoachUrl(req, resetPath);
     return deps.sendTransactionalEmail({
@@ -124,7 +125,7 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
   async function deliverInvitationEmail(
     req: Request,
     invitation: InvitationTokenRecord,
-  ): Promise<{ delivered: boolean; reason?: string }> {
+  ): Promise<EmailDeliveryResult> {
     const invitePath = buildInvitePath(invitation.schoolId, invitation.token);
     const inviteUrl = buildAbsoluteCoachUrl(req, invitePath);
     return deps.sendTransactionalEmail({
@@ -198,8 +199,7 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
     pruneExpiredPasswordResetTokens,
     pruneExpiredInvitationTokens,
     deliverPasswordResetEmail: async (req, schoolId, account, token) => {
-      const result = await deliverPasswordResetEmail(req, schoolId, account, token);
-      return exposePasswordResetToken ? result : { delivered: result.delivered, reason: result.reason };
+      return deliverPasswordResetEmail(req, schoolId, account, token);
     },
     issueMemberInvitation,
   };
