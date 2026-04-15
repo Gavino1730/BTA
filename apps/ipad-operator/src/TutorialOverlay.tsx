@@ -1,39 +1,39 @@
-import React, { useState } from 'react';
+import { useState } from "react";
 
 const STEPS = [
   {
-    title: 'Welcome',
-    body: 'This app is your live stat-entry hub during games. You\'ll log every play in real time, and the coach dashboard updates instantly.',
-    icon: '🏀',
+    title: "Welcome",
+    body: "This app is your live stat-entry hub during games. You log every play in real time, and the coach dashboard updates instantly.",
+    icon: "Live",
   },
   {
-    title: 'Pair With Coach Dashboard',
-    body: 'Before tip-off, open Settings and paste the 6-digit coach connection code. Team, lineup, and matchup setup are coach-controlled and sync down to iPad.',
-    icon: '⚙️',
+    title: "Pair With Coach Dashboard",
+    body: "Before tip-off, open Settings and paste the 6-digit coach connection code. Team, lineup, and matchup setup are coach-controlled and sync down to the iPad.",
+    icon: "Pair",
   },
   {
-    title: 'Logging Stats',
-    body: 'Tap players to log shots, assists, rebounds, fouls, and other events in a few taps. Every event feeds the live coach timeline.',
-    icon: '📋',
+    title: "Logging Stats",
+    body: "Tap players to log shots, assists, rebounds, fouls, and other events in a few taps. Every event feeds the live coach timeline.",
+    icon: "Log",
   },
   {
-    title: 'Substitutions',
-    body: 'Tap the sub button next to a player\'s name to swap them in or out. The lineup syncs to the coach dashboard instantly via Wi-Fi.',
-    icon: '🔄',
+    title: "Substitutions",
+    body: "Tap the sub button next to a player's name to swap them in or out. The lineup syncs to the coach dashboard instantly via Wi-Fi.",
+    icon: "Subs",
   },
   {
-    title: 'Post-Game',
-    body: 'After the final buzzer, tap End Game to close the period and lock the score. Your stats stay available in the coach dashboard for post-game analysis.',
-    icon: '🏁',
+    title: "Post-Game",
+    body: "After the final buzzer, tap End Game to close the period and lock the score. Your stats stay available in the coach dashboard for post-game analysis.",
+    icon: "Close",
   },
   {
-    title: 'Offline Mode',
-    body: 'No Wi-Fi? Events queue locally first, then sync automatically after reconnect. Keep entering stats and let the app catch up.',
-    icon: '📡',
+    title: "Offline Mode",
+    body: "No Wi-Fi? Events queue locally first, then sync automatically after reconnect. Keep entering stats and let the app catch up.",
+    icon: "Offline",
   },
 ];
 
-const LS_KEY = 'ipo:tutorial-complete';
+const LS_KEY = "ipo:tutorial-complete";
 
 interface Props {
   onDismiss: () => void;
@@ -42,123 +42,55 @@ interface Props {
 export default function TutorialOverlay({ onDismiss }: Props) {
   const [step, setStep] = useState(0);
   const isLast = step === STEPS.length - 1;
-  const s = STEPS[step];
+  const currentStep = STEPS[step];
 
   function handleDismiss() {
-    localStorage.setItem(LS_KEY, '1');
+    localStorage.setItem(LS_KEY, "1");
     onDismiss();
   }
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.72)',
-        zIndex: 9999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
+      className="tutorial-overlay"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          handleDismiss();
+        }
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) handleDismiss(); }}
     >
-      <div
-        style={{
-          background: '#1a1a2e',
-          border: '1.5px solid #4f8cff',
-          borderRadius: '14px',
-          padding: '28px 24px 20px',
-          width: '100%',
-          maxWidth: '420px',
-          color: '#e2e8f0',
-          fontFamily: 'inherit',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
-        }}
-      >
-        {/* Step dots */}
-        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', marginBottom: '20px' }}>
-          {STEPS.map((_, i) => (
+      <div className="tutorial-card">
+        <div className="tutorial-dots" aria-hidden="true">
+          {STEPS.map((_, index) => (
             <div
-              key={i}
-              style={{
-                width: i === step ? '20px' : '8px',
-                height: '8px',
-                borderRadius: '4px',
-                background: i === step ? '#4f8cff' : i < step ? '#4f8cff66' : '#2d3748',
-                transition: 'width .2s, background .2s',
-              }}
+              key={index}
+              className={`tutorial-dot${index === step ? " is-active" : ""}${index < step ? " is-complete" : ""}`}
             />
           ))}
         </div>
 
-        {/* Icon */}
-        <div style={{ textAlign: 'center', fontSize: '40px', marginBottom: '12px' }}>
-          {s.icon}
-        </div>
-
-        {/* Title */}
-        <div style={{ fontWeight: 700, fontSize: '18px', marginBottom: '10px', textAlign: 'center' }}>
-          {s.title}
-        </div>
-
-        {/* Body */}
-        <div style={{ fontSize: '14px', lineHeight: 1.6, color: '#a0aec0', textAlign: 'center', marginBottom: '24px' }}>
-          {s.body}
-        </div>
-
-        {/* Step counter */}
-        <div style={{ textAlign: 'center', fontSize: '11px', color: '#4f8cff', marginBottom: '16px', letterSpacing: '0.5px' }}>
+        <div className="tutorial-icon">{currentStep.icon}</div>
+        <div className="tutorial-title">{currentStep.title}</div>
+        <div className="tutorial-body">{currentStep.body}</div>
+        <div className="tutorial-counter">
           {step + 1} / {STEPS.length}
         </div>
 
-        {/* Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-          <button
-            onClick={handleDismiss}
-            style={{
-              background: 'transparent',
-              border: '1px solid #4a5568',
-              color: '#a0aec0',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
+        <div className="tutorial-actions">
+          <button type="button" className="tutorial-skip-button" onClick={handleDismiss}>
             Skip
           </button>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {step > 0 && (
-              <button
-                onClick={() => setStep(step - 1)}
-                style={{
-                  background: 'transparent',
-                  border: '1.5px solid #4f8cff',
-                  color: '#4f8cff',
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                }}
-              >
+          <div className="tutorial-primary-actions">
+            {step > 0 ? (
+              <button type="button" className="tutorial-back-button" onClick={() => setStep(step - 1)}>
                 Back
               </button>
-            )}
+            ) : null}
             <button
+              type="button"
+              className="tutorial-next-button"
               onClick={isLast ? handleDismiss : () => setStep(step + 1)}
-              style={{
-                background: '#4f8cff',
-                border: 'none',
-                color: '#fff',
-                padding: '8px 18px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 600,
-              }}
             >
-              {isLast ? 'Get Started' : 'Next →'}
+              {isLast ? "Get Started" : "Next"}
             </button>
           </div>
         </div>

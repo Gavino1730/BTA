@@ -93,18 +93,18 @@ export function ShellPage({
 }: ShellPageProps) {
   return (
     <div className="stats-page">
-      <section className="stats-page-card" style={{ maxWidth: "840px", margin: "0 auto" }}>
+      <section className="stats-page-card shell-page-card">
         <p className="stats-page-eyebrow">Platform</p>
         <h1>{title}</h1>
         <p className="stats-page-subtitle">{subtitle}</p>
         {bullets.length > 0 && (
-          <ul style={{ marginTop: "0.75rem", lineHeight: 1.6, color: "rgba(232,234,240,0.85)" }}>
+          <ul className="shell-page-bullets">
             {bullets.map((bullet) => (
               <li key={bullet}>{bullet}</li>
             ))}
           </ul>
         )}
-        <div className="bta-shell-actions" style={{ marginTop: "1rem" }}>
+        <div className="bta-shell-actions shell-page-actions">
           {onPrimary && primaryLabel ? (
             <button type="button" className="shell-nav-link shell-nav-link-active" onClick={onPrimary}>
               {primaryLabel}

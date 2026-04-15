@@ -350,22 +350,22 @@ export function CheckoutSuccessPage({ onNavigate }: RoutedPageProps) {
 
   return (
     <div className="stats-page">
-      <section className="stats-page-card" style={{ maxWidth: "840px", margin: "0 auto" }}>
+      <section className="stats-page-card shell-page-card">
         <p className="stats-page-eyebrow">Billing</p>
         <h1>Checkout Complete</h1>
         <p className="stats-page-subtitle">Your billing workflow is marked complete. Confirm status and continue setup.</p>
-        <p className="stats-page-subcopy" style={{ marginTop: "0.5rem" }}>{syncStatus}</p>
-        <ul style={{ marginTop: "0.75rem", lineHeight: 1.6, color: "rgba(232,234,240,0.85)" }}>
+        <p className="stats-page-subcopy checkout-success-status">{syncStatus}</p>
+        <ul className="shell-page-bullets">
           <li>Setup preserves your school scope and continues onboarding.</li>
           <li>Open Billing if access has not updated after checkout.</li>
           <li>Webhook sync may take a few seconds during peak traffic.</li>
         </ul>
         {entitlement ? (
-          <p className="stats-page-subcopy" style={{ marginTop: "0.65rem" }}>
+          <p className="stats-page-subcopy checkout-success-entitlement">
             Current billing status: <strong>{entitlement.status}</strong>
           </p>
         ) : null}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginTop: "1rem" }}>
+        <div className="checkout-success-actions">
           <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onNavigate(setupPath)}>
             Continue Setup
           </button>

@@ -92,6 +92,39 @@
   gap: 0.65rem;
 }
 
+.shell-page-card {
+  max-width: 840px;
+  margin: 0 auto;
+}
+
+.shell-page-bullets {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  line-height: 1.6;
+  color: rgba(232, 234, 240, 0.85);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.shell-page-actions {
+  margin-top: 1rem;
+}
+
+.checkout-success-status {
+  margin-top: 0.5rem;
+}
+
+.checkout-success-entitlement {
+  margin-top: 0.65rem;
+}
+
+.checkout-success-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
 .stats-page-status {
   color: rgba(232,234,240,0.45);
   font-size: 0.8rem;
@@ -260,6 +293,28 @@
   flex-wrap: wrap;
   gap: 0.65rem;
   margin-top: 1rem;
+}
+
+.account-upload-link {
+  position: relative;
+  cursor: pointer;
+}
+
+.account-upload-link.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.account-hidden-file-input {
+  display: none;
+}
+
+.account-deletion-note {
+  margin-top: 0.5rem;
+}
+
+.account-delete-grid {
+  margin-top: 0.75rem;
 }
 
 .stats-game-grid {

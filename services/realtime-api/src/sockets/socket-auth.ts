@@ -7,6 +7,7 @@ interface RegisterSocketAuthOptions {
   apiKey?: string;
   writeApiKey?: string;
   isJwtAuthEnabled: () => boolean;
+  allowAnonymousWhenUnconfigured?: boolean;
   trackSecurityEvent: (event: "unauthorizedSocket", details: Record<string, unknown>) => void;
 }
 
@@ -40,6 +41,15 @@ export function registerSocketAuth(io: Server, options: RegisterSocketAuthOption
         : undefined;
 
     if (!hasConfiguredSocketAuthPath(options)) {
+      if (options.allowAnonymousWhenUnconfigured) {
+        const resolved = options.resolveSocketSchoolId(socket);
+        if (!resolved.schoolId) {
+          next(new Error(resolved.error ?? "schoolId is required"));
+          return;
+        }
+        next();
+        return;
+      }
       next(new Error("Authentication is not configured for this protected socket"));
       options.trackSecurityEvent("unauthorizedSocket", { reason: "auth-misconfigured" });
       return;

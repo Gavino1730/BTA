@@ -332,12 +332,12 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
           )}
         </div>
         <div className="account-action-row">
-          <label className="shell-nav-link" style={{ cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          <label className={`shell-nav-link account-upload-link${saving ? " is-disabled" : ""}`}>
             Upload Photo
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              style={{ display: "none" }}
+              className="account-hidden-file-input"
               disabled={saving || processingDelete || processingSessionAction}
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
@@ -384,11 +384,11 @@ export function AccountPage({ onSessionUpdated, onSignOutRequested }: AccountPag
           </div>
         </div>
         {scheduledDeletionAtIso && (
-          <p className="stats-page-subcopy" style={{ marginTop: "0.5rem" }}>
+          <p className="stats-page-subcopy account-deletion-note">
             Deletion is scheduled for {formatScheduledDeletion(scheduledDeletionAtIso)}.
           </p>
         )}
-        <div className="setup-grid" style={{ marginTop: "0.75rem" }}>
+        <div className="setup-grid account-delete-grid">
           <label className="stats-filter-field">
             <span>Type DELETE to confirm</span>
             <input

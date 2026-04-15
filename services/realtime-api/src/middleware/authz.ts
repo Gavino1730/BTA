@@ -11,6 +11,7 @@ interface CreateAuthzMiddlewareOptions {
   writeApiKey?: string;
   isJwtAuthEnabled: () => boolean;
   jwtWriteRequired: boolean;
+  allowAnonymousWhenUnconfigured?: boolean;
   hasWriteRole: (role?: string) => boolean;
   trackSecurityEvent: (event: "unauthorizedHttp" | "forbiddenWriteRole", details: Record<string, unknown>) => void;
 }
@@ -46,6 +47,10 @@ export function createAuthzMiddleware(options: CreateAuthzMiddlewareOptions): {
     }
 
     if (!hasAnyConfiguredAuthPath(options)) {
+      if (options.allowAnonymousWhenUnconfigured) {
+        next();
+        return;
+      }
       options.trackSecurityEvent("unauthorizedHttp", { reason: "auth-misconfigured", path: req.path, method: req.method });
       res.status(503).json({ error: "Authentication is not configured for this protected route" });
       return;
@@ -65,6 +70,11 @@ export function createAuthzMiddleware(options: CreateAuthzMiddlewareOptions): {
 
   function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
     if (hasValidApiKeyRequest(req, options.writeApiKey)) {
+      next();
+      return;
+    }
+
+    if (options.allowAnonymousWhenUnconfigured && !options.writeApiKey && !options.isJwtAuthEnabled()) {
       next();
       return;
     }

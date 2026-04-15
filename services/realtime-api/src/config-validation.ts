@@ -112,10 +112,11 @@ export function assertRuntimeConfig(config: RuntimeConfig): void {
   const result = validateRuntimeConfig(config);
   if (result.warnings.length > 0) {
     for (const warning of result.warnings) {
-      console.warn(`[realtime-api] ${warning}`);
+      logger.warn("startup.runtime_config_warning", { warning });
     }
   }
   if (result.errors.length > 0) {
     throw new Error(formatValidationReport(result));
   }
 }
+import { logger } from "./logger.js";
