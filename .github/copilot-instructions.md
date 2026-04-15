@@ -46,6 +46,13 @@ Run commands from repo root unless noted.
   - realtime-api: low-latency ingest, corrections, websocket fanout, auth, persistence
   - coach-dashboard / ipad-operator: rendering, workflow, local UI state
 
+## File Size Discipline
+- Keep files under 300 lines. If a file would exceed this, split it first.
+- One concern per file: each component, hook, or helper has its own file.
+- Route/page files import components — they do not define them inline.
+- Extract a `useSomething` hook whenever a `useState` + `useEffect` pair managing the same concern exceeds ~50 lines.
+- If adding code would push a file past 300 lines, pause and propose a split before proceeding.
+
 ## Code Conventions
 - TypeScript uses ESM and strict mode from tsconfig.base.json.
 - Keep public APIs small and stable in packages/*.

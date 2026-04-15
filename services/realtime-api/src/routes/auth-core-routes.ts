@@ -54,6 +54,7 @@ interface RegisterAuthCoreRoutesOptions {
   buildResetPath: (schoolId: string, token: string) => string;
   exposePasswordResetToken: boolean;
   getLocalAuthAccountsByScope: (scope: { schoolId: string }) => any[];
+  billingGuardBeforeRegister?: (schoolId: string) => { allowed: boolean; error?: string; status?: number };
 }
 
 export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRoutesOptions): void {
@@ -165,6 +166,14 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
     if (password.length < 8) {
       res.status(400).json({ error: "Password must be at least 8 characters" });
       return;
+    }
+
+    if (options.billingGuardBeforeRegister) {
+      const billingCheck = options.billingGuardBeforeRegister(schoolId);
+      if (!billingCheck.allowed) {
+        res.status(billingCheck.status ?? 402).json({ error: billingCheck.error ?? "Complete checkout before creating your account" });
+        return;
+      }
     }
 
     if (options.getLocalAuthAccountByEmail(email, { schoolId })) {

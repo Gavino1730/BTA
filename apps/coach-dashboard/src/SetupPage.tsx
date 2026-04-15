@@ -228,6 +228,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       return;
     }
 
+    if (authMode === "register" && !schoolName.trim()) {
+      setAuthStatus("School name is required to create your workspace.");
+      return;
+    }
+
     if (!normalizedEmail.includes("@")) {
       setAuthStatus("Enter a valid coach email address.");
       return;
@@ -428,6 +433,12 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     <span>Coach Email</span>
                     <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
                   </label>
+                  {authMode === "register" && (
+                    <label className="stats-filter-field">
+                      <span>School Name</span>
+                      <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder="Lincoln High School" />
+                    </label>
+                  )}
                   <label className="stats-filter-field">
                     <span>Password</span>
                     <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" />
