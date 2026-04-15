@@ -1,4 +1,6 @@
 import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { ReactNode } from "react";
+import { cx } from "./cx";
 
 interface BaseFieldProps {
   label: string;
@@ -14,7 +16,7 @@ interface InputFieldProps extends BaseFieldProps, InputHTMLAttributes<HTMLInputE
 }
 interface SelectFieldProps extends BaseFieldProps, SelectHTMLAttributes<HTMLSelectElement> {
   as: "select";
-  children: React.ReactNode;
+  children: ReactNode;
 }
 interface TextareaFieldProps extends BaseFieldProps, TextareaHTMLAttributes<HTMLTextAreaElement> {
   as: "textarea";
@@ -25,14 +27,7 @@ type FormFieldProps = InputFieldProps | SelectFieldProps | TextareaFieldProps;
 export function FormField(props: FormFieldProps) {
   const { label, hint, error, className = "", fullSpan, as: asElement, ...rest } = props;
 
-  const wrapClass = [
-    "bta-field",
-    fullSpan ? "bta-field-full" : "",
-    error ? "bta-field-invalid" : "",
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const wrapClass = cx("bta-field", fullSpan && "bta-field-full", error && "bta-field-invalid", className);
 
   return (
     <label className={wrapClass}>

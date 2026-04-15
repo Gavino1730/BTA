@@ -8,6 +8,7 @@ interface ScopedRequest extends Request {
 
 interface CreateAuthzMiddlewareOptions {
   apiKey?: string;
+  writeApiKey?: string;
   isJwtAuthEnabled: () => boolean;
   jwtWriteRequired: boolean;
   hasWriteRole: (role?: string) => boolean;
@@ -18,6 +19,10 @@ function hasValidApiKeyRequest(req: Request, apiKey?: string): boolean {
   const provided = req.headers["x-api-key"] ?? req.query.apiKey;
   const candidate = Array.isArray(provided) ? provided[0] : provided;
   return Boolean(apiKey && candidate === apiKey);
+}
+
+function hasAnyConfiguredAuthPath(options: CreateAuthzMiddlewareOptions): boolean {
+  return Boolean(options.apiKey || options.writeApiKey || options.isJwtAuthEnabled());
 }
 
 function isReadOnlyRequest(req: Request): boolean {
@@ -40,12 +45,13 @@ export function createAuthzMiddleware(options: CreateAuthzMiddlewareOptions): {
       return;
     }
 
-    if (!options.apiKey && !options.isJwtAuthEnabled()) {
-      next();
+    if (!hasAnyConfiguredAuthPath(options)) {
+      options.trackSecurityEvent("unauthorizedHttp", { reason: "auth-misconfigured", path: req.path, method: req.method });
+      res.status(503).json({ error: "Authentication is not configured for this protected route" });
       return;
     }
 
-    if (hasValidApiKeyRequest(req, options.apiKey)) {
+    if (hasValidApiKeyRequest(req, options.apiKey) || hasValidApiKeyRequest(req, options.writeApiKey)) {
       next();
       return;
     }
@@ -58,13 +64,14 @@ export function createAuthzMiddleware(options: CreateAuthzMiddlewareOptions): {
   }
 
   function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-    if (!options.isJwtAuthEnabled()) {
+    if (hasValidApiKeyRequest(req, options.writeApiKey)) {
       next();
       return;
     }
 
-    if (hasValidApiKeyRequest(req, options.apiKey)) {
-      next();
+    if (!options.isJwtAuthEnabled()) {
+      options.trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "write-auth-misconfigured" });
+      res.status(503).json({ error: "Write authorization is not configured for this protected route" });
       return;
     }
 

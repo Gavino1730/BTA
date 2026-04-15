@@ -187,7 +187,7 @@ function schoolScopeHasData(schoolId: string): boolean {
   );
 }
 
-function allocateBootstrapSchoolId(seed: string): string {
+export function allocateBootstrapSchoolId(seed: string): string {
   const base = normalizeSchoolId(seed) || `school-${randomBytes(3).toString("hex")}`;
   let candidate = base;
   let attempt = 1;
@@ -199,7 +199,7 @@ function allocateBootstrapSchoolId(seed: string): string {
   return candidate;
 }
 
-function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
+export function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
   for (const candidate of candidates) {
     const raw = sanitizeTextField(candidate, 120);
     if (!raw) {

@@ -8,6 +8,7 @@ function baseConfig(): RuntimeConfig {
     jwtWriteRequired: true,
     jwtEnabled: true,
     apiKeyPresent: false,
+    writeApiKeyPresent: false,
     allowedOriginsConfigured: true,
     databaseUrlConfigured: true,
     localAuthSecretConfigured: true,
@@ -66,7 +67,8 @@ describe("runtime config validation", () => {
       nodeEnv: "production",
       jwtWriteRequired: false,
       jwtEnabled: false,
-      apiKeyPresent: false
+      apiKeyPresent: false,
+      writeApiKeyPresent: false
     };
 
     const result = validateRuntimeConfig(config);
@@ -79,6 +81,7 @@ describe("runtime config validation", () => {
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
+      writeApiKeyPresent: false,
       allowedOriginsConfigured: false,
       databaseUrlConfigured: true
     };
@@ -93,6 +96,7 @@ describe("runtime config validation", () => {
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
+      writeApiKeyPresent: false,
       allowedOriginsConfigured: true,
       databaseUrlConfigured: false
     };
@@ -107,6 +111,7 @@ describe("runtime config validation", () => {
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
+      writeApiKeyPresent: false,
       localAuthSecretConfigured: false
     };
 
@@ -120,6 +125,7 @@ describe("runtime config validation", () => {
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
+      writeApiKeyPresent: false,
       emailProvider: "resend",
       emailFromConfigured: false,
       resendApiKeyConfigured: true,
@@ -135,6 +141,7 @@ describe("runtime config validation", () => {
       nodeEnv: "production",
       jwtWriteRequired: false,
       apiKeyPresent: true,
+      writeApiKeyPresent: false,
       emailProvider: "resend",
       emailFromConfigured: true,
       resendApiKeyConfigured: false,
@@ -142,5 +149,18 @@ describe("runtime config validation", () => {
 
     const result = validateRuntimeConfig(config);
     expect(result.warnings.some((warning) => warning.includes("RESEND_API_KEY"))).toBe(true);
+  });
+
+  it("warns when no write-capable auth path is configured", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      jwtEnabled: false,
+      apiKeyPresent: true,
+      writeApiKeyPresent: false,
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.warnings.some((warning) => warning.includes("BTA_WRITE_API_KEY"))).toBe(true);
   });
 });

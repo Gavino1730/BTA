@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@bta/ui-tokens/tokens.css";
+@import "../../../shared-ui/components.css";
 
 /* ============================================================
    BTA Marketing Site — Design Tokens
@@ -143,6 +144,11 @@ body {
   font-family: var(--font-body), "Inter", "Segoe UI", sans-serif;
   min-height: 100%;
   transition: opacity 210ms ease, transform 210ms ease, filter 210ms ease;
+}
+
+.marketing-shell {
+  position: relative;
+  isolation: isolate;
 }
 
 body.app-exit-to-external {

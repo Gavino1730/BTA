@@ -4,6 +4,7 @@ export interface RuntimeConfig {
   jwtWriteRequired: boolean;
   jwtEnabled: boolean;
   apiKeyPresent: boolean;
+  writeApiKeyPresent: boolean;
   allowedOriginsConfigured: boolean;
   databaseUrlConfigured: boolean;
   localAuthSecretConfigured: boolean;
@@ -26,6 +27,7 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     jwtWriteRequired: process.env.BTA_JWT_WRITE_REQUIRED !== "0",
     jwtEnabled,
     apiKeyPresent: Boolean(process.env.BTA_API_KEY?.trim()),
+    writeApiKeyPresent: Boolean(process.env.BTA_WRITE_API_KEY?.trim()),
     allowedOriginsConfigured: Boolean(process.env.ALLOWED_ORIGINS?.trim()),
     databaseUrlConfigured: Boolean(process.env.DATABASE_URL?.trim()),
     localAuthSecretConfigured: Boolean(
@@ -59,6 +61,13 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
 
   if (!config.jwtEnabled && !config.apiKeyPresent) {
     errors.push("Production requires authentication. Configure JWT or set BTA_API_KEY.");
+  }
+
+  if (!config.jwtEnabled && !config.writeApiKeyPresent) {
+    warnings.push(
+      "No write-capable auth path is configured. Protected write/admin routes will fail closed " +
+      "unless JWT auth is enabled or BTA_WRITE_API_KEY is set."
+    );
   }
 
   if (!config.allowedOriginsConfigured) {

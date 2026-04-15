@@ -507,6 +507,13 @@ const REALTIME_DB_TABLE = process.env.BTA_REALTIME_DB_TABLE?.trim();
 const persistenceProvider: PersistenceProvider | null = persistenceEnabled && DATABASE_URL
   ? createPostgresPersistenceProvider({ connectionString: DATABASE_URL, tableName: REALTIME_DB_TABLE })
   : null;
+
+export interface PersistenceStatus {
+  backend: "postgres" | "file_snapshot" | "memory";
+  durable: boolean;
+  warning?: string;
+  dataFile?: string;
+}
 const OPENAI_API_URL = process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
 const LIVE_AI_MODEL = process.env.BTA_LIVE_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const LIVE_AI_TIMEOUT_MS = readEnvNumber("BTA_LIVE_INSIGHT_TIMEOUT_MS", 12000);
@@ -2808,6 +2815,30 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
   setupRetentionMaintenance();
 
   storeInitialized = true;
+}
+
+export function getPersistenceStatus(): PersistenceStatus {
+  if (persistenceProvider) {
+    return {
+      backend: "postgres",
+      durable: true,
+    };
+  }
+
+  if (persistenceEnabled) {
+    return {
+      backend: "file_snapshot",
+      durable: false,
+      dataFile,
+      warning: "Using local file snapshot persistence. Data durability depends on host-local storage.",
+    };
+  }
+
+  return {
+    backend: "memory",
+    durable: false,
+    warning: "Persistence is disabled. Data will be lost when the process exits.",
+  };
 }
 
 export function getRosterTeamsByScope(scope?: TenantScope): RosterTeam[] {

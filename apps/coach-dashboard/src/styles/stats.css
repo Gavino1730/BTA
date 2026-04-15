@@ -271,10 +271,10 @@
 .stats-metric-card,
 .stats-page-card,
 .stats-game-card {
-  background: var(--bta-bg-elevated);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bta-bg-elevated) 95%, white 5%), var(--bta-bg-panel));
   border: 1px solid var(--bta-border-soft);
   border-radius: var(--bta-radius-lg);
-  box-shadow: var(--bta-shadow-sm);
+  box-shadow: var(--bta-shadow-md);
   position: relative;
   overflow: hidden;
 }
@@ -477,11 +477,12 @@
 }
 
 .stats-filter-field input,
-.stats-filter-field select {
-  min-height: 42px;
+.stats-filter-field select,
+.stats-filter-field textarea {
+  min-height: 44px;
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.11);
-  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--bta-border-soft);
+  background: color-mix(in srgb, var(--bta-bg-panel) 78%, transparent);
   color: var(--text);
   padding: 0.65rem 0.85rem;
   font: inherit;
@@ -493,11 +494,17 @@
 }
 
 .stats-filter-field input:focus,
-.stats-filter-field select:focus {
+.stats-filter-field select:focus,
+.stats-filter-field textarea:focus {
   outline: none;
   border-color: color-mix(in srgb, var(--bta-accent-violet) 55%, transparent);
-  background: rgba(255, 255, 255, 0.07);
+  background: color-mix(in srgb, var(--bta-bg-panel) 92%, transparent);
   box-shadow: 0 0 0 3px var(--bta-accent-violet-soft);
+}
+
+.stats-filter-field textarea {
+  min-height: 120px;
+  resize: vertical;
 }
 
 .stats-filter-field input[type="color"] {

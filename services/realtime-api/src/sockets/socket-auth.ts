@@ -5,8 +5,13 @@ interface RegisterSocketAuthOptions {
   verifyBearerToken: (token: string) => Promise<unknown | null>;
   resolveSocketSchoolId: (socket: any) => { schoolId?: string; error?: string };
   apiKey?: string;
+  writeApiKey?: string;
   isJwtAuthEnabled: () => boolean;
   trackSecurityEvent: (event: "unauthorizedSocket", details: Record<string, unknown>) => void;
+}
+
+function hasConfiguredSocketAuthPath(options: RegisterSocketAuthOptions): boolean {
+  return Boolean(options.apiKey || options.writeApiKey || options.isJwtAuthEnabled());
 }
 
 export function registerSocketAuth(io: Server, options: RegisterSocketAuthOptions): void {
@@ -34,17 +39,13 @@ export function registerSocketAuth(io: Server, options: RegisterSocketAuthOption
         ? socket.handshake.headers["x-api-key"]
         : undefined;
 
-    if (!options.apiKey && !options.isJwtAuthEnabled()) {
-      const resolved = options.resolveSocketSchoolId(socket);
-      if (!resolved.schoolId) {
-        next(new Error(resolved.error ?? "schoolId is required"));
-        return;
-      }
-      next();
+    if (!hasConfiguredSocketAuthPath(options)) {
+      next(new Error("Authentication is not configured for this protected socket"));
+      options.trackSecurityEvent("unauthorizedSocket", { reason: "auth-misconfigured" });
       return;
     }
 
-    if (options.apiKey && provided === options.apiKey) {
+    if ((options.apiKey && provided === options.apiKey) || (options.writeApiKey && provided === options.writeApiKey)) {
       const resolved = options.resolveSocketSchoolId(socket);
       if (!resolved.schoolId) {
         next(new Error(resolved.error ?? "schoolId is required"));

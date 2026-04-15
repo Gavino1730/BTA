@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from "react";
+import { cx } from "./cx";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   /** Adds a subtle top-glow accent */
@@ -25,14 +26,7 @@ export function Card({
   children,
   ...props
 }: CardProps) {
-  const classes = [
-    "bta-card",
-    glowClasses[glow],
-    paddingClasses[padding],
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const classes = cx("bta-card", glowClasses[glow], paddingClasses[padding], className);
 
   return (
     <div className={classes} {...props}>

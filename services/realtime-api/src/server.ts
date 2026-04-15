@@ -78,8 +78,6 @@ import {
   hasWriteRole,
   normalizeSchoolId,
   readHeaderValue,
-  resolveRequestTenant,
-  resolveSocketTenant
 } from "./tenant-guards.js";
 import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
 import { registerOrgMembersRoutes } from "./routes/org-members-routes.js";
@@ -110,6 +108,7 @@ import {
   hasProcessedStripeWebhookEvent,
   markProcessedStripeWebhookEvent,
   trimProcessedStripeWebhookEvents,
+  getPersistenceStatus,
 } from "./store.js";
 import {
   seasonAnalysisBySchool,
@@ -186,6 +185,8 @@ import {
   getSchoolIdFromRequest,
   getSchoolIdFromSocket,
   resolveAuthSchoolId,
+  allocateBootstrapSchoolId,
+  buildBootstrapSchoolSeed,
 } from "./helpers/tenant-helpers.js";
 
 const app = express();
@@ -459,127 +460,6 @@ async function issueMemberInvitation(req: Request, schoolId: string, member: Org
     warning: emailDelivery.delivered ? undefined : "Invitation email was not delivered. Share the invite link manually.",
   };
 }
-const TEAM_AI_FOCUS_OPTIONS = new Set<CoachAiSettings["focusInsights"][number]>([
-  "timeouts",
-  "substitutions",
-  "foul_management",
-  "momentum",
-  "shot_selection",
-  "ball_security",
-  "hot_hand",
-  "defense"
-]);
-
-function normalizePersonName(value: unknown): string {
-  return String(value ?? "").trim().replace(/\s+/g, " ");
-}
-
-function normalizeNameKey(value: unknown): string {
-  return normalizePersonName(value).toLowerCase();
-}
-
-function buildTeamAbbreviation(name: string): string {
-  const compact = name.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  return compact.slice(0, 4) || "TEAM";
-}
-
-function buildSchoolTeamId(name: string): string {
-  const slug = buildOrganizationSlug(name);
-  return `team-${slug || "team"}`;
-}
-
-function buildUniqueSchoolTeamId(name: string, teams: RosterTeam[]): string {
-  const base = buildSchoolTeamId(name);
-  const existing = new Set(teams.map((team) => team.id));
-  if (!existing.has(base)) {
-    return base;
-  }
-
-  let attempt = 2;
-  while (existing.has(`${base}-${attempt}`)) {
-    attempt += 1;
-  }
-  return `${base}-${attempt}`;
-}
-
-function buildOrganizationSlug(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-}
-
-function resolveSchoolName(payload: Record<string, unknown>): string {
-  return sanitizeTextField(
-    payload.schoolName
-    ?? payload.organizationName
-    ?? payload.school,
-    160,
-  );
-}
-
-function resolveCoachName(payload: Record<string, unknown>): string {
-  return sanitizeTextField(payload.coachName ?? payload.fullName, 120);
-}
-
-function resolveCoachEmail(payload: Record<string, unknown>): string {
-  return sanitizeTextField(payload.coachEmail ?? payload.email, 160).toLowerCase();
-}
-
-function shouldSyncPrimaryCoachIdentity(role: OrganizationMember["role"]): boolean {
-  return role === "owner" || role === "coach";
-}
-
-function defaultTeamAiSettings(): CoachAiSettings {
-  return {
-    playingStyle: "",
-    teamContext: "",
-    customPrompt: "",
-    focusInsights: [
-      "timeouts",
-      "substitutions",
-      "foul_management",
-      "momentum",
-      "shot_selection",
-      "ball_security",
-      "hot_hand",
-      "defense"
-    ]
-  };
-}
-
-function sanitizeTextField(value: unknown, maxLength: number): string {
-  return String(value ?? "").trim().slice(0, maxLength);
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function hashPassword(password: string, salt?: string): { passwordHash: string; passwordSalt: string } {
-  const passwordSalt = salt ?? randomBytes(16).toString("hex");
-  const passwordHash = scryptSync(password, passwordSalt, 64).toString("hex");
-  return { passwordHash, passwordSalt };
-}
-
-function verifyPassword(password: string, passwordSalt: string, passwordHash: string): boolean {
-  if (!password || !passwordSalt || !passwordHash) {
-    return false;
-  }
-
-  try {
-    const actual = scryptSync(password, passwordSalt, 64);
-    const expected = Buffer.from(passwordHash, "hex");
-    if (actual.length !== expected.length) {
-      return false;
-    }
-    return timingSafeEqual(actual, expected);
-  } catch {
-    return false;
-  }
-}
 
 function buildAuthUserView(account: LocalAuthAccount, currentMember: OrganizationMember | null) {
   return {
@@ -830,174 +710,11 @@ function buildOnboardingProfileView(schoolId: string): OrganizationProfile | nul
   };
 }
 
-function sanitizeFocusInsights(value: unknown): CoachAiSettings["focusInsights"] {
-  if (!Array.isArray(value)) {
-    return defaultTeamAiSettings().focusInsights;
-  }
-
-  const normalized = [...new Set(value
-    .map((item) => String(item).trim().toLowerCase())
-    .filter((item): item is CoachAiSettings["focusInsights"][number] => TEAM_AI_FOCUS_OPTIONS.has(item as CoachAiSettings["focusInsights"][number])))];
-
-  return normalized.length > 0 ? normalized : defaultTeamAiSettings().focusInsights;
-}
-
-function extractTeamAiSettings(team?: RosterTeam | null): CoachAiSettings {
-  const defaults = defaultTeamAiSettings();
-  return {
-    playingStyle: sanitizeTextField(team?.playingStyle, 500) || defaults.playingStyle,
-    teamContext: sanitizeTextField(team?.teamContext, 1200) || defaults.teamContext,
-    customPrompt: sanitizeTextField(team?.customPrompt, 1200) || defaults.customPrompt,
-    focusInsights: sanitizeFocusInsights(team?.focusInsights)
-  };
-}
-
-function buildPlayerId(teamId: string, playerName: string): string {
-  const slug = normalizeNameKey(playerName).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
-  return `${teamId}-${slug || Date.now().toString()}`;
-}
-
-function buildRosterPlayer(input: Record<string, unknown>, teamId: string, existingPlayer?: RosterPlayer): RosterPlayer | null {
-  const name = normalizePersonName(input.name ?? existingPlayer?.name);
-  if (!name) {
-    return null;
-  }
-
-  return {
-    id: existingPlayer?.id ?? buildPlayerId(teamId, name),
-    number: sanitizeTextField(input.number ?? existingPlayer?.number, 8),
-    name,
-    position: sanitizeTextField(input.position ?? existingPlayer?.position, 24),
-    height: sanitizeTextField(input.height ?? existingPlayer?.height, 32) || undefined,
-    weight: sanitizeTextField(input.weight ?? existingPlayer?.weight, 32) || undefined,
-    grade: sanitizeTextField(input.grade ?? existingPlayer?.grade, 16) || undefined,
-    role: sanitizeTextField(input.role ?? existingPlayer?.role, 80) || undefined,
-    notes: sanitizeTextField(input.notes ?? existingPlayer?.notes, 240) || undefined,
-    email: sanitizeTextField(input.email ?? existingPlayer?.email, 200) || undefined,
-    phone: sanitizeTextField(input.phone ?? existingPlayer?.phone, 30) || undefined,
-  };
-}
-
-function persistSchoolTeams(schoolId: string, teams: RosterTeam[]): RosterTeam[] {
-  const saved = saveRosterTeams(teams, { schoolId });
-  io.to(schoolRoom(schoolId)).emit("roster:teams", saved);
-  return saved;
-}
-
-function getPrimaryTeam(schoolId: string): { teams: RosterTeam[]; team: RosterTeam | null } {
-  const teams = getRosterTeamsByScope({ schoolId });
-  return { teams, team: teams[0] ?? null };
-}
-
-function upsertPrimaryTeam(schoolId: string, payload: Record<string, unknown>): RosterTeam[] {
-  const { teams, team } = getPrimaryTeam(schoolId);
-  const name = sanitizeTextField(payload.name ?? team?.name ?? "Team", 120) || "Team";
-  const seededTeamId = sanitizeTextField(payload.teamId ?? payload.id, 80)
-    || (buildOrganizationSlug(name) ? `team-${buildOrganizationSlug(name)}` : "");
-  const nextTeam: RosterTeam = {
-    id: team?.id ?? (seededTeamId || "primary-team"),
-    schoolId,
-    name,
-    abbreviation: sanitizeTextField(payload.abbreviation ?? team?.abbreviation ?? buildTeamAbbreviation(name), 12) || buildTeamAbbreviation(name),
-    season: sanitizeTextField(payload.season ?? team?.season, 40) || undefined,
-    teamColor: normalizeTeamColor(payload.teamColor ?? team?.teamColor),
-    coachStyle: sanitizeTextField(payload.coachStyle ?? team?.coachStyle, 500) || undefined,
-    playingStyle: sanitizeTextField(payload.playingStyle ?? team?.playingStyle, 500) || undefined,
-    teamContext: sanitizeTextField(payload.teamContext ?? team?.teamContext, 1200) || undefined,
-    customPrompt: sanitizeTextField(payload.customPrompt ?? team?.customPrompt, 1200) || undefined,
-    focusInsights: payload.focusInsights !== undefined ? sanitizeFocusInsights(payload.focusInsights) : team?.focusInsights,
-    players: team?.players ?? []
-  };
-
-  return persistSchoolTeams(schoolId, [nextTeam, ...teams.slice(1)]);
-}
-
-function buildOrganizationProfilePayload(
-  schoolId: string,
-  payload: Record<string, unknown>,
-  options?: { complete?: boolean },
-): Partial<OrganizationProfile> {
-  const organizationName = resolveSchoolName(payload);
-  const coachName = resolveCoachName(payload);
-  const coachEmail = resolveCoachEmail(payload);
-
-  return {
-    schoolId,
-    organizationName,
-    organizationSlug: buildOrganizationSlug(organizationName),
-    coachName,
-    coachEmail,
-    teamName: sanitizeTextField(payload.teamName, 120) || undefined,
-    season: sanitizeTextField(payload.season, 40) || undefined,
-    completedAtIso: options?.complete ? new Date().toISOString() : undefined,
-  };
-}
-
-function buildOnboardingAccountPayload(
-  schoolId: string,
-  payload: Record<string, unknown>,
-  options?: { complete?: boolean },
-): OnboardingAccountInput {
-  const organizationName = resolveSchoolName(payload);
-  const coachName = resolveCoachName(payload);
-  const coachEmail = resolveCoachEmail(payload);
-
-  return {
-    organization: {
-      schoolId,
-      organizationName,
-      organizationSlug: buildOrganizationSlug(organizationName),
-      teamName: sanitizeTextField(payload.teamName, 120) || undefined,
-      season: sanitizeTextField(payload.season, 40) || undefined,
-      onboardingCompletedAtIso: options?.complete ? new Date().toISOString() : undefined,
-    },
-    primaryCoach: {
-      schoolId,
-      fullName: coachName,
-      email: coachEmail,
-      role: "owner",
-      organizationId: "",
-      accountId: "",
-      createdAtIso: "",
-      updatedAtIso: "",
-    },
-  };
-}
-
-function requireOnboardingIdentity(payload: Record<string, unknown>, res: Response): boolean {
-  const organizationName = resolveSchoolName(payload);
-  const coachName = resolveCoachName(payload);
-  const coachEmail = resolveCoachEmail(payload);
-
-  if (!organizationName || !coachName || !coachEmail) {
-    res.status(400).json({ error: "schoolName, coachName, and coachEmail are required" });
-    return false;
-  }
-
-  return true;
-}
-
-function findPlayerRecord(teams: RosterTeam[], playerName: string): { team: RosterTeam; player: RosterPlayer; playerIndex: number; teamIndex: number } | null {
-  const targetKey = normalizeNameKey(playerName);
-  for (const [teamIndex, team] of teams.entries()) {
-    const playerIndex = team.players.findIndex((player) => normalizeNameKey(player.name) === targetKey);
-    if (playerIndex >= 0) {
-      return { team, player: team.players[playerIndex]!, playerIndex, teamIndex };
-    }
-  }
-
-  return null;
-}
-
-
-// ---------------------------------------------------------------------------
-// Optional API-key auth. Set BTA_API_KEY env var to enable.
-// ---------------------------------------------------------------------------
-
 // ---------------------------------------------------------------------------
 // Optional API-key auth. Set BTA_API_KEY env var to enable.
 // ---------------------------------------------------------------------------
 const API_KEY = process.env.BTA_API_KEY?.trim() || undefined;
+const WRITE_API_KEY = process.env.BTA_WRITE_API_KEY?.trim() || undefined;
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
 const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
@@ -1008,319 +725,25 @@ const BILLING_STRIPE_SECRET_KEY = process.env.BTA_STRIPE_SECRET_KEY?.trim() || u
 const BILLING_STRIPE_WEBHOOK_SECRET = process.env.BTA_STRIPE_WEBHOOK_SECRET?.trim() || undefined;
 const BILLING_STRIPE_PRICE_ID_MONTHLY = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim() || undefined;
 const BILLING_STRIPE_PRICE_ID_YEARLY = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim() || undefined;
-const SECURITY_METRICS_PUSH_URL = process.env.BTA_SECURITY_METRICS_PUSH_URL?.trim();
-const METRICS_PUSH_MIN_INTERVAL_MS = Number(process.env.BTA_SECURITY_METRICS_PUSH_INTERVAL_MS ?? 10000);
-
-type SecurityMetricKey =
-  | "requestTenantMismatch"
-  | "socketTenantMismatch"
-  | "missingTenantScope"
-  | "unauthorizedHttp"
-  | "unauthorizedSocket"
-  | "forbiddenWriteRole";
-
-const securityTelemetry: Record<SecurityMetricKey, number> = {
-  requestTenantMismatch: 0,
-  socketTenantMismatch: 0,
-  missingTenantScope: 0,
-  unauthorizedHttp: 0,
-  unauthorizedSocket: 0,
-  forbiddenWriteRole: 0
-};
-
-let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
-
-function renderPrometheusSecurityMetrics(): string {
-  return [
-    "# HELP bta_security_request_tenant_mismatch_total Request tenant mismatch denials.",
-    "# TYPE bta_security_request_tenant_mismatch_total counter",
-    `bta_security_request_tenant_mismatch_total ${securityTelemetry.requestTenantMismatch}`,
-    "# HELP bta_security_socket_tenant_mismatch_total Socket tenant mismatch denials.",
-    "# TYPE bta_security_socket_tenant_mismatch_total counter",
-    `bta_security_socket_tenant_mismatch_total ${securityTelemetry.socketTenantMismatch}`,
-    "# HELP bta_security_missing_tenant_scope_total Missing tenant scope denials.",
-    "# TYPE bta_security_missing_tenant_scope_total counter",
-    `bta_security_missing_tenant_scope_total ${securityTelemetry.missingTenantScope}`,
-    "# HELP bta_security_unauthorized_http_total Unauthorized HTTP attempts.",
-    "# TYPE bta_security_unauthorized_http_total counter",
-    `bta_security_unauthorized_http_total ${securityTelemetry.unauthorizedHttp}`,
-    "# HELP bta_security_unauthorized_socket_total Unauthorized socket attempts.",
-    "# TYPE bta_security_unauthorized_socket_total counter",
-    `bta_security_unauthorized_socket_total ${securityTelemetry.unauthorizedSocket}`,
-    "# HELP bta_security_forbidden_write_role_total Forbidden write role attempts.",
-    "# TYPE bta_security_forbidden_write_role_total counter",
-    `bta_security_forbidden_write_role_total ${securityTelemetry.forbiddenWriteRole}`,
-    ""
-  ].join("\n");
-}
-
-async function pushSecurityMetrics(): Promise<void> {
-  if (!SECURITY_METRICS_PUSH_URL) {
-    return;
-  }
-
-  try {
-    await fetch(SECURITY_METRICS_PUSH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain; version=0.0.4" },
-      body: renderPrometheusSecurityMetrics()
-    });
-  } catch (error) {
-    console.warn("[realtime-api] Failed to push security metrics", error);
-  }
-}
-
-function scheduleMetricsPush(): void {
-  if (!SECURITY_METRICS_PUSH_URL || metricsPushTimer) {
-    return;
-  }
-
-  const interval = Number.isFinite(METRICS_PUSH_MIN_INTERVAL_MS)
-    ? Math.max(Math.floor(METRICS_PUSH_MIN_INTERVAL_MS), 1000)
-    : 10000;
-
-  metricsPushTimer = setTimeout(() => {
-    metricsPushTimer = null;
-    void pushSecurityMetrics();
-  }, interval);
-}
-
-function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): void {
-  securityTelemetry[event] += 1;
-  scheduleMetricsPush();
-  console.warn("[realtime-api] security", {
-    event,
-    ...details
-  });
-}
-
-type AuthedRequest = Request & { authContext?: AuthContext };
-type ScopedRequest = AuthedRequest & { tenantSchoolId?: string };
-
-function resolveRequestSchoolId(
-  req: Request,
-  options?: { suppressMissingScopeTelemetry?: boolean }
-): { schoolId?: string; error?: string; status?: number } {
-  const scopedReq = req as ScopedRequest;
-  if (scopedReq.tenantSchoolId) {
-    return { schoolId: scopedReq.tenantSchoolId };
-  }
-
-  const result = resolveRequestTenant({
-    authSchoolId: scopedReq.authContext?.schoolId,
-    headerSchoolId: readHeaderValue(req.headers["x-school-id"]),
-    querySchoolId: req.query.schoolId,
-    requireTenant: REQUIRE_TENANT,
-    defaultSchoolId: DEFAULT_SCHOOL_ID
-  });
-
-  if (result.error?.includes("mismatch")) {
-    trackSecurityEvent("requestTenantMismatch", {
-      authSchoolId: normalizeSchoolId(scopedReq.authContext?.schoolId),
-      requestedSchoolId: normalizeSchoolId(readHeaderValue(req.headers["x-school-id"]) ?? req.query.schoolId),
-      path: req.path,
-      method: req.method
-    });
-  }
-
-  if (result.error === "schoolId is required" && !options?.suppressMissingScopeTelemetry) {
-    trackSecurityEvent("missingTenantScope", {
-      path: req.path,
-      method: req.method
-    });
-  }
-
-  return result;
-}
-
-function resolveSocketSchoolId(socket: {
-  handshake: { auth?: unknown; headers?: Record<string, unknown> };
-  data?: { authContext?: AuthContext };
-}): { schoolId?: string; error?: string } {
-  const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
-  const result = resolveSocketTenant({
-    authSchoolId: socket.data?.authContext?.schoolId,
-    handshakeSchoolId: auth.schoolId ?? readHeaderValue(socket.handshake.headers?.["x-school-id"]),
-    requireTenant: REQUIRE_TENANT,
-    defaultSchoolId: DEFAULT_SCHOOL_ID
-  });
-
-  if (result.error?.includes("mismatch")) {
-    const authSchoolId = normalizeSchoolId(socket.data?.authContext?.schoolId);
-    const requestedSchoolId = normalizeSchoolId(auth.schoolId ?? readHeaderValue(socket.handshake.headers?.["x-school-id"]));
-    trackSecurityEvent("socketTenantMismatch", {
-      authSchoolId,
-      requestedSchoolId
-    });
-  }
-
-  if (result.error === "schoolId is required") {
-    trackSecurityEvent("missingTenantScope", { transport: "socket" });
-  }
-
-  return result;
-}
-
-function isPublicAuthBootstrapRequest(req: Request): boolean {
-  return req.method === "POST"
-    && (req.path.endsWith("/auth/register") || req.path.endsWith("/auth/login"));
-}
-
-function isOperatorBootstrapRequest(req: Request): boolean {
-  return req.method === "GET" && /^\/operator-links\/[a-z0-9_-]+$/i.test(req.path);
-}
-
-function isOptionalTenantScopeRequest(req: Request): boolean {
-  if (isPublicAuthBootstrapRequest(req) || isOperatorBootstrapRequest(req)) {
-    return true;
-  }
-
-  if (req.method === "GET" && (req.path === "/auth/session" || req.path === "/onboarding/state")) {
-    return true;
-  }
-
-  // Billing webhook and bootstrap checkout are server-to-server or public marketing flows.
-  if (req.method === "POST" && (req.path === "/billing/webhook" || req.path === "/billing/bootstrap-checkout-session")) {
-    return true;
-  }
-
-  return false;
-}
-
-function shouldSuppressMissingTenantTelemetry(req: Request): boolean {
-  // Some clients probe roster config before account/school bootstrap completes.
-  // Keep strict tenant enforcement (request still fails) but avoid noisy logs.
-  if (req.method === "GET" && req.path === "/roster-teams") {
-    return true;
-  }
-  // Billing entitlement is probed without full school scope during checkout flow.
-  // Keep enforcement but suppress the telemetry noise.
-  if (req.path === "/billing/entitlement") {
-    return true;
-  }
-  return false;
-}
-
-function buildBootstrapSchoolSeed(...candidates: unknown[]): string {
-  for (const candidate of candidates) {
-    const raw = sanitizeTextField(candidate, 120);
-    if (!raw) {
-      continue;
-    }
-
-    const source = raw.includes("@") ? (raw.split("@")[0] ?? raw) : raw;
-    const seed = normalizeSchoolId(buildOrganizationSlug(source));
-    if (seed && seed !== DEFAULT_SCHOOL_ID) {
-      return seed;
-    }
-  }
-
-  return "";
-}
-
-function schoolScopeHasData(schoolId: string): boolean {
-  return Boolean(
-    getLocalAuthAccountsByScope({ schoolId }).length
-    || getOnboardingAccountStateByScope({ schoolId })
-    || getOrganizationProfileByScope({ schoolId })
-    || getOrganizationMembersByScope({ schoolId }).length
-    || getPrimaryTeam(schoolId).teams.length
-  );
-}
-
-function allocateBootstrapSchoolId(seed: string): string {
-  const base = normalizeSchoolId(seed) || `school-${randomBytes(3).toString("hex")}`;
-  let candidate = base;
-  let attempt = 1;
-
-  while (schoolScopeHasData(candidate)) {
-    const suffix = String(attempt);
-    candidate = `${base.slice(0, Math.max(1, 64 - suffix.length - 1))}-${suffix}`;
-    attempt += 1;
-  }
-
-  return candidate;
-}
-
-function resolveAuthSchoolId(
-  req: Request,
-  payload: Record<string, unknown>,
-  email: string,
-): { schoolId?: string; error?: string; status?: number } {
-  const resolved = resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
-  if (resolved.schoolId) {
-    return { schoolId: resolved.schoolId };
-  }
-
-  if (!isPublicAuthBootstrapRequest(req)) {
-    return resolved;
-  }
-
-  const matches = getLocalAuthAccountsByEmailAcrossSchools(email);
-  if (req.path.endsWith("/auth/login")) {
-    if (matches.length === 1) {
-      return { schoolId: matches[0]?.schoolId };
-    }
-    if (matches.length > 1) {
-      return {
-        status: 409,
-        error: "Multiple workspaces match this email. Reopen your school link or include schoolId.",
-      };
-    }
-    return { status: 401, error: "Invalid email or password" };
-  }
-
-  if (matches.length > 0) {
-    return { status: 409, error: "An account with that email already exists. Sign in instead." };
-  }
-
-  return {
-    schoolId: allocateBootstrapSchoolId(buildBootstrapSchoolSeed(
-      payload.schoolId,
-      payload.schoolName,
-      payload.organizationName,
-      payload.teamName,
-      email,
-    ))
-  };
-}
-
-function getSchoolIdFromRequest(req: Request): string {
-  const resolved = resolveRequestSchoolId(req);
-  if (!resolved.schoolId) {
-    throw new Error(resolved.error ?? "schoolId is required");
-  }
-  return resolved.schoolId;
-}
-
-function getSchoolIdFromSocket(socket: {
-  handshake: { auth?: unknown; headers?: Record<string, unknown> };
-  data?: { authContext?: AuthContext };
-}): string | null {
-  const resolved = resolveSocketSchoolId(socket);
-  return resolved.schoolId ?? null;
-}
-
-function schoolRoom(schoolId: string): string {
-  return `school:${schoolId}`;
-}
-
-function gameRoom(schoolId: string, gameId: string): string {
-  return `school:${schoolId}:game:${gameId}`;
-}
-
-function deviceRoom(schoolId: string, deviceId: string): string {
-  return `school:${schoolId}:device:${deviceId}`;
-}
-
-function connectionRoom(schoolId: string, connectionId: string): string {
-  return `school:${schoolId}:connection:${connectionId}`;
-}
 
 function hasValidApiKeyRequest(req: Request): boolean {
   const provided = req.headers["x-api-key"] ?? req.query.apiKey;
   const candidate = Array.isArray(provided) ? provided[0] : provided;
   return Boolean(API_KEY && candidate === API_KEY);
+}
+
+function hasValidWriteApiKeyRequest(req: Request): boolean {
+  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
+  const candidate = Array.isArray(provided) ? provided[0] : provided;
+  return Boolean(WRITE_API_KEY && candidate === WRITE_API_KEY);
+}
+
+function hasConfiguredHttpAuthPath(): boolean {
+  return Boolean(API_KEY || WRITE_API_KEY || isJwtAuthEnabled());
+}
+
+function hasConfiguredWriteAuthPath(): boolean {
+  return Boolean(WRITE_API_KEY || isJwtAuthEnabled());
 }
 
 function isReadOnlyRequest(req: Request): boolean {
@@ -1339,12 +762,13 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
     return;
   }
 
-  if (!API_KEY && !isJwtAuthEnabled()) {
-    next();
+  if (!hasConfiguredHttpAuthPath()) {
+    trackSecurityEvent("unauthorizedHttp", { reason: "auth-misconfigured", path: req.path, method: req.method });
+    res.status(503).json({ error: "Authentication is not configured for this protected route" });
     return;
   }
 
-  if (hasValidApiKeyRequest(req)) {
+  if (hasValidApiKeyRequest(req) || hasValidWriteApiKeyRequest(req)) {
     next();
     return;
   }
@@ -1400,13 +824,20 @@ function requireTenantScope(req: Request, res: Response, next: NextFunction): vo
 }
 
 function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-  if (!isJwtAuthEnabled()) {
+  if (hasValidWriteApiKeyRequest(req)) {
     next();
     return;
   }
 
-  if (hasValidApiKeyRequest(req)) {
-    next();
+  if (!hasConfiguredWriteAuthPath()) {
+    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "write-auth-misconfigured" });
+    res.status(503).json({ error: "Write authorization is not configured for this protected route" });
+    return;
+  }
+
+  if (!isJwtAuthEnabled()) {
+    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "write-auth-misconfigured" });
+    res.status(503).json({ error: "Write authorization is not configured for this protected route" });
     return;
   }
 
@@ -1438,6 +869,7 @@ registerSocketAuth(io, {
   verifyBearerToken,
   resolveSocketSchoolId,
   apiKey: API_KEY,
+  writeApiKey: WRITE_API_KEY,
   isJwtAuthEnabled,
   trackSecurityEvent: (event, details) => {
     trackSecurityEvent(event, details);
@@ -1472,6 +904,39 @@ const {
   io,
   gameRoom,
 });
+
+function getPrimaryTeam(schoolId: string): { teams: RosterTeam[]; team: RosterTeam | null } {
+  const teams = getRosterTeamsByScope({ schoolId });
+  return { teams, team: teams[0] ?? null };
+}
+
+function persistSchoolTeams(schoolId: string, teams: RosterTeam[]): RosterTeam[] {
+  const saved = saveRosterTeams(teams, { schoolId });
+  io.to(schoolRoom(schoolId)).emit("roster:teams", saved);
+  return saved;
+}
+
+function upsertPrimaryTeam(schoolId: string, payload: Record<string, unknown>): RosterTeam[] {
+  const { teams, team } = getPrimaryTeam(schoolId);
+  const name = sanitizeTextField(payload.name ?? team?.name ?? "Team", 120) || "Team";
+  const seededTeamId = sanitizeTextField(payload.teamId ?? payload.id, 80)
+    || (buildOrganizationSlug(name) ? `team-${buildOrganizationSlug(name)}` : "");
+  const nextTeam: RosterTeam = {
+    id: team?.id ?? (seededTeamId || "primary-team"),
+    schoolId,
+    name,
+    abbreviation: sanitizeTextField(payload.abbreviation ?? team?.abbreviation ?? buildTeamAbbreviation(name), 12) || buildTeamAbbreviation(name),
+    season: sanitizeTextField(payload.season ?? team?.season, 40) || undefined,
+    teamColor: normalizeTeamColor(payload.teamColor ?? team?.teamColor),
+    coachStyle: sanitizeTextField(payload.coachStyle ?? team?.coachStyle, 500) || undefined,
+    playingStyle: sanitizeTextField(payload.playingStyle ?? team?.playingStyle, 500) || undefined,
+    teamContext: sanitizeTextField(payload.teamContext ?? team?.teamContext, 1200) || undefined,
+    customPrompt: sanitizeTextField(payload.customPrompt ?? team?.customPrompt, 1200) || undefined,
+    focusInsights: payload.focusInsights !== undefined ? sanitizeFocusInsights(payload.focusInsights) : team?.focusInsights,
+    players: team?.players ?? [],
+  };
+  return persistSchoolTeams(schoolId, [nextTeam, ...teams.slice(1)]);
+}
 
 async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Promise<void> {
   const insights = await refreshGameAiInsights(gameId, undefined, { schoolId });
@@ -1514,8 +979,9 @@ app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
 });
 
 registerHealthRoute(app, {
-  databaseUrl: DATABASE_URL,
+  persistenceStatus: getPersistenceStatus(),
   apiKey: API_KEY,
+  writeApiKey: WRITE_API_KEY,
   isJwtAuthEnabled,
 });
 
@@ -1876,6 +1342,7 @@ registerRealtimeConnectionHandlers(io, {
   schoolRoom,
   normalizeConnectionKey,
   apiKey: API_KEY,
+  writeApiKey: WRITE_API_KEY,
   isJwtAuthEnabled,
   jwtWriteRequired: JWT_WRITE_REQUIRED,
   hasWriteRole,
@@ -1992,6 +1459,7 @@ export async function startServer(overridePort?: number): Promise<number> {
 
   const port = overridePort ?? Number(process.env.PORT ?? 4000);
   const host = process.env.HOST ?? "0.0.0.0";
+  const persistenceStatus = getPersistenceStatus();
 
   return new Promise<number>((resolve) => {
     httpServer.listen(port, host, () => {
@@ -2002,7 +1470,20 @@ export async function startServer(overridePort?: number): Promise<number> {
         : port;
       logger.info("startup.server_listening", { port: boundPort, host });
       logger.info("startup.api_key_auth", { enabled: Boolean(API_KEY) });
-      logger.info("startup.persistence_backend", { backend: DATABASE_URL ? "postgresql" : "file_snapshot" });
+      logger.info("startup.write_api_key_auth", { enabled: Boolean(WRITE_API_KEY) });
+      logger.info("startup.persistence_backend", { backend: persistenceStatus.backend, durable: persistenceStatus.durable });
+      if (persistenceStatus.warning) {
+        logger.warn("startup.persistence_degraded", {
+          backend: persistenceStatus.backend,
+          warning: persistenceStatus.warning,
+          dataFile: persistenceStatus.dataFile,
+        });
+      }
+      if (!isJwtAuthEnabled() && !WRITE_API_KEY) {
+        logger.warn("startup.write_auth_degraded", {
+          warning: "No write-capable auth path configured; protected write routes will return 503 until JWT auth or BTA_WRITE_API_KEY is configured.",
+        });
+      }
       if (isJwtAuthEnabled()) {
         logger.info("startup.jwt_auth", { enabled: true });
       }

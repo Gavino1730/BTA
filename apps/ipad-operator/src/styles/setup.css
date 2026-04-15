@@ -857,13 +857,14 @@
   min-height: 100vh;
   padding: 1.5rem;
   background:
-    radial-gradient(circle at top center, rgba(79,140,255,0.18), transparent 0 42%),
+    radial-gradient(circle at top center, rgba(110, 91, 255, 0.22), transparent 0 42%),
+    radial-gradient(circle at 20% 12%, rgba(70, 215, 255, 0.08), transparent 0 36%),
     linear-gradient(180deg, #081224 0%, var(--bta-bg-base) 100%);
 }
 
 .pregame-card {
-  background: linear-gradient(180deg, rgba(18,35,71,0.95), rgba(12,24,51,0.94));
-  border: 1px solid rgba(79,140,255,0.22);
+  background: linear-gradient(180deg, rgba(20, 31, 68, 0.97), rgba(11, 19, 44, 0.96));
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 35%, transparent);
   border-radius: 22px;
   padding: 1.4rem 1.4rem 1.2rem;
   width: 100%;
@@ -871,7 +872,7 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  box-shadow: 0 22px 48px rgba(0,0,0,0.3);
+  box-shadow: var(--bta-shadow-lg);
 }
 
 .pregame-header {
@@ -1177,13 +1178,13 @@
   letter-spacing: 0.04em;
   cursor: pointer;
   transition: all 0.15s;
-  background: rgba(79,140,255,0.16);
-  border: 2px solid var(--bta-accent-violet);
-  color: var(--bta-accent-violet);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--bta-accent-violet) 28%, transparent), color-mix(in srgb, var(--bta-accent-cyan) 20%, transparent));
+  border: 2px solid color-mix(in srgb, var(--bta-accent-violet) 72%, transparent);
+  color: var(--bta-text-primary);
 }
 
 .pregame-start-btn:hover:not(:disabled) {
-  background: rgba(79,140,255,0.27);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--bta-accent-violet) 42%, transparent), color-mix(in srgb, var(--bta-accent-cyan) 28%, transparent));
   box-shadow: 0 0 18px rgba(79,140,255,0.18);
 }
 
@@ -1288,9 +1289,9 @@
 
 .pregame-device-input {
   width: 100%;
-  min-height: 42px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
+  min-height: 44px;
+  background: color-mix(in srgb, var(--bta-bg-panel) 78%, transparent);
+  border: 1px solid var(--bta-border-soft);
   border-radius: 10px;
   color: var(--bta-text-primary);
   font-size: 0.84rem;
@@ -1315,10 +1316,10 @@
 }
 
 .pregame-device-copy-btn {
-  padding: 0.55rem 0.9rem;
-  min-height: 42px;
-  background: rgba(79,140,255,0.14);
-  border: 1px solid rgba(79,140,255,0.35);
+  padding: 0.62rem 1rem;
+  min-height: 44px;
+  background: color-mix(in srgb, var(--bta-accent-violet) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 42%, transparent);
   border-radius: 10px;
   color: var(--bta-text-secondary);
   font-size: 0.78rem;
@@ -1329,8 +1330,8 @@
 }
 
 .pregame-device-copy-btn:hover {
-  background: rgba(79,140,255,0.22);
-  border-color: rgba(79,140,255,0.5);
+  background: color-mix(in srgb, var(--bta-accent-violet) 28%, transparent);
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 45%, transparent);
   transform: translateY(-1px);
 }
 
@@ -1363,8 +1364,8 @@
 .pregame-device-name-input {
   padding: 0.7rem 1rem;
   border-radius: 8px;
-  border: 1px solid rgba(79,140,255,0.25);
-  background: rgba(20,25,35,0.5);
+  border: 1px solid var(--bta-border-soft);
+  background: color-mix(in srgb, var(--bta-bg-panel) 78%, transparent);
   color: var(--bta-text-primary);
   font-size: 0.9rem;
   font-weight: 500;

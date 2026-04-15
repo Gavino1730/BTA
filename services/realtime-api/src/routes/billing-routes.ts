@@ -96,22 +96,12 @@ function buildBillingEntitlement(
   };
 }
 
-function validateCouponCode(couponCode: string): {
-  valid: boolean;
-  couponId?: string;
-  percentOff?: number;
-  error?: string;
-} {
-  if (!couponCode) {
-    return { valid: false, error: "couponCode is required" };
-  }
-
-  const normalized = couponCode.toUpperCase().trim();
-  if (normalized === "SAVE10") {
-    return { valid: true, couponId: "coupon_test_save10", percentOff: 10 };
-  }
-
-  return { valid: false, error: "Coupon is not valid" };
+function buildCouponDeprecationResponse() {
+  return {
+    error: "Coupon codes are entered on the Stripe-hosted checkout page.",
+    code: "stripe_checkout_promotion_codes_only",
+    checkoutHandlesPromotionCodes: true,
+  };
 }
 
 export function registerBillingRoutes(app: Express, options: RegisterBillingRoutesOptions): void {
@@ -126,52 +116,44 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
   });
 
   // POST /api/billing/validate-coupon
-  // Validates a coupon code. In test mode, only SAVE10 is valid.
-  app.post("/api/billing/validate-coupon", (req, res) => {
-    const payload = (req.body ?? {}) as Record<string, unknown>;
-    const couponCode = options.sanitizeTextField(payload.couponCode, 80);
-
-    if (!couponCode) {
-      res.json({ valid: false, error: "couponCode is required" });
+  // Coupons are entered on the Stripe-hosted checkout page.
+  app.post("/api/billing/validate-coupon", options.requireApiKey, (req, res) => {
+    if (!options.paywallEnabled) {
+      res.status(400).json({ valid: false, error: "Billing is not enabled" });
       return;
     }
 
-    const result = validateCouponCode(couponCode);
-    res.json(result);
+    res.status(410).json({ valid: false, ...buildCouponDeprecationResponse() });
   });
 
   // POST /api/billing/apply-coupon
-  // Applies a coupon code to the school's billing state.
-  app.post("/api/billing/apply-coupon", options.requireWriteRole, (req, res) => {
-    const schoolId = options.getSchoolIdFromRequest(req);
-    const payload = (req.body ?? {}) as Record<string, unknown>;
-    const couponCode = options.sanitizeTextField(payload.couponCode, 80);
-
-    if (!couponCode) {
-      res.status(400).json({ error: "couponCode is required" });
+  // Coupons are entered on the Stripe-hosted checkout page.
+  app.post("/api/billing/apply-coupon", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    if (!options.paywallEnabled) {
+      res.status(400).json({ error: "Billing is not enabled" });
       return;
     }
 
-    const validation = validateCouponCode(couponCode);
-    if (!validation.valid) {
-      res.status(400).json({ error: validation.error ?? "Coupon is not valid" });
-      return;
-    }
-
-    options.saveBillingState({ couponCode }, { schoolId });
-    res.json({ applied: true });
+    res.status(410).json(buildCouponDeprecationResponse());
   });
 
   // POST /api/billing/checkout-session
   // Creates a Stripe Checkout session for subscribing.
-  app.post("/api/billing/checkout-session", options.requireWriteRole, (req, res) => {
+  app.post("/api/billing/checkout-session", options.requireApiKey, options.requireWriteRole, (req, res) => {
     if (!options.paywallEnabled) {
       res.status(400).json({ error: "Billing is not enabled" });
       return;
     }
 
     const payload = (req.body ?? {}) as Record<string, unknown>;
-    const planCycle = options.sanitizeTextField(payload.planCycle, 20) || "monthly";
+    const rawPlanCycle = options.sanitizeTextField(payload.planCycle, 20);
+    const planCycle = !rawPlanCycle ? "monthly" : rawPlanCycle;
+
+    if (planCycle !== "monthly" && planCycle !== "yearly") {
+      res.status(400).json({ error: "Invalid plan cycle — must be 'monthly' or 'yearly'" });
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
 
     const priceId = planCycle === "yearly"
@@ -185,9 +167,9 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
 
     if (options.stripeTestMode) {
       const sessionId = `cs_test_${schoolId}_${Date.now()}`;
-      const url = `checkout.stripe.com/test/session/${priceId}?school=${schoolId}`;
+      const url = `https://checkout.stripe.com/test/session/${priceId}?school=${encodeURIComponent(schoolId)}&prefilled_promo_entry=1`;
       options.loggerInfo("billing.checkout_session_created", { schoolId, sessionId, planCycle, testMode: true });
-      res.json({ id: sessionId, url });
+      res.json({ id: sessionId, url, allowPromotionCodes: true, promotionCodeEntry: "stripe_checkout" });
       return;
     }
 
@@ -198,7 +180,11 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
       return;
     }
 
-    res.status(503).json({ error: "Stripe checkout is not configured" });
+    res.status(503).json({
+      error: "Stripe checkout is not configured",
+      allowPromotionCodes: true,
+      promotionCodeEntry: "stripe_checkout",
+    });
   });
 
   // POST /api/billing/bootstrap-checkout-session
@@ -237,7 +223,7 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
 
     if (options.stripeTestMode) {
       const sessionId = `cs_test_bootstrap_${schoolId}_${Date.now()}`;
-      const url = `checkout.stripe.com/test/session/bootstrap-${priceId}?school=${schoolId}`;
+      const url = `https://checkout.stripe.com/test/session/bootstrap-${priceId}?school=${encodeURIComponent(schoolId)}&prefilled_promo_entry=1`;
       options.loggerInfo("billing.bootstrap_checkout_session_created", {
         schoolId,
         sessionId,
@@ -252,6 +238,8 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
         schoolId,
         id: sessionId,
         url,
+        allowPromotionCodes: true,
+        promotionCodeEntry: "stripe_checkout",
       });
       return;
     }
@@ -262,7 +250,11 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
       return;
     }
 
-    res.status(503).json({ error: "Stripe checkout is not configured" });
+    res.status(503).json({
+      error: "Stripe checkout is not configured",
+      allowPromotionCodes: true,
+      promotionCodeEntry: "stripe_checkout",
+    });
   });
 
   // POST /api/billing/webhook
@@ -468,7 +460,12 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
 
   // GET /api/billing/portal-session
   // Returns a Stripe billing portal session URL.
-  app.get("/api/billing/portal-session", (req, res) => {
+  app.get("/api/billing/portal-session", options.requireApiKey, (req, res) => {
+    if (!options.paywallEnabled) {
+      res.status(400).json({ error: "Billing is not enabled" });
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
     const billingState = options.getBillingStateByScope({ schoolId });
 

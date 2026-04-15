@@ -967,9 +967,9 @@
 
 .auth-topbar-link,
 .auth-secondary-button {
-  min-height: 40px;
-  padding: 0.55rem 0.9rem;
-  font-size: 0.84rem;
+  min-height: 44px;
+  padding: 0.62rem 1rem;
+  font-size: 0.86rem;
   font-weight: 600;
 }
 
@@ -1277,8 +1277,8 @@
 }
 
 .auth-primary-button {
-  min-height: 46px;
-  border: none;
+  min-height: 48px;
+  border: 1px solid color-mix(in srgb, var(--bta-accent-violet) 55%, transparent);
   border-radius: var(--bta-radius-full);
   background: linear-gradient(135deg, var(--bta-accent-violet) 0%, var(--bta-accent-violet-dark) 60%, var(--bta-accent-cyan) 100%);
   color: var(--bta-accent-on);
@@ -1286,16 +1286,25 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   box-shadow: 0 14px 30px color-mix(in srgb, var(--bta-accent-violet) 34%, transparent);
-  transition: filter var(--bta-motion-fast), opacity var(--bta-motion-fast);
+  transition: filter var(--bta-motion-fast), opacity var(--bta-motion-fast), transform var(--bta-motion-fast);
 }
 
 .auth-primary-button:hover {
   filter: saturate(1.08) brightness(1.05);
+  transform: translateY(-1px);
 }
 
 .auth-primary-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.auth-topbar-link:focus-visible,
+.auth-secondary-button:focus-visible,
+.auth-primary-button:focus-visible,
+.auth-text-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bta-ring) 30%, transparent);
 }
 
 .auth-status,

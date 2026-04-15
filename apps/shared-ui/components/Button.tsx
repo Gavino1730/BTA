@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes } from "react";
+import { cx } from "./cx";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "success";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -31,14 +32,7 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
-  const classes = [
-    variantStyles[variant],
-    sizeStyles[size],
-    fullWidth ? "bta-btn-full" : "",
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const classes = cx(variantStyles[variant], sizeStyles[size], fullWidth && "bta-btn-full", className);
 
   return (
     <button type="button" className={classes} {...props}>

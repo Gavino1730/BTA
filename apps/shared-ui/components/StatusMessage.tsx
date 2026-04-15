@@ -1,3 +1,5 @@
+import { cx } from "./cx";
+
 interface StatusMessageProps {
   message: string;
   type?: "success" | "error" | "info" | "warning";
@@ -15,7 +17,7 @@ export function StatusMessage({ message, type = "info", className = "" }: Status
   if (!message) return null;
   return (
     <p
-      className={[typeClasses[type], className].filter(Boolean).join(" ")}
+      className={cx(typeClasses[type], className)}
       aria-live="polite"
       role={type === "error" ? "alert" : undefined}
     >

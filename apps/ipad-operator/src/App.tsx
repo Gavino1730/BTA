@@ -1,10 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import TutorialOverlay from "./TutorialOverlay.js";
-import IpadTipsPage from "./IpadTipsPage.js";
-import { SettingsScreen } from "./SettingsScreen.js";
-import { PreGameScreen } from "./PreGameScreen.js";
-import { PostGameScreen } from "./PostGameScreen.js";
-import { GameFinishedScreen } from "./GameFinishedScreen.js";
 import { GameSummaryModal } from "./GameSummaryModal.js";
 import { ModalRouter, ChainPromptBar } from "./ModalRouter.js";
 import { ScoringPanel } from "./ScoringPanel.js";
@@ -28,7 +22,6 @@ import type {
   FeedbackTone,
   Modal,
   OperatorAlert,
-  Team,
 } from "./types.js";
 import type { SettingsView, TeamSide } from "./types.js";
 import {
@@ -54,6 +47,14 @@ import {
   uid,
 } from "./helpers/storage.js";
 import { sanitizeLineup, lineupsEqual } from "./helpers/lineup.js";
+import {
+  AccessBlockedView,
+  FinishedGameView,
+  PostGameView,
+  PreGameView,
+  SettingsViewRenderer,
+  TutorialGate,
+} from "./OperatorPhaseViews.js";
 
 function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsView: SettingsView } {
   const h = hash.replace(/^#\/?/, "");
@@ -179,14 +180,7 @@ export function App() {
   const operatorAllowedSettingsViews = new Set<SettingsView>(["menu", "game-setup", "ipad-tips", "sound"]);
 
   if (accessBlockedMessage) {
-    return (
-      <main className="app-shell" style={{ display: "grid", minHeight: "100dvh", placeItems: "center", padding: 24 }}>
-        <section className="card" style={{ maxWidth: 640 }}>
-          <h2>Access Restricted</h2>
-          <p>{accessBlockedMessage}</p>
-        </section>
-      </main>
-    );
+    return <AccessBlockedView message={accessBlockedMessage} />;
   }
 
   function navigateView(nextView: "game" | "settings", nextSettingsView: SettingsView = "menu") {
@@ -574,27 +568,16 @@ export function App() {
   //  SETTINGS
   // ================================================================
   if (view === "settings") {
-    if (settingsView === "ipad-tips") {
-      return <IpadTipsPage onBack={() => navigateView("settings", "menu")} />;
-    }
-
-    const safeSettingsView: SettingsView = operatorAllowedSettingsViews.has(settingsView)
-      ? settingsView
-      : "menu";
-
-    return <SettingsScreen
-      appData={appData}
-      settingsView={safeSettingsView}
-      onPersist={persistData}
-      onNav={(nextView) => navigateView("settings", operatorAllowedSettingsViews.has(nextView) ? nextView : "menu")}
-      onBack={() => navigateView("game")}
-      onStartGame={async () => {
-        const reset = await endAndResetGame();
-        if (reset) {
-          navigateView("game");
-        }
-      }}
-    />;
+    return (
+      <SettingsViewRenderer
+        settingsView={settingsView}
+        operatorAllowedSettingsViews={operatorAllowedSettingsViews}
+        appData={appData}
+        persistData={persistData}
+        navigateView={navigateView}
+        endAndResetGame={endAndResetGame}
+      />
+    );
   }
 
   // ================================================================
@@ -604,7 +587,7 @@ export function App() {
   // ---- PRE-GAME SCREEN ----
   if (gamePhase === "pre-game") {
     return (
-      <PreGameScreen
+      <PreGameView
         appData={appData}
         myTeam={myTeam}
         opponentName={opponentName}
@@ -615,13 +598,13 @@ export function App() {
         selectedStarters={selectedStarters}
         showLineupSetup={showLineupSetup}
         lineupLockedByLiveGame={lineupLockedByLiveGame}
-        onPersist={persistData}
-        onSetConnectionSyncStatus={setConnectionSyncStatus}
-        onSetSelectedStarters={setSelectedStarters}
-        onSetShowLineupSetup={setShowLineupSetup}
-        onSyncFromCoachCode={syncFromCoachCode}
-        onStartGame={startGame}
-        onNavigate={navigateView}
+        persistData={persistData}
+        setConnectionSyncStatus={setConnectionSyncStatus}
+        setSelectedStarters={setSelectedStarters}
+        setShowLineupSetup={setShowLineupSetup}
+        syncFromCoachCode={syncFromCoachCode}
+        startGame={startGame}
+        navigateView={navigateView}
         showInlineNotice={showInlineNotice}
         inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
         confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
@@ -632,7 +615,7 @@ export function App() {
   // ---- POST-GAME SCREEN ----
   if (gamePhase === "post-game") {
     return (
-      <PostGameScreen
+      <PostGameView
         gameId={gameId}
         homeTeamName={homeTeamName}
         awayTeamName={awayTeamName}
@@ -644,24 +627,20 @@ export function App() {
         postGameAwayScoreInput={postGameAwayScoreInput}
         submitStatus={submitStatus}
         submitMessage={submitMessage}
-        onSetPostGameNameInput={setPostGameNameInput}
-        onSetPostGameDateInput={setPostGameDateInput}
-        onSetPostGameOpponentInput={setPostGameOpponentInput}
-        onSetPostGameHomeScoreInput={setPostGameHomeScoreInput}
-        onSetPostGameAwayScoreInput={setPostGameAwayScoreInput}
-        onSetSubmitStatus={setSubmitStatus}
-        onSetSubmitMessage={setSubmitMessage}
-        onApplyPostGameEdits={applyPostGameEdits}
-        onSubmitGameToRealtimeApi={submitGameToRealtimeApi}
-        onRequestConfirm={requestConfirm}
-        onResetFromPostGame={resetFromPostGame}
-        onDiscardFromPostGame={discardFromPostGame}
-        onHandleNewGame={hardResetOperatorSession}
-        onMarkGameFinished={() => {
-          persistPhase("finished");
-          setSubmitStatus("success");
-          setSubmitMessage("Game submitted. This session is now locked to finished summary.");
-        }}
+        setPostGameNameInput={setPostGameNameInput}
+        setPostGameDateInput={setPostGameDateInput}
+        setPostGameOpponentInput={setPostGameOpponentInput}
+        setPostGameHomeScoreInput={setPostGameHomeScoreInput}
+        setPostGameAwayScoreInput={setPostGameAwayScoreInput}
+        setSubmitStatus={setSubmitStatus}
+        setSubmitMessage={setSubmitMessage}
+        applyPostGameEdits={applyPostGameEdits}
+        submitGameToRealtimeApi={submitGameToRealtimeApi}
+        requestConfirm={requestConfirm}
+        resetFromPostGame={resetFromPostGame}
+        discardFromPostGame={discardFromPostGame}
+        hardResetOperatorSession={hardResetOperatorSession}
+        persistPhase={persistPhase}
         inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
         confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />
@@ -670,7 +649,7 @@ export function App() {
 
   if (gamePhase === "finished") {
     return (
-      <GameFinishedScreen
+      <FinishedGameView
         gameId={postGameNameInput || gameId}
         gameDate={postGameDateInput || gameDate}
         opponentName={postGameOpponentInput}
@@ -679,7 +658,7 @@ export function App() {
         homeScore={scores.home}
         awayScore={scores.away}
         submitMessage={submitMessage || "Game has been submitted."}
-        onStartNewGame={hardResetOperatorSession}
+        hardResetOperatorSession={hardResetOperatorSession}
         inlineNoticeNode={<InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />}
         confirmDialogNode={<ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />}
       />
@@ -694,7 +673,7 @@ export function App() {
         ["--team-away-color" as string]: awayTeamColor,
       }}
     >
-      {showTutorial && <TutorialOverlay onDismiss={() => setShowTutorial(false)} />}
+      <TutorialGate showTutorial={showTutorial} onDismiss={() => setShowTutorial(false)} />
       <button className="help-fab" onClick={() => setShowTutorial(true)} title="Help &amp; Tutorial">?</button>
       <InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />
       <AlertBanner alerts={liveAlerts} dismissedIds={dismissedAlertIds} onDismissId={setDismissedAlertIds} />

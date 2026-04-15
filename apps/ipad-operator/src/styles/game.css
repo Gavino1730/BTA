@@ -1334,13 +1334,13 @@
   top: 12px;
   left: 12px;
   z-index: 900;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 1.5px solid rgba(232, 234, 240, 0.45);
-  background: rgba(41, 43, 103, 0.82);
+  background: linear-gradient(180deg, rgba(31, 42, 90, 0.92), rgba(18, 26, 60, 0.94));
   color: var(--bta-text-primary);
-  font-size: 0.85rem;
+  font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -1356,10 +1356,10 @@
 }
 
 .live-nav-btn {
-  min-height: 44px;
+  min-height: 48px;
   border-radius: 999px;
-  border: 1.5px solid rgba(232,234,240,0.65);
-  background: rgba(41, 43, 103, 0.78);
+  border: 1.5px solid color-mix(in srgb, var(--bta-border-strong) 88%, transparent);
+  background: linear-gradient(180deg, rgba(30, 39, 84, 0.88), rgba(18, 24, 54, 0.94));
   color: var(--bta-text-primary);
   font-size: 0.92rem;
   font-weight: 700;
@@ -1432,12 +1432,12 @@
 
 /* Secondary nav — quiet, non-distracting during live game */
 .live-nav-btn-secondary {
-  border-color: rgba(232,234,240,0.18);
-  background: rgba(20, 22, 43, 0.45);
-  color: rgba(232,234,240,0.38);
-  font-size: 0.7rem;
+  border-color: rgba(232,234,240,0.22);
+  background: rgba(20, 22, 43, 0.65);
+  color: rgba(232,234,240,0.68);
+  font-size: 0.78rem;
   font-weight: 600;
-  min-height: 36px;
+  min-height: 42px;
 }
 .live-nav-btn-secondary:hover {
   border-color: rgba(232,234,240,0.35);

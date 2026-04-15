@@ -3,8 +3,14 @@ import type { Express, NextFunction, Request, Response } from "express";
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
 
 interface RegisterHealthRouteOptions {
-  databaseUrl?: string;
+  persistenceStatus: {
+    backend: string;
+    durable: boolean;
+    warning?: string;
+    dataFile?: string;
+  };
   apiKey?: string;
+  writeApiKey?: string;
   isJwtAuthEnabled: () => boolean;
 }
 
@@ -32,9 +38,15 @@ export function registerHealthRoute(app: Express, options: RegisterHealthRouteOp
     res.json({
       status: "ok",
       uptime: Math.round(process.uptime()),
-      persistence: options.databaseUrl ? "postgres" : "file",
+      persistence: {
+        backend: options.persistenceStatus.backend,
+        durable: options.persistenceStatus.durable,
+        warning: options.persistenceStatus.warning,
+        dataFile: options.persistenceStatus.dataFile,
+      },
       auth: {
         apiKey: Boolean(options.apiKey),
+        writeApiKey: Boolean(options.writeApiKey),
         jwt: options.isJwtAuthEnabled(),
       },
     });

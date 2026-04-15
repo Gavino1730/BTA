@@ -68,7 +68,7 @@ export function Navbar(): JSX.Element {
             <Link
               href="/demo-signup"
               className={cn(
-                buttonVariants({ variant: "ghost", size: "md" }),
+                buttonVariants({ variant: "secondary", size: "md" }),
                 "hidden md:inline-flex"
               )}
             >
