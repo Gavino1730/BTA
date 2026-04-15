@@ -26,6 +26,7 @@ test_output/
 .playwright-mcp/
 docs/_build/
 site/
+.tmp/
 
 # Local env variants
 .env.local
