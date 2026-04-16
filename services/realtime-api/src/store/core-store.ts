@@ -26,7 +26,10 @@ import {
 } from "../persistence.js";
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "../school-id.js";
 import { logger } from "../logger.js";
+import { createActivityStore } from "./activity-store.js";
+import { createAuthStore } from "./auth-store.js";
 import { createBillingStore } from "./billing-store.js";
+import { createRosterStore } from "./roster-store.js";
 
 type WorkspaceRosterTeam = RosterTeam & {
   sport?: "basketball";
@@ -3236,17 +3239,21 @@ export function getPersistenceStatus(): PersistenceStatus {
   };
 }
 
-export function getRosterTeamsByScope(scope?: TenantScope): RosterTeam[] {
-  return getRosterTeamsForSchool(resolveSchoolId(scope));
-}
+const rosterStore = createRosterStore({
+  resolveSchoolId,
+  trimProfileField,
+  rosterTeamsBySchool,
+  getRosterTeamsForSchool,
+  setRosterTeamsForSchool,
+  persistSessions,
+  persistRosterTeamsForSchool,
+});
 
-export function saveRosterTeams(next: RosterTeam[], scope?: TenantScope): RosterTeam[] {
-  const schoolId = resolveSchoolId(scope);
-  const saved = setRosterTeamsForSchool(schoolId, next);
-  persistSessions();
-  persistRosterTeamsForSchool(schoolId, saved);
-  return saved;
-}
+export const {
+  getRosterTeamsByScope,
+  saveRosterTeams,
+  getTeamById,
+} = rosterStore;
 
 export function resetAllData(scope?: TenantScope): void {
   const schoolId = scope ? resolveSchoolId(scope) : null;
@@ -3343,57 +3350,26 @@ export function getOrganizationMembersByScope(scope?: TenantScope): Organization
   return organizationMembersBySchool.get(resolveSchoolId(scope)) ?? [];
 }
 
-export function getLocalAuthAccountsByScope(scope?: TenantScope): LocalAuthAccount[] {
-  return localAuthAccountsBySchool.get(resolveSchoolId(scope)) ?? [];
-}
+const authStore = createAuthStore({
+  resolveSchoolId,
+  trimProfileField,
+  localAuthAccountsBySchool,
+  findLocalAuthAccountByEmailForSchool,
+  upsertLocalAuthAccountForSchool,
+  touchLocalAuthAccountLoginForSchool,
+  setLocalAuthAccountsForSchool,
+  persistSessions,
+  persistLocalAuthAccountsForSchool,
+});
 
-export function getLocalAuthAccountByEmail(email: string, scope?: TenantScope): LocalAuthAccount | null {
-  const schoolId = resolveSchoolId(scope);
-  return findLocalAuthAccountByEmailForSchool(schoolId, email);
-}
-
-export function getLocalAuthAccountsByEmailAcrossSchools(email: string): LocalAuthAccount[] {
-  const normalizedEmail = trimProfileField(email, 160).toLowerCase();
-  if (!normalizedEmail) {
-    return [];
-  }
-
-  return Array.from(localAuthAccountsBySchool.values())
-    .flat()
-    .filter((account) => account.email === normalizedEmail);
-}
-
-export function saveLocalAuthAccount(account: LocalAuthAccountInput, scope?: TenantScope): LocalAuthAccount {
-  const schoolId = resolveSchoolId(scope);
-  const saved = upsertLocalAuthAccountForSchool(schoolId, account);
-  persistSessions();
-  persistLocalAuthAccountsForSchool(schoolId, localAuthAccountsBySchool.get(schoolId) ?? []);
-  return saved;
-}
-
-export function recordLocalAuthLogin(accountId: string, scope?: TenantScope): LocalAuthAccount | null {
-  const schoolId = resolveSchoolId(scope);
-  const saved = touchLocalAuthAccountLoginForSchool(schoolId, accountId);
-  persistSessions();
-  if (saved) {
-    persistLocalAuthAccountsForSchool(schoolId, localAuthAccountsBySchool.get(schoolId) ?? []);
-  }
-  return saved;
-}
-
-export function deleteLocalAuthAccount(accountId: string, scope?: TenantScope): boolean {
-  const schoolId = resolveSchoolId(scope);
-  const accounts = localAuthAccountsBySchool.get(schoolId) ?? [];
-  const next = accounts.filter((account) => account.accountId !== accountId);
-  if (next.length === accounts.length) {
-    return false;
-  }
-
-  setLocalAuthAccountsForSchool(schoolId, next);
-  persistSessions();
-  persistLocalAuthAccountsForSchool(schoolId, next);
-  return true;
-}
+export const {
+  getLocalAuthAccountsByScope,
+  getLocalAuthAccountByEmail,
+  getLocalAuthAccountsByEmailAcrossSchools,
+  saveLocalAuthAccount,
+  recordLocalAuthLogin,
+  deleteLocalAuthAccount,
+} = authStore;
 
 export function getGameOverrideMap(schoolId: string): Map<string, GameEditOverride> {
   const existing = gameOverridesBySchool.get(normalizeSchoolId(schoolId));
@@ -3587,96 +3563,28 @@ export function listTeamMembershipsForUser(input: { schoolId?: string; userId?: 
     .filter((membership) => (normalizedUserId && membership.userId === normalizedUserId) || (normalizedEmail && membership.email === normalizedEmail));
 }
 
-export function getTeamById(teamId: string, scope?: TenantScope): RosterTeam | null {
-  const normalizedTeamId = trimProfileField(teamId, 120);
-  if (!normalizedTeamId) {
-    return null;
-  }
-  if (scope?.schoolId) {
-    return getRosterTeamsByScope(scope).find((team) => team.id === normalizedTeamId) ?? null;
-  }
-  for (const teams of rosterTeamsBySchool.values()) {
-    const match = teams.find((team) => team.id === normalizedTeamId);
-    if (match) {
-      return match;
-    }
-  }
-  return null;
-}
+const activityStore = createActivityStore({
+  resolveSchoolId,
+  normalizeSchoolId,
+  trimProfileField,
+  buildWorkspaceMembershipId,
+  activityEventsBySchool,
+  liveGameSessionsBySchool,
+  operatorSessionsByLiveSession,
+  setActivityEventsForSchool,
+  setLiveGameSessionsForSchool,
+  persistSessions,
+});
 
-export function saveActivityEvent(event: Omit<ActivityEvent, "id" | "createdAtIso"> & { id?: string; createdAtIso?: string }): ActivityEvent {
-  const schoolId = normalizeSchoolId(event.schoolId);
-  const current = activityEventsBySchool.get(schoolId) ?? [];
-  const saved: ActivityEvent = {
-    id: trimProfileField(event.id, 120) || buildWorkspaceMembershipId(`${schoolId}:${event.type}:${Date.now()}`, "activity"),
-    schoolId,
-    teamId: trimProfileField(event.teamId, 120) || undefined,
-    type: event.type,
-    actorUserId: trimProfileField(event.actorUserId, 120) || undefined,
-    message: trimProfileField(event.message, 240),
-    createdAtIso: trimProfileField(event.createdAtIso, 64) || new Date().toISOString(),
-    metadata: event.metadata,
-  };
-  setActivityEventsForSchool(schoolId, [saved, ...current]);
-  persistSessions();
-  return saved;
-}
-
-export function getActivityEventsByScope(scope?: TenantScope): ActivityEvent[] {
-  return activityEventsBySchool.get(resolveSchoolId(scope)) ?? [];
-}
-
-export function createLiveGameSessionRecord(input: Omit<LiveGameSessionRecord, "createdAtIso" | "updatedAtIso">): LiveGameSessionRecord {
-  const schoolId = normalizeSchoolId(input.schoolId);
-  const current = liveGameSessionsBySchool.get(schoolId) ?? [];
-  const nowIso = new Date().toISOString();
-  const saved: LiveGameSessionRecord = {
-    ...input,
-    schoolId,
-    createdAtIso: nowIso,
-    updatedAtIso: nowIso,
-  };
-  setLiveGameSessionsForSchool(schoolId, [saved, ...current.filter((entry) => entry.liveSessionId !== saved.liveSessionId)]);
-  persistSessions();
-  return saved;
-}
-
-export function getLiveGameSessionsByScope(scope?: TenantScope): LiveGameSessionRecord[] {
-  return liveGameSessionsBySchool.get(resolveSchoolId(scope)) ?? [];
-}
-
-export function getLiveGameSessionById(liveSessionId: string): LiveGameSessionRecord | null {
-  const normalizedId = trimProfileField(liveSessionId, 120);
-  for (const liveSessions of liveGameSessionsBySchool.values()) {
-    const match = liveSessions.find((entry) => entry.liveSessionId === normalizedId);
-    if (match) {
-      return match;
-    }
-  }
-  return null;
-}
-
-export function saveOperatorSessionRecord(session: OperatorSessionRecord): OperatorSessionRecord {
-  const saved: OperatorSessionRecord = {
-    ...session,
-    operatorSessionId: trimProfileField(session.operatorSessionId, 120),
-    liveSessionId: trimProfileField(session.liveSessionId, 120),
-    schoolId: normalizeSchoolId(session.schoolId),
-    teamId: trimProfileField(session.teamId, 120),
-    pairingCode: trimProfileField(session.pairingCode, 32),
-    operatorToken: trimProfileField(session.operatorToken, 2_000),
-    expiresAtIso: trimProfileField(session.expiresAtIso, 64),
-    createdAtIso: trimProfileField(session.createdAtIso, 64) || new Date().toISOString(),
-    updatedAtIso: new Date().toISOString(),
-  };
-  operatorSessionsByLiveSession.set(saved.liveSessionId, saved);
-  persistSessions();
-  return saved;
-}
-
-export function getOperatorSessionByLiveSession(liveSessionId: string): OperatorSessionRecord | null {
-  return operatorSessionsByLiveSession.get(trimProfileField(liveSessionId, 120)) ?? null;
-}
+export const {
+  saveActivityEvent,
+  getActivityEventsByScope,
+  createLiveGameSessionRecord,
+  getLiveGameSessionsByScope,
+  getLiveGameSessionById,
+  saveOperatorSessionRecord,
+  getOperatorSessionByLiveSession,
+} = activityStore;
 
 export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {
   const schoolId = resolveRequiredSchoolId(input.schoolId, scope);
