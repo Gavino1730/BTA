@@ -26,6 +26,7 @@ import {
 } from "../persistence.js";
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "../school-id.js";
 import { logger } from "../logger.js";
+import { createBillingStore } from "./billing-store.js";
 
 type WorkspaceRosterTeam = RosterTeam & {
   sport?: "basketball";
@@ -3297,138 +3298,23 @@ export function resetAllData(scope?: TenantScope): void {
   persistRosterTeamsForSchool(schoolId, []);
 }
 
-export function getBillingStateByScope(scope?: TenantScope): BillingState | null {
-  const schoolId = resolveSchoolId(scope);
-  const existing = billingBySchool.get(schoolId);
-  return existing ? { ...existing } : null;
-}
+const billingStore = createBillingStore({
+  resolveSchoolId,
+  billingBySchool,
+  processedStripeWebhookEvents,
+  persistSessions,
+});
 
-export function findBillingStateByStripeCustomerId(stripeCustomerId: string): BillingState | null {
-  const normalized = String(stripeCustomerId ?? "").trim();
-  if (!normalized) {
-    return null;
-  }
-
-  for (const state of billingBySchool.values()) {
-    if (state.stripeCustomerId === normalized) {
-      return { ...state };
-    }
-  }
-
-  return null;
-}
-
-export function findBillingStateByStripeSubscriptionId(stripeSubscriptionId: string): BillingState | null {
-  const normalized = String(stripeSubscriptionId ?? "").trim();
-  if (!normalized) {
-    return null;
-  }
-
-  for (const state of billingBySchool.values()) {
-    if (state.stripeSubscriptionId === normalized) {
-      return { ...state };
-    }
-  }
-
-  return null;
-}
-
-export function ensureTrialBillingState(scope?: TenantScope, trialDays = 14): BillingState {
-  const schoolId = resolveSchoolId(scope);
-  const existing = billingBySchool.get(schoolId);
-  if (existing) {
-    return { ...existing };
-  }
-
-  const now = new Date();
-  const normalizedTrialDays = Number.isFinite(trialDays) ? Math.max(0, Math.floor(trialDays)) : 0;
-  const hasTrial = normalizedTrialDays > 0;
-  const end = new Date(now.getTime());
-  end.setUTCDate(end.getUTCDate() + normalizedTrialDays);
-
-  const created: BillingState = {
-    schoolId,
-    planId: hasTrial ? "trial" : "pro",
-    status: hasTrial ? "trialing" : "incomplete",
-    includedActiveTeamLimit: 1,
-    extraActiveTeamSeats: 0,
-    trialStartedAtIso: hasTrial ? now.toISOString() : undefined,
-    trialEndsAtIso: hasTrial ? end.toISOString() : undefined,
-    createdAtIso: now.toISOString(),
-    updatedAtIso: now.toISOString(),
-  };
-
-  billingBySchool.set(schoolId, created);
-  persistSessions();
-  return { ...created };
-}
-
-export function saveBillingState(state: Partial<BillingState>, scope?: TenantScope): BillingState {
-  const schoolId = resolveSchoolId(scope);
-  const nowIso = new Date().toISOString();
-  const existing = billingBySchool.get(schoolId);
-
-  const saved: BillingState = {
-    schoolId,
-    planId: String(state.planId ?? existing?.planId ?? "trial"),
-    status: (state.status ?? existing?.status ?? "trialing") as BillingSubscriptionStatus,
-    includedActiveTeamLimit: Number.isFinite(state.includedActiveTeamLimit)
-      ? Number(state.includedActiveTeamLimit)
-      : existing?.includedActiveTeamLimit ?? 1,
-    extraActiveTeamSeats: Number.isFinite(state.extraActiveTeamSeats)
-      ? Number(state.extraActiveTeamSeats)
-      : existing?.extraActiveTeamSeats ?? 0,
-    trialStartedAtIso: state.trialStartedAtIso ?? existing?.trialStartedAtIso,
-    trialEndsAtIso: state.trialEndsAtIso ?? existing?.trialEndsAtIso,
-    stripeCustomerId: state.stripeCustomerId ?? existing?.stripeCustomerId,
-    stripeSubscriptionId: state.stripeSubscriptionId ?? existing?.stripeSubscriptionId,
-    currentPeriodEndsAtIso: state.currentPeriodEndsAtIso ?? existing?.currentPeriodEndsAtIso,
-    couponCode: state.couponCode === undefined
-      ? existing?.couponCode
-      : (state.couponCode.trim() || undefined),
-    createdAtIso: existing?.createdAtIso ?? state.createdAtIso ?? nowIso,
-    updatedAtIso: nowIso,
-  };
-
-  billingBySchool.set(schoolId, saved);
-  persistSessions();
-  return { ...saved };
-}
-
-export function hasProcessedStripeWebhookEvent(eventId: string): boolean {
-  const normalized = String(eventId ?? "").trim();
-  if (!normalized) {
-    return false;
-  }
-
-  return processedStripeWebhookEvents.has(normalized);
-}
-
-export function markProcessedStripeWebhookEvent(eventId: string): void {
-  const normalized = String(eventId ?? "").trim();
-  if (!normalized) {
-    return;
-  }
-
-  processedStripeWebhookEvents.set(normalized, new Date().toISOString());
-  persistSessions();
-}
-
-export function trimProcessedStripeWebhookEvents(maxEntries = 10_000): void {
-  const normalizedMax = Number.isFinite(maxEntries) ? Math.max(1, Math.floor(maxEntries)) : 10_000;
-  if (processedStripeWebhookEvents.size <= normalizedMax) {
-    return;
-  }
-
-  const entries = [...processedStripeWebhookEvents.entries()]
-    .sort(([, leftProcessedAt], [, rightProcessedAt]) => Date.parse(leftProcessedAt) - Date.parse(rightProcessedAt));
-  const toDeleteCount = entries.length - normalizedMax;
-  for (let index = 0; index < toDeleteCount; index += 1) {
-    const [eventId] = entries[index];
-    processedStripeWebhookEvents.delete(eventId);
-  }
-  persistSessions();
-}
+export const {
+  getBillingStateByScope,
+  findBillingStateByStripeCustomerId,
+  findBillingStateByStripeSubscriptionId,
+  ensureTrialBillingState,
+  saveBillingState,
+  hasProcessedStripeWebhookEvent,
+  markProcessedStripeWebhookEvent,
+  trimProcessedStripeWebhookEvents,
+} = billingStore;
 
 export function getOrganizationProfileByScope(scope?: TenantScope): OrganizationProfile | null {
   return organizationProfilesBySchool.get(resolveSchoolId(scope)) ?? null;
