@@ -32,7 +32,7 @@ interface RegisterBillingRoutesOptions {
   loggerError: (message: string, context?: Record<string, unknown>) => void;
 }
 
-function buildBillingEntitlement(
+export function buildBillingEntitlement(
   paywallEnabled: boolean,
   billingState: BillingState | null
 ): {
@@ -40,13 +40,19 @@ function buildBillingEntitlement(
   accessActive: boolean;
   status: string;
   reason: string;
+  activeTeamLimit: number | null;
 } {
+  const activeTeamLimit = billingState?.status === "trialing"
+    ? null
+    : Math.max(1, Number(billingState?.includedActiveTeamLimit ?? 1) + Number(billingState?.extraActiveTeamSeats ?? 0));
+
   if (!paywallEnabled) {
     return {
       paywallEnabled: false,
       accessActive: true,
       status: "active",
       reason: "billing_disabled",
+      activeTeamLimit: null,
     };
   }
 
@@ -56,6 +62,7 @@ function buildBillingEntitlement(
       accessActive: false,
       status: "incomplete",
       reason: "inactive_subscription",
+      activeTeamLimit: 1,
     };
   }
 
@@ -67,6 +74,7 @@ function buildBillingEntitlement(
       accessActive: true,
       status,
       reason: "subscription_active",
+      activeTeamLimit,
     };
   }
 
@@ -76,6 +84,7 @@ function buildBillingEntitlement(
       accessActive: false,
       status: "past_due",
       reason: "inactive_subscription",
+      activeTeamLimit,
     };
   }
 
@@ -85,6 +94,7 @@ function buildBillingEntitlement(
       accessActive: false,
       status: "canceled",
       reason: "inactive_subscription",
+      activeTeamLimit,
     };
   }
 
@@ -93,6 +103,7 @@ function buildBillingEntitlement(
     accessActive: false,
     status: status || "incomplete",
     reason: "inactive_subscription",
+    activeTeamLimit,
   };
 }
 

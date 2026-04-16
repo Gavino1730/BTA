@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { createSchoolTeam, fetchSchoolOverview, type SchoolOverviewPayload } from "./workspace.js";
+import {
+  createSchoolTeam,
+  fetchSchoolOverview,
+  inviteSchoolStaff,
+  removeSchoolStaffMembership,
+  resendSchoolMembershipInvite,
+  updateSchoolStaffMembership,
+  type SchoolOverviewPayload,
+} from "./workspace.js";
 
 interface SchoolOverviewPageProps {
   schoolId: string;
@@ -16,20 +24,52 @@ const TEAM_TEMPLATES = [
   { label: "Custom Team", gender: "custom" as const, level: "custom" as const },
 ];
 
+type StaffAccessOption = "school_admin" | "head_coach" | "assistant_coach" | "operator" | "viewer";
+
+interface MembershipEditorState {
+  role: StaffAccessOption;
+  teamId: string;
+}
+
+interface StaffRow {
+  membershipType: "school" | "team";
+  membershipId: string;
+  fullName: string;
+  email: string;
+  role: string;
+  status: "active" | "invited";
+  teamId?: string;
+  teamName?: string;
+}
+
 export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: SchoolOverviewPageProps) {
   const [overview, setOverview] = useState<SchoolOverviewPayload | null>(null);
   const [status, setStatus] = useState("Loading school overview...");
   const [showAddTeam, setShowAddTeam] = useState(false);
+  const [showInviteStaff, setShowInviteStaff] = useState(false);
   const [busy, setBusy] = useState(false);
   const [templateLabel, setTemplateLabel] = useState("Boys Varsity");
   const [displayName, setDisplayName] = useState("Boys Varsity");
   const [customLabel, setCustomLabel] = useState("");
   const [abbreviation, setAbbreviation] = useState("");
   const [teamColor, setTeamColor] = useState("#1d4ed8");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteAccess, setInviteAccess] = useState<StaffAccessOption>("school_admin");
+  const [inviteTeamId, setInviteTeamId] = useState("");
+  const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
+  const [editorState, setEditorState] = useState<MembershipEditorState | null>(null);
+
+  async function reloadOverview(nextStatus?: string) {
+    setStatus(nextStatus ?? "Loading school overview...");
+    const payload = await fetchSchoolOverview(schoolId);
+    setOverview(payload);
+    setStatus(nextStatus ?? "School overview loaded.");
+    return payload;
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setStatus("Loading school overview...");
     void (async () => {
       try {
         const payload = await fetchSchoolOverview(schoolId);
@@ -49,7 +89,37 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
     };
   }, [schoolId]);
 
-  const selectedTemplate = useMemo(() => TEAM_TEMPLATES.find((template) => template.label === templateLabel) ?? TEAM_TEMPLATES[0], [templateLabel]);
+  const selectedTemplate = useMemo(
+    () => TEAM_TEMPLATES.find((template) => template.label === templateLabel) ?? TEAM_TEMPLATES[0],
+    [templateLabel],
+  );
+
+  const staffRows = useMemo<StaffRow[]>(() => {
+    if (!overview) {
+      return [];
+    }
+    const teamNameById = new Map(overview.teams.map((team) => [team.id, team.displayName ?? team.name]));
+    return [
+      ...overview.staff.schoolMemberships.map((membership) => ({
+        membershipType: "school" as const,
+        membershipId: membership.membershipId,
+        fullName: membership.fullName,
+        email: membership.email,
+        role: membership.role,
+        status: membership.status,
+      })),
+      ...overview.staff.teamMemberships.map((membership) => ({
+        membershipType: "team" as const,
+        membershipId: membership.membershipId,
+        fullName: membership.fullName,
+        email: membership.email,
+        role: membership.role,
+        status: membership.status,
+        teamId: membership.teamId,
+        teamName: teamNameById.get(membership.teamId) ?? membership.teamId,
+      })),
+    ].sort((left, right) => left.fullName.localeCompare(right.fullName) || left.email.localeCompare(right.email));
+  }, [overview]);
 
   useEffect(() => {
     setDisplayName(selectedTemplate.label);
@@ -57,6 +127,16 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
       setCustomLabel("");
     }
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (!overview?.teams.length) {
+      setInviteTeamId("");
+      return;
+    }
+    if (inviteAccess !== "school_admin" && !inviteTeamId) {
+      setInviteTeamId(overview.teams[0]?.id ?? "");
+    }
+  }, [inviteAccess, inviteTeamId, overview?.teams]);
 
   async function handleCreateTeam() {
     if (!overview) {
@@ -74,12 +154,96 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         abbreviation: abbreviation.trim().toUpperCase() || undefined,
         teamColor,
       });
+      await reloadOverview(result.billingNotice ?? `${result.team.displayName ?? result.team.name} created.`);
       setShowAddTeam(false);
-      setOverview(await fetchSchoolOverview(overview.school.schoolId));
-      setStatus(`${result.team.displayName ?? result.team.name} created.`);
       onOpenTeam(result.team.id);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not create team.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleInviteStaff() {
+    if (!overview) {
+      return;
+    }
+    setBusy(true);
+    setStatus("Sending invite...");
+    try {
+      const response = await inviteSchoolStaff(overview.school.schoolId, {
+        fullName: inviteName.trim(),
+        email: inviteEmail.trim().toLowerCase(),
+        schoolRole: inviteAccess === "school_admin" ? "school_admin" : undefined,
+        teamRole: inviteAccess !== "school_admin" ? inviteAccess : undefined,
+        teamId: inviteAccess !== "school_admin" ? inviteTeamId : undefined,
+      });
+      setInviteName("");
+      setInviteEmail("");
+      setShowInviteStaff(false);
+      await reloadOverview(response.warning ?? "Staff invite sent.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not invite staff member.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendInvite(membershipType: "school" | "team", membershipId: string) {
+    setBusy(true);
+    setStatus("Resending invite...");
+    try {
+      const response = await resendSchoolMembershipInvite(schoolId, membershipType, membershipId);
+      setStatus(response.warning ?? "Invite resent.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not resend invite.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleStartEdit(membership: StaffRow) {
+    setEditingMembershipId(`${membership.membershipType}:${membership.membershipId}`);
+    setEditorState({
+      role: membership.role as StaffAccessOption,
+      teamId: membership.teamId ?? "",
+    });
+  }
+
+  function handleCancelEdit() {
+    setEditingMembershipId(null);
+    setEditorState(null);
+  }
+
+  async function handleSaveEdit(membership: StaffRow) {
+    if (!editorState) {
+      return;
+    }
+    setBusy(true);
+    setStatus("Updating staff membership...");
+    try {
+      await updateSchoolStaffMembership(schoolId, membership.membershipType, membership.membershipId, {
+        role: editorState.role,
+        teamId: membership.membershipType === "team" ? editorState.teamId : undefined,
+        status: membership.status,
+      });
+      handleCancelEdit();
+      await reloadOverview("Staff membership updated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update staff membership.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveStaff(membershipType: "school" | "team", membershipId: string) {
+    setBusy(true);
+    setStatus("Removing staff member...");
+    try {
+      await removeSchoolStaffMembership(schoolId, membershipType, membershipId);
+      await reloadOverview("Staff membership removed.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not remove staff member.");
     } finally {
       setBusy(false);
     }
@@ -104,9 +268,14 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         </div>
         <div className="settings-header-actions">
           {canManageSchool ? (
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam((current) => !current)}>
-              Add Team
-            </button>
+            <>
+              <button type="button" className="shell-nav-link" onClick={() => setShowInviteStaff((current) => !current)}>
+                Invite Staff
+              </button>
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam((current) => !current)}>
+                Add Team
+              </button>
+            </>
           ) : null}
           <p className="stats-page-status">{status}</p>
         </div>
@@ -116,12 +285,20 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         <article className="stats-page-card">
           <p className="stats-page-eyebrow">Billing</p>
           <h3>{overview.summary.planId}</h3>
-          <p className="stats-page-subcopy">Status: {overview.summary.billingStatus}</p>
+          <p className="stats-page-subcopy">
+            Status: {overview.summary.billingStatus}
+            {overview.summary.activeTeamLimit === null
+              ? " / Unlimited active teams in trial"
+              : ` / ${overview.summary.activeTeamsCount} of ${overview.summary.activeTeamLimit} active team slots used`}
+          </p>
         </article>
         <article className="stats-page-card">
           <p className="stats-page-eyebrow">Teams</p>
           <h3>{overview.summary.activeTeamsCount}</h3>
-          <p className="stats-page-subcopy">Active team workspaces</p>
+          <p className="stats-page-subcopy">
+            Active team workspaces
+            {overview.summary.overLimitTeamCount ? ` / ${overview.summary.overLimitTeamCount} read-only` : ""}
+          </p>
         </article>
         <article className="stats-page-card">
           <p className="stats-page-eyebrow">Live Games</p>
@@ -175,6 +352,53 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         </section>
       ) : null}
 
+      {showInviteStaff ? (
+        <section className="stats-page-card settings-section-card">
+          <div className="stats-page-card-head">
+            <div>
+              <h3>Invite Staff</h3>
+              <p className="settings-section-desc">Invite school admins or team staff into this workspace.</p>
+            </div>
+          </div>
+          <div className="setup-grid">
+            <label className="stats-filter-field">
+              <span>Full Name</span>
+              <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Assistant Coach Lee" />
+            </label>
+            <label className="stats-filter-field">
+              <span>Email</span>
+              <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="coach@school.org" />
+            </label>
+            <label className="stats-filter-field">
+              <span>Access</span>
+              <select value={inviteAccess} onChange={(event) => setInviteAccess(event.target.value as StaffAccessOption)}>
+                <option value="school_admin">School Admin</option>
+                <option value="head_coach">Head Coach</option>
+                <option value="assistant_coach">Assistant Coach</option>
+                <option value="operator">Operator</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </label>
+            {inviteAccess !== "school_admin" ? (
+              <label className="stats-filter-field">
+                <span>Team</span>
+                <select value={inviteTeamId} onChange={(event) => setInviteTeamId(event.target.value)}>
+                  {overview.teams.map((team) => (
+                    <option key={team.id} value={team.id}>{team.displayName ?? team.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div className="settings-header-actions">
+            <button type="button" className="shell-nav-link" onClick={() => setShowInviteStaff(false)} disabled={busy}>Cancel</button>
+            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void handleInviteStaff()} disabled={busy}>
+              {busy ? "Sending..." : "Send Invite"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section className="stats-page-card settings-section-card">
         <div className="stats-page-card-head">
           <div>
@@ -203,6 +427,9 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
                   </div>
                 </div>
                 <div className="settings-member-controls">
+                  {team.status === "read_only" ? (
+                    <span className="settings-status-badge settings-status-invited">Read Only</span>
+                  ) : null}
                   <span className={`settings-status-badge settings-status-${team.liveSession ? "active" : "invited"}`}>
                     {team.liveSession ? "Live" : "Ready"}
                   </span>
@@ -221,21 +448,96 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
           <div className="stats-page-card-head">
             <div>
               <h3>Staff</h3>
-              <p className="settings-section-desc">School-wide roles and team assignments.</p>
+              <p className="settings-section-desc">School admins and team-level staff memberships.</p>
             </div>
           </div>
           <div className="settings-members-list">
-            {overview.staff.schoolMemberships.map((membership) => (
-              <div key={membership.membershipId} className="settings-member-row">
+            {staffRows.length === 0 ? (
+              <p className="stats-empty-copy">No staff memberships yet.</p>
+            ) : staffRows.map((membership) => (
+              <div key={`${membership.membershipType}:${membership.membershipId}`} className="settings-member-row">
                 <div className="settings-member-info">
                   <div className="settings-member-avatar">{membership.fullName.charAt(0)}</div>
                   <div>
                     <strong className="settings-member-name">{membership.fullName}</strong>
                     <span className="settings-member-email">{membership.email}</span>
+                    <span className="settings-member-email">
+                      {membership.membershipType === "school" ? "School access" : membership.teamName ? `Team: ${membership.teamName}` : "Team access"}
+                    </span>
                   </div>
                 </div>
                 <div className="settings-member-controls">
-                  <span className="settings-status-badge settings-status-active">{membership.role}</span>
+                  {editingMembershipId === `${membership.membershipType}:${membership.membershipId}` && editorState ? (
+                    <>
+                      <select
+                        value={editorState.role}
+                        onChange={(event) => setEditorState((current) => current ? { ...current, role: event.target.value as StaffAccessOption } : current)}
+                        disabled={busy || (membership.membershipType === "school" && membership.role === "owner")}
+                      >
+                        {membership.membershipType === "school" ? (
+                          <>
+                            <option value="school_admin">School Admin</option>
+                            {membership.role === "owner" ? <option value="school_admin" disabled>Owner</option> : null}
+                          </>
+                        ) : (
+                          <>
+                            <option value="head_coach">Head Coach</option>
+                            <option value="assistant_coach">Assistant Coach</option>
+                            <option value="operator">Operator</option>
+                            <option value="viewer">Viewer</option>
+                          </>
+                        )}
+                      </select>
+                      {membership.membershipType === "team" ? (
+                        <select
+                          value={editorState.teamId}
+                          onChange={(event) => setEditorState((current) => current ? { ...current, teamId: event.target.value } : current)}
+                          disabled={busy}
+                        >
+                          {overview.teams.map((team) => (
+                            <option key={team.id} value={team.id}>{team.displayName ?? team.name}</option>
+                          ))}
+                        </select>
+                      ) : null}
+                      <button type="button" className="shell-nav-link" disabled={busy} onClick={() => void handleSaveEdit(membership)}>
+                        Save
+                      </button>
+                      <button type="button" className="shell-nav-link" disabled={busy} onClick={handleCancelEdit}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className={`settings-status-badge settings-status-${membership.status === "active" ? "active" : "invited"}`}>
+                        {membership.role}
+                      </span>
+                      {canManageSchool ? (
+                        <button
+                          type="button"
+                          className="shell-nav-link"
+                          disabled={busy || (membership.membershipType === "school" && membership.role === "owner")}
+                          onClick={() => handleStartEdit(membership)}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                  {canManageSchool && membership.status === "invited" ? (
+                    <button type="button" className="shell-nav-link" disabled={busy} onClick={() => void handleResendInvite(membership.membershipType, membership.membershipId)}>
+                      Resend
+                    </button>
+                  ) : null}
+                  {canManageSchool ? (
+                    <button
+                      type="button"
+                      className="shell-nav-link"
+                      disabled={busy || (membership.membershipType === "school" && membership.role === "owner")}
+                      onClick={() => void handleRemoveStaff(membership.membershipType, membership.membershipId)}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}

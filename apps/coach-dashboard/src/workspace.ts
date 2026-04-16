@@ -87,6 +87,8 @@ export interface SchoolOverviewPayload {
     staffCount: number;
     billingStatus: string;
     planId: string;
+    activeTeamLimit?: number | null;
+    overLimitTeamCount?: number;
   };
   teams: WorkspaceTeam[];
   staff: {
@@ -104,6 +106,15 @@ export interface SchoolOverviewPayload {
     status?: string;
     trialEndsAtIso?: string;
   } | null;
+}
+
+export interface StaffMutationResult {
+  staff: {
+    schoolMemberships: WorkspaceSchoolMembership[];
+    teamMemberships: WorkspaceTeamMembership[];
+  };
+  invitePath?: string;
+  warning?: string;
 }
 
 export async function fetchWorkspaceContext(): Promise<WorkspaceContext> {
@@ -158,7 +169,7 @@ export async function createSchoolTeam(schoolId: string, input: {
   customLabel?: string;
   abbreviation?: string;
   teamColor?: string;
-}): Promise<{ team: WorkspaceTeam }> {
+}): Promise<{ team: WorkspaceTeam; billingNotice?: string }> {
   const response = await fetch(`${apiBase}/api/schools/${encodeURIComponent(schoolId)}/teams`, {
     method: "POST",
     headers: apiKeyHeader(true),
@@ -168,7 +179,7 @@ export async function createSchoolTeam(schoolId: string, input: {
     const payload = await response.json().catch(() => ({})) as { error?: string };
     throw new Error(payload.error || "Could not create team.");
   }
-  return response.json() as Promise<{ team: WorkspaceTeam }>;
+  return response.json() as Promise<{ team: WorkspaceTeam; billingNotice?: string }>;
 }
 
 export async function createTeamLiveSession(teamId: string, input: {
@@ -220,4 +231,67 @@ export async function createTeamLiveSession(teamId: string, input: {
       operatorToken?: string | null;
     };
   }>;
+}
+
+export async function inviteSchoolStaff(schoolId: string, input: {
+  fullName: string;
+  email: string;
+  schoolRole?: "school_admin";
+  teamRole?: "head_coach" | "assistant_coach" | "operator" | "viewer";
+  teamId?: string;
+}): Promise<StaffMutationResult> {
+  const response = await fetch(`${apiBase}/api/schools/${encodeURIComponent(schoolId)}/staff/invitations`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "Could not invite staff member.");
+  }
+  return response.json() as Promise<StaffMutationResult>;
+}
+
+export async function resendSchoolMembershipInvite(schoolId: string, membershipType: "school" | "team", membershipId: string): Promise<{ invitePath?: string; warning?: string }> {
+  const segment = membershipType === "school" ? "school-memberships" : "team-memberships";
+  const response = await fetch(`${apiBase}/api/schools/${encodeURIComponent(schoolId)}/staff/${segment}/${encodeURIComponent(membershipId)}/resend-invite`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "Could not resend invite.");
+  }
+  return response.json() as Promise<{ invitePath?: string; warning?: string }>;
+}
+
+export async function removeSchoolStaffMembership(schoolId: string, membershipType: "school" | "team", membershipId: string): Promise<StaffMutationResult> {
+  const segment = membershipType === "school" ? "school-memberships" : "team-memberships";
+  const response = await fetch(`${apiBase}/api/schools/${encodeURIComponent(schoolId)}/staff/${segment}/${encodeURIComponent(membershipId)}`, {
+    method: "DELETE",
+    headers: apiKeyHeader(),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "Could not remove staff member.");
+  }
+  return response.json() as Promise<StaffMutationResult>;
+}
+
+export async function updateSchoolStaffMembership(schoolId: string, membershipType: "school" | "team", membershipId: string, input: {
+  role?: "school_admin" | "head_coach" | "assistant_coach" | "operator" | "viewer";
+  teamId?: string;
+  status?: "active" | "invited";
+}): Promise<StaffMutationResult> {
+  const segment = membershipType === "school" ? "school-memberships" : "team-memberships";
+  const response = await fetch(`${apiBase}/api/schools/${encodeURIComponent(schoolId)}/staff/${segment}/${encodeURIComponent(membershipId)}`, {
+    method: "PUT",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "Could not update staff membership.");
+  }
+  return response.json() as Promise<StaffMutationResult>;
 }

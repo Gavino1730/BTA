@@ -165,6 +165,8 @@ export interface BillingState {
   schoolId?: string;
   planId: string;
   status: BillingSubscriptionStatus;
+  includedActiveTeamLimit?: number;
+  extraActiveTeamSeats?: number;
   trialStartedAtIso?: string;
   trialEndsAtIso?: string;
   stripeCustomerId?: string;
@@ -2724,6 +2726,12 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
         schoolId: normalizeSchoolId(schoolId),
         planId: String((billing as BillingState).planId ?? "trial"),
         status: ((billing as BillingState).status ?? "trialing") as BillingSubscriptionStatus,
+        includedActiveTeamLimit: Number.isFinite((billing as BillingState).includedActiveTeamLimit)
+          ? Number((billing as BillingState).includedActiveTeamLimit)
+          : 1,
+        extraActiveTeamSeats: Number.isFinite((billing as BillingState).extraActiveTeamSeats)
+          ? Number((billing as BillingState).extraActiveTeamSeats)
+          : 0,
         trialStartedAtIso: (billing as BillingState).trialStartedAtIso,
         trialEndsAtIso: (billing as BillingState).trialEndsAtIso,
         stripeCustomerId: (billing as BillingState).stripeCustomerId,
@@ -3342,6 +3350,8 @@ export function ensureTrialBillingState(scope?: TenantScope, trialDays = 14): Bi
     schoolId,
     planId: hasTrial ? "trial" : "pro",
     status: hasTrial ? "trialing" : "incomplete",
+    includedActiveTeamLimit: 1,
+    extraActiveTeamSeats: 0,
     trialStartedAtIso: hasTrial ? now.toISOString() : undefined,
     trialEndsAtIso: hasTrial ? end.toISOString() : undefined,
     createdAtIso: now.toISOString(),
@@ -3362,6 +3372,12 @@ export function saveBillingState(state: Partial<BillingState>, scope?: TenantSco
     schoolId,
     planId: String(state.planId ?? existing?.planId ?? "trial"),
     status: (state.status ?? existing?.status ?? "trialing") as BillingSubscriptionStatus,
+    includedActiveTeamLimit: Number.isFinite(state.includedActiveTeamLimit)
+      ? Number(state.includedActiveTeamLimit)
+      : existing?.includedActiveTeamLimit ?? 1,
+    extraActiveTeamSeats: Number.isFinite(state.extraActiveTeamSeats)
+      ? Number(state.extraActiveTeamSeats)
+      : existing?.extraActiveTeamSeats ?? 0,
     trialStartedAtIso: state.trialStartedAtIso ?? existing?.trialStartedAtIso,
     trialEndsAtIso: state.trialEndsAtIso ?? existing?.trialEndsAtIso,
     stripeCustomerId: state.stripeCustomerId ?? existing?.stripeCustomerId,
@@ -3592,6 +3608,19 @@ export function saveSchoolMembership(membership: Partial<SchoolMembership> & Pic
   return saved!;
 }
 
+export function deleteSchoolMembership(membershipId: string, scope?: TenantScope): boolean {
+  const schoolId = resolveSchoolId(scope);
+  const current = schoolMembershipsBySchool.get(schoolId) ?? [];
+  const normalizedMembershipId = trimProfileField(membershipId, 120);
+  const next = current.filter((entry) => entry.membershipId !== normalizedMembershipId);
+  if (next.length === current.length) {
+    return false;
+  }
+  schoolMembershipsBySchool.set(schoolId, next);
+  persistSessions();
+  return true;
+}
+
 export function getTeamMembershipsByScope(scope?: TenantScope): TeamMembership[] {
   return teamMembershipsBySchool.get(resolveSchoolId(scope)) ?? [];
 }
@@ -3599,19 +3628,22 @@ export function getTeamMembershipsByScope(scope?: TenantScope): TeamMembership[]
 export function saveTeamMembership(membership: Partial<TeamMembership> & Pick<TeamMembership, "schoolId" | "teamId" | "email" | "fullName" | "role">): TeamMembership {
   const schoolId = normalizeSchoolId(membership.schoolId);
   const current = teamMembershipsBySchool.get(schoolId) ?? [];
+  const normalizedTeamId = trimProfileField(membership.teamId, 120);
   const normalizedEmail = trimProfileField(membership.email, 160).toLowerCase();
   const existing = current.find((entry) =>
-    entry.teamId === trimProfileField(membership.teamId, 120)
-      && (
-        (membership.userId && entry.userId === membership.userId)
-        || entry.email === normalizedEmail
-        || (membership.membershipId && entry.membershipId === membership.membershipId)
+    (membership.membershipId && entry.membershipId === membership.membershipId)
+      || (
+        entry.teamId === normalizedTeamId
+        && (
+          (membership.userId && entry.userId === membership.userId)
+          || entry.email === normalizedEmail
+        )
       )
   );
   const createdMembership: TeamMembership = {
     membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${schoolId}:${membership.teamId}:${membership.userId ?? membership.email}:${membership.role}`, "team-member"),
     schoolId,
-    teamId: trimProfileField(membership.teamId, 120),
+    teamId: normalizedTeamId,
     userId: trimProfileField(membership.userId, 120) || undefined,
     email: normalizedEmail,
     fullName: trimProfileField(membership.fullName, 120),
@@ -3622,15 +3654,31 @@ export function saveTeamMembership(membership: Partial<TeamMembership> & Pick<Te
   };
   const merged = existing
     ? current.map((entry) => (entry.membershipId === existing.membershipId
-      ? { ...entry, ...membership, schoolId, teamId: trimProfileField(membership.teamId, 120), email: normalizedEmail, fullName: trimProfileField(membership.fullName, 120), updatedAtIso: new Date().toISOString() }
+      ? { ...entry, ...membership, schoolId, teamId: normalizedTeamId, email: normalizedEmail, fullName: trimProfileField(membership.fullName, 120), updatedAtIso: new Date().toISOString() }
       : entry))
     : [...current, createdMembership];
   const saved = setTeamMembershipsForSchool(schoolId, merged).find((entry) =>
-    entry.teamId === trimProfileField(membership.teamId, 120)
-      && ((membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail)
+    (membership.membershipId && entry.membershipId === membership.membershipId)
+      || (
+        entry.teamId === normalizedTeamId
+        && ((membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail)
+      )
   );
   persistSessions();
   return saved!;
+}
+
+export function deleteTeamMembership(membershipId: string, scope?: TenantScope): boolean {
+  const schoolId = resolveSchoolId(scope);
+  const current = teamMembershipsBySchool.get(schoolId) ?? [];
+  const normalizedMembershipId = trimProfileField(membershipId, 120);
+  const next = current.filter((entry) => entry.membershipId !== normalizedMembershipId);
+  if (next.length === current.length) {
+    return false;
+  }
+  teamMembershipsBySchool.set(schoolId, next);
+  persistSessions();
+  return true;
 }
 
 export function listSchoolMembershipsForUser(input: { userId?: string; email?: string }): SchoolMembership[] {

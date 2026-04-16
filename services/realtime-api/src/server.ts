@@ -69,8 +69,10 @@ import {
   saveUserWorkspaceProfile,
   getSchoolMembershipsByScope,
   saveSchoolMembership,
+  deleteSchoolMembership,
   getTeamMembershipsByScope,
   saveTeamMembership,
+  deleteTeamMembership,
   listSchoolMembershipsForUser,
   listTeamMembershipsForUser,
   getTeamById,
@@ -591,6 +593,72 @@ const {
   getOrganizationProfileByScope,
 });
 
+async function issueWorkspaceInvitation(req: Request, input: {
+  schoolId: string;
+  membershipId: string;
+  email: string;
+  fullName: string;
+  roleLabel: string;
+}) {
+  pruneExpiredInvitationTokens();
+
+  for (const [token, invitation] of invitationTokens.entries()) {
+    if (invitation.schoolId === input.schoolId && invitation.memberId === input.membershipId) {
+      invitationTokens.delete(token);
+    }
+  }
+
+  const inviteToken = randomBytes(24).toString("hex");
+  const now = Date.now();
+  const schoolName = sanitizeTextField(
+    getSchoolRecord(input.schoolId)?.name
+      || getOnboardingAccountStateByScope({ schoolId: input.schoolId })?.organization.organizationName
+      || getOrganizationProfileByScope({ schoolId: input.schoolId })?.organizationName
+      || "your school",
+    160,
+  );
+  const invitePath = buildInvitePath(input.schoolId, inviteToken);
+  const inviteUrl = new URL(invitePath, `${resolveCoachRedirectOrigin(req)}/`).toString();
+
+  invitationTokens.set(inviteToken, {
+    token: inviteToken,
+    schoolId: input.schoolId,
+    memberId: input.membershipId,
+    email: input.email,
+    fullName: input.fullName,
+    role: "coach",
+    organizationName: schoolName,
+    createdAt: now,
+    expiresAt: now + (7 * 24 * 60 * 60 * 1000),
+  });
+
+  const emailDelivery = await sendTransactionalEmail({
+    to: input.email,
+    subject: `You're invited to ${schoolName} on BTA`,
+    text: [
+      `Hi ${input.fullName || "Coach"},`,
+      "",
+      `You've been invited to join ${schoolName} on BTA as ${input.roleLabel}.`,
+      `Accept your invite here: ${inviteUrl}`,
+      "",
+      "If you already have a BTA login for this email, sign in from the same link and your workspace access will be activated.",
+    ].join("\n"),
+    html: [
+      `<p>Hi ${input.fullName || "Coach"},</p>`,
+      `<p>You've been invited to join <strong>${schoolName}</strong> on BTA as ${input.roleLabel}.</p>`,
+      `<p><a href="${inviteUrl}">Accept your invite</a></p>`,
+      "<p>If you already have a BTA login for this email, sign in from the same link and your workspace access will be activated.</p>",
+    ].join(""),
+  });
+
+  return {
+    inviteToken: (process.env.BTA_EXPOSE_INVITATION_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production") ? inviteToken : undefined,
+    invitePath,
+    emailDelivery,
+    warning: emailDelivery.delivered ? undefined : "Invitation email was not delivered. Share the invite link manually.",
+  };
+}
+
 app.use(express.static(COACH_DIST, { index: false }));
 app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
   const targetPath = LEGACY_COACH_ROUTE_REDIRECTS[req.path];
@@ -674,6 +742,7 @@ registerAuthAccountRoutes(app, {
 });
 
 registerWorkspaceRoutes(app, {
+  paywallEnabled: BILLING_PAYWALL_ENABLED,
   requireApiKey,
   requireWriteRole,
   getAuthUser: (req) => getAuthUserFromContext((req as ScopedRequest).authContext),
@@ -686,8 +755,10 @@ registerWorkspaceRoutes(app, {
   saveUserWorkspaceProfile,
   getSchoolMembershipsByScope,
   saveSchoolMembership,
+  deleteSchoolMembership,
   getTeamMembershipsByScope,
   saveTeamMembership,
+  deleteTeamMembership,
   listSchoolMembershipsForUser,
   listTeamMembershipsForUser,
   getRosterTeamsByScope,
@@ -705,6 +776,7 @@ registerWorkspaceRoutes(app, {
   saveBillingState,
   createGame,
   setOperatorLinkSetup,
+  issueWorkspaceInvitation,
 });
 
 registerOnboardingRoutes(app, {

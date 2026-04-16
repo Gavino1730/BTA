@@ -9,6 +9,7 @@ import type {
   BillingState,
   RosterTeam,
 } from "../store.js";
+import { buildBillingEntitlement } from "./billing-routes.js";
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
 
@@ -28,6 +29,7 @@ type WorkspaceRosterTeam = RosterTeam & {
 };
 
 interface RegisterWorkspaceRoutesOptions {
+  paywallEnabled: boolean;
   requireApiKey: Middleware;
   requireWriteRole: Middleware;
   getAuthUser: (req: Request) => AuthUser;
@@ -40,8 +42,10 @@ interface RegisterWorkspaceRoutesOptions {
   saveUserWorkspaceProfile: (profile: Partial<UserWorkspaceProfile> & Pick<UserWorkspaceProfile, "userId" | "email">) => UserWorkspaceProfile;
   getSchoolMembershipsByScope: (scope: { schoolId: string }) => SchoolMembership[];
   saveSchoolMembership: (membership: Partial<SchoolMembership> & Pick<SchoolMembership, "schoolId" | "email" | "fullName" | "role">) => SchoolMembership;
+  deleteSchoolMembership: (membershipId: string, scope?: { schoolId: string }) => boolean;
   getTeamMembershipsByScope: (scope: { schoolId: string }) => TeamMembership[];
   saveTeamMembership: (membership: Partial<TeamMembership> & Pick<TeamMembership, "schoolId" | "teamId" | "email" | "fullName" | "role">) => TeamMembership;
+  deleteTeamMembership: (membershipId: string, scope?: { schoolId: string }) => boolean;
   listSchoolMembershipsForUser: (input: { userId?: string; email?: string }) => SchoolMembership[];
   listTeamMembershipsForUser: (input: { schoolId?: string; userId?: string; email?: string }) => TeamMembership[];
   getRosterTeamsByScope: (scope: { schoolId: string }) => RosterTeam[];
@@ -114,6 +118,18 @@ interface RegisterWorkspaceRoutesOptions {
     updatedAtIso: string;
     operatorToken?: string;
   }) => void;
+  issueWorkspaceInvitation: (req: Request, input: {
+    schoolId: string;
+    membershipId: string;
+    email: string;
+    fullName: string;
+    roleLabel: string;
+  }) => Promise<{
+    inviteToken?: string;
+    invitePath: string;
+    emailDelivery: unknown;
+    warning?: string;
+  }>;
 }
 
 function buildPairingCode(): string {
@@ -143,6 +159,67 @@ function isSchoolAdmin(role: SchoolMembership["role"] | undefined): boolean {
   return role === "owner" || role === "school_admin";
 }
 
+function applyTeamBillingStatuses(
+  options: Pick<RegisterWorkspaceRoutesOptions, "paywallEnabled" | "getBillingStateByScope" | "getRosterTeamsByScope" | "saveRosterTeams">,
+  schoolId: string,
+): {
+  teams: WorkspaceRosterTeam[];
+  entitlement: ReturnType<typeof buildBillingEntitlement>;
+  activeTeamCount: number;
+  overLimitTeamCount: number;
+} {
+  const teams = options.getRosterTeamsByScope({ schoolId }) as WorkspaceRosterTeam[];
+  const entitlement = buildBillingEntitlement(options.paywallEnabled, options.getBillingStateByScope({ schoolId }));
+  const activeTeamLimit = entitlement.activeTeamLimit;
+
+  if (activeTeamLimit === null) {
+    const normalizedTeams: WorkspaceRosterTeam[] = teams.map((team) => ({
+      ...team,
+      status: team.status === "archived" ? "archived" : "active",
+    }));
+    const changed = normalizedTeams.some((team, index) => team.status !== teams[index]?.status);
+    const savedTeams = changed ? options.saveRosterTeams(normalizedTeams, { schoolId }) as WorkspaceRosterTeam[] : normalizedTeams;
+    return {
+      teams: savedTeams,
+      entitlement,
+      activeTeamCount: savedTeams.filter((team) => team.status === "active").length,
+      overLimitTeamCount: 0,
+    };
+  }
+
+  let remainingActiveSlots = Math.max(0, activeTeamLimit);
+  const normalizedTeams: WorkspaceRosterTeam[] = teams.map((team) => {
+    if (team.status === "archived") {
+      return { ...team, status: "archived" as const };
+    }
+    if (remainingActiveSlots > 0) {
+      remainingActiveSlots -= 1;
+      return { ...team, status: "active" as const };
+    }
+    return { ...team, status: "read_only" as const };
+  });
+  const changed = normalizedTeams.some((team, index) => team.status !== teams[index]?.status);
+  const savedTeams = changed ? options.saveRosterTeams(normalizedTeams, { schoolId }) as WorkspaceRosterTeam[] : normalizedTeams;
+  return {
+    teams: savedTeams,
+    entitlement,
+    activeTeamCount: savedTeams.filter((team) => team.status === "active").length,
+    overLimitTeamCount: savedTeams.filter((team) => team.status === "read_only").length,
+  };
+}
+
+function resolveActingSchoolMembership(
+  options: Pick<RegisterWorkspaceRoutesOptions, "getSchoolMembershipsByScope" | "getAuthUser">,
+  req: Request,
+  schoolId: string,
+): SchoolMembership | undefined {
+  const authUser = options.getAuthUser(req);
+  return options.getSchoolMembershipsByScope({ schoolId }).find((membership) =>
+    (authUser.userId && membership.userId === authUser.userId)
+    || (authUser.email && membership.email === authUser.email),
+  );
+}
+
 export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspaceRoutesOptions): void {
   app.get("/api/me/context", options.requireApiKey, (req, res) => {
     const authUser = options.getAuthUser(req);
@@ -169,7 +246,7 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
     );
 
     const teams = schoolMemberships.flatMap((membership) => {
-      const schoolTeams = options.getRosterTeamsByScope({ schoolId: membership.schoolId });
+      const schoolTeams = applyTeamBillingStatuses(options, membership.schoolId).teams;
       if (isSchoolAdmin(membership.role)) {
         return schoolTeams;
       }
@@ -276,8 +353,14 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
       res.status(404).json({ error: "School not found" });
       return;
     }
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!actingMembership) {
+      res.status(403).json({ error: "School access required" });
+      return;
+    }
 
-    const teams = options.getRosterTeamsByScope({ schoolId: school.schoolId });
+    const billingTeamState = applyTeamBillingStatuses(options, school.schoolId);
+    const teams = billingTeamState.teams;
     const schoolMemberships = options.getSchoolMembershipsByScope({ schoolId: school.schoolId });
     const teamMemberships = options.getTeamMembershipsByScope({ schoolId: school.schoolId });
     const activity = options.getActivityEventsByScope({ schoolId: school.schoolId }).slice(0, 12);
@@ -295,11 +378,13 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
     res.json({
       school,
       summary: {
-        activeTeamsCount: teams.filter((team) => team.status !== "archived").length,
+        activeTeamsCount: billingTeamState.activeTeamCount,
         activeLiveGamesCount: liveSessions.length,
         staffCount: schoolMemberships.length + teamMemberships.length,
         billingStatus: billing?.status ?? "trialing",
         planId: billing?.planId ?? "trial",
+        activeTeamLimit: billingTeamState.entitlement.activeTeamLimit,
+        overLimitTeamCount: billingTeamState.overLimitTeamCount,
       },
       teams: teamSummaries,
       staff: {
@@ -318,11 +403,9 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
   });
 
   app.post("/api/schools/:schoolId/teams", options.requireApiKey, options.requireWriteRole, (req, res) => {
-    const authUser = options.getAuthUser(req);
     const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
-    const schoolMembership = options.getSchoolMembershipsByScope({ schoolId }).find((membership) =>
-      (authUser.userId && membership.userId === authUser.userId) || (authUser.email && membership.email === authUser.email),
-    );
+    const authUser = options.getAuthUser(req);
+    const schoolMembership = resolveActingSchoolMembership(options, req, schoolId);
     if (!isSchoolAdmin(schoolMembership?.role)) {
       res.status(403).json({ error: "School admin access required" });
       return;
@@ -362,7 +445,7 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
       players: [],
     };
 
-    const savedTeams = options.saveRosterTeams([...teams, team], { schoolId });
+    options.saveRosterTeams([...teams, team], { schoolId });
     options.saveTeamMembership({
       schoolId,
       teamId: team.id,
@@ -399,39 +482,427 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
       message: `${authUser.fullName ?? authUser.email} added ${displayName}.`,
     });
 
+    const billingTeamState = applyTeamBillingStatuses(options, schoolId);
+    const savedTeam = billingTeamState.teams.find((entry) => entry.id === team.id) ?? team;
+
     res.status(201).json({
-      team: savedTeams.find((entry) => entry.id === team.id) ?? team,
+      team: savedTeam,
+      billingNotice: savedTeam.status === "read_only"
+        ? "This team was created successfully, but it is read-only until the school adds more active team capacity."
+        : undefined,
       nextChecklist: ["Invite staff", "Import roster", "Start first live game"],
     });
   });
 
-  app.get("/api/teams/:teamId", options.requireApiKey, (req, res) => {
-    const teamId = options.sanitizeTextField(req.params.teamId, 120);
-    const team = options.getTeamById(teamId);
+  app.post("/api/schools/:schoolId/staff/invitations", options.requireApiKey, options.requireWriteRole, async (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const school = options.getSchoolRecord(schoolId);
+    if (!school) {
+      res.status(404).json({ error: "School not found" });
+      return;
+    }
+
+    const payload = (req.body ?? {}) as Record<string, unknown>;
+    const fullName = options.sanitizeTextField(payload.fullName, 120);
+    const email = options.sanitizeTextField(payload.email, 160).toLowerCase();
+    const schoolRole = payload.schoolRole === "school_admin" ? "school_admin" : null;
+    const teamRole = payload.teamRole === "head_coach" || payload.teamRole === "assistant_coach" || payload.teamRole === "operator" || payload.teamRole === "viewer"
+      ? payload.teamRole
+      : null;
+    const teamId = options.sanitizeTextField(payload.teamId, 120) || undefined;
+
+    if (!fullName || !email) {
+      res.status(400).json({ error: "fullName and email are required" });
+      return;
+    }
+
+    if (schoolRole) {
+      const membership = options.saveSchoolMembership({
+        schoolId,
+        email,
+        fullName,
+        role: schoolRole,
+        status: "invited",
+      });
+      const invite = await options.issueWorkspaceInvitation(req, {
+        schoolId,
+        membershipId: membership.membershipId,
+        email,
+        fullName,
+        roleLabel: "school admin",
+      });
+      options.saveActivityEvent({
+        schoolId,
+        type: "member_invited",
+        actorUserId: options.getAuthUser(req).userId,
+        message: `${fullName} was invited as a school admin.`,
+        metadata: { membershipId: membership.membershipId, email, role: schoolRole },
+      });
+      res.status(201).json({
+        membershipType: "school",
+        membership,
+        staff: {
+          schoolMemberships: options.getSchoolMembershipsByScope({ schoolId }),
+          teamMemberships: options.getTeamMembershipsByScope({ schoolId }),
+        },
+        inviteToken: invite.inviteToken,
+        invitePath: invite.invitePath,
+        emailDelivery: invite.emailDelivery,
+        warning: invite.warning,
+      });
+      return;
+    }
+
+    if (!teamRole || !teamId) {
+      res.status(400).json({ error: "teamRole and teamId are required for team staff invites" });
+      return;
+    }
+
+    const team = options.getTeamById(teamId, { schoolId });
     if (!team) {
       res.status(404).json({ error: "Team not found" });
       return;
     }
 
+    const membership = options.saveTeamMembership({
+      schoolId,
+      teamId,
+      email,
+      fullName,
+      role: teamRole,
+      status: "invited",
+    });
+    const invite = await options.issueWorkspaceInvitation(req, {
+      schoolId,
+      membershipId: membership.membershipId,
+      email,
+      fullName,
+        roleLabel: `${(team as WorkspaceRosterTeam).displayName ?? team.name} ${teamRole.replace(/_/g, " ")}`,
+    });
+    options.saveActivityEvent({
+      schoolId,
+      teamId,
+      type: "member_invited",
+      actorUserId: options.getAuthUser(req).userId,
+      message: `${fullName} was invited to ${(team as WorkspaceRosterTeam).displayName ?? team.name} as ${teamRole.replace(/_/g, " ")}.`,
+      metadata: { membershipId: membership.membershipId, email, role: teamRole },
+    });
+    res.status(201).json({
+      membershipType: "team",
+      membership,
+      staff: {
+        schoolMemberships: options.getSchoolMembershipsByScope({ schoolId }),
+        teamMemberships: options.getTeamMembershipsByScope({ schoolId }),
+      },
+      inviteToken: invite.inviteToken,
+      invitePath: invite.invitePath,
+      emailDelivery: invite.emailDelivery,
+      warning: invite.warning,
+    });
+  });
+
+  app.post("/api/schools/:schoolId/staff/school-memberships/:membershipId/resend-invite", options.requireApiKey, options.requireWriteRole, async (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const membershipId = options.sanitizeTextField(req.params.membershipId, 120);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const membership = options.getSchoolMembershipsByScope({ schoolId }).find((entry) => entry.membershipId === membershipId);
+    if (!membership) {
+      res.status(404).json({ error: "School membership not found" });
+      return;
+    }
+
+    const invite = await options.issueWorkspaceInvitation(req, {
+      schoolId,
+      membershipId,
+      email: membership.email,
+      fullName: membership.fullName,
+      roleLabel: membership.role === "school_admin" ? "school admin" : "owner",
+    });
+    res.json({
+      membership,
+      inviteToken: invite.inviteToken,
+      invitePath: invite.invitePath,
+      emailDelivery: invite.emailDelivery,
+      warning: invite.warning,
+    });
+  });
+
+  app.post("/api/schools/:schoolId/staff/team-memberships/:membershipId/resend-invite", options.requireApiKey, options.requireWriteRole, async (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const membershipId = options.sanitizeTextField(req.params.membershipId, 120);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const membership = options.getTeamMembershipsByScope({ schoolId }).find((entry) => entry.membershipId === membershipId);
+    if (!membership) {
+      res.status(404).json({ error: "Team membership not found" });
+      return;
+    }
+
+    const team = options.getTeamById(membership.teamId, { schoolId });
+    const invite = await options.issueWorkspaceInvitation(req, {
+      schoolId,
+      membershipId,
+      email: membership.email,
+      fullName: membership.fullName,
+      roleLabel: `${(team as WorkspaceRosterTeam | null)?.displayName ?? team?.name ?? "team"} ${membership.role.replace(/_/g, " ")}`,
+    });
+    res.json({
+      membership,
+      inviteToken: invite.inviteToken,
+      invitePath: invite.invitePath,
+      emailDelivery: invite.emailDelivery,
+      warning: invite.warning,
+    });
+  });
+
+  app.put("/api/schools/:schoolId/staff/school-memberships/:membershipId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const membershipId = options.sanitizeTextField(req.params.membershipId, 120);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const existing = options.getSchoolMembershipsByScope({ schoolId }).find((entry) => entry.membershipId === membershipId);
+    if (!existing) {
+      res.status(404).json({ error: "School membership not found" });
+      return;
+    }
+
+    const payload = (req.body ?? {}) as Record<string, unknown>;
+    const fullName = options.sanitizeTextField(payload.fullName ?? existing.fullName, 120) || existing.fullName;
+    const email = options.sanitizeTextField(payload.email ?? existing.email, 160).toLowerCase() || existing.email;
+    const role = payload.role === "school_admin" ? "school_admin" : existing.role;
+    const status = payload.status === "active" || payload.status === "invited" ? payload.status : existing.status;
+
+    if (existing.role === "owner" && role !== "owner") {
+      res.status(400).json({ error: "Owner membership role cannot be changed here" });
+      return;
+    }
+
+    const membership = options.saveSchoolMembership({
+      membershipId,
+      schoolId,
+      userId: existing.userId,
+      fullName,
+      email,
+      role,
+      status,
+    });
+
+    options.saveActivityEvent({
+      schoolId,
+      type: "membership_updated",
+      actorUserId: options.getAuthUser(req).userId,
+      message: `${membership.fullName}'s school access was updated.`,
+      metadata: { membershipId, email: membership.email, role: membership.role, status: membership.status },
+    });
+
+    res.json({
+      membership,
+      staff: {
+        schoolMemberships: options.getSchoolMembershipsByScope({ schoolId }),
+        teamMemberships: options.getTeamMembershipsByScope({ schoolId }),
+      },
+    });
+  });
+
+  app.put("/api/schools/:schoolId/staff/team-memberships/:membershipId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const membershipId = options.sanitizeTextField(req.params.membershipId, 120);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const existing = options.getTeamMembershipsByScope({ schoolId }).find((entry) => entry.membershipId === membershipId);
+    if (!existing) {
+      res.status(404).json({ error: "Team membership not found" });
+      return;
+    }
+
+    const payload = (req.body ?? {}) as Record<string, unknown>;
+    const fullName = options.sanitizeTextField(payload.fullName ?? existing.fullName, 120) || existing.fullName;
+    const email = options.sanitizeTextField(payload.email ?? existing.email, 160).toLowerCase() || existing.email;
+    const nextTeamId = options.sanitizeTextField(payload.teamId ?? existing.teamId, 120) || existing.teamId;
+    const nextTeam = options.getTeamById(nextTeamId, { schoolId });
+    if (!nextTeam) {
+      res.status(404).json({ error: "Target team not found" });
+      return;
+    }
+
+    const role = payload.role === "head_coach" || payload.role === "assistant_coach" || payload.role === "operator" || payload.role === "viewer"
+      ? payload.role
+      : existing.role;
+    const status = payload.status === "active" || payload.status === "invited" ? payload.status : existing.status;
+
+    const membership = options.saveTeamMembership({
+      membershipId,
+      schoolId,
+      teamId: nextTeamId,
+      userId: existing.userId,
+      fullName,
+      email,
+      role,
+      status,
+    });
+
+    options.saveActivityEvent({
+      schoolId,
+      teamId: membership.teamId,
+      type: "membership_updated",
+      actorUserId: options.getAuthUser(req).userId,
+      message: `${membership.fullName}'s team access was updated.`,
+      metadata: { membershipId, email: membership.email, teamId: membership.teamId, role: membership.role, status: membership.status },
+    });
+
+    res.json({
+      membership,
+      staff: {
+        schoolMemberships: options.getSchoolMembershipsByScope({ schoolId }),
+        teamMemberships: options.getTeamMembershipsByScope({ schoolId }),
+      },
+    });
+  });
+
+  app.delete("/api/schools/:schoolId/staff/school-memberships/:membershipId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const membershipId = options.sanitizeTextField(req.params.membershipId, 120);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const target = options.getSchoolMembershipsByScope({ schoolId }).find((entry) => entry.membershipId === membershipId);
+    if (!target) {
+      res.status(404).json({ error: "School membership not found" });
+      return;
+    }
+    if (target.role === "owner") {
+      res.status(400).json({ error: "Owner membership cannot be removed here" });
+      return;
+    }
+
+    options.deleteSchoolMembership(membershipId, { schoolId });
+    options.saveActivityEvent({
+      schoolId,
+      type: "membership_updated",
+      actorUserId: options.getAuthUser(req).userId,
+      message: `${target.fullName} was removed from school staff.`,
+      metadata: { membershipId, email: target.email },
+    });
+    res.json({
+      success: true,
+      staff: {
+        schoolMemberships: options.getSchoolMembershipsByScope({ schoolId }),
+        teamMemberships: options.getTeamMembershipsByScope({ schoolId }),
+      },
+    });
+  });
+
+  app.delete("/api/schools/:schoolId/staff/team-memberships/:membershipId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const membershipId = options.sanitizeTextField(req.params.membershipId, 120);
+    const actingMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(actingMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const target = options.getTeamMembershipsByScope({ schoolId }).find((entry) => entry.membershipId === membershipId);
+    if (!target) {
+      res.status(404).json({ error: "Team membership not found" });
+      return;
+    }
+
+    options.deleteTeamMembership(membershipId, { schoolId });
+    options.saveActivityEvent({
+      schoolId,
+      teamId: target.teamId,
+      type: "membership_updated",
+      actorUserId: options.getAuthUser(req).userId,
+      message: `${target.fullName} was removed from team staff.`,
+      metadata: { membershipId, email: target.email, teamId: target.teamId },
+    });
+    res.json({
+      success: true,
+      staff: {
+        schoolMemberships: options.getSchoolMembershipsByScope({ schoolId }),
+        teamMemberships: options.getTeamMembershipsByScope({ schoolId }),
+      },
+    });
+  });
+
+  app.get("/api/teams/:teamId", options.requireApiKey, (req, res) => {
+    const teamId = options.sanitizeTextField(req.params.teamId, 120);
+    const rawTeam = options.getTeamById(teamId);
+    if (!rawTeam) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    const authUser = options.getAuthUser(req);
+    if (!rawTeam.schoolId) {
+      res.status(404).json({ error: "Team school not found" });
+      return;
+    }
+    const schoolId = rawTeam.schoolId;
+    const schoolMembership = options.getSchoolMembershipsByScope({ schoolId }).find((membership) =>
+      (authUser.userId && membership.userId === authUser.userId) || (authUser.email && membership.email === authUser.email),
+    );
+    const teamMembership = options.getTeamMembershipsByScope({ schoolId }).find((membership) =>
+      membership.teamId === rawTeam.id
+        && (
+          (authUser.userId && membership.userId === authUser.userId)
+          || (authUser.email && membership.email === authUser.email)
+        ),
+    );
+    if (!isSchoolAdmin(schoolMembership?.role) && !teamMembership) {
+      res.status(403).json({ error: "Team access required" });
+      return;
+    }
+    const team = rawTeam.schoolId
+      ? applyTeamBillingStatuses(options, schoolId).teams.find((entry) => entry.id === rawTeam.id) ?? rawTeam
+      : rawTeam;
+
     res.json({
       team,
-      memberships: options.getTeamMembershipsByScope({ schoolId: team.schoolId ?? "" }).filter((membership) => membership.teamId === team.id),
+      memberships: options.getTeamMembershipsByScope({ schoolId }).filter((membership) => membership.teamId === team.id),
     });
   });
 
   app.post("/api/teams/:teamId/live-sessions", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const authUser = options.getAuthUser(req);
     const teamId = options.sanitizeTextField(req.params.teamId, 120);
-    const team = options.getTeamById(teamId);
-    if (!team?.schoolId) {
+    const rawTeam = options.getTeamById(teamId);
+    if (!rawTeam?.schoolId) {
       res.status(404).json({ error: "Team not found" });
       return;
     }
+    const schoolId = rawTeam.schoolId;
+    const team = applyTeamBillingStatuses(options, schoolId).teams.find((entry) => entry.id === rawTeam.id) ?? rawTeam;
 
-    const schoolMembership = options.getSchoolMembershipsByScope({ schoolId: team.schoolId }).find((membership) =>
+    const schoolMembership = options.getSchoolMembershipsByScope({ schoolId }).find((membership) =>
       (authUser.userId && membership.userId === authUser.userId) || (authUser.email && membership.email === authUser.email),
     );
-    const teamMembership = options.getTeamMembershipsByScope({ schoolId: team.schoolId }).find((membership) =>
+    const teamMembership = options.getTeamMembershipsByScope({ schoolId }).find((membership) =>
       membership.teamId === team.id
         && (
           (authUser.userId && membership.userId === authUser.userId)
@@ -440,6 +911,14 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
     );
     if (!isSchoolAdmin(schoolMembership?.role) && !teamMembership) {
       res.status(403).json({ error: "Team access required" });
+      return;
+    }
+    if (team.status === "read_only") {
+      res.status(402).json({
+        error: "This team is read-only until the school upgrades for additional active team capacity.",
+        code: "team_upgrade_required",
+        team,
+      });
       return;
     }
 
@@ -468,7 +947,7 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
 
     const liveSession = options.createLiveGameSessionRecord({
       liveSessionId,
-      schoolId: team.schoolId,
+      schoolId,
       teamId: team.id,
       gameId,
       opponentName,
@@ -479,19 +958,19 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
     });
 
     options.createGame({
-      schoolId: team.schoolId,
+      schoolId,
       gameId,
       homeTeamId,
       awayTeamId,
       opponentName,
       opponentTeamId,
       startingLineupByTeam,
-    }, { schoolId: team.schoolId });
+    }, { schoolId });
 
     const operatorToken = options.issueLocalAuthToken({
       subject: `operator:${liveSessionId}`,
       email: `operator-${liveSessionId}@system.bta`,
-      schoolId: team.schoolId,
+      schoolId,
       role: "operator",
       expiresInHours: 24,
     });
@@ -502,7 +981,7 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
       options.saveOperatorSessionRecord({
         operatorSessionId: `operator-session-${liveSessionId}`,
         liveSessionId,
-        schoolId: team.schoolId,
+        schoolId,
         teamId: team.id,
         pairingCode,
         operatorToken,
@@ -510,7 +989,7 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
         createdAtIso: now.toISOString(),
         updatedAtIso: now.toISOString(),
       });
-      options.setOperatorLinkSetup?.(team.schoolId, pairingCode, {
+      options.setOperatorLinkSetup?.(schoolId, pairingCode, {
         gameId,
         myTeamId: team.id,
         myTeamName: (team as WorkspaceRosterTeam).displayName ?? team.name,
@@ -525,7 +1004,7 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
     }
 
     options.saveActivityEvent({
-      schoolId: team.schoolId,
+      schoolId,
       teamId: team.id,
       type: "live_session_started",
       actorUserId: authUser.userId,
