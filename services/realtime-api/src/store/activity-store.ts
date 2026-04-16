@@ -43,15 +43,17 @@ export function createActivityStore(deps: ActivityStoreDependencies) {
 
   const createLiveGameSessionRecord = (input: Omit<LiveGameSessionRecord, "createdAtIso" | "updatedAtIso">): LiveGameSessionRecord => {
     const schoolId = deps.normalizeSchoolId(input.schoolId);
+    const liveSessionId = deps.trimProfileField(input.liveSessionId, 120);
     const current = deps.liveGameSessionsBySchool.get(schoolId) ?? [];
     const nowIso = new Date().toISOString();
     const saved: LiveGameSessionRecord = {
       ...input,
+      liveSessionId,
       schoolId,
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
-    deps.setLiveGameSessionsForSchool(schoolId, [saved, ...current.filter((entry) => entry.liveSessionId !== saved.liveSessionId)]);
+    deps.setLiveGameSessionsForSchool(schoolId, [saved, ...current.filter((entry) => entry.liveSessionId !== liveSessionId)]);
     deps.persistSessions();
     return saved;
   };
