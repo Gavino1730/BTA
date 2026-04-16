@@ -209,9 +209,15 @@ export interface RosterTeam {
   id: string;
   schoolId?: string;
   name: string;
+  sport?: "basketball";
+  gender?: "boys" | "girls" | "custom";
+  level?: "varsity" | "jv" | "freshman" | "custom";
+  customLabel?: string;
+  displayName?: string;
   abbreviation: string;
   season?: string;
   teamColor?: string;
+  status?: "active" | "archived" | "read_only";
   coachStyle?: string;
   playingStyle?: string;
   teamContext?: string;

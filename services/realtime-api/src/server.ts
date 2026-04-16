@@ -62,7 +62,25 @@ import {
   deleteOrganizationMember,
   type LocalAuthAccount,
   getGameOverrideMap,
-  setGameOverride
+  setGameOverride,
+  getSchoolRecord,
+  saveSchoolRecord,
+  getUserWorkspaceProfile,
+  saveUserWorkspaceProfile,
+  getSchoolMembershipsByScope,
+  saveSchoolMembership,
+  getTeamMembershipsByScope,
+  saveTeamMembership,
+  listSchoolMembershipsForUser,
+  listTeamMembershipsForUser,
+  getTeamById,
+  getActivityEventsByScope,
+  saveActivityEvent,
+  getLiveGameSessionsByScope,
+  createLiveGameSessionRecord,
+  getLiveGameSessionById,
+  saveOperatorSessionRecord,
+  getOperatorSessionByLiveSession,
 } from "./store.js";
 import {
   extractBearerToken,
@@ -96,6 +114,7 @@ import { registerGameEventRoutes } from "./routes/game-event-routes.js";
 import { registerAuthCoreRoutes } from "./routes/auth-core-routes.js";
 import { registerAuthAccountRoutes } from "./routes/auth-account-routes.js";
 import { registerBillingRoutes } from "./routes/billing-routes.js";
+import { registerWorkspaceRoutes } from "./routes/workspace-routes.js";
 import { logger } from "./logger.js";
 import { createAuthzMiddleware } from "./middleware/authz.js";
 import { createBillingEntitlementMiddleware } from "./middleware/billing-entitlement.js";
@@ -283,6 +302,41 @@ function isReadOnlyRequest(req: Request): boolean {
   return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
 }
 
+function readAuthClaimValue(authContext: AuthContext | undefined, path: string): unknown {
+  const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
+  let current: unknown = authContext?.claims;
+  for (const part of parts) {
+    if (!current || typeof current !== "object" || !(part in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function getAuthUserFromContext(authContext: AuthContext | undefined): { userId?: string; email?: string; fullName?: string } {
+  const email = sanitizeTextField(
+    readAuthClaimValue(authContext, "email")
+      ?? readAuthClaimValue(authContext, "user.email")
+      ?? readAuthClaimValue(authContext, "preferred_username"),
+    160,
+  ).toLowerCase();
+  const fullName = sanitizeTextField(
+    readAuthClaimValue(authContext, "name")
+      ?? [
+        sanitizeTextField(readAuthClaimValue(authContext, "given_name"), 80),
+        sanitizeTextField(readAuthClaimValue(authContext, "family_name"), 80),
+      ].filter(Boolean).join(" "),
+    120,
+  );
+
+  return {
+    userId: sanitizeTextField(authContext?.subject, 120) || undefined,
+    email: email || undefined,
+    fullName: fullName || undefined,
+  };
+}
+
 async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
   const scopedReq = req as ScopedRequest;
   if (scopedReq.authContext) {
@@ -383,9 +437,35 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
   }
 
   const scopedReq = req as ScopedRequest;
-  const role = scopedReq.authContext?.role?.trim().toLowerCase();
-  if (!hasWriteRole(role)) {
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: role ?? null });
+  const claimRole = scopedReq.authContext?.role?.trim().toLowerCase();
+  if (hasWriteRole(claimRole)) {
+    next();
+    return;
+  }
+
+  const schoolId = scopedReq.tenantSchoolId ?? resolveRequestSchoolId(req, {
+    suppressMissingScopeTelemetry: isOptionalTenantScopeRequest(req) || shouldSuppressMissingTenantTelemetry(req),
+  }).schoolId;
+  const authUser = getAuthUserFromContext(scopedReq.authContext);
+  const schoolMembership = schoolId
+    ? getSchoolMembershipsByScope({ schoolId }).find((membership) =>
+        (authUser.userId && membership.userId === authUser.userId)
+        || (authUser.email && membership.email === authUser.email)
+      )
+    : null;
+  const canWriteFromSchoolMembership = schoolMembership?.role === "owner" || schoolMembership?.role === "school_admin";
+  const canWriteFromTeamMembership = schoolId
+    ? getTeamMembershipsByScope({ schoolId }).some((membership) =>
+        membership.role !== "viewer"
+          && (
+            (authUser.userId && membership.userId === authUser.userId)
+            || (authUser.email && membership.email === authUser.email)
+          )
+      )
+    : false;
+
+  if (!canWriteFromSchoolMembership && !canWriteFromTeamMembership) {
+    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: claimRole ?? null, schoolId: schoolId ?? null });
     res.status(403).json({ error: "Insufficient role for write access" });
     return;
   }
@@ -573,15 +653,7 @@ registerAuthCoreRoutes(app, {
   buildResetPath,
   exposePasswordResetToken: EXPOSE_PASSWORD_RESET_TOKEN,
   getLocalAuthAccountsByScope,
-  billingGuardBeforeRegister: BILLING_PAYWALL_ENABLED
-    ? (schoolId: string) => {
-        const billingState = getBillingStateByScope({ schoolId });
-        if (!billingState || (billingState.status !== "active" && billingState.status !== "trialing")) {
-          return { allowed: false, error: "Complete checkout before creating your account", status: 402 };
-        }
-        return { allowed: true };
-      }
-    : undefined,
+  billingGuardBeforeRegister: undefined,
 });
 
 registerAuthAccountRoutes(app, {
@@ -599,6 +671,40 @@ registerAuthAccountRoutes(app, {
   findPlayerRecord,
   saveOrganizationMember,
   persistSchoolTeams,
+});
+
+registerWorkspaceRoutes(app, {
+  requireApiKey,
+  requireWriteRole,
+  getAuthUser: (req) => getAuthUserFromContext((req as ScopedRequest).authContext),
+  sanitizeTextField,
+  buildUniqueSchoolTeamId,
+  normalizeTeamColor,
+  getSchoolRecord,
+  saveSchoolRecord,
+  getUserWorkspaceProfile,
+  saveUserWorkspaceProfile,
+  getSchoolMembershipsByScope,
+  saveSchoolMembership,
+  getTeamMembershipsByScope,
+  saveTeamMembership,
+  listSchoolMembershipsForUser,
+  listTeamMembershipsForUser,
+  getRosterTeamsByScope,
+  saveRosterTeams,
+  getTeamById,
+  getActivityEventsByScope,
+  saveActivityEvent,
+  getLiveGameSessionsByScope,
+  createLiveGameSessionRecord,
+  getLiveGameSessionById,
+  saveOperatorSessionRecord,
+  getOperatorSessionByLiveSession,
+  issueLocalAuthToken,
+  getBillingStateByScope,
+  saveBillingState,
+  createGame,
+  setOperatorLinkSetup,
 });
 
 registerOnboardingRoutes(app, {

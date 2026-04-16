@@ -27,6 +27,15 @@ import {
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "./school-id.js";
 import { logger } from "./logger.js";
 
+type WorkspaceRosterTeam = RosterTeam & {
+  sport?: "basketball";
+  gender?: "boys" | "girls" | "custom";
+  level?: "varsity" | "jv" | "freshman" | "custom";
+  customLabel?: string;
+  displayName?: string;
+  status?: "active" | "archived" | "read_only";
+};
+
 export interface CreateGameInput {
   schoolId: string;
   gameId: string;
@@ -162,6 +171,94 @@ export interface BillingState {
   stripeSubscriptionId?: string;
   currentPeriodEndsAtIso?: string;
   couponCode?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface UserWorkspaceProfile {
+  userId: string;
+  email: string;
+  fullName: string;
+  lastSchoolId?: string;
+  lastTeamId?: string;
+  lastContextType?: "school" | "team";
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface SchoolRecord {
+  schoolId: string;
+  name: string;
+  slug: string;
+  sport: "basketball";
+  status: "draft" | "active";
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface SchoolMembership {
+  membershipId: string;
+  schoolId: string;
+  userId?: string;
+  email: string;
+  fullName: string;
+  role: "owner" | "school_admin";
+  status: "active" | "invited";
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface TeamMembership {
+  membershipId: string;
+  schoolId: string;
+  teamId: string;
+  userId?: string;
+  email: string;
+  fullName: string;
+  role: "head_coach" | "assistant_coach" | "operator" | "viewer";
+  status: "active" | "invited";
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  schoolId: string;
+  teamId?: string;
+  type:
+    | "school_created"
+    | "team_created"
+    | "live_session_started"
+    | "member_invited"
+    | "membership_updated";
+  actorUserId?: string;
+  message: string;
+  createdAtIso: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LiveGameSessionRecord {
+  liveSessionId: string;
+  schoolId: string;
+  teamId: string;
+  gameId: string;
+  opponentName?: string;
+  opponentTeamId?: string;
+  status: "active" | "completed";
+  pairingCode: string;
+  createdByUserId?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface OperatorSessionRecord {
+  operatorSessionId: string;
+  liveSessionId: string;
+  schoolId: string;
+  teamId: string;
+  pairingCode: string;
+  operatorToken: string;
+  expiresAtIso: string;
   createdAtIso: string;
   updatedAtIso: string;
 }
@@ -459,10 +556,18 @@ interface PersistedSnapshot {
   gameOverridesBySchool?: Record<string, Record<string, GameEditOverride>>;
   billingBySchool?: Record<string, BillingState>;
   processedStripeWebhookEvents?: Record<string, string>;
+  userWorkspaceProfilesById?: Record<string, UserWorkspaceProfile>;
+  schoolsById?: Record<string, SchoolRecord>;
+  schoolMembershipsBySchool?: Record<string, SchoolMembership[]>;
+  teamMembershipsBySchool?: Record<string, TeamMembership[]>;
+  activityEventsBySchool?: Record<string, ActivityEvent[]>;
+  liveGameSessionsBySchool?: Record<string, LiveGameSessionRecord[]>;
+  operatorSessionsByLiveSession?: Record<string, OperatorSessionRecord>;
 }
 
 export interface TenantScope {
   schoolId?: string;
+  teamId?: string;
 }
 
 function resolveSchoolId(scope?: TenantScope): string {
@@ -499,6 +604,13 @@ const localAuthAccountsBySchool = new Map<string, LocalAuthAccount[]>();
 const gameOverridesBySchool = new Map<string, Map<string, GameEditOverride>>();
 const billingBySchool = new Map<string, BillingState>();
 const processedStripeWebhookEvents = new Map<string, string>();
+const userWorkspaceProfilesById = new Map<string, UserWorkspaceProfile>();
+const schoolsById = new Map<string, SchoolRecord>();
+const schoolMembershipsBySchool = new Map<string, SchoolMembership[]>();
+const teamMembershipsBySchool = new Map<string, TeamMembership[]>();
+const activityEventsBySchool = new Map<string, ActivityEvent[]>();
+const liveGameSessionsBySchool = new Map<string, LiveGameSessionRecord[]>();
+const operatorSessionsByLiveSession = new Map<string, OperatorSessionRecord>();
 const persistenceEnabled = !process.env.VITEST && process.env.NODE_ENV !== "test";
 const dataDirectory = resolve(process.cwd(), ".platform-data");
 const dataFile = resolve(dataDirectory, "realtime-api.json");
@@ -924,14 +1036,50 @@ function getMostRecentActiveSessionForSchool(schoolId: string): GameSession | nu
   return activeSessions[0] ?? null;
 }
 
+function getMostRecentActiveSessionForTeam(schoolId: string, teamId: string): GameSession | null {
+  const normalizedTeamId = String(teamId ?? "").trim();
+  if (!normalizedTeamId) {
+    return getMostRecentActiveSessionForSchool(schoolId);
+  }
+
+  const activeSessions = getSessionsForSchool(schoolId).filter((session) =>
+    !session.submitted
+      && (session.homeTeamId === normalizedTeamId || session.awayTeamId === normalizedTeamId),
+  );
+  if (activeSessions.length === 0) {
+    return null;
+  }
+
+  activeSessions.sort((left, right) => {
+    const eventCountDiff = right.state.events.length - left.state.events.length;
+    if (eventCountDiff !== 0) {
+      return eventCountDiff;
+    }
+
+    return right.state.gameId.localeCompare(left.state.gameId);
+  });
+
+  return activeSessions[0] ?? null;
+}
+
 function setRosterTeamsForSchool(schoolId: string, teams: RosterTeam[]): RosterTeam[] {
   const normalized = Array.isArray(teams)
-    ? teams.map((team) => ({
-        ...team,
-        schoolId: normalizeSchoolId(team.schoolId ?? schoolId),
-        coachStyle: sanitizeCoachStyleValue(team.coachStyle, schoolId),
-        teamContext: sanitizeTeamContextValue(team.teamContext, schoolId),
-      }))
+    ? teams.map((team) => {
+        const workspaceTeam = team as WorkspaceRosterTeam;
+        return {
+          ...team,
+          schoolId: normalizeSchoolId(team.schoolId ?? schoolId),
+          sport: "basketball" as const,
+          gender: workspaceTeam.gender ?? "custom",
+          level: workspaceTeam.level ?? "custom",
+          customLabel: trimProfileField(workspaceTeam.customLabel, 80) || undefined,
+          displayName: trimProfileField(workspaceTeam.displayName ?? team.name, 120) || team.name,
+          status: workspaceTeam.status === "archived" || workspaceTeam.status === "read_only" ? workspaceTeam.status : "active",
+          name: trimProfileField(workspaceTeam.displayName ?? team.name, 120) || "Team",
+          coachStyle: sanitizeCoachStyleValue(team.coachStyle, schoolId),
+          teamContext: sanitizeTeamContextValue(team.teamContext, schoolId),
+        } as RosterTeam;
+      })
     : [];
   rosterTeamsBySchool.set(schoolId, normalized);
   return normalized;
@@ -1217,6 +1365,152 @@ function touchLocalAuthAccountLoginForSchool(schoolId: string, accountId: string
     lastLoginAtIso: new Date().toISOString(),
     scheduledDeletionAtIso: existing.scheduledDeletionAtIso,
   });
+}
+
+function buildWorkspaceMembershipId(seed: string, prefix: string): string {
+  const normalizedSeed = trimProfileField(seed, 200).toLowerCase() || prefix;
+  const suffix = createHash("sha1").update(normalizedSeed).digest("hex").slice(0, 10);
+  const localPart = normalizedSeed.replace(/[^a-z0-9_-]/g, "").slice(0, 32) || prefix;
+  return `${prefix}-${localPart}-${suffix}`;
+}
+
+function setSchoolRecord(record: Partial<SchoolRecord> & Pick<SchoolRecord, "schoolId" | "name">): SchoolRecord {
+  const schoolId = normalizeSchoolId(record.schoolId);
+  const nowIso = new Date().toISOString();
+  const existing = schoolsById.get(schoolId);
+  const slug = trimProfileField(record.slug ?? existing?.slug, 80) || buildOrganizationSlug(record.name);
+  const next: SchoolRecord = {
+    schoolId,
+    name: trimProfileField(record.name, 160) || existing?.name || schoolId,
+    slug: slug || schoolId,
+    sport: "basketball",
+    status: record.status ?? existing?.status ?? "draft",
+    createdAtIso: existing?.createdAtIso ?? nowIso,
+    updatedAtIso: nowIso,
+  };
+  schoolsById.set(schoolId, next);
+  return next;
+}
+
+function setUserWorkspaceProfile(profile: Partial<UserWorkspaceProfile> & Pick<UserWorkspaceProfile, "userId" | "email">): UserWorkspaceProfile {
+  const userId = trimProfileField(profile.userId, 120);
+  const email = trimProfileField(profile.email, 160).toLowerCase();
+  const nowIso = new Date().toISOString();
+  const existing = userWorkspaceProfilesById.get(userId);
+  const next: UserWorkspaceProfile = {
+    userId,
+    email,
+    fullName: trimProfileField(profile.fullName ?? existing?.fullName, 120),
+    lastSchoolId: trimProfileField(profile.lastSchoolId ?? existing?.lastSchoolId, 80) || undefined,
+    lastTeamId: trimProfileField(profile.lastTeamId ?? existing?.lastTeamId, 80) || undefined,
+    lastContextType: profile.lastContextType ?? existing?.lastContextType ?? "school",
+    createdAtIso: existing?.createdAtIso ?? nowIso,
+    updatedAtIso: nowIso,
+  };
+  userWorkspaceProfilesById.set(userId, next);
+  return next;
+}
+
+function setSchoolMembershipsForSchool(schoolId: string, memberships: SchoolMembership[]): SchoolMembership[] {
+  const normalizedSchoolId = normalizeSchoolId(schoolId);
+  const deduped = new Map<string, SchoolMembership>();
+  for (const membership of memberships) {
+    const userId = trimProfileField(membership.userId, 120) || undefined;
+    const email = trimProfileField(membership.email, 160).toLowerCase();
+    const nowIso = new Date().toISOString();
+    const key = userId || email || membership.membershipId;
+    const normalizedMembership: SchoolMembership = {
+      ...membership,
+      schoolId: normalizedSchoolId,
+      userId,
+      email,
+      membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${normalizedSchoolId}:${key}`, "school-member"),
+      fullName: trimProfileField(membership.fullName, 120),
+      role: membership.role === "school_admin" ? "school_admin" : "owner",
+      status: membership.status === "invited" ? "invited" : "active",
+      createdAtIso: membership.createdAtIso || nowIso,
+      updatedAtIso: nowIso,
+    };
+    deduped.set(key, normalizedMembership);
+  }
+  const next = [...deduped.values()].sort((left, right) => left.email.localeCompare(right.email));
+  schoolMembershipsBySchool.set(normalizedSchoolId, next);
+  return next;
+}
+
+function setTeamMembershipsForSchool(schoolId: string, memberships: TeamMembership[]): TeamMembership[] {
+  const normalizedSchoolId = normalizeSchoolId(schoolId);
+  const deduped = new Map<string, TeamMembership>();
+  for (const membership of memberships) {
+    const userId = trimProfileField(membership.userId, 120) || undefined;
+    const email = trimProfileField(membership.email, 160).toLowerCase();
+    const teamId = trimProfileField(membership.teamId, 120);
+    const nowIso = new Date().toISOString();
+    const key = `${teamId}:${userId || email || membership.membershipId}`;
+    const normalizedMembership: TeamMembership = {
+      ...membership,
+      schoolId: normalizedSchoolId,
+      teamId,
+      userId,
+      email,
+      membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${normalizedSchoolId}:${key}`, "team-member"),
+      fullName: trimProfileField(membership.fullName, 120),
+      role: membership.role ?? "viewer",
+      status: membership.status === "invited" ? "invited" : "active",
+      createdAtIso: membership.createdAtIso || nowIso,
+      updatedAtIso: nowIso,
+    };
+    deduped.set(key, normalizedMembership);
+  }
+  const next = [...deduped.values()].sort((left, right) => {
+    if (left.teamId !== right.teamId) {
+      return left.teamId.localeCompare(right.teamId);
+    }
+    return left.email.localeCompare(right.email);
+  });
+  teamMembershipsBySchool.set(normalizedSchoolId, next);
+  return next;
+}
+
+function setActivityEventsForSchool(schoolId: string, events: ActivityEvent[]): ActivityEvent[] {
+  const normalizedSchoolId = normalizeSchoolId(schoolId);
+  const next = [...events]
+    .map((event) => ({
+      ...event,
+      schoolId: normalizedSchoolId,
+      id: trimProfileField(event.id, 120) || buildWorkspaceMembershipId(`${normalizedSchoolId}:${event.type}:${event.createdAtIso}`, "activity"),
+      message: trimProfileField(event.message, 240),
+      teamId: trimProfileField(event.teamId, 120) || undefined,
+      actorUserId: trimProfileField(event.actorUserId, 120) || undefined,
+      createdAtIso: trimProfileField(event.createdAtIso, 64) || new Date().toISOString(),
+    }))
+    .sort((left, right) => Date.parse(right.createdAtIso) - Date.parse(left.createdAtIso))
+    .slice(0, 100);
+  activityEventsBySchool.set(normalizedSchoolId, next);
+  return next;
+}
+
+function setLiveGameSessionsForSchool(schoolId: string, sessionsForSchool: LiveGameSessionRecord[]): LiveGameSessionRecord[] {
+  const normalizedSchoolId = normalizeSchoolId(schoolId);
+  const next = sessionsForSchool.map((session) => {
+    const normalizedSession: LiveGameSessionRecord = {
+      ...session,
+      schoolId: normalizedSchoolId,
+      liveSessionId: trimProfileField(session.liveSessionId, 120),
+      teamId: trimProfileField(session.teamId, 120),
+      gameId: trimProfileField(session.gameId, 120),
+      pairingCode: trimProfileField(session.pairingCode, 32),
+      opponentName: trimProfileField(session.opponentName, 120) || undefined,
+      opponentTeamId: trimProfileField(session.opponentTeamId, 120) || undefined,
+      createdByUserId: trimProfileField(session.createdByUserId, 120) || undefined,
+      status: session.status === "completed" ? "completed" : "active",
+      createdAtIso: trimProfileField(session.createdAtIso, 64) || new Date().toISOString(),
+      updatedAtIso: trimProfileField(session.updatedAtIso, 64) || new Date().toISOString(),
+    };
+    return normalizedSession;
+  });
+  liveGameSessionsBySchool.set(normalizedSchoolId, next);
+  return next;
 }
 
 function upsertOrganizationMemberForSchool(
@@ -2288,6 +2582,13 @@ function buildPersistedSnapshot(): PersistedSnapshot {
     localAuthAccountsBySchool: Object.fromEntries(localAuthAccountsBySchool.entries()),
     billingBySchool: Object.fromEntries(billingBySchool.entries()),
     processedStripeWebhookEvents: Object.fromEntries(processedStripeWebhookEvents.entries()),
+    userWorkspaceProfilesById: Object.fromEntries(userWorkspaceProfilesById.entries()),
+    schoolsById: Object.fromEntries(schoolsById.entries()),
+    schoolMembershipsBySchool: Object.fromEntries(schoolMembershipsBySchool.entries()),
+    teamMembershipsBySchool: Object.fromEntries(teamMembershipsBySchool.entries()),
+    activityEventsBySchool: Object.fromEntries(activityEventsBySchool.entries()),
+    liveGameSessionsBySchool: Object.fromEntries(liveGameSessionsBySchool.entries()),
+    operatorSessionsByLiveSession: Object.fromEntries(operatorSessionsByLiveSession.entries()),
     gameOverridesBySchool: Object.fromEntries(
       [...gameOverridesBySchool.entries()].map(([schoolId, overrideMap]) => [
         schoolId,
@@ -2344,6 +2645,13 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   const persistedGameOverrides = Array.isArray(payload) ? undefined : payload.gameOverridesBySchool;
   const persistedBilling = Array.isArray(payload) ? undefined : payload.billingBySchool;
   const persistedWebhookEvents = Array.isArray(payload) ? undefined : payload.processedStripeWebhookEvents;
+  const persistedWorkspaceProfiles = Array.isArray(payload) ? undefined : payload.userWorkspaceProfilesById;
+  const persistedSchools = Array.isArray(payload) ? undefined : payload.schoolsById;
+  const persistedSchoolMemberships = Array.isArray(payload) ? undefined : payload.schoolMembershipsBySchool;
+  const persistedTeamMemberships = Array.isArray(payload) ? undefined : payload.teamMembershipsBySchool;
+  const persistedActivityEvents = Array.isArray(payload) ? undefined : payload.activityEventsBySchool;
+  const persistedLiveGameSessions = Array.isArray(payload) ? undefined : payload.liveGameSessionsBySchool;
+  const persistedOperatorSessions = Array.isArray(payload) ? undefined : payload.operatorSessionsByLiveSession;
 
   sessions.clear();
   rosterTeamsBySchool.clear();
@@ -2354,6 +2662,13 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
   gameOverridesBySchool.clear();
   billingBySchool.clear();
   processedStripeWebhookEvents.clear();
+  userWorkspaceProfilesById.clear();
+  schoolsById.clear();
+  schoolMembershipsBySchool.clear();
+  teamMembershipsBySchool.clear();
+  activityEventsBySchool.clear();
+  liveGameSessionsBySchool.clear();
+  operatorSessionsByLiveSession.clear();
 
   if (persistedRosterTeamsBySchool && typeof persistedRosterTeamsBySchool === "object") {
     for (const [schoolId, teams] of Object.entries(persistedRosterTeamsBySchool)) {
@@ -2429,6 +2744,65 @@ function applyPersistedSnapshot(payload: PersistedSnapshot | PersistedGameSessio
       }
       const normalizedProcessedAtIso = String(processedAtIso ?? "").trim() || new Date().toISOString();
       processedStripeWebhookEvents.set(normalizedEventId, normalizedProcessedAtIso);
+    }
+  }
+
+  if (persistedWorkspaceProfiles && typeof persistedWorkspaceProfiles === "object") {
+    for (const profile of Object.values(persistedWorkspaceProfiles)) {
+      if (!profile || typeof profile !== "object") {
+        continue;
+      }
+      const typedProfile = profile as UserWorkspaceProfile;
+      if (!typedProfile.userId || !typedProfile.email) {
+        continue;
+      }
+      setUserWorkspaceProfile(typedProfile);
+    }
+  }
+
+  if (persistedSchools && typeof persistedSchools === "object") {
+    for (const school of Object.values(persistedSchools)) {
+      if (!school || typeof school !== "object") {
+        continue;
+      }
+      const typedSchool = school as SchoolRecord;
+      if (!typedSchool.schoolId || !typedSchool.name) {
+        continue;
+      }
+      setSchoolRecord(typedSchool);
+    }
+  }
+
+  if (persistedSchoolMemberships && typeof persistedSchoolMemberships === "object") {
+    for (const [schoolId, memberships] of Object.entries(persistedSchoolMemberships)) {
+      setSchoolMembershipsForSchool(normalizeSchoolId(schoolId), Array.isArray(memberships) ? memberships as SchoolMembership[] : []);
+    }
+  }
+
+  if (persistedTeamMemberships && typeof persistedTeamMemberships === "object") {
+    for (const [schoolId, memberships] of Object.entries(persistedTeamMemberships)) {
+      setTeamMembershipsForSchool(normalizeSchoolId(schoolId), Array.isArray(memberships) ? memberships as TeamMembership[] : []);
+    }
+  }
+
+  if (persistedActivityEvents && typeof persistedActivityEvents === "object") {
+    for (const [schoolId, events] of Object.entries(persistedActivityEvents)) {
+      setActivityEventsForSchool(normalizeSchoolId(schoolId), Array.isArray(events) ? events as ActivityEvent[] : []);
+    }
+  }
+
+  if (persistedLiveGameSessions && typeof persistedLiveGameSessions === "object") {
+    for (const [schoolId, liveSessions] of Object.entries(persistedLiveGameSessions)) {
+      setLiveGameSessionsForSchool(normalizeSchoolId(schoolId), Array.isArray(liveSessions) ? liveSessions as LiveGameSessionRecord[] : []);
+    }
+  }
+
+  if (persistedOperatorSessions && typeof persistedOperatorSessions === "object") {
+    for (const [liveSessionId, session] of Object.entries(persistedOperatorSessions)) {
+      if (!session || typeof session !== "object") {
+        continue;
+      }
+      operatorSessionsByLiveSession.set(trimProfileField(liveSessionId, 120), session as OperatorSessionRecord);
     }
   }
 
@@ -2510,9 +2884,21 @@ async function restoreRosterTeamsFromProvider(): Promise<boolean> {
     return false;
   }
 
+  const snapshotTeamMetadata = new Map<string, RosterTeam>();
+  for (const [schoolId, teams] of rosterTeamsBySchool.entries()) {
+    for (const team of teams) {
+      snapshotTeamMetadata.set(`${schoolId}:${team.id}`, team);
+    }
+  }
+
   rosterTeamsBySchool.clear();
   for (const [schoolId, teams] of entries) {
-    setRosterTeamsForSchool(normalizeSchoolId(schoolId), Array.isArray(teams) ? teams : []);
+    const normalizedSchoolId = normalizeSchoolId(schoolId);
+    const mergedTeams = (Array.isArray(teams) ? teams : []).map((team) => ({
+      ...snapshotTeamMetadata.get(`${normalizedSchoolId}:${team.id}`),
+      ...team,
+    }));
+    setRosterTeamsForSchool(normalizedSchoolId, mergedTeams);
   }
   return true;
 }
@@ -2865,6 +3251,13 @@ export function resetAllData(scope?: TenantScope): void {
     gameOverridesBySchool.clear();
     billingBySchool.clear();
     processedStripeWebhookEvents.clear();
+    userWorkspaceProfilesById.clear();
+    schoolsById.clear();
+    schoolMembershipsBySchool.clear();
+    teamMembershipsBySchool.clear();
+    activityEventsBySchool.clear();
+    liveGameSessionsBySchool.clear();
+    operatorSessionsByLiveSession.clear();
     persistSessions();
     clearPersistedRosterTeams();
     return;
@@ -2882,6 +3275,16 @@ export function resetAllData(scope?: TenantScope): void {
   localAuthAccountsBySchool.delete(schoolId);
   gameOverridesBySchool.delete(schoolId);
   billingBySchool.delete(schoolId);
+  schoolsById.delete(schoolId);
+  schoolMembershipsBySchool.delete(schoolId);
+  teamMembershipsBySchool.delete(schoolId);
+  activityEventsBySchool.delete(schoolId);
+  liveGameSessionsBySchool.delete(schoolId);
+  for (const [liveSessionId, operatorSession] of operatorSessionsByLiveSession.entries()) {
+    if (operatorSession.schoolId === schoolId) {
+      operatorSessionsByLiveSession.delete(liveSessionId);
+    }
+  }
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
 }
@@ -3132,6 +3535,215 @@ export function deleteOrganizationMember(memberId: string, scope?: TenantScope):
   return true;
 }
 
+export function getUserWorkspaceProfile(userId: string): UserWorkspaceProfile | null {
+  const normalizedUserId = trimProfileField(userId, 120);
+  return normalizedUserId ? userWorkspaceProfilesById.get(normalizedUserId) ?? null : null;
+}
+
+export function saveUserWorkspaceProfile(profile: Partial<UserWorkspaceProfile> & Pick<UserWorkspaceProfile, "userId" | "email">): UserWorkspaceProfile {
+  const saved = setUserWorkspaceProfile(profile);
+  persistSessions();
+  return saved;
+}
+
+export function getSchoolRecord(schoolId: string): SchoolRecord | null {
+  return schoolsById.get(normalizeSchoolId(schoolId)) ?? null;
+}
+
+export function saveSchoolRecord(record: Partial<SchoolRecord> & Pick<SchoolRecord, "schoolId" | "name">): SchoolRecord {
+  const saved = setSchoolRecord(record);
+  persistSessions();
+  return saved;
+}
+
+export function getSchoolMembershipsByScope(scope?: TenantScope): SchoolMembership[] {
+  return schoolMembershipsBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function saveSchoolMembership(membership: Partial<SchoolMembership> & Pick<SchoolMembership, "schoolId" | "email" | "fullName" | "role">): SchoolMembership {
+  const schoolId = normalizeSchoolId(membership.schoolId);
+  const current = schoolMembershipsBySchool.get(schoolId) ?? [];
+  const normalizedEmail = trimProfileField(membership.email, 160).toLowerCase();
+  const existing = current.find((entry) =>
+    (membership.userId && entry.userId === membership.userId)
+    || entry.email === normalizedEmail
+    || (membership.membershipId && entry.membershipId === membership.membershipId)
+  );
+  const createdMembership: SchoolMembership = {
+    membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${schoolId}:${membership.userId ?? membership.email}:${membership.role}`, "school-member"),
+    schoolId,
+    userId: trimProfileField(membership.userId, 120) || undefined,
+    email: normalizedEmail,
+    fullName: trimProfileField(membership.fullName, 120),
+    role: membership.role,
+    status: membership.status === "invited" ? "invited" : "active",
+    createdAtIso: new Date().toISOString(),
+    updatedAtIso: new Date().toISOString(),
+  };
+  const merged = existing
+    ? current.map((entry) => (entry.membershipId === existing.membershipId
+      ? { ...entry, ...membership, schoolId, email: normalizedEmail, fullName: trimProfileField(membership.fullName, 120), updatedAtIso: new Date().toISOString() }
+      : entry))
+    : [...current, createdMembership];
+  const saved = setSchoolMembershipsForSchool(schoolId, merged).find((entry) =>
+    (membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail
+  );
+  persistSessions();
+  return saved!;
+}
+
+export function getTeamMembershipsByScope(scope?: TenantScope): TeamMembership[] {
+  return teamMembershipsBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function saveTeamMembership(membership: Partial<TeamMembership> & Pick<TeamMembership, "schoolId" | "teamId" | "email" | "fullName" | "role">): TeamMembership {
+  const schoolId = normalizeSchoolId(membership.schoolId);
+  const current = teamMembershipsBySchool.get(schoolId) ?? [];
+  const normalizedEmail = trimProfileField(membership.email, 160).toLowerCase();
+  const existing = current.find((entry) =>
+    entry.teamId === trimProfileField(membership.teamId, 120)
+      && (
+        (membership.userId && entry.userId === membership.userId)
+        || entry.email === normalizedEmail
+        || (membership.membershipId && entry.membershipId === membership.membershipId)
+      )
+  );
+  const createdMembership: TeamMembership = {
+    membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${schoolId}:${membership.teamId}:${membership.userId ?? membership.email}:${membership.role}`, "team-member"),
+    schoolId,
+    teamId: trimProfileField(membership.teamId, 120),
+    userId: trimProfileField(membership.userId, 120) || undefined,
+    email: normalizedEmail,
+    fullName: trimProfileField(membership.fullName, 120),
+    role: membership.role,
+    status: membership.status === "invited" ? "invited" : "active",
+    createdAtIso: new Date().toISOString(),
+    updatedAtIso: new Date().toISOString(),
+  };
+  const merged = existing
+    ? current.map((entry) => (entry.membershipId === existing.membershipId
+      ? { ...entry, ...membership, schoolId, teamId: trimProfileField(membership.teamId, 120), email: normalizedEmail, fullName: trimProfileField(membership.fullName, 120), updatedAtIso: new Date().toISOString() }
+      : entry))
+    : [...current, createdMembership];
+  const saved = setTeamMembershipsForSchool(schoolId, merged).find((entry) =>
+    entry.teamId === trimProfileField(membership.teamId, 120)
+      && ((membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail)
+  );
+  persistSessions();
+  return saved!;
+}
+
+export function listSchoolMembershipsForUser(input: { userId?: string; email?: string }): SchoolMembership[] {
+  const normalizedUserId = trimProfileField(input.userId, 120);
+  const normalizedEmail = trimProfileField(input.email, 160).toLowerCase();
+  return [...schoolMembershipsBySchool.values()]
+    .flat()
+    .filter((membership) => (normalizedUserId && membership.userId === normalizedUserId) || (normalizedEmail && membership.email === normalizedEmail));
+}
+
+export function listTeamMembershipsForUser(input: { schoolId?: string; userId?: string; email?: string }): TeamMembership[] {
+  const normalizedSchoolId = trimProfileField(input.schoolId, 80);
+  const normalizedUserId = trimProfileField(input.userId, 120);
+  const normalizedEmail = trimProfileField(input.email, 160).toLowerCase();
+  const source = normalizedSchoolId
+    ? [teamMembershipsBySchool.get(normalizeSchoolId(normalizedSchoolId)) ?? []]
+    : [...teamMembershipsBySchool.values()];
+  return source
+    .flat()
+    .filter((membership) => (normalizedUserId && membership.userId === normalizedUserId) || (normalizedEmail && membership.email === normalizedEmail));
+}
+
+export function getTeamById(teamId: string, scope?: TenantScope): RosterTeam | null {
+  const normalizedTeamId = trimProfileField(teamId, 120);
+  if (!normalizedTeamId) {
+    return null;
+  }
+  if (scope?.schoolId) {
+    return getRosterTeamsByScope(scope).find((team) => team.id === normalizedTeamId) ?? null;
+  }
+  for (const teams of rosterTeamsBySchool.values()) {
+    const match = teams.find((team) => team.id === normalizedTeamId);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+export function saveActivityEvent(event: Omit<ActivityEvent, "id" | "createdAtIso"> & { id?: string; createdAtIso?: string }): ActivityEvent {
+  const schoolId = normalizeSchoolId(event.schoolId);
+  const current = activityEventsBySchool.get(schoolId) ?? [];
+  const saved: ActivityEvent = {
+    id: trimProfileField(event.id, 120) || buildWorkspaceMembershipId(`${schoolId}:${event.type}:${Date.now()}`, "activity"),
+    schoolId,
+    teamId: trimProfileField(event.teamId, 120) || undefined,
+    type: event.type,
+    actorUserId: trimProfileField(event.actorUserId, 120) || undefined,
+    message: trimProfileField(event.message, 240),
+    createdAtIso: trimProfileField(event.createdAtIso, 64) || new Date().toISOString(),
+    metadata: event.metadata,
+  };
+  setActivityEventsForSchool(schoolId, [saved, ...current]);
+  persistSessions();
+  return saved;
+}
+
+export function getActivityEventsByScope(scope?: TenantScope): ActivityEvent[] {
+  return activityEventsBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function createLiveGameSessionRecord(input: Omit<LiveGameSessionRecord, "createdAtIso" | "updatedAtIso">): LiveGameSessionRecord {
+  const schoolId = normalizeSchoolId(input.schoolId);
+  const current = liveGameSessionsBySchool.get(schoolId) ?? [];
+  const nowIso = new Date().toISOString();
+  const saved: LiveGameSessionRecord = {
+    ...input,
+    schoolId,
+    createdAtIso: nowIso,
+    updatedAtIso: nowIso,
+  };
+  setLiveGameSessionsForSchool(schoolId, [saved, ...current.filter((entry) => entry.liveSessionId !== saved.liveSessionId)]);
+  persistSessions();
+  return saved;
+}
+
+export function getLiveGameSessionsByScope(scope?: TenantScope): LiveGameSessionRecord[] {
+  return liveGameSessionsBySchool.get(resolveSchoolId(scope)) ?? [];
+}
+
+export function getLiveGameSessionById(liveSessionId: string): LiveGameSessionRecord | null {
+  const normalizedId = trimProfileField(liveSessionId, 120);
+  for (const liveSessions of liveGameSessionsBySchool.values()) {
+    const match = liveSessions.find((entry) => entry.liveSessionId === normalizedId);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+export function saveOperatorSessionRecord(session: OperatorSessionRecord): OperatorSessionRecord {
+  const saved: OperatorSessionRecord = {
+    ...session,
+    operatorSessionId: trimProfileField(session.operatorSessionId, 120),
+    liveSessionId: trimProfileField(session.liveSessionId, 120),
+    schoolId: normalizeSchoolId(session.schoolId),
+    teamId: trimProfileField(session.teamId, 120),
+    pairingCode: trimProfileField(session.pairingCode, 32),
+    operatorToken: trimProfileField(session.operatorToken, 2_000),
+    expiresAtIso: trimProfileField(session.expiresAtIso, 64),
+    createdAtIso: trimProfileField(session.createdAtIso, 64) || new Date().toISOString(),
+    updatedAtIso: new Date().toISOString(),
+  };
+  operatorSessionsByLiveSession.set(saved.liveSessionId, saved);
+  persistSessions();
+  return saved;
+}
+
+export function getOperatorSessionByLiveSession(liveSessionId: string): OperatorSessionRecord | null {
+  return operatorSessionsByLiveSession.get(trimProfileField(liveSessionId, 120)) ?? null;
+}
+
 export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {
   const schoolId = resolveRequiredSchoolId(input.schoolId, scope);
   const state = createInitialGameState(
@@ -3195,7 +3807,9 @@ export function createGame(input: CreateGameInput, scope?: TenantScope): GameSta
 
 export function getActiveGameState(scope?: TenantScope): GameState | null {
   const schoolId = resolveSchoolId(scope);
-  const activeSession = getMostRecentActiveSessionForSchool(schoolId);
+  const activeSession = scope?.teamId
+    ? getMostRecentActiveSessionForTeam(schoolId, scope.teamId)
+    : getMostRecentActiveSessionForSchool(schoolId);
   return activeSession?.state ?? null;
 }
 

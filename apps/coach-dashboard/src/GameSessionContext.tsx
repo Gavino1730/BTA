@@ -381,7 +381,15 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     newGameOppColor, setNewGameOppColor,
     newGameStartingLineup, setNewGameStartingLineup,
     isLaunchingGame, launchGame,
-  } = useNewGameForm({ rosterTeams, endedGameIdsRef, connectionId, setGameId, setSetupNames, setDashboardStatus });
+  } = useNewGameForm({
+    rosterTeams,
+    endedGameIdsRef,
+    connectionId,
+    setConnectionId,
+    setGameId,
+    setSetupNames,
+    setDashboardStatus,
+  });
 
   useEffect(() => {
     const schoolId = resolveActiveSchoolId();

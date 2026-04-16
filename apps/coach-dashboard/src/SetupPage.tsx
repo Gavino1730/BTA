@@ -1,35 +1,21 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { apiBase, apiKeyHeader, clearAuthSession, formatSchoolNameFromId, resolveActiveSchoolId, storeAuthSession } from "./platform.js";
+import {
+  apiBase,
+  apiKeyHeader,
+  clearAuthSession,
+  formatSchoolNameFromId,
+  resolveActiveSchoolId,
+  storeAuthSession,
+} from "./platform.js";
+import {
+  bootstrapSchoolWorkspace,
+  createSchoolTeam,
+  fetchWorkspaceContext,
+  saveWorkspaceContextPreference,
+} from "./workspace.js";
 
 interface SetupPageProps {
   onComplete: () => void;
-}
-
-interface RosterRow {
-  id: number;
-  name: string;
-  number: string;
-  position: string;
-  grade: string;
-}
-
-interface OnboardingAccountPayload {
-  account?: {
-    organization?: {
-      organizationName?: string;
-      schoolName?: string;
-      teamName?: string;
-      season?: string;
-    } | null;
-    primaryCoach?: {
-      fullName?: string;
-      email?: string;
-    } | null;
-  } | null;
-  suggestedCoach?: {
-    coachName?: string;
-    coachEmail?: string;
-  } | null;
 }
 
 interface AuthUser {
@@ -51,172 +37,114 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-interface InvitationLookupPayload {
-  invitation?: {
-    email?: string;
-    fullName?: string;
-    role?: string;
-    organizationName?: string;
-    expiresAtIso?: string;
-  } | null;
-  error?: string;
-}
+const TEAM_TEMPLATES = [
+  { label: "Boys Varsity", gender: "boys" as const, level: "varsity" as const },
+  { label: "Boys JV", gender: "boys" as const, level: "jv" as const },
+  { label: "Boys Freshman", gender: "boys" as const, level: "freshman" as const },
+  { label: "Girls Varsity", gender: "girls" as const, level: "varsity" as const },
+  { label: "Girls JV", gender: "girls" as const, level: "jv" as const },
+  { label: "Custom Team", gender: "custom" as const, level: "custom" as const },
+];
 
-const PROFILE_KEY = "bta.coach.setupProfile";
-
-function buildEmptyRosterRow(id: number): RosterRow {
-  return { id, name: "", number: "", position: "", grade: "" };
+function slugifySchoolId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 export function SetupPage({ onComplete }: SetupPageProps) {
   const schoolPlaceholder = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite")?.trim() ?? "", []);
+  const inviteEmail = useMemo(() => new URLSearchParams(window.location.search).get("email")?.trim().toLowerCase() ?? "", []);
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
-  const [coachEmail, setCoachEmail] = useState("");
-  const [teamName, setTeamName] = useState("");
+  const [coachEmail, setCoachEmail] = useState(inviteEmail);
+  const [templateLabel, setTemplateLabel] = useState("Boys Varsity");
+  const [displayName, setDisplayName] = useState("Boys Varsity");
+  const [customLabel, setCustomLabel] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
-  const [season, setSeason] = useState(String(new Date().getFullYear()));
   const [teamColor, setTeamColor] = useState("#1d4ed8");
-  const [rows, setRows] = useState<RosterRow[]>([buildEmptyRosterRow(1)]);
-  const [status, setStatus] = useState("Create your account and complete setup to unlock the unified coach workspace.");
+  const [status, setStatus] = useState("Create your account, confirm the school, and create the first team.");
   const [saving, setSaving] = useState(false);
-  const [authMode, setAuthMode] = useState<"register" | "login">("register");
+  const [authMode, setAuthMode] = useState<"register" | "login">(inviteToken ? "register" : "register");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [authSession, setAuthSession] = useState<AuthUser | null>(null);
-  const [authStatus, setAuthStatus] = useState("Create a coach account with email and password to secure this workspace.");
+  const [authStatus, setAuthStatus] = useState("Create your coach account to unlock the school workspace.");
   const [authBusy, setAuthBusy] = useState(false);
-  const activeSchoolId = resolveActiveSchoolId();
+
+  const selectedTemplate = useMemo(
+    () => TEAM_TEMPLATES.find((template) => template.label === templateLabel) ?? TEAM_TEMPLATES[0],
+    [templateLabel],
+  );
 
   useEffect(() => {
-    if (!activeSchoolId) {
-      return;
+    setDisplayName(selectedTemplate.label);
+    if (selectedTemplate.gender !== "custom" && selectedTemplate.level !== "custom") {
+      setCustomLabel("");
     }
-
-    void (async () => {
-      try {
-        const [sessionResponse, accountResponse] = await Promise.all([
-          fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() }),
-          fetch(`${apiBase}/api/onboarding/account`, { headers: apiKeyHeader() }),
-        ]);
-
-        if (sessionResponse.ok) {
-          const sessionPayload = await sessionResponse.json() as AuthSessionPayload;
-          if (sessionPayload.authenticated && sessionPayload.user) {
-            setAuthSession(sessionPayload.user);
-            setCoachName(sessionPayload.user.fullName ?? "");
-            setCoachEmail(sessionPayload.user.email ?? "");
-            setAuthStatus(`Signed in as ${sessionPayload.user.email ?? sessionPayload.user.fullName ?? "your coach account"}.`);
-            if (sessionPayload.token) {
-              storeAuthSession({
-                token: sessionPayload.token,
-                email: sessionPayload.user.email,
-                fullName: sessionPayload.user.fullName,
-                role: sessionPayload.user.role,
-                schoolId: sessionPayload.user.schoolId,
-                lastLoginAtIso: sessionPayload.user.lastLoginAtIso ?? null,
-              });
-            }
-          } else {
-            clearAuthSession();
-          }
-        }
-
-        if (!accountResponse.ok) {
-          return;
-        }
-
-        const accountPayload = await accountResponse.json() as OnboardingAccountPayload;
-        const account = accountPayload.account;
-        const suggestedCoach = accountPayload.suggestedCoach;
-        if (account?.organization || account?.primaryCoach) {
-          setSchoolName(account.organization?.schoolName ?? account.organization?.organizationName ?? "");
-          setCoachName((current) => current || account.primaryCoach?.fullName || suggestedCoach?.coachName || "");
-          setCoachEmail((current) => current || account.primaryCoach?.email || suggestedCoach?.coachEmail || "");
-          setTeamName(account.organization?.teamName ?? "");
-          setSeason(account.organization?.season ?? String(new Date().getFullYear()));
-          if (account.primaryCoach?.email && !authSession) {
-            setAuthMode("login");
-            setAuthStatus("Sign in with your coach email and password to continue onboarding.");
-          }
-          return;
-        }
-
-        if (suggestedCoach?.coachName || suggestedCoach?.coachEmail) {
-          setCoachName((current) => current || suggestedCoach.coachName || "");
-          setCoachEmail((current) => current || suggestedCoach.coachEmail || "");
-        }
-      } catch {
-        // best effort prefill only
-      }
-    })();
-  }, [activeSchoolId]);
+  }, [selectedTemplate]);
 
   useEffect(() => {
-    if (!activeSchoolId || !inviteToken) {
-      return;
-    }
-
     let cancelled = false;
 
     void (async () => {
       try {
-        const response = await fetch(`${apiBase}/api/auth/invitations/${encodeURIComponent(inviteToken)}`, {
-          headers: {
-            "x-school-id": activeSchoolId,
-          },
-        });
-
-        const payload = await response.json() as InvitationLookupPayload;
-        if (!response.ok || !payload.invitation || cancelled) {
-          if (!cancelled) {
-            setAuthStatus(payload.error || "This invitation is no longer valid. Ask your organization owner to resend it.");
-          }
+        const response = await fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() });
+        if (!response.ok || cancelled) {
           return;
         }
 
-        setAuthMode("register");
-        setCoachEmail((current) => current || payload.invitation?.email || "");
-        setCoachName((current) => current || payload.invitation?.fullName || "");
-        setSchoolName((current) => current || payload.invitation?.organizationName || "");
-        setAuthStatus(`Invitation loaded for ${payload.invitation.email ?? "your coach account"}. Create your password to join this workspace.`);
-      } catch {
-        if (!cancelled) {
-          setAuthStatus("Could not load the invite details. Ask your organization owner to resend the invitation.");
+        const payload = await response.json() as AuthSessionPayload;
+        if (!payload.authenticated || !payload.user) {
+          return;
         }
+
+        if (payload.token) {
+          storeAuthSession({
+            token: payload.token,
+            email: payload.user.email,
+            fullName: payload.user.fullName,
+            role: payload.user.role,
+            schoolId: payload.user.schoolId,
+            lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
+          });
+        }
+
+        setAuthSession(payload.user);
+        setCoachName(payload.user.fullName ?? "");
+        setCoachEmail(payload.user.email ?? inviteEmail);
+        setAuthStatus(`Signed in as ${payload.user.email ?? payload.user.fullName ?? "coach"}.`);
+
+        if (payload.user.schoolId && !schoolName) {
+          setSchoolName(formatSchoolNameFromId(payload.user.schoolId));
+        }
+
+        const context = await fetchWorkspaceContext().catch(() => null);
+        if (!cancelled && context && context.schools.length > 0 && context.teams.length > 0) {
+          onComplete();
+        }
+      } catch {
+        // best effort session restore only
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeSchoolId, inviteToken]);
-
-  const validRows = useMemo(() => {
-    return rows
-      .map((row) => ({
-        name: row.name.trim(),
-        number: row.number.trim(),
-        position: row.position.trim(),
-        grade: row.grade.trim(),
-      }))
-      .filter((row) => row.name.length > 0);
-  }, [rows]);
+  }, [inviteEmail, onComplete, schoolName]);
 
   const completionPercent = useMemo(() => {
     const completed = [
       authSession?.email ? "account" : "",
       schoolName.trim(),
-      coachName.trim(),
-      coachEmail.trim(),
-      teamName.trim(),
-      season.trim(),
-      validRows.length > 0 ? "roster" : "",
+      displayName.trim(),
     ].filter(Boolean).length;
-
-    return Math.round((completed / 7) * 100);
-  }, [authSession?.email, schoolName, coachName, coachEmail, teamName, season, validRows.length]);
+    return Math.round((completed / 3) * 100);
+  }, [authSession?.email, schoolName, displayName]);
 
   async function handleAuthSubmit() {
     const normalizedName = coachName.trim();
@@ -229,7 +157,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     }
 
     if (authMode === "register" && !schoolName.trim()) {
-      setAuthStatus("School name is required to create your workspace.");
+      setAuthStatus("School name is required.");
       return;
     }
 
@@ -250,7 +178,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     }
 
     setAuthBusy(true);
-    setAuthStatus(authMode === "login" ? "Signing in..." : "Creating your secure coach account...");
+    setAuthStatus(authMode === "login" ? "Signing in..." : "Creating account...");
 
     try {
       const response = await fetch(`${apiBase}/api/auth/${authMode === "login" ? "login" : "register"}`, {
@@ -262,7 +190,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           password: normalizedPassword,
           inviteToken: authMode === "register" && inviteToken ? inviteToken : undefined,
           schoolName: schoolName.trim() || undefined,
-          teamName: teamName.trim() || undefined,
         }),
       });
 
@@ -282,14 +209,18 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       setAuthSession(payload.user);
       setPassword("");
       setConfirmPassword("");
+      setCoachName(payload.user.fullName ?? normalizedName);
+      setCoachEmail(payload.user.email ?? normalizedEmail);
+      if (payload.user.schoolId && !schoolName.trim()) {
+        setSchoolName(formatSchoolNameFromId(payload.user.schoolId));
+      }
       setAuthStatus(
         payload.onboarding?.completed
-          ? `Welcome back, ${payload.user.fullName ?? payload.user.email ?? "Coach"}. Redirecting to your dashboard...`
-          : `Account ready for ${payload.user.email ?? normalizedEmail}. Continue with program setup below.`,
+          ? "Account ready. Redirecting..."
+          : `Account ready for ${payload.user.email ?? normalizedEmail}. Continue below.`,
       );
 
       if (payload.onboarding?.completed) {
-        setStatus("Account verified. Redirecting to live dashboard...");
         onComplete();
       }
     } catch (error) {
@@ -306,60 +237,56 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     setConfirmPassword("");
     setAuthMode("login");
     setAuthStatus("Signed out. Sign back in to continue.");
-    setStatus("Sign in to access onboarding and the coach workspace.");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const normalizedTeam = teamName.trim();
     if (!authSession) {
-      setStatus("Create or sign into your coach account before completing setup.");
+      setStatus("Create or sign in to a coach account first.");
       return;
     }
-    if (!normalizedTeam || !schoolName.trim() || !coachName.trim() || !coachEmail.trim()) {
-      setStatus("School name, coach name, coach email, and team name are required.");
+
+    const normalizedSchoolName = schoolName.trim();
+    const normalizedDisplayName = displayName.trim() || selectedTemplate.label;
+    const normalizedSchoolId = authSession.schoolId?.trim() || slugifySchoolId(normalizedSchoolName);
+    if (!normalizedSchoolName || !normalizedSchoolId || !normalizedDisplayName) {
+      setStatus("School name and first team are required.");
       return;
     }
 
     setSaving(true);
-    setStatus("Saving school, team, and roster setup...");
+    setStatus("Creating school workspace...");
 
     try {
-      const teamRes = await fetch(`${apiBase}/api/onboarding/complete`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          schoolName: schoolName.trim(),
-          organizationName: schoolName.trim(),
-          coachName: coachName.trim(),
-          coachEmail: coachEmail.trim(),
-          teamName: normalizedTeam,
-          abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
-          season: season.trim() || undefined,
-          teamColor,
-          roster: validRows,
-        }),
-      });
-
-      if (!teamRes.ok) {
-        throw new Error("Onboarding save failed");
+      const existingContext = await fetchWorkspaceContext().catch(() => null);
+      const existingSchool = existingContext?.schools.find((school) => school.schoolId === normalizedSchoolId) ?? null;
+      if (!existingSchool) {
+        await bootstrapSchoolWorkspace({
+          schoolId: normalizedSchoolId,
+          schoolName: normalizedSchoolName,
+        });
       }
 
-      localStorage.setItem(
-        PROFILE_KEY,
-        JSON.stringify({
-          schoolName: schoolName.trim(),
-          coachName: coachName.trim(),
-          coachEmail: coachEmail.trim(),
-          teamName: normalizedTeam,
-          completedAt: new Date().toISOString(),
-        }),
-      );
+      setStatus("Creating first team...");
+      const teamResult = await createSchoolTeam(normalizedSchoolId, {
+        gender: selectedTemplate.gender,
+        level: selectedTemplate.level,
+        displayName: normalizedDisplayName,
+        customLabel: customLabel.trim() || undefined,
+        abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
+        teamColor,
+      });
 
-      setStatus("Setup complete. Redirecting to live dashboard...");
+      await saveWorkspaceContextPreference({
+        schoolId: normalizedSchoolId,
+        teamId: teamResult.team.id,
+        contextType: "team",
+      }).catch(() => undefined);
+
+      setStatus("Workspace ready. Opening team dashboard...");
       onComplete();
-    } catch {
-      setStatus("Could not complete setup. Check API connection and credentials.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not complete setup.");
     } finally {
       setSaving(false);
     }
@@ -369,9 +296,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     <div className="stats-page">
       <section className="stats-page-hero setup-hero">
         <div>
-          <p className="stats-page-eyebrow">Coach onboarding</p>
-          <h1>School Setup</h1>
-          <p className="stats-page-subtitle">Set up your school, team, and roster in one streamlined flow.</p>
+          <p className="stats-page-eyebrow">School onboarding</p>
+          <h1>Launch Your School Workspace</h1>
+          <p className="stats-page-subtitle">Two required steps: confirm the school, then create the first basketball team.</p>
         </div>
         <div className="setup-hero-status">
           <span className="setup-status-pill">{completionPercent}% ready</span>
@@ -383,11 +310,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         <section className="setup-section setup-auth-section">
           <div className="setup-section-head setup-section-head-inline">
             <div>
-              <h3>Account Access</h3>
-              <p className="setup-section-copy">Secure this workspace with an email/password coach account before finishing onboarding.</p>
+              <h3>Step 1: Account</h3>
+              <p className="setup-section-copy">Create or sign in to the coach account that owns this school workspace.</p>
             </div>
             <span className={`setup-auth-pill ${authSession ? "setup-auth-pill-active" : ""}`}>
-              {authSession ? "Signed in" : "Step 1"}
+              {authSession ? "Signed in" : "Required"}
             </span>
           </div>
 
@@ -396,10 +323,10 @@ export function SetupPage({ onComplete }: SetupPageProps) {
               <div className="setup-auth-signed-in">
                 <div>
                   <strong>{authSession.fullName || coachName.trim() || "Coach account ready"}</strong>
-                  <p>{authSession.email || coachEmail.trim() || "This workspace is protected."}</p>
+                  <p>{authSession.email || coachEmail.trim() || "Workspace owner account"}</p>
                 </div>
                 <div className="setup-roster-toolbar">
-                  <span className="setup-count-badge">Protected workspace</span>
+                  <span className="setup-count-badge">Authenticated</span>
                   <button type="button" className="shell-nav-link" onClick={() => void handleSignOut()}>
                     Sign Out
                   </button>
@@ -431,24 +358,24 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   </label>
                   <label className="stats-filter-field">
                     <span>Coach Email</span>
-                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@program.org" />
+                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.org" />
                   </label>
-                  {authMode === "register" && (
+                  {authMode === "register" ? (
                     <label className="stats-filter-field">
                       <span>School Name</span>
-                      <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder="Lincoln High School" />
+                      <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder || "Lincoln High School"} />
                     </label>
-                  )}
+                  ) : null}
                   <label className="stats-filter-field">
                     <span>Password</span>
                     <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" />
                   </label>
-                  {authMode === "register" && (
+                  {authMode === "register" ? (
                     <label className="stats-filter-field">
                       <span>Confirm Password</span>
                       <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Re-enter password" />
                     </label>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="setup-auth-actions">
@@ -458,7 +385,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     onClick={() => void handleAuthSubmit()}
                     disabled={authBusy}
                   >
-                    {authBusy ? (authMode === "login" ? "Signing In..." : "Creating Account...") : (authMode === "login" ? "Sign In" : "Create Secure Account")}
+                    {authBusy ? (authMode === "login" ? "Signing In..." : "Creating Account...") : (authMode === "login" ? "Sign In" : "Create Account")}
                   </button>
                   <p className="stats-page-status">{authStatus}</p>
                 </div>
@@ -469,54 +396,69 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
         <div className="setup-summary-grid">
           <article className="setup-summary-card setup-summary-card-accent">
-            <span className="setup-summary-label">Workspace readiness</span>
-            <strong>{completionPercent}%</strong>
-            <p>
-              {validRows.length > 0
-                ? `${validRows.length} player${validRows.length === 1 ? "" : "s"} added so far.`
-                : "Add your first player to unlock live lineup context."}
-            </p>
+            <span className="setup-summary-label">School</span>
+            <strong>{schoolName.trim() || "Confirm school"}</strong>
+            <p>This becomes the billing and admin entity.</p>
           </article>
           <article className="setup-summary-card">
-            <span className="setup-summary-label">Coach profile</span>
-            <strong>{coachName.trim() || "Add lead coach"}</strong>
-            <p>{coachEmail.trim() || "Set the main contact email for alerts and invites."}</p>
+            <span className="setup-summary-label">First Team</span>
+            <strong>{displayName.trim() || "Create first team"}</strong>
+            <p>Default templates are optimized for high school basketball.</p>
           </article>
           <article className="setup-summary-card">
-            <span className="setup-summary-label">Team identity</span>
-            <strong>{teamName.trim() || "Team name"}</strong>
-            <p>{season.trim() ? `Season ${season.trim()}` : "Choose the current season"}</p>
+            <span className="setup-summary-label">Next Steps</span>
+            <strong>Invite staff</strong>
+            <p>Roster import and live game setup happen after entry, not during signup.</p>
           </article>
         </div>
 
         <section className="setup-section">
           <div className="setup-section-head">
             <div>
-              <h3>School Details</h3>
-              <p className="setup-section-copy">These details appear across the coach dashboard, operator app, and live reports.</p>
+              <h3>Step 2: School Details</h3>
+              <p className="setup-section-copy">This creates the school workspace and admin control center.</p>
             </div>
           </div>
 
           <div className="setup-grid">
             <label className="stats-filter-field">
               <span>School Name *</span>
-              <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder} required />
+              <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder || "Lincoln High School"} required />
+            </label>
+          </div>
+        </section>
+
+        <section className="setup-section">
+          <div className="stats-page-card-head setup-section-head setup-section-head-inline">
+            <div>
+              <h3>Step 3: First Team</h3>
+              <p className="setup-section-copy">Create the first team workspace. Roster import can happen after entry.</p>
+            </div>
+            <div className="setup-roster-toolbar">
+              <span className="setup-count-badge">Basketball only</span>
+            </div>
+          </div>
+
+          <div className="setup-grid">
+            <label className="stats-filter-field">
+              <span>Template *</span>
+              <select value={templateLabel} onChange={(event) => setTemplateLabel(event.target.value)}>
+                {TEAM_TEMPLATES.map((template) => (
+                  <option key={template.label} value={template.label}>{template.label}</option>
+                ))}
+              </select>
             </label>
             <label className="stats-filter-field">
-              <span>Team Name *</span>
-              <input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Boys Varsity" required />
+              <span>Display Name *</span>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Boys Varsity" required />
             </label>
             <label className="stats-filter-field">
-              <span>Team Abbreviation</span>
+              <span>Abbreviation</span>
               <input
                 value={teamAbbreviation}
                 onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
-                placeholder="VCBV"
+                placeholder="BVAR"
               />
-            </label>
-            <label className="stats-filter-field">
-              <span>Season</span>
-              <input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="2026" />
             </label>
             <label className="stats-filter-field setup-color-field">
               <span>Team Color</span>
@@ -528,98 +470,18 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                 </div>
               </div>
             </label>
-          </div>
-        </section>
-
-        <section className="setup-section">
-          <div className="stats-page-card-head setup-section-head setup-section-head-inline">
-            <div>
-              <h3>Roster</h3>
-              <p className="setup-section-copy">Add players now so live tracking, AI insights, and box scores are ready on day one.</p>
-            </div>
-            <div className="setup-roster-toolbar">
-              <span className="setup-count-badge">{validRows.length} player{validRows.length === 1 ? "" : "s"}</span>
-              <button
-                type="button"
-                className="shell-nav-link"
-                onClick={() => setRows((current) => [...current, buildEmptyRosterRow(current.length + 1)])}
-              >
-                Add Player
-              </button>
-            </div>
-          </div>
-
-          <div className="setup-roster-list">
-            {rows.map((row, index) => (
-              <div key={row.id} className="setup-roster-row setup-player-row">
-                <div className="setup-player-row-head">
-                  <div className="setup-roster-index" aria-hidden="true">
-                    <span>Player</span>
-                    <strong>{index + 1}</strong>
-                  </div>
-                  <button
-                    type="button"
-                    className="shell-nav-link setup-remove-button"
-                    onClick={() => setRows((current) => (current.length <= 1 ? current : current.filter((entry) => entry.id !== row.id)))}
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <div className="setup-player-fields">
-                  <label className="stats-filter-field">
-                    <span>Name</span>
-                    <input
-                      value={row.name}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, name: value } : entry)));
-                      }}
-                      placeholder="Player name"
-                    />
-                  </label>
-                  <label className="stats-filter-field">
-                    <span>#</span>
-                    <input
-                      value={row.number}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, number: value } : entry)));
-                      }}
-                      placeholder="0"
-                    />
-                  </label>
-                  <label className="stats-filter-field">
-                    <span>Position</span>
-                    <input
-                      value={row.position}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, position: value } : entry)));
-                      }}
-                      placeholder="PG"
-                    />
-                  </label>
-                  <label className="stats-filter-field">
-                    <span>Grade</span>
-                    <input
-                      value={row.grade}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setRows((current) => current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, grade: value } : entry)));
-                      }}
-                      placeholder="11"
-                    />
-                  </label>
-                </div>
-              </div>
-            ))}
+            {selectedTemplate.gender === "custom" || selectedTemplate.level === "custom" ? (
+              <label className="stats-filter-field">
+                <span>Custom Label</span>
+                <input value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="Girls Development" />
+              </label>
+            ) : null}
           </div>
         </section>
 
         <div className="setup-actions">
           <button type="submit" className="shell-nav-link shell-nav-link-active setup-submit-button" disabled={saving}>
-            {saving ? "Saving..." : "Complete Setup"}
+            {saving ? "Creating Workspace..." : "Create School Workspace"}
           </button>
         </div>
       </form>

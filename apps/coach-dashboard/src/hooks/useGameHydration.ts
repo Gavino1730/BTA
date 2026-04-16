@@ -48,11 +48,19 @@ interface ActiveSetupResponse {
     gameId?: string;
     myTeamId?: string;
     myTeamName?: string;
-    clearActiveGame: (statusMessage: string, options?: { rotateConnectionCode?: boolean }) => void;
+    opponentName?: string;
     vcSide?: "home" | "away";
     homeTeamColor?: string;
     awayTeamColor?: string;
   } | null;
+}
+
+function readActiveTeamId(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return new URLSearchParams(window.location.search).get("teamId")?.trim() ?? "";
 }
 
 export interface UseGameHydrationOptions {
@@ -89,6 +97,7 @@ export function useGameHydration({
   setBoxScoreFilter,
 }: UseGameHydrationOptions): void {
   const hasTenantScope = Boolean(resolveActiveSchoolId());
+  const activeTeamId = readActiveTeamId();
 
   // Set to true when we've just determined there's no active game (e.g. both the
   // specific gameId and active/state returned 404). Prevents reconcileGameId from
@@ -112,9 +121,11 @@ export function useGameHydration({
 
     async function reconcileGameId() {
       try {
-        const activeResponse = await fetch(`${apiBase}/api/games/active/state`, {
-          headers: apiKeyHeader(),
-        });
+        const activeUrl = new URL(`${apiBase}/api/games/active/state`);
+        if (activeTeamId) {
+          activeUrl.searchParams.set("teamId", activeTeamId);
+        }
+        const activeResponse = await fetch(activeUrl, { headers: apiKeyHeader() });
 
         if (!activeResponse.ok || cancelled) {
           return;
@@ -138,7 +149,7 @@ export function useGameHydration({
     return () => {
       cancelled = true;
     };
-  }, [connectionId, gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTeamId, connectionId, gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate setup names from the server when a game is active.
   useEffect(() => {
@@ -150,9 +161,11 @@ export function useGameHydration({
 
     async function hydrateActiveSetupNames() {
       try {
-        const response = await fetch(`${apiBase}/api/games/active/setup`, {
-          headers: apiKeyHeader(),
-        });
+        const activeSetupUrl = new URL(`${apiBase}/api/games/active/setup`);
+        if (activeTeamId) {
+          activeSetupUrl.searchParams.set("teamId", activeTeamId);
+        }
+        const response = await fetch(activeSetupUrl, { headers: apiKeyHeader() });
 
         if (!response.ok || cancelled) {
           return;
@@ -190,7 +203,7 @@ export function useGameHydration({
     return () => {
       cancelled = true;
     };
-  }, [gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTeamId, gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load game state and insights when gameId changes.
   useEffect(() => {
@@ -239,7 +252,11 @@ export function useGameHydration({
           // Game no longer exists on server — try to find the current active game
           // and switch to it, or clear the session if none exists.
           try {
-            const activeRes = await fetch(`${apiBase}/api/games/active/state`, { headers: apiKeyHeader() });
+            const activeUrl = new URL(`${apiBase}/api/games/active/state`);
+            if (activeTeamId) {
+              activeUrl.searchParams.set("teamId", activeTeamId);
+            }
+            const activeRes = await fetch(activeUrl, { headers: apiKeyHeader() });
             if (activeRes.ok) {
               const active = await activeRes.json() as { gameId?: string | null };
               if (active.gameId && active.gameId !== gameId) {
@@ -338,5 +355,5 @@ export function useGameHydration({
     return () => {
       cancelled = true;
     };
-  }, [gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTeamId, gameId, hasTenantScope]); // eslint-disable-line react-hooks/exhaustive-deps
 }

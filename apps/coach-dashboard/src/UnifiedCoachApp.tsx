@@ -1,24 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { GameSessionProvider, useGameSession } from "./GameSessionContext.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GameSessionProvider } from "./GameSessionContext.js";
 import { ForgotPasswordPage } from "./ForgotPasswordPage.js";
 import { LivePage } from "./LivePage.js";
 import { AiInsightsPage } from "./AiInsightsPage.js";
 import { GamesPage } from "./GamesPage.js";
 import { LoginPage } from "./LoginPage.js";
 import { PlayersPage } from "./PlayersPage.js";
-import { apiBase, apiKeyHeader, clearAuthSession, generateConnectionCode, normalizeConnectionCode, readStoredAuthSession, resolveActiveSchoolId } from "./platform.js";
+import {
+  apiBase,
+  apiKeyHeader,
+  clearAuthSession,
+  readStoredAuthSession,
+} from "./platform.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
+import { SchoolOverviewPage } from "./SchoolOverviewPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
 import { TeamSettingsPage } from "./TeamSettingsPage.js";
 import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 import { BillingPage } from "./RouteShellPages.js";
-
-function normalizeConnectionId(value: string | null | undefined): string {
-  return normalizeConnectionCode(value);
-}
+import { fetchWorkspaceContext, saveWorkspaceContextPreference, type WorkspaceContext } from "./workspace.js";
 
 function buildSetupPathFromInviteQuery(): string {
   const params = new URLSearchParams(window.location.search);
@@ -43,57 +46,71 @@ function buildSetupPathFromInviteQuery(): string {
   return `/setup?${next.toString()}`;
 }
 
-interface ConnectedNavActionsProps {
-  onSignOut: () => void;
-  onShowTutorial: () => void;
-}
-
-function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsProps) {
-  const {
-    connectionId,
-    deviceConnected,
-    serverConnected,
-    operatorConsoleUrl,
-    hasGameStarted,
-  } = useGameSession();
-  const [codeCopied, setCodeCopied] = useState(false);
-  const scoreOperatorUrl = hasGameStarted
-    ? operatorConsoleUrl
-    : operatorConsoleUrl.split("?")[0] ?? operatorConsoleUrl;
-
-  function handleCopyCode() {
-    if (!connectionId) return;
-    void navigator.clipboard?.writeText(connectionId).then(() => {
-      setCodeCopied(true);
-      setTimeout(() => setCodeCopied(false), 2000);
-    });
+function buildContextUrl(pathname: string, input: {
+  schoolId?: string;
+  teamId?: string;
+  contextType?: "school" | "team" | null;
+}): string {
+  const [basePath] = pathname.split("?");
+  if (basePath === "/" || basePath === "/login" || basePath === "/forgot-password" || basePath === "/reset-password" || basePath === "/demo" || basePath === "/setup") {
+    return pathname;
   }
 
+  const params = new URLSearchParams();
+  if (input.schoolId) {
+    params.set("schoolId", input.schoolId);
+  }
+  if (input.contextType === "team" && input.teamId) {
+    params.set("teamId", input.teamId);
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+function isPublicRoute(route: AppRoute): boolean {
+  return route === "marketing"
+    || route === "login"
+    || route === "forgot-password"
+    || route === "reset-password"
+    || route === "setup"
+    || route === "demo";
+}
+
+function isTeamRoute(route: AppRoute): boolean {
+  return route === "live"
+    || route === "stats-games"
+    || route === "stats-players"
+    || route === "stats-trends"
+    || route === "stats-insights"
+    || route === "stats-settings";
+}
+
+function isSchoolAdminContext(context: WorkspaceContext | null, schoolId: string | null): boolean {
+  if (!context || !schoolId) {
+    return false;
+  }
+
+  return context.schoolMemberships.some((membership) =>
+    membership.schoolId === schoolId
+      && (membership.role === "owner" || membership.role === "school_admin"),
+  );
+}
+
+interface AuthSessionPayload {
+  authenticated?: boolean;
+  token?: string | null;
+}
+
+function StaticNavActions({
+  onSignOut,
+  onShowTutorial,
+}: {
+  onSignOut: () => void;
+  onShowTutorial: () => void;
+}) {
   return (
     <>
-      <button
-        type="button"
-        className={`connection-pill connection-pill-copy ${deviceConnected ? "online" : "offline"}`}
-        onClick={handleCopyCode}
-        title={codeCopied ? "Copied!" : "Click to copy operator code"}
-        aria-label={codeCopied ? "Code copied" : `Copy operator code ${connectionId}`}
-      >
-        <span className="connection-pill-dot" aria-hidden="true" />
-        <span className="connection-pill-status">
-          {codeCopied ? "Copied!" : deviceConnected ? "Live" : serverConnected ? "Waiting" : "Offline"}
-        </span>
-        {!codeCopied && (
-          <>
-            <span className="connection-pill-sep" aria-hidden="true">·</span>
-            <span className="connection-pill-code">
-              {connectionId}
-            </span>
-          </>
-        )}
-      </button>
-      <a href={scoreOperatorUrl} className="coach-nav-ext-link" target="_blank" rel="noreferrer">
-        Score Operator
-      </a>
       <button
         type="button"
         className="coach-nav-ext-link"
@@ -104,32 +121,140 @@ function ConnectedNavActions({ onSignOut, onShowTutorial }: ConnectedNavActionsP
       <button
         type="button"
         onClick={onShowTutorial}
-        title="Help &amp; Tutorial"
+        title="Help and Tutorial"
         aria-label="Open help and tutorial"
         className="coach-nav-help-button"
-      >?</button>
+      >
+        ?
+      </button>
     </>
   );
 }
 
 export function UnifiedCoachApp() {
-  // useRef for one-time initializers avoids re-running expensive localStorage
-  // reads and generateConnectionCode() on every render.
-  const initialConnectionId = useRef(
-    normalizeConnectionId(new URLSearchParams(window.location.search).get("connectionId"))
-    || normalizeConnectionId(localStorage.getItem("coach-bound-connection-id"))
-    || generateConnectionCode()
-  ).current;
   const initialAuthSession = useRef(readStoredAuthSession()).current;
   const [route, setRoute] = useState<AppRoute>(() => resolveCoachRoute(window.location.pathname));
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => Boolean(initialAuthSession?.token));
   const [requiresSetup, setRequiresSetup] = useState<boolean | null>(null);
+  const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null);
+  const [activeSchoolId, setActiveSchoolId] = useState<string | null>(null);
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
+  const [activeContextType, setActiveContextType] = useState<"school" | "team" | null>(null);
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("coach:tutorial-complete"));
+
+  const canManageSchool = useMemo(
+    () => isSchoolAdminContext(workspaceContext, activeSchoolId),
+    [workspaceContext, activeSchoolId],
+  );
+
+  const activeSchool = useMemo(
+    () => workspaceContext?.schools.find((school) => school.schoolId === activeSchoolId) ?? null,
+    [workspaceContext, activeSchoolId],
+  );
+
+  const activeTeams = useMemo(
+    () => workspaceContext?.teams.filter((team) => team.schoolId === activeSchoolId) ?? [],
+    [workspaceContext, activeSchoolId],
+  );
+
+  const currentTeam = useMemo(
+    () => activeTeams.find((team) => team.id === activeTeamId) ?? null,
+    [activeTeamId, activeTeams],
+  );
+
+  const applyResolvedContext = useCallback((context: WorkspaceContext) => {
+    if (context.schools.length === 0) {
+      setActiveSchoolId(null);
+      setActiveTeamId(null);
+      setActiveContextType(null);
+      return;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const requestedSchoolId = urlParams.get("schoolId")?.trim() ?? "";
+    const requestedTeamId = urlParams.get("teamId")?.trim() ?? "";
+    const availableSchoolIds = new Set(context.schools.map((school) => school.schoolId));
+    const resolvedSchoolId = availableSchoolIds.has(requestedSchoolId)
+      ? requestedSchoolId
+      : (context.profile?.lastSchoolId && availableSchoolIds.has(context.profile.lastSchoolId))
+        ? context.profile.lastSchoolId
+        : context.defaultContext.schoolId
+          ? context.defaultContext.schoolId
+          : context.schools[0]?.schoolId ?? null;
+
+    const schoolTeams = context.teams.filter((team) => team.schoolId === resolvedSchoolId);
+    const availableTeamIds = new Set(schoolTeams.map((team) => team.id));
+    const resolvedTeamId = availableTeamIds.has(requestedTeamId)
+      ? requestedTeamId
+      : (context.profile?.lastTeamId && availableTeamIds.has(context.profile.lastTeamId))
+        ? context.profile.lastTeamId
+        : context.defaultContext.teamId && availableTeamIds.has(context.defaultContext.teamId)
+          ? context.defaultContext.teamId
+          : schoolTeams[0]?.id ?? null;
+
+    const adminInSchool = context.schoolMemberships.some((membership) =>
+      membership.schoolId === resolvedSchoolId
+        && (membership.role === "owner" || membership.role === "school_admin"),
+    );
+
+    const nextContextType = adminInSchool && context.defaultContext.type === "school"
+      ? "school"
+      : resolvedTeamId
+        ? "team"
+        : adminInSchool
+          ? "school"
+          : null;
+
+    setActiveSchoolId(resolvedSchoolId);
+    setActiveTeamId(nextContextType === "team" ? resolvedTeamId : null);
+    setActiveContextType(nextContextType);
+  }, []);
+
+  const syncWorkspaceState = useCallback(async () => {
+    const sessionResponse = await fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() });
+    const sessionPayload = sessionResponse.ok
+      ? await sessionResponse.json() as AuthSessionPayload
+      : null;
+
+    if (sessionPayload !== null && !sessionPayload.authenticated) {
+      clearAuthSession();
+      setIsAuthenticated(false);
+      setRequiresSetup(false);
+      setWorkspaceContext(null);
+      setActiveSchoolId(null);
+      setActiveTeamId(null);
+      setActiveContextType(null);
+      return;
+    }
+
+    const storedSession = readStoredAuthSession();
+    const authenticated = sessionPayload !== null
+      ? Boolean(sessionPayload.authenticated && (sessionPayload.token || storedSession?.token))
+      : Boolean(storedSession?.token);
+
+    setIsAuthenticated(authenticated);
+    if (!authenticated) {
+      setRequiresSetup(false);
+      setWorkspaceContext(null);
+      return;
+    }
+
+    const context = await fetchWorkspaceContext();
+    setWorkspaceContext(context);
+    const needsSetup = context.schools.length === 0 || context.teams.length === 0;
+    setRequiresSetup(needsSetup);
+    applyResolvedContext(context);
+  }, [applyResolvedContext]);
 
   useEffect(() => {
     const canonicalPath = canonicalizeCoachPath(window.location.pathname);
     if (canonicalPath !== window.location.pathname) {
-      window.history.replaceState({}, "", canonicalPath);
+      const nextUrl = buildContextUrl(canonicalPath, {
+        schoolId: new URLSearchParams(window.location.search).get("schoolId")?.trim() ?? undefined,
+        teamId: new URLSearchParams(window.location.search).get("teamId")?.trim() ?? undefined,
+        contextType: new URLSearchParams(window.location.search).get("teamId") ? "team" : "school",
+      });
+      window.history.replaceState({}, "", nextUrl);
       setRoute(resolveCoachRoute(canonicalPath));
     }
   }, []);
@@ -139,130 +264,145 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    const activeSchoolId = resolveActiveSchoolId();
-    if (!activeSchoolId) {
+    void syncWorkspaceState().catch(() => {
       const storedSession = readStoredAuthSession();
       setIsAuthenticated(Boolean(storedSession?.token));
       setRequiresSetup(!Boolean(storedSession?.token));
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadSetupState() {
-      try {
-        const [sessionResponse, onboardingResponse] = await Promise.all([
-          fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() }),
-          fetch(`${apiBase}/api/onboarding/state`, { headers: apiKeyHeader() }),
-        ]);
-
-        const sessionPayload = sessionResponse.ok
-          ? await sessionResponse.json() as { authenticated?: boolean }
-          : null;
-        const onboardingPayload = onboardingResponse.ok
-          ? await onboardingResponse.json() as { completed?: boolean }
-          : { completed: false };
-
-        // Only clear the stored session when the server explicitly confirms the
-        // token is invalid (200 OK + authenticated: false).  Non-OK responses
-        // (server errors, network not yet ready after iPad wakeup) should keep
-        // the stored session so the user isn't forced to log in again.
-        if (sessionPayload !== null && !sessionPayload.authenticated) {
-          clearAuthSession();
-        }
-
-        if (!cancelled) {
-          // If the server returned a non-OK response (sessionPayload is null),
-          // fall back to the stored session token so the user stays logged in.
-          const storedSession = sessionPayload === null ? readStoredAuthSession() : null;
-          const authenticated = sessionPayload !== null
-            ? Boolean(sessionPayload.authenticated)
-            : Boolean(storedSession?.token);
-          setIsAuthenticated(authenticated);
-          setRequiresSetup(!authenticated || !Boolean(onboardingPayload.completed));
-        }
-      } catch {
-        if (!cancelled) {
-          const storedSession = readStoredAuthSession();
-          setIsAuthenticated(Boolean(storedSession?.token));
-          setRequiresSetup(!Boolean(storedSession?.token));
-        }
-      }
-    }
-
-    void loadSetupState();
-    return () => {
-      cancelled = true;
-    };
-  }, [route]);
+    });
+  }, [route, syncWorkspaceState]);
 
   useEffect(() => {
-    if (!requiresSetup) {
+    if (!workspaceContext || !activeSchoolId) {
       return;
     }
 
-    if (route === "marketing" || route === "login" || route === "forgot-password" || route === "reset-password" || route === "setup" || route === "demo") {
-      return;
+    const nextUrl = buildContextUrl(window.location.pathname, {
+      schoolId: activeSchoolId,
+      teamId: activeContextType === "team" ? activeTeamId ?? undefined : undefined,
+      contextType: activeContextType,
+    });
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.replaceState({}, "", nextUrl);
+      setRoute(resolveCoachRoute(window.location.pathname));
     }
-
-    const targetPath = isAuthenticated ? "/setup" : "/login";
-    window.history.replaceState({}, "", targetPath);
-    setRoute(resolveCoachRoute(targetPath));
-  }, [isAuthenticated, requiresSetup, route]);
+  }, [activeContextType, activeSchoolId, activeTeamId, workspaceContext]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (requiresSetup === null || isAuthenticated === null) {
       return;
     }
 
-    if (route !== "marketing" && route !== "login" && route !== "forgot-password" && route !== "reset-password") {
+    if (!isAuthenticated && !isPublicRoute(route)) {
+      window.history.replaceState({}, "", "/login");
+      setRoute("login");
       return;
     }
 
-    const targetPath = requiresSetup ? "/setup" : "/live";
-    window.history.replaceState({}, "", targetPath);
-    setRoute(resolveCoachRoute(targetPath));
-  }, [isAuthenticated, requiresSetup, route]);
+    if (isAuthenticated && requiresSetup && route !== "setup") {
+      window.history.replaceState({}, "", buildSetupPathFromInviteQuery());
+      setRoute("setup");
+      return;
+    }
+
+    if (isAuthenticated && !requiresSetup && (isPublicRoute(route) || route === "setup")) {
+      const targetPath = activeContextType === "school" ? "/stats" : "/live";
+      const nextUrl = buildContextUrl(targetPath, {
+        schoolId: activeSchoolId ?? undefined,
+        teamId: activeContextType === "team" ? activeTeamId ?? undefined : undefined,
+        contextType: activeContextType,
+      });
+      window.history.replaceState({}, "", nextUrl);
+      setRoute(resolveCoachRoute(targetPath));
+      return;
+    }
+
+    if (activeContextType === "school" && isTeamRoute(route)) {
+      const nextUrl = buildContextUrl("/stats", {
+        schoolId: activeSchoolId ?? undefined,
+        contextType: "school",
+      });
+      window.history.replaceState({}, "", nextUrl);
+      setRoute("stats-overview");
+    }
+  }, [activeContextType, activeSchoolId, activeTeamId, isAuthenticated, requiresSetup, route]);
 
   useEffect(() => {
     function handlePopState() {
       const canonicalPath = canonicalizeCoachPath(window.location.pathname);
       if (canonicalPath !== window.location.pathname) {
-        window.history.replaceState({}, "", canonicalPath);
+        const nextUrl = buildContextUrl(canonicalPath, {
+          schoolId: new URLSearchParams(window.location.search).get("schoolId")?.trim() ?? undefined,
+          teamId: new URLSearchParams(window.location.search).get("teamId")?.trim() ?? undefined,
+          contextType: new URLSearchParams(window.location.search).get("teamId") ? "team" : "school",
+        });
+        window.history.replaceState({}, "", nextUrl);
       }
       setRoute(resolveCoachRoute(canonicalPath));
+      if (workspaceContext) {
+        applyResolvedContext(workspaceContext);
+      }
     }
 
     window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
+  }, [applyResolvedContext, workspaceContext]);
+
+  const handleAuthSuccess = useCallback(async () => {
+    await syncWorkspaceState();
+  }, [syncWorkspaceState]);
+
+  const persistContextPreference = useCallback((input: {
+    schoolId: string;
+    teamId?: string;
+    contextType: "school" | "team";
+  }) => {
+    void saveWorkspaceContextPreference(input).catch(() => undefined);
   }, []);
 
-  const handleAuthSuccess = useCallback((setupComplete: boolean) => {
-    setIsAuthenticated(true);
-    setRequiresSetup(!setupComplete);
-    const nextPath = setupComplete ? "/live" : "/setup";
-    window.history.replaceState({}, "", nextPath);
-    setRoute(resolveCoachRoute(nextPath));
-  }, []);
+  const switchToSchool = useCallback((schoolId: string) => {
+    setActiveSchoolId(schoolId);
+    setActiveTeamId(null);
+    setActiveContextType("school");
+    persistContextPreference({ schoolId, contextType: "school" });
+    const nextUrl = buildContextUrl("/stats", { schoolId, contextType: "school" });
+    window.history.pushState({}, "", nextUrl);
+    setRoute("stats-overview");
+  }, [persistContextPreference]);
+
+  const switchToTeam = useCallback((schoolId: string, teamId: string) => {
+    setActiveSchoolId(schoolId);
+    setActiveTeamId(teamId);
+    setActiveContextType("team");
+    persistContextPreference({ schoolId, teamId, contextType: "team" });
+  }, [persistContextPreference]);
 
   function navigate(nextPath: string) {
-    const isPublicPath = nextPath === "/" || nextPath === "/login" || nextPath === "/forgot-password" || nextPath === "/reset-password" || nextPath === "/demo";
+    let routePath = nextPath.split("?")[0] ?? nextPath;
 
-    if (requiresSetup && !isAuthenticated && !isPublicPath && nextPath !== "/setup") {
+    if (requiresSetup && !isAuthenticated && !isPublicRoute(resolveCoachRoute(routePath)) && routePath !== "/setup") {
       nextPath = "/login";
+      routePath = "/login";
     }
 
-    if (requiresSetup && isAuthenticated && !isPublicPath && nextPath !== "/setup") {
+    if (requiresSetup && isAuthenticated && routePath !== "/setup") {
       nextPath = "/setup";
+      routePath = "/setup";
     }
 
-    if (window.location.pathname === nextPath) {
+    const nextUrl = buildContextUrl(nextPath, {
+      schoolId: activeSchoolId ?? undefined,
+      teamId: activeContextType === "team" ? activeTeamId ?? undefined : undefined,
+      contextType: activeContextType,
+    });
+
+    if (`${window.location.pathname}${window.location.search}` === nextUrl) {
       return;
     }
-    window.history.pushState({}, "", nextPath);
-    setRoute(resolveCoachRoute(nextPath));
+
+    window.history.pushState({}, "", nextUrl);
+    setRoute(resolveCoachRoute(routePath));
   }
 
   if (route === "marketing" || route === "demo") {
@@ -271,7 +411,7 @@ export function UnifiedCoachApp() {
         onBackHome={() => navigate("/")}
         onCreateAccount={() => navigate(buildSetupPathFromInviteQuery())}
         onForgotPassword={() => navigate("/forgot-password")}
-        onSuccess={handleAuthSuccess}
+        onSuccess={() => void handleAuthSuccess()}
       />
     );
   }
@@ -282,7 +422,7 @@ export function UnifiedCoachApp() {
         onBackHome={() => navigate("/")}
         onCreateAccount={() => navigate(buildSetupPathFromInviteQuery())}
         onForgotPassword={() => navigate("/forgot-password")}
-        onSuccess={handleAuthSuccess}
+        onSuccess={() => void handleAuthSuccess()}
       />
     );
   }
@@ -305,11 +445,11 @@ export function UnifiedCoachApp() {
     );
   }
 
-  if (requiresSetup === null) {
+  if (requiresSetup === null || isAuthenticated === null) {
     return (
       <div className="stats-page">
         <section className="stats-page-card">
-          <p className="stats-page-status">Loading workspace setup...</p>
+          <p className="stats-page-status">Loading workspace...</p>
         </section>
       </div>
     );
@@ -319,16 +459,21 @@ export function UnifiedCoachApp() {
     return (
       <SetupPage
         onComplete={() => {
-          setIsAuthenticated(true);
-          setRequiresSetup(false);
-          window.history.replaceState({}, "", "/live");
-          setRoute("live");
+          void handleAuthSuccess();
         }}
       />
     );
   }
 
-  const isLive = route === "live";
+  if (!workspaceContext || !activeSchoolId || (!activeContextType && !requiresSetup)) {
+    return (
+      <div className="stats-page">
+        <section className="stats-page-card">
+          <p className="stats-page-status">Loading workspace context...</p>
+        </section>
+      </div>
+    );
+  }
 
   function navBtn(label: string, targetRoute: AppRoute, path: string) {
     return (
@@ -344,28 +489,87 @@ export function UnifiedCoachApp() {
     );
   }
 
+  const switcherOptions = [
+    ...(canManageSchool && activeSchool ? [{
+      label: `${activeSchool.name} Overview`,
+      value: `school:${activeSchool.schoolId}`,
+    }] : []),
+    ...activeTeams.map((team) => ({
+      label: team.displayName ?? team.name,
+      value: `team:${team.id}`,
+    })),
+  ];
+
+  const switcherValue = activeContextType === "school"
+    ? `school:${activeSchoolId}`
+    : activeTeamId
+      ? `team:${activeTeamId}`
+      : "";
+
+  const gameShellKey = `${activeSchoolId}:${activeContextType}:${activeTeamId ?? "school"}`;
+
   return (
-    <GameSessionProvider>
-      {showTutorial && (
+    <GameSessionProvider key={gameShellKey}>
+      {showTutorial ? (
         <TutorialOverlay onDismiss={() => setShowTutorial(false)} />
-      )}
+      ) : null}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
-          <ul className="coach-nav-links">
-            {navBtn("Live", "live", "/live")}
-            {navBtn("Overview", "stats-overview", "/stats")}
-            {navBtn("Games", "stats-games", "/stats/games")}
-            {navBtn("Players", "stats-players", "/stats/players")}
-            {navBtn("Trends", "stats-trends", "/stats/trends")}
-            {navBtn("AI Insights", "stats-insights", "/stats/insights")}
-            {navBtn("Settings", "stats-settings", "/stats/settings")}
-          </ul>
           <div className="coach-nav-actions">
-            <ConnectedNavActions
+            <select
+              value={switcherValue}
+              onChange={(event) => {
+                const [type, id] = event.target.value.split(":");
+                if (type === "school" && id) {
+                  switchToSchool(id);
+                  return;
+                }
+                const team = activeTeams.find((entry) => entry.id === id) ?? workspaceContext.teams.find((entry) => entry.id === id);
+                if (team?.schoolId) {
+                  switchToTeam(team.schoolId, team.id);
+                  if (route === "stats-overview" || route === "billing") {
+                    navigate("/live");
+                  } else {
+                    navigate(window.location.pathname);
+                  }
+                }
+              }}
+            >
+              {switcherOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <ul className="coach-nav-links">
+            {activeContextType === "school" ? (
+              <>
+                {navBtn("Overview", "stats-overview", "/stats")}
+                {canManageSchool ? navBtn("Billing", "billing", "/billing") : null}
+              </>
+            ) : (
+              <>
+                {navBtn("Live", "live", "/live")}
+                {navBtn("Overview", "stats-overview", "/stats")}
+                {navBtn("Games", "stats-games", "/stats/games")}
+                {navBtn("Players", "stats-players", "/stats/players")}
+                {navBtn("Trends", "stats-trends", "/stats/trends")}
+                {navBtn("AI Insights", "stats-insights", "/stats/insights")}
+                {navBtn("Settings", "stats-settings", "/stats/settings")}
+              </>
+            )}
+          </ul>
+
+          <div className="coach-nav-actions">
+            <StaticNavActions
               onSignOut={() => {
                 clearAuthSession();
                 setIsAuthenticated(false);
-                setRequiresSetup(true);
+                setRequiresSetup(false);
+                setWorkspaceContext(null);
+                setActiveSchoolId(null);
+                setActiveTeamId(null);
+                setActiveContextType(null);
                 window.history.replaceState({}, "", "/login");
                 setRoute("login");
               }}
@@ -374,14 +578,34 @@ export function UnifiedCoachApp() {
           </div>
         </div>
       </nav>
-      {isLive && <LivePage />}
-      {route === "billing" && <BillingPage onNavigate={navigate} />}
-      {route === "stats-overview" && <StatsOverviewPage />}
-      {route === "stats-games" && <GamesPage />}
-      {route === "stats-players" && <PlayersPage />}
-      {route === "stats-trends" && <TrendsPage />}
-      {route === "stats-insights" && <AiInsightsPage />}
-      {route === "stats-settings" && <TeamSettingsPage />}
+
+      {activeContextType === "school" ? (
+        <>
+          {route === "billing" ? (
+            <BillingPage onNavigate={navigate} />
+          ) : (
+            <SchoolOverviewPage
+              schoolId={activeSchoolId}
+              canManageSchool={canManageSchool}
+              onOpenTeam={(teamId) => {
+                switchToTeam(activeSchoolId, teamId);
+                navigate("/live");
+              }}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {route === "live" && <LivePage />}
+          {route === "stats-overview" && <StatsOverviewPage />}
+          {route === "stats-games" && <GamesPage />}
+          {route === "stats-players" && <PlayersPage />}
+          {route === "stats-trends" && <TrendsPage />}
+          {route === "stats-insights" && <AiInsightsPage />}
+          {route === "stats-settings" && <TeamSettingsPage />}
+          {!currentTeam && route === "billing" ? <BillingPage onNavigate={navigate} /> : null}
+        </>
+      )}
     </GameSessionProvider>
   );
 }

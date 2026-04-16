@@ -67,6 +67,18 @@ export function isOptionalTenantScopeRequest(req: Request): boolean {
   if (isPublicAuthBootstrapRequest(req) || isOperatorBootstrapRequest(req)) {
     return true;
   }
+  if (req.path === "/me/context" || req.path === "/schools/bootstrap") {
+    return true;
+  }
+  if (/^\/schools\/[^/]+(?:\/overview|\/teams)?$/i.test(req.path)) {
+    return true;
+  }
+  if (/^\/teams\/[^/]+(?:\/live-sessions)?$/i.test(req.path)) {
+    return true;
+  }
+  if (/^\/live-sessions\/[^/]+\/operator-pairing$/i.test(req.path)) {
+    return true;
+  }
   if (req.method === "GET" && (req.path === "/auth/session" || req.path === "/onboarding/state")) {
     return true;
   }

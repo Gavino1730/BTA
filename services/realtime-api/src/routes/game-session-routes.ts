@@ -16,7 +16,7 @@ interface RegisterGameSessionRoutesOptions {
   requireWriteRole: Middleware;
   getSchoolIdFromRequest: (req: Request) => string;
   getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
-  getActiveGameState: (scope: { schoolId: string }) => GameState | null;
+  getActiveGameState: (scope: { schoolId: string; teamId?: string }) => GameState | null;
   createGame: (input: CreateGameInput, scope?: { schoolId: string }) => unknown;
   emitToGameRooms: (schoolId: string, gameId: string, eventName: string, payload: unknown) => void;
   getLatestOperatorLinkSetup: (schoolId: string, options?: { gameId?: string }) => { connectionId: string; setup: OperatorLinkSetup } | null;
@@ -26,6 +26,7 @@ interface RegisterGameSessionRoutesOptions {
 export function registerGameSessionRoutes(app: Express, options: RegisterGameSessionRoutesOptions): void {
   app.post(["/games", "/api/games"], options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
+    const requestedTeamId = typeof req.body?.teamId === "string" ? req.body.teamId.trim() : "";
     const {
       gameId,
       homeTeamId,
@@ -47,10 +48,11 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
       return;
     }
 
-    const activeState = options.getActiveGameState({ schoolId });
+    const activeTeamId = requestedTeamId || homeTeamId || awayTeamId;
+    const activeState = options.getActiveGameState({ schoolId, teamId: activeTeamId });
     if (activeState && activeState.gameId !== gameId) {
       res.status(409).json({
-        error: "An active game is already in progress for this school",
+        error: "An active game is already in progress for this team",
         activeGameId: activeState.gameId,
         activeState,
       });
@@ -76,7 +78,8 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
 
   app.get("/api/games/active/state", options.requireApiKey, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
-    const activeState = options.getActiveGameState({ schoolId });
+    const teamId = typeof req.query.teamId === "string" ? req.query.teamId.trim() : "";
+    const activeState = options.getActiveGameState({ schoolId, teamId: teamId || undefined });
 
     if (!activeState) {
       res.json({ gameId: null });
@@ -88,7 +91,8 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
 
   app.get("/api/games/active/setup", options.requireApiKey, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
-    const activeState = options.getActiveGameState({ schoolId });
+    const teamId = typeof req.query.teamId === "string" ? req.query.teamId.trim() : "";
+    const activeState = options.getActiveGameState({ schoolId, teamId: teamId || undefined });
 
     if (!activeState) {
       res.status(404).json({ error: "no active game" });
