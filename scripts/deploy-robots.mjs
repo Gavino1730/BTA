@@ -2,8 +2,12 @@
 // Copies the correct robots.txt for Vercel preview or production deploys
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const publicDir = path.resolve('apps/coach-dashboard/public');
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..');
+const publicDir = path.join(repoRoot, 'apps/coach-dashboard/public');
+
 const vercelEnv = process.env.VERCEL_ENV;
 const robotsPreview = process.env.BTA_ROBOTS_PREVIEW;
 const isPreview = vercelEnv === 'preview' || robotsPreview === '1';
@@ -12,12 +16,20 @@ const dest = 'robots.txt';
 
 async function main() {
   console.log(`[robots] VERCEL_ENV=${vercelEnv} BTA_ROBOTS_PREVIEW=${robotsPreview}`);
-  if (src !== dest) {
-    await fs.copyFile(path.join(publicDir, src), path.join(publicDir, dest));
-    console.log(`[robots] Copied ${src} -> ${dest} (mode: ${isPreview ? 'preview' : 'production'})`);
-  } else {
+
+  if (src === dest) {
     console.log(`[robots] Using default ${dest} (mode: production)`);
+    return;
   }
+
+  const srcPath = path.join(publicDir, src);
+  const destPath = path.join(publicDir, dest);
+
+  await fs.copyFile(srcPath, destPath);
+  console.log(`[robots] Copied ${src} -> ${dest} (mode: ${isPreview ? 'preview' : 'production'})`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
