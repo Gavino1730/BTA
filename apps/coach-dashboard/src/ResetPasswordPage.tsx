@@ -1,5 +1,9 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { getSupabaseSessionIdentity, updateSupabasePassword } from "./supabase/client.js";
+import {
+  getSupabaseSessionIdentity,
+  initializeSupabaseRecoverySessionFromUrl,
+  updateSupabasePassword,
+} from "./supabase/client.js";
 
 interface ResetPasswordPageProps {
   onBackLogin: () => void;
@@ -23,14 +27,17 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
     let cancelled = false;
 
     void (async () => {
-      const session = await getSupabaseSessionIdentity().catch(() => null);
+      const session = await initializeSupabaseRecoverySessionFromUrl()
+        .catch(() => getSupabaseSessionIdentity().catch(() => null));
       if (cancelled) {
         return;
       }
       if (session?.token) {
         setRecoveryReady(true);
         setStatus("Enter a new password to finish resetting your account.");
+        return;
       }
+      setStatus("This reset link is invalid or expired. Request a new password reset email.");
     })();
 
     return () => {

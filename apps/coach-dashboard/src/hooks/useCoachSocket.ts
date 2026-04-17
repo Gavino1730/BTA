@@ -70,6 +70,9 @@ export function useCoachSocket({
   setRosterTeamsFromRemote,
   setLastFinishedGameSummary,
 }: UseCoachSocketOptions): void {
+  const preferPollingOnly = typeof window !== "undefined"
+    && !/^(localhost|127(?:\.\d{1,3}){3})$/i.test(window.location.hostname);
+
   // Keep a stable ref to clearActiveGame so the socket event handlers
   // always call the latest version — the socket effect only re-runs when
   // connectionId changes, so callbacks captured at setup time would have
@@ -93,8 +96,8 @@ export function useCoachSocket({
         ...(authSession?.token ? { token: authSession.token } : {}),
       },
       extraHeaders: apiKeyHeader(),
-      transports: ["polling", "websocket"],
-      upgrade: true,
+      transports: preferPollingOnly ? ["polling"] : ["polling", "websocket"],
+      upgrade: !preferPollingOnly,
       timeout: 20000,
       reconnection: true,
       reconnectionAttempts: Infinity,

@@ -82,6 +82,52 @@ export async function getSupabaseSessionIdentity(): Promise<{
   };
 }
 
+export async function initializeSupabaseRecoverySessionFromUrl(): Promise<{
+  token: string | null;
+  email?: string;
+  fullName?: string;
+  userId?: string;
+} | null> {
+  const client = createSupabaseClient();
+  if (!client || typeof window === "undefined") {
+    return null;
+  }
+
+  const url = new URL(window.location.href);
+  const type = (url.searchParams.get("type") ?? "").trim().toLowerCase();
+  const tokenHash = (url.searchParams.get("token_hash") ?? "").trim();
+  const code = (url.searchParams.get("code") ?? "").trim();
+  let changedUrl = false;
+
+  if (tokenHash && type === "recovery") {
+    const { error } = await client.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: "recovery",
+    });
+    if (error) {
+      throw new Error(error.message || "Could not verify password reset link.");
+    }
+    url.searchParams.delete("token_hash");
+    url.searchParams.delete("type");
+    changedUrl = true;
+  } else if (code) {
+    const { error } = await client.auth.exchangeCodeForSession(code);
+    if (error) {
+      throw new Error(error.message || "Could not verify recovery session.");
+    }
+    url.searchParams.delete("code");
+    changedUrl = true;
+  }
+
+  if (changedUrl) {
+    const nextSearch = url.searchParams.toString();
+    const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ""}${url.hash || ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }
+
+  return getSupabaseSessionIdentity();
+}
+
 export async function signInWithSupabase(email: string, password: string): Promise<{
   token: string;
   email?: string;
