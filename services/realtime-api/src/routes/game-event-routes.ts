@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { findTrackedRosterTeamForGame, isTeamReadOnly, type GameStateLike, type WorkspaceRosterTeam } from "../helpers/team-billing-guards.js";
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
 
@@ -7,6 +8,7 @@ interface RegisterGameEventRoutesOptions {
   requireWriteRole: Middleware;
   eventRateLimiter: Middleware;
   getSchoolIdFromRequest: (req: Request) => string;
+  getRosterTeamsByScope: (scope: { schoolId: string }) => WorkspaceRosterTeam[];
   getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
   getGameEvents: (gameId: string, scope: { schoolId: string }) => unknown[];
   ingestEvent: (payload: Record<string, unknown>, scope: { schoolId: string }) => { event: { gameId: string }; state: unknown; insights: unknown };
@@ -18,6 +20,21 @@ interface RegisterGameEventRoutesOptions {
 }
 
 export function registerGameEventRoutes(app: Express, options: RegisterGameEventRoutesOptions): void {
+  function rejectReadOnlyTeamMutation(res: Response, schoolId: string, gameId: string): boolean {
+    const state = options.getGameState(gameId, { schoolId }) as GameStateLike | null;
+    const trackedTeam = findTrackedRosterTeamForGame(state, options.getRosterTeamsByScope({ schoolId }));
+    if (!isTeamReadOnly(trackedTeam)) {
+      return false;
+    }
+
+    res.status(402).json({
+      error: "This team is read-only until the school upgrades for additional active team capacity.",
+      code: "team_upgrade_required",
+      team: trackedTeam,
+    });
+    return true;
+  }
+
   app.get("/api/games/:gameId/events", options.requireApiKey, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const state = options.getGameState(req.params.gameId, { schoolId });
@@ -41,6 +58,9 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
 
   app.post("/api/games/:gameId/events", options.requireApiKey, options.requireWriteRole, options.eventRateLimiter, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
+    if (rejectReadOnlyTeamMutation(res, schoolId, req.params.gameId)) {
+      return;
+    }
     try {
       const payload = {
         ...(req.body ?? {}),
@@ -79,6 +99,9 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
 
   app.delete("/api/games/:gameId/events/:eventId", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
+    if (rejectReadOnlyTeamMutation(res, schoolId, req.params.gameId)) {
+      return;
+    }
     try {
       const { state, insights } = options.deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
 
@@ -99,6 +122,9 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
 
   app.put("/api/games/:gameId/events/:eventId", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
+    if (rejectReadOnlyTeamMutation(res, schoolId, req.params.gameId)) {
+      return;
+    }
     try {
       const { event, state, insights } = options.updateEvent(
         req.params.gameId,

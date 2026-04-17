@@ -4,6 +4,10 @@ export type AppRoute =
   | "forgot-password"
   | "reset-password"
   | "billing"
+  | "school-teams"
+  | "school-staff"
+  | "school-activity"
+  | "school-settings"
   | "live"
   | "setup"
   | "stats-overview"
@@ -50,6 +54,18 @@ export function resolveCoachRoute(pathname: string): AppRoute {
   }
   if (canonical === "/billing") {
     return "billing";
+  }
+  if (canonical === "/school/teams") {
+    return "school-teams";
+  }
+  if (canonical === "/school/staff") {
+    return "school-staff";
+  }
+  if (canonical === "/school/activity") {
+    return "school-activity";
+  }
+  if (canonical === "/school/settings") {
+    return "school-settings";
   }
   if (canonical === "/setup") {
     return "setup";

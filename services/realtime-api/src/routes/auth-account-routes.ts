@@ -17,10 +17,27 @@ interface RegisterAuthAccountRoutesOptions {
   findPlayerRecord: (teams: any[], playerName: string) => { player: any; playerIndex: number; teamIndex: number } | null;
   saveOrganizationMember: (member: any, scope: { schoolId: string }) => any;
   persistSchoolTeams: (schoolId: string, teams: any[]) => any[];
+  enableLegacyLocalAuth?: boolean;
 }
 
 export function registerAuthAccountRoutes(app: Express, options: RegisterAuthAccountRoutesOptions): void {
+  function rejectLegacyLocalAuth(res: Response, action: "coach password reset" | "player account" | "player password reset"): boolean {
+    if (options.enableLegacyLocalAuth !== false) {
+      return false;
+    }
+
+    res.status(410).json({
+      error: `Legacy local ${action} is disabled. Use Supabase auth flows instead.`,
+      code: "legacy_local_auth_disabled",
+    });
+    return true;
+  }
+
   app.post("/api/auth/coach-account/reset-password", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "coach password reset")) {
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
     const actingMember = options.requireOrganizationManager(req, res);
     if (!actingMember) {
@@ -78,6 +95,10 @@ export function registerAuthAccountRoutes(app: Express, options: RegisterAuthAcc
   });
 
   app.post("/api/auth/player-account", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "player account")) {
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
     const actingMember = options.requireOrganizationManager(req, res);
     if (!actingMember) {
@@ -163,6 +184,10 @@ export function registerAuthAccountRoutes(app: Express, options: RegisterAuthAcc
   });
 
   app.post("/api/auth/player-account/reset-password", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "player password reset")) {
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
     const actingMember = options.requireOrganizationManager(req, res);
     if (!actingMember) {

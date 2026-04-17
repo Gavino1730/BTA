@@ -14,6 +14,7 @@ export function generateGameId(opponent: string, date: string): string {
 
 export function applyGameSessionToUrl(
   nextGameId: string,
+  nextLiveSessionId: string | undefined,
   myTeamId: string,
   myTeamName: string,
   opponentName: string,
@@ -23,6 +24,11 @@ export function applyGameSessionToUrl(
 ): void {
   const params = new URLSearchParams(window.location.search);
   params.set("gameId", nextGameId);
+  if (nextLiveSessionId?.trim()) {
+    params.set("liveSessionId", nextLiveSessionId.trim());
+  } else {
+    params.delete("liveSessionId");
+  }
   params.set("myTeamId", myTeamId);
   if (myTeamName) {
     params.set("myTeamName", myTeamName);

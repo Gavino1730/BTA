@@ -98,6 +98,7 @@ export function loadAppData(): AppData {
   if (qp.get("apiKey"))      urlSetup.apiKey      = qp.get("apiKey")!;
   if (qp.get("schoolId"))    urlSetup.schoolId    = qp.get("schoolId")!;
   if (qp.get("gameId"))      urlSetup.gameId      = qp.get("gameId")!;
+  if (qp.get("liveSessionId")) urlSetup.liveSessionId = qp.get("liveSessionId")!;
   if (qp.get("connectionId")) urlSetup.connectionId = normalizeConnectionId(qp.get("connectionId"));
   if (qp.get("opponent"))    urlSetup.opponent    = qp.get("opponent")!;
   if (qp.get("vcSide") === "home" || qp.get("vcSide") === "away") urlSetup.vcSide = qp.get("vcSide") as "home" | "away";

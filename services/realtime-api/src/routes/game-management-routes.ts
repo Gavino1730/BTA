@@ -1,5 +1,6 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type { GameEditOverride } from "../store.js";
+import { findTrackedRosterTeamForGame, isTeamReadOnly, type GameStateLike, type WorkspaceRosterTeam } from "../helpers/team-billing-guards.js";
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
 
@@ -7,6 +8,8 @@ interface RegisterGameManagementRoutesOptions {
   requireApiKey: Middleware;
   requireWriteRole: Middleware;
   getSchoolIdFromRequest: (req: Request) => string;
+  getRosterTeamsByScope: (scope: { schoolId: string }) => WorkspaceRosterTeam[];
+  getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
   getSeasonTeamStats: (scope: { schoolId: string }) => unknown;
   buildGamesPayload: (schoolId: string) => Record<string, unknown>[];
   getGameOverrideMap: (schoolId: string) => Map<string, GameEditOverride>;
@@ -20,6 +23,21 @@ interface RegisterGameManagementRoutesOptions {
 }
 
 export function registerGameManagementRoutes(app: Express, options: RegisterGameManagementRoutesOptions): void {
+  function rejectReadOnlyTeamMutation(res: Response, schoolId: string, gameId: string): boolean {
+    const state = options.getGameState(gameId, { schoolId }) as GameStateLike | null;
+    const trackedTeam = findTrackedRosterTeamForGame(state, options.getRosterTeamsByScope({ schoolId }));
+    if (!isTeamReadOnly(trackedTeam)) {
+      return false;
+    }
+
+    res.status(402).json({
+      error: "This team is read-only until the school upgrades for additional active team capacity.",
+      code: "team_upgrade_required",
+      team: trackedTeam,
+    });
+    return true;
+  }
+
   app.get("/api/season-stats", (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     res.json(options.getSeasonTeamStats({ schoolId }));
@@ -58,6 +76,9 @@ export function registerGameManagementRoutes(app: Express, options: RegisterGame
   app.put("/api/games/:gameId", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const gameId = String(req.params.gameId);
+    if (rejectReadOnlyTeamMutation(res, schoolId, gameId)) {
+      return;
+    }
     const existing = options.buildGamesPayload(schoolId).find((entry) => String(entry.gameId) === gameId);
     if (!existing) {
       res.status(404).json({ error: "Game not found" });
@@ -110,6 +131,9 @@ export function registerGameManagementRoutes(app: Express, options: RegisterGame
   app.delete("/api/games/:gameId", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const gameId = String(req.params.gameId);
+    if (rejectReadOnlyTeamMutation(res, schoolId, gameId)) {
+      return;
+    }
     const removedFromState = options.deleteGame(gameId, { schoolId });
     const removedOverride = options.getGameOverrideMap(schoolId).delete(gameId);
     if (!removedFromState && !removedOverride) {
@@ -124,6 +148,9 @@ export function registerGameManagementRoutes(app: Express, options: RegisterGame
   app.post("/api/games/:gameId/submit", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const gameId = String(req.params.gameId);
+    if (rejectReadOnlyTeamMutation(res, schoolId, gameId)) {
+      return;
+    }
     const ok = options.submitGame(gameId, { schoolId });
     if (!ok) {
       res.status(404).json({ error: "Game not found" });

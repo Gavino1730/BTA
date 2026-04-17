@@ -279,6 +279,9 @@ const BILLING_STRIPE_WEBHOOK_SECRET = process.env.BTA_STRIPE_WEBHOOK_SECRET?.tri
 const BILLING_STRIPE_PRICE_ID_MONTHLY = process.env.BTA_STRIPE_PRICE_ID_MONTHLY?.trim() || undefined;
 const BILLING_STRIPE_PRICE_ID_YEARLY = process.env.BTA_STRIPE_PRICE_ID_YEARLY?.trim() || undefined;
 const EXPOSE_PASSWORD_RESET_TOKEN = process.env.BTA_EXPOSE_PASSWORD_RESET_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production";
+const ENABLE_LEGACY_LOCAL_AUTH = process.env.BTA_ENABLE_LEGACY_LOCAL_AUTH?.trim()
+  ? process.env.BTA_ENABLE_LEGACY_LOCAL_AUTH !== "0"
+  : ((process.env.NODE_ENV ?? "development") === "test" || !isJwtAuthEnabled());
 
 function hasValidApiKeyRequest(req: Request): boolean {
   const provided = req.headers["x-api-key"] ?? req.query.apiKey;
@@ -698,6 +701,8 @@ registerAuthCoreRoutes(app, {
   resolveCurrentOrganizationMember,
   getLocalAuthAccountByEmail,
   buildAuthSessionResponse,
+  getUserWorkspaceProfile,
+  listSchoolMembershipsForUser,
   sanitizeTextField,
   resolveAuthSchoolId,
   pruneExpiredInvitationTokens,
@@ -722,6 +727,7 @@ registerAuthCoreRoutes(app, {
   exposePasswordResetToken: EXPOSE_PASSWORD_RESET_TOKEN,
   getLocalAuthAccountsByScope,
   billingGuardBeforeRegister: undefined,
+  enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
 });
 
 registerAuthAccountRoutes(app, {
@@ -739,6 +745,7 @@ registerAuthAccountRoutes(app, {
   findPlayerRecord,
   saveOrganizationMember,
   persistSchoolTeams,
+  enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
 });
 
 registerWorkspaceRoutes(app, {
@@ -862,6 +869,8 @@ registerGameManagementRoutes(app, {
   requireApiKey,
   requireWriteRole,
   getSchoolIdFromRequest,
+  getRosterTeamsByScope,
+  getGameState,
   getSeasonTeamStats,
   buildGamesPayload,
   getGameOverrideMap,
@@ -1018,6 +1027,7 @@ registerGameSessionRoutes(app, {
   requireApiKey,
   requireWriteRole,
   getSchoolIdFromRequest,
+  getRosterTeamsByScope,
   getGameState,
   getActiveGameState,
   createGame,
@@ -1050,6 +1060,7 @@ registerGameEventRoutes(app, {
   requireWriteRole,
   eventRateLimiter,
   getSchoolIdFromRequest,
+  getRosterTeamsByScope,
   getGameState,
   getGameEvents,
   ingestEvent,

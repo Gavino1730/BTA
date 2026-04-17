@@ -52,6 +52,8 @@ export interface GameSession {
   // Connection
   connectionId: string;
   setConnectionId: (id: string) => void;
+  liveSessionId: string;
+  setLiveSessionId: (id: string) => void;
   deviceId: string;
   operatorConsoleUrl: string;
 
@@ -264,6 +266,10 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
       return params.get("gameId") ?? "";
     }
   });
+  const [liveSessionId, setLiveSessionId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("liveSessionId")?.trim() ?? "";
+  });
 
   const gameIdRef = useRef(gameId);
 
@@ -311,6 +317,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     const params = new URLSearchParams();
     const schoolId = resolveActiveSchoolId();
     if (connectionId) params.set("connectionId", connectionId);
+    if (liveSessionId) params.set("liveSessionId", liveSessionId);
     if (schoolId) params.set("schoolId", schoolId);
     if (gameId) params.set("gameId", gameId);
     if (setupNames.myTeamId) params.set("myTeamId", setupNames.myTeamId);
@@ -320,7 +327,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     if (setupNames.homeColor) params.set("homeColor", setupNames.homeColor);
     if (setupNames.awayColor) params.set("awayColor", setupNames.awayColor);
     return `${operatorBase.replace(/\/$/, "")}/?${params.toString()}`;
-  }, [connectionId, gameId, setupNames]);
+  }, [connectionId, gameId, liveSessionId, setupNames]);
 
   useEffect(() => {
     onConnectionChange?.({ deviceConnected, serverConnected, connectionId, operatorConsoleUrl });
@@ -386,6 +393,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
     endedGameIdsRef,
     connectionId,
     setConnectionId,
+    setLiveSessionId,
     setGameId,
     setSetupNames,
     setDashboardStatus,
@@ -454,10 +462,14 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
       if (gameId) { params.set("gameId", gameId); } else { params.delete("gameId"); }
       changed = true;
     }
+    if (params.get("liveSessionId") !== liveSessionId) {
+      if (liveSessionId) { params.set("liveSessionId", liveSessionId); } else { params.delete("liveSessionId"); }
+      changed = true;
+    }
     if (changed) {
       window.history.replaceState({}, "", `?${params.toString()}`);
     }
-  }, [connectionId, gameId]);
+  }, [connectionId, gameId, liveSessionId]);
 
   const clearActiveGame = useCallback((statusMessage: string): void => {
     if (gameId) {
@@ -469,6 +481,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
       } catch { /* ignore */ }
     }
     setGameId("");
+    setLiveSessionId("");
     setState(null);
     setInsights([]);
     resetAiState();
@@ -550,7 +563,7 @@ export function GameSessionProvider({ children, onConnectionChange }: GameSessio
 
   const value: GameSession = {
     // Connection
-    connectionId, setConnectionId, deviceId, operatorConsoleUrl,
+    connectionId, setConnectionId, liveSessionId, setLiveSessionId, deviceId, operatorConsoleUrl,
     // Game identity
     gameId, setupNames,
     // Game data

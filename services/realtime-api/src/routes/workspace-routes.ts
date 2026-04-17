@@ -228,22 +228,62 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
       return;
     }
 
-    const schoolMemberships = options.listSchoolMembershipsForUser({
+    const initialSchoolMemberships = options.listSchoolMembershipsForUser({
       userId: authUser.userId,
       email: authUser.email,
     });
+    const normalizedSchoolMemberships = authUser.userId
+      ? initialSchoolMemberships.map((membership) =>
+          membership.userId === authUser.userId
+            ? membership
+            : options.saveSchoolMembership({
+                membershipId: membership.membershipId,
+                schoolId: membership.schoolId,
+                userId: authUser.userId,
+                email: membership.email,
+                fullName: authUser.fullName ?? membership.fullName,
+                role: membership.role,
+                status: membership.status,
+              }),
+        )
+      : initialSchoolMemberships;
+    const schoolMemberships = normalizedSchoolMemberships;
 
-    const schools = schoolMemberships
-      .map((membership) => options.getSchoolRecord(membership.schoolId))
-      .filter((school): school is SchoolRecord => Boolean(school));
-
-    const teamMemberships = schoolMemberships.flatMap((membership) =>
+    const initialTeamMemberships = schoolMemberships.flatMap((membership) =>
       options.listTeamMembershipsForUser({
         schoolId: membership.schoolId,
         userId: authUser.userId,
         email: authUser.email,
       }),
     );
+    const teamMemberships = authUser.userId
+      ? initialTeamMemberships.map((membership) =>
+          membership.userId === authUser.userId
+            ? membership
+            : options.saveTeamMembership({
+                membershipId: membership.membershipId,
+                schoolId: membership.schoolId,
+                teamId: membership.teamId,
+                userId: authUser.userId,
+                email: membership.email,
+                fullName: authUser.fullName ?? membership.fullName,
+                role: membership.role,
+                status: membership.status,
+              }),
+        )
+      : initialTeamMemberships;
+
+    const schools = schoolMemberships
+      .map((membership) => options.getSchoolRecord(membership.schoolId))
+      .filter((school): school is SchoolRecord => Boolean(school));
+
+    if (authUser.userId && authUser.email) {
+      options.saveUserWorkspaceProfile({
+        userId: authUser.userId,
+        email: authUser.email,
+        fullName: authUser.fullName ?? "",
+      });
+    }
 
     const teams = schoolMemberships.flatMap((membership) => {
       const schoolTeams = applyTeamBillingStatuses(options, membership.schoolId).teams;

@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { apiBase, resolveActiveSchoolId } from "./platform.js";
+import { requestSupabasePasswordReset } from "./supabase/client.js";
 
 interface ForgotPasswordPageProps {
   onBackLogin: () => void;
@@ -7,7 +7,6 @@ interface ForgotPasswordPageProps {
 }
 
 export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPageProps) {
-  const schoolId = resolveActiveSchoolId();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("Enter your coach email to receive a password reset link.");
   const [busy, setBusy] = useState(false);
@@ -15,11 +14,6 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = email.trim().toLowerCase();
-
-    if (!schoolId) {
-      setStatus("Open your school workspace link first so we know where to send the reset.");
-      return;
-    }
 
     if (!normalized) {
       setStatus("Enter your coach email to continue.");
@@ -35,21 +29,9 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
     setStatus("Preparing your reset email...");
 
     try {
-      const response = await fetch(`${apiBase}/api/auth/password-reset/request`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-school-id": schoolId,
-        },
-        body: JSON.stringify({ email: normalized }),
-      });
-
-      const payload = await response.json() as { message?: string; error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not submit password reset request.");
-      }
-
-      setStatus(payload.message || "If this email exists for your organization, reset instructions have been sent.");
+      const redirectTo = `${window.location.origin}/reset-password`;
+      await requestSupabasePasswordReset(normalized, redirectTo);
+      setStatus("If this email exists, a password reset link has been sent.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not submit password reset request.");
     } finally {
@@ -69,7 +51,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
           <p className="stats-page-eyebrow">Account Recovery</p>
           <h1>Forgot Password</h1>
           <p className="stats-page-subtitle">
-            We&apos;ll email a secure reset link to the coach account tied to this school workspace.
+            We&apos;ll email a secure reset link to the coach account for this workspace.
           </p>
 
           <form className="marketing-login-form" onSubmit={handleSubmit}>

@@ -56,13 +56,56 @@ export function operatorLinkHeaders(setup: { schoolId?: string }): Record<string
 
 export async function fetchOperatorLinkSnapshot(setup: {
   apiUrl?: string;
+  liveSessionId?: string;
   connectionId?: string;
   syncedConnectionId?: string;
   schoolId?: string;
 }): Promise<{ connectionId: string; payload: OperatorLinkResponse } | null> {
   const apiUrl = normalizeUrlBase(setup.apiUrl);
+  const liveSessionId = (setup.liveSessionId ?? "").trim();
   const connectionId = normalizeConnectionId(setup.syncedConnectionId || setup.connectionId);
-  if (!apiUrl || !connectionId) {
+  if (!apiUrl || (!connectionId && !liveSessionId)) {
+    return null;
+  }
+
+  if (liveSessionId) {
+    const liveSessionEndpoint = `${apiUrl}/api/live-sessions/${encodeURIComponent(liveSessionId)}/operator-pairing`;
+    const liveSessionResponse = await fetch(liveSessionEndpoint, {
+      headers: operatorLinkHeaders({ schoolId: setup.schoolId }),
+    }).catch(() => null);
+    if (liveSessionResponse?.ok) {
+      const payload = await liveSessionResponse.json() as {
+        liveSession?: { liveSessionId?: string; schoolId?: string; pairingCode?: string };
+        pairing?: { pairingCode?: string; operatorToken?: string | null };
+        setup?: {
+          teamId?: string;
+          teamName?: string;
+          opponentName?: string;
+          teamColor?: string;
+        };
+      };
+      const resolvedConnectionId = normalizeConnectionId(payload.pairing?.pairingCode ?? payload.liveSession?.pairingCode ?? "");
+      if (resolvedConnectionId) {
+        return {
+          connectionId: resolvedConnectionId,
+          payload: {
+            connectionId: resolvedConnectionId,
+            liveSessionId: payload.liveSession?.liveSessionId ?? liveSessionId,
+            schoolId: payload.liveSession?.schoolId ?? setup.schoolId,
+            operatorToken: payload.pairing?.operatorToken ?? undefined,
+            setup: {
+              myTeamId: payload.setup?.teamId,
+              myTeamName: payload.setup?.teamName,
+              opponentName: payload.setup?.opponentName,
+              homeTeamColor: payload.setup?.teamColor,
+            },
+          },
+        };
+      }
+    }
+  }
+
+  if (!connectionId) {
     return null;
   }
 
@@ -110,6 +153,7 @@ export function isLegacyStatsExportConfigured(setup: { dashboardUrl?: string }):
 export function buildCoachViewUrl(
   gameId: string,
   setup: {
+    liveSessionId?: string;
     connectionId?: string;
     myTeamId?: string;
     myTeamName?: string;
@@ -123,6 +167,7 @@ export function buildCoachViewUrl(
   const base = resolveCoachDashboardBaseUrl();
   const params = new URLSearchParams();
   const connId = normalizeConnectionId(setup.connectionId);
+  if (setup.liveSessionId?.trim()) params.set("liveSessionId", setup.liveSessionId.trim());
   const schoolId = setup.schoolId?.trim() || DEFAULT_SCHOOL_ID;
   if (connId) params.set("connectionId", connId);
   if (schoolId) params.set("schoolId", schoolId);
@@ -196,6 +241,7 @@ export function mergeCoachLinkSnapshot(current: AppData, snapshot: OperatorLinkR
     teams: convertedTeams,
     gameSetup: {
       ...current.gameSetup,
+      liveSessionId: snapshot.liveSessionId?.trim() || current.gameSetup.liveSessionId,
       schoolId: snapshot.schoolId?.trim() || current.gameSetup.schoolId,
       connectionId: resolvedConnectionId || undefined,
       syncedConnectionId: resolvedConnectionId || undefined,

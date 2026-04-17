@@ -19,6 +19,7 @@ interface UseNewGameFormOptions {
   endedGameIdsRef: React.RefObject<Set<string>>;
   connectionId: string;
   setConnectionId: (value: string) => void;
+  setLiveSessionId: (value: string) => void;
   setGameId: (id: string) => void;
   setSetupNames: (names: SetupNames) => void;
   setDashboardStatus: (status: string) => void;
@@ -37,6 +38,7 @@ export function useNewGameForm({
   endedGameIdsRef,
   connectionId,
   setConnectionId,
+  setLiveSessionId,
   setGameId,
   setSetupNames,
   setDashboardStatus,
@@ -95,6 +97,7 @@ export function useNewGameForm({
       });
 
       const createdGameId = payload.liveSession.gameId ?? newId;
+      setLiveSessionId(payload.liveSession.liveSessionId);
       if (payload.pairing.pairingCode && payload.pairing.pairingCode !== connectionId) {
         setConnectionId(payload.pairing.pairingCode);
       }
@@ -122,6 +125,7 @@ export function useNewGameForm({
       });
       applyGameSessionToUrl(
         createdGameId,
+        payload.liveSession.liveSessionId,
         newGameMyTeamId,
         selectedTeam.displayName ?? selectedTeam.name ?? "",
         opponentName,

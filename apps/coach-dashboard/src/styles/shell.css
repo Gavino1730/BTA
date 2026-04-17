@@ -36,6 +36,16 @@
   letter-spacing: 0.08em;
   flex-shrink: 0;
   white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.coach-nav-logo:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bta-accent-violet-soft) 160%, transparent), rgba(110,91,255,0.12));
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 55%, transparent);
+  box-shadow: 0 6px 18px rgba(110,91,255,0.18), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 
 .coach-nav-links {

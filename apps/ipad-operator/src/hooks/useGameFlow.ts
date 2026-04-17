@@ -2,6 +2,7 @@ import type { GameEvent } from "@bta/shared-schema";
 import {
   apiKeyHeader,
   buildAiContextFromSetup,
+  fetchOperatorLinkSnapshot,
   generateFreshGameId,
   generateGameId,
   isConnectionReadyForStart,
@@ -11,7 +12,7 @@ import {
 } from "../helpers/network.js";
 import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
-import type { AppData, GameSetup, OperatorLinkResponse, Team, TeamSide } from "../types.js";
+import type { AppData, GameSetup, Team, TeamSide } from "../types.js";
 
 export interface UseGameFlowInput {
   appData: AppData;
@@ -91,51 +92,24 @@ export function useGameFlow({
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
 
-  function clearCachedOperatorAuth(current: AppData): AppData {
-    if (!current.gameSetup.apiKey) {
-      return current;
-    }
-
-    const next: AppData = {
-      ...current,
-      gameSetup: {
-        ...current.gameSetup,
-        apiKey: undefined,
-      },
-    };
-    saveAppData(next);
-    setAppData(next);
-    return next;
-  }
-
   async function refreshOperatorAuthFromConnection(current: AppData): Promise<AppData> {
-    const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
-    if (!connectionId) {
+    const snapshot = await fetchOperatorLinkSnapshot(current.gameSetup).catch(() => null);
+    if (!snapshot) {
+      const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
+      if (!connectionId) {
+        return current;
+      }
       return current;
     }
 
     try {
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (current.gameSetup.schoolId?.trim()) {
-        headers["x-school-id"] = current.gameSetup.schoolId.trim();
-      }
-
-      const response = await fetch(
-        `${current.gameSetup.apiUrl}/api/operator-links/${encodeURIComponent(connectionId)}`,
-        { headers },
-      );
-      if (!response.ok) {
-        if (response.status === 404) {
-          return clearCachedOperatorAuth(current);
-        }
-        return current;
-      }
-
-      const payload = (await response.json()) as OperatorLinkResponse;
-      const next = mergeCoachLinkSnapshot(current, payload);
+      const next = mergeCoachLinkSnapshot(current, snapshot.payload);
       if (
         next.gameSetup.apiKey !== current.gameSetup.apiKey
         || next.gameSetup.schoolId !== current.gameSetup.schoolId
+        || next.gameSetup.connectionId !== current.gameSetup.connectionId
+        || next.gameSetup.syncedConnectionId !== current.gameSetup.syncedConnectionId
+        || next.gameSetup.liveSessionId !== current.gameSetup.liveSessionId
       ) {
         saveAppData(next);
         setAppData(next);

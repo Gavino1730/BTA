@@ -16,6 +16,9 @@ interface ActivityStoreDependencies {
   setActivityEventsForSchool: (schoolId: string, events: ActivityEvent[]) => ActivityEvent[];
   setLiveGameSessionsForSchool: (schoolId: string, sessions: LiveGameSessionRecord[]) => LiveGameSessionRecord[];
   persistSessions: () => void;
+  persistActivityEventsForSchool: (schoolId: string, events: ActivityEvent[]) => void | Promise<void>;
+  persistLiveGameSessionsForSchool: (schoolId: string, sessions: LiveGameSessionRecord[]) => void | Promise<void>;
+  persistOperatorSessionsForSchool: (schoolId: string, sessions: OperatorSessionRecord[]) => void | Promise<void>;
 }
 
 export function createActivityStore(deps: ActivityStoreDependencies) {
@@ -32,8 +35,9 @@ export function createActivityStore(deps: ActivityStoreDependencies) {
       createdAtIso: deps.trimProfileField(event.createdAtIso, 64) || new Date().toISOString(),
       metadata: event.metadata,
     };
-    deps.setActivityEventsForSchool(schoolId, [saved, ...current]);
+    const next = deps.setActivityEventsForSchool(schoolId, [saved, ...current]);
     deps.persistSessions();
+    void deps.persistActivityEventsForSchool(schoolId, next);
     return saved;
   };
 
@@ -53,8 +57,9 @@ export function createActivityStore(deps: ActivityStoreDependencies) {
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
-    deps.setLiveGameSessionsForSchool(schoolId, [saved, ...current.filter((entry) => entry.liveSessionId !== liveSessionId)]);
+    const next = deps.setLiveGameSessionsForSchool(schoolId, [saved, ...current.filter((entry) => entry.liveSessionId !== liveSessionId)]);
     deps.persistSessions();
+    void deps.persistLiveGameSessionsForSchool(schoolId, next);
     return saved;
   };
 
@@ -88,6 +93,8 @@ export function createActivityStore(deps: ActivityStoreDependencies) {
     };
     deps.operatorSessionsByLiveSession.set(saved.liveSessionId, saved);
     deps.persistSessions();
+    const sessionsForSchool = [...deps.operatorSessionsByLiveSession.values()].filter((entry) => entry.schoolId === saved.schoolId);
+    void deps.persistOperatorSessionsForSchool(saved.schoolId, sessionsForSchool);
     return saved;
   };
 

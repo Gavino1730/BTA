@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  buildStaffRows,
+  SchoolActivitySection,
+  SchoolStaffSection,
+  SchoolTeamsSection,
+  type MembershipEditorState,
+  type StaffAccessOption,
+  type StaffRow,
+} from "./SchoolAdminSections.js";
+import {
   createSchoolTeam,
   fetchSchoolOverview,
   inviteSchoolStaff,
@@ -23,24 +32,6 @@ const TEAM_TEMPLATES = [
   { label: "Girls JV", gender: "girls" as const, level: "jv" as const },
   { label: "Custom Team", gender: "custom" as const, level: "custom" as const },
 ];
-
-type StaffAccessOption = "school_admin" | "head_coach" | "assistant_coach" | "operator" | "viewer";
-
-interface MembershipEditorState {
-  role: StaffAccessOption;
-  teamId: string;
-}
-
-interface StaffRow {
-  membershipType: "school" | "team";
-  membershipId: string;
-  fullName: string;
-  email: string;
-  role: string;
-  status: "active" | "invited";
-  teamId?: string;
-  teamName?: string;
-}
 
 export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: SchoolOverviewPageProps) {
   const [overview, setOverview] = useState<SchoolOverviewPayload | null>(null);
@@ -94,32 +85,7 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
     [templateLabel],
   );
 
-  const staffRows = useMemo<StaffRow[]>(() => {
-    if (!overview) {
-      return [];
-    }
-    const teamNameById = new Map(overview.teams.map((team) => [team.id, team.displayName ?? team.name]));
-    return [
-      ...overview.staff.schoolMemberships.map((membership) => ({
-        membershipType: "school" as const,
-        membershipId: membership.membershipId,
-        fullName: membership.fullName,
-        email: membership.email,
-        role: membership.role,
-        status: membership.status,
-      })),
-      ...overview.staff.teamMemberships.map((membership) => ({
-        membershipType: "team" as const,
-        membershipId: membership.membershipId,
-        fullName: membership.fullName,
-        email: membership.email,
-        role: membership.role,
-        status: membership.status,
-        teamId: membership.teamId,
-        teamName: teamNameById.get(membership.teamId) ?? membership.teamId,
-      })),
-    ].sort((left, right) => left.fullName.localeCompare(right.fullName) || left.email.localeCompare(right.email));
-  }, [overview]);
+  const staffRows = useMemo<StaffRow[]>(() => (overview ? buildStaffRows(overview) : []), [overview]);
 
   useEffect(() => {
     setDisplayName(selectedTemplate.label);
@@ -284,7 +250,7 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
       <section className="stats-page-grid three-column">
         <article className="stats-metric-card">
           <p className="stats-metric-label">Billing</p>
-          <p className="stats-metric-value" style={{ fontSize: "1.35rem" }}>{overview.summary.planId}</p>
+          <p className="stats-metric-value" style={{ fontSize: "1.35rem", textTransform: "capitalize" }}>{overview.summary.planId}</p>
           <p className="stats-metric-detail">
             Status: {overview.summary.billingStatus}
             {overview.summary.activeTeamLimit === null
@@ -399,173 +365,29 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         </section>
       ) : null}
 
-      <section className="stats-page-card settings-section-card">
-        <div className="stats-page-card-head">
-          <div>
-            <h3>Teams</h3>
-            <p className="settings-section-desc">Open a team workspace or start managing roster and live sessions.</p>
-          </div>
-        </div>
-        {overview.teams.length === 0 ? (
-          <div className="empty-state">
-            <p className="stats-empty-copy">No teams yet.</p>
-            {canManageSchool ? (
-              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam(true)}>
-                Add Team
-              </button>
-            ) : null}
-          </div>
-        ) : (
-          <div className="settings-members-list">
-            {overview.teams.map((team) => (
-              <div key={team.id} className="settings-member-row">
-                <div className="settings-member-info">
-                  <div className="settings-member-avatar">{(team.displayName ?? team.name).charAt(0)}</div>
-                  <div>
-                    <strong className="settings-member-name">{team.displayName ?? team.name}</strong>
-                    <span className="settings-member-email">{team.rosterCount ?? team.players.length} players · {team.staffCount ?? 0} staff</span>
-                  </div>
-                </div>
-                <div className="settings-member-controls">
-                  {team.status === "read_only" ? (
-                    <span className="settings-status-badge settings-status-invited">Read Only</span>
-                  ) : null}
-                  <span className={`settings-status-badge settings-status-${team.liveSession ? "live" : "active"}`}>
-                    {team.liveSession ? "Live" : "Ready"}
-                  </span>
-                  <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onOpenTeam(team.id)}>
-                    Open Team
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <SchoolTeamsSection
+        overview={overview}
+        canManageSchool={canManageSchool}
+        onAddTeam={() => setShowAddTeam(true)}
+        onOpenTeam={onOpenTeam}
+      />
 
-      <section className="stats-page-grid two-column">
-        <section className="stats-page-card settings-section-card">
-          <div className="stats-page-card-head">
-            <div>
-              <h3>Staff</h3>
-              <p className="settings-section-desc">School admins and team-level staff memberships.</p>
-            </div>
-          </div>
-          <div className="settings-members-list">
-            {staffRows.length === 0 ? (
-              <p className="stats-empty-copy">No staff memberships yet.</p>
-            ) : staffRows.map((membership) => (
-              <div key={`${membership.membershipType}:${membership.membershipId}`} className="settings-member-row">
-                <div className="settings-member-info">
-                  <div className="settings-member-avatar">{membership.fullName.charAt(0)}</div>
-                  <div>
-                    <strong className="settings-member-name">{membership.fullName}</strong>
-                    <span className="settings-member-email">{membership.email}</span>
-                    <span className="settings-member-email">
-                      {membership.membershipType === "school" ? "School access" : membership.teamName ? `Team: ${membership.teamName}` : "Team access"}
-                    </span>
-                  </div>
-                </div>
-                <div className="settings-member-controls">
-                  {editingMembershipId === `${membership.membershipType}:${membership.membershipId}` && editorState ? (
-                    <>
-                      <select
-                        value={editorState.role}
-                        onChange={(event) => setEditorState((current) => current ? { ...current, role: event.target.value as StaffAccessOption } : current)}
-                        disabled={busy || (membership.membershipType === "school" && membership.role === "owner")}
-                      >
-                        {membership.membershipType === "school" ? (
-                          <>
-                            <option value="school_admin">School Admin</option>
-                            {membership.role === "owner" ? <option value="school_admin" disabled>Owner</option> : null}
-                          </>
-                        ) : (
-                          <>
-                            <option value="head_coach">Head Coach</option>
-                            <option value="assistant_coach">Assistant Coach</option>
-                            <option value="operator">Operator</option>
-                            <option value="viewer">Viewer</option>
-                          </>
-                        )}
-                      </select>
-                      {membership.membershipType === "team" ? (
-                        <select
-                          value={editorState.teamId}
-                          onChange={(event) => setEditorState((current) => current ? { ...current, teamId: event.target.value } : current)}
-                          disabled={busy}
-                        >
-                          {overview.teams.map((team) => (
-                            <option key={team.id} value={team.id}>{team.displayName ?? team.name}</option>
-                          ))}
-                        </select>
-                      ) : null}
-                      <button type="button" className="shell-nav-link" disabled={busy} onClick={() => void handleSaveEdit(membership)}>
-                        Save
-                      </button>
-                      <button type="button" className="shell-nav-link" disabled={busy} onClick={handleCancelEdit}>
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className={`settings-status-badge settings-status-${membership.status === "active" ? "active" : "invited"}`}>
-                        {membership.role}
-                      </span>
-                      {canManageSchool ? (
-                        <button
-                          type="button"
-                          className="shell-nav-link"
-                          disabled={busy || (membership.membershipType === "school" && membership.role === "owner")}
-                          onClick={() => handleStartEdit(membership)}
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </>
-                  )}
-                  {canManageSchool && membership.status === "invited" ? (
-                    <button type="button" className="shell-nav-link" disabled={busy} onClick={() => void handleResendInvite(membership.membershipType, membership.membershipId)}>
-                      Resend
-                    </button>
-                  ) : null}
-                  {canManageSchool ? (
-                    <button
-                      type="button"
-                      className="shell-nav-link"
-                      disabled={busy || (membership.membershipType === "school" && membership.role === "owner")}
-                      onClick={() => void handleRemoveStaff(membership.membershipType, membership.membershipId)}
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="stats-page-card settings-section-card">
-          <div className="stats-page-card-head">
-            <div>
-              <h3>Activity</h3>
-              <p className="settings-section-desc">Recent team and workspace events.</p>
-            </div>
-          </div>
-          <div className="settings-members-list">
-            {overview.activity.length === 0 ? (
-              <p className="stats-empty-copy">No recent activity.</p>
-            ) : overview.activity.map((event) => (
-              <div key={event.id} className="settings-member-row activity-feed-row">
-                <div className="settings-member-info">
-                  <div>
-                    <strong className="settings-member-name">{event.message}</strong>
-                    <span className="settings-member-email">{new Date(event.createdAtIso).toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+      <section className="stats-page-grid two-column" style={{ marginTop: "1.5rem" }}>
+        <SchoolStaffSection
+          overview={overview}
+          canManageSchool={canManageSchool}
+          staffRows={staffRows}
+          busy={busy}
+          editingMembershipId={editingMembershipId}
+          editorState={editorState}
+          setEditorState={setEditorState}
+          onStartEdit={handleStartEdit}
+          onSaveEdit={handleSaveEdit}
+          onCancelEdit={handleCancelEdit}
+          onResendInvite={handleResendInvite}
+          onRemoveStaff={handleRemoveStaff}
+        />
+        <SchoolActivitySection overview={overview} />
       </section>
     </div>
   );

@@ -67,6 +67,16 @@ describe.skipIf(!hasTestDb)("persistence RLS integration", () => {
   });
 
   afterAll(async () => {
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_operator_sessions CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_live_sessions CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_activity CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_billing CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_team_memberships CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_school_memberships CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_workspace_profiles CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_local_auth CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_org_members CASCADE`);
+    await pool.query(`DROP TABLE IF EXISTS ${tableBase}_org_profiles CASCADE`);
     await pool.query(`DROP TABLE IF EXISTS ${tableBase}_events CASCADE`);
     await pool.query(`DROP TABLE IF EXISTS ${tableBase}_games CASCADE`);
     await pool.query(`DROP TABLE IF EXISTS ${tableBase}_players CASCADE`);
@@ -97,5 +107,120 @@ describe.skipIf(!hasTestDb)("persistence RLS integration", () => {
       `SELECT DISTINCT school_id FROM ${tableBase}_games ORDER BY school_id`
     );
     expect(allRows.rows.map((row) => row.school_id)).toEqual(["alpha", "beta"]);
+  });
+
+  it("round-trips workspace records through normalized postgres tables", async () => {
+    await provider.replaceSchoolRecord("alpha", {
+      schoolId: "alpha",
+      name: "Alpha High",
+      slug: "alpha-high",
+      sport: "basketball",
+      status: "active",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    });
+    await provider.replaceUserWorkspaceProfile({
+      userId: "user-alpha",
+      email: "alpha@school.org",
+      fullName: "Alpha Coach",
+      lastSchoolId: "alpha",
+      lastTeamId: "alpha-varsity",
+      lastContextType: "team",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    });
+    await provider.replaceSchoolMembershipsForSchool("alpha", [{
+      membershipId: "school-member-alpha",
+      schoolId: "alpha",
+      userId: "user-alpha",
+      email: "alpha@school.org",
+      fullName: "Alpha Coach",
+      role: "owner",
+      status: "active",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    }]);
+    await provider.replaceTeamMembershipsForSchool("alpha", [{
+      membershipId: "team-member-alpha",
+      schoolId: "alpha",
+      teamId: "alpha-varsity",
+      userId: "user-alpha",
+      email: "alpha@school.org",
+      fullName: "Alpha Coach",
+      role: "head_coach",
+      status: "active",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    }]);
+    await provider.replaceBillingStateForSchool("alpha", {
+      schoolId: "alpha",
+      planId: "trial",
+      status: "trialing",
+      includedActiveTeamLimit: 1,
+      extraActiveTeamSeats: 0,
+      trialStartedAtIso: "2026-04-01T00:00:00.000Z",
+      trialEndsAtIso: "2026-04-15T00:00:00.000Z",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    });
+    await provider.replaceActivityEventsForSchool("alpha", [{
+      id: "activity-alpha-1",
+      schoolId: "alpha",
+      teamId: "alpha-varsity",
+      type: "team_created",
+      actorUserId: "user-alpha",
+      message: "Alpha added varsity.",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      metadata: { source: "test" },
+    }]);
+    await provider.replaceLiveGameSessionsForSchool("alpha", [{
+      liveSessionId: "live-alpha-1",
+      schoolId: "alpha",
+      teamId: "alpha-varsity",
+      gameId: "game-alpha-live",
+      opponentName: "Central",
+      opponentTeamId: "opp-central",
+      status: "active",
+      pairingCode: "123456",
+      createdByUserId: "user-alpha",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    }]);
+    await provider.replaceOperatorSessionsForSchool("alpha", [{
+      operatorSessionId: "operator-alpha-1",
+      liveSessionId: "live-alpha-1",
+      schoolId: "alpha",
+      teamId: "alpha-varsity",
+      pairingCode: "123456",
+      operatorToken: "token-alpha",
+      expiresAtIso: "2026-04-02T00:00:00.000Z",
+      createdAtIso: "2026-04-01T00:00:00.000Z",
+      updatedAtIso: "2026-04-01T00:00:00.000Z",
+    }]);
+
+    const data = await provider.loadWorkspaceData();
+    expect(data.schools.alpha?.name).toBe("Alpha High");
+    expect(data.userProfiles["user-alpha"]?.lastSchoolId).toBe("alpha");
+    expect(data.schoolMemberships.alpha?.[0]?.role).toBe("owner");
+    expect(data.teamMemberships.alpha?.[0]?.teamId).toBe("alpha-varsity");
+    expect(data.billingStates.alpha?.status).toBe("trialing");
+    expect(data.activityEvents.alpha?.[0]?.id).toBe("activity-alpha-1");
+    expect(data.liveGameSessions.alpha?.[0]?.liveSessionId).toBe("live-alpha-1");
+    expect(data.operatorSessions["live-alpha-1"]?.operatorSessionId).toBe("operator-alpha-1");
+  });
+
+  it("clears school-scoped normalized workspace rows", async () => {
+    await provider.clearSchoolData("alpha");
+    const data = await provider.loadWorkspaceData();
+
+    expect(data.schools.alpha).toBeUndefined();
+    expect(data.schoolMemberships.alpha).toBeUndefined();
+    expect(data.teamMemberships.alpha).toBeUndefined();
+    expect(data.billingStates.alpha).toBeUndefined();
+    expect(data.activityEvents.alpha).toBeUndefined();
+    expect(data.liveGameSessions.alpha).toBeUndefined();
+    expect(data.operatorSessions["live-alpha-1"]).toBeUndefined();
+    expect(data.userProfiles["user-alpha"]?.lastSchoolId).toBeUndefined();
+    expect(data.userProfiles["user-alpha"]?.lastTeamId).toBeUndefined();
   });
 });

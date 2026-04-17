@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { apiBase, apiKeyHeader, storeAuthSession } from "./platform.js";
+import { apiBase, apiKeyHeader, readStoredAuthSession, storeAuthSession } from "./platform.js";
+import { getSupabaseSessionIdentity, signInWithSupabase } from "./supabase/client.js";
 
 interface LoginPageProps {
   onSuccess: (setupComplete: boolean) => void;
@@ -51,12 +52,13 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
         }
 
         const payload = await response.json() as AuthSessionPayload;
-        if (!payload.authenticated || !payload.user || !payload.token) {
+        const token = payload.token ?? readStoredAuthSession()?.token ?? null;
+        if (!payload.authenticated || !payload.user || !token) {
           return;
         }
 
         storeAuthSession({
-          token: payload.token,
+          token,
           email: payload.user.email,
           fullName: payload.user.fullName,
           role: payload.user.role,
@@ -95,24 +97,26 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
     setStatus("Signing in...");
 
     try {
-      const response = await fetch(`${apiBase}/api/auth/login`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          email: normalizedEmail,
-          password: normalizedPassword,
-        }),
+      const supabaseSession = await signInWithSupabase(normalizedEmail, normalizedPassword);
+      storeAuthSession({
+        token: supabaseSession.token,
+        email: supabaseSession.email,
+        fullName: supabaseSession.fullName,
       });
 
+      const response = await fetch(`${apiBase}/api/auth/session`, {
+        headers: apiKeyHeader(),
+      });
       const payload = await response.json() as AuthSessionPayload;
-      if (!response.ok || !payload.user || !payload.token) {
+      const token = payload.token ?? supabaseSession.token;
+      if (!response.ok || !payload.user || !token) {
         throw new Error(payload.error || "Could not authenticate this account.");
       }
 
       storeAuthSession({
-        token: payload.token,
-        email: payload.user.email,
-        fullName: payload.user.fullName,
+        token,
+        email: payload.user.email ?? supabaseSession.email,
+        fullName: payload.user.fullName ?? supabaseSession.fullName,
         role: payload.user.role,
         schoolId: payload.user.schoolId,
         lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
@@ -126,6 +130,14 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
       );
       onSuccess(Boolean(payload.onboarding?.completed));
     } catch (error) {
+      const fallbackSession = await getSupabaseSessionIdentity().catch(() => null);
+      if (fallbackSession?.token) {
+        storeAuthSession({
+          token: fallbackSession.token,
+          email: fallbackSession.email,
+          fullName: fallbackSession.fullName,
+        });
+      }
       setStatus(error instanceof Error ? error.message : "Could not authenticate this account.");
     } finally {
       setBusy(false);

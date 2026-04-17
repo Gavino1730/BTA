@@ -8,6 +8,12 @@ import {
   storeAuthSession,
 } from "./platform.js";
 import {
+  getSupabaseSessionIdentity,
+  signInWithSupabase,
+  signOutSupabase,
+  signUpWithSupabase,
+} from "./supabase/client.js";
+import {
   bootstrapSchoolWorkspace,
   createSchoolTeam,
   fetchWorkspaceContext,
@@ -99,20 +105,20 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         }
 
         const payload = await response.json() as AuthSessionPayload;
-        if (!payload.authenticated || !payload.user) {
+        const fallbackSession = await getSupabaseSessionIdentity().catch(() => null);
+        const token = payload.token ?? fallbackSession?.token ?? null;
+        if (!payload.authenticated || !payload.user || !token) {
           return;
         }
 
-        if (payload.token) {
-          storeAuthSession({
-            token: payload.token,
-            email: payload.user.email,
-            fullName: payload.user.fullName,
-            role: payload.user.role,
-            schoolId: payload.user.schoolId,
-            lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
-          });
-        }
+        storeAuthSession({
+          token,
+          email: payload.user.email ?? fallbackSession?.email,
+          fullName: payload.user.fullName ?? fallbackSession?.fullName,
+          role: payload.user.role,
+          schoolId: payload.user.schoolId,
+          lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
+        });
 
         setAuthSession(payload.user);
         setCoachName(payload.user.fullName ?? "");
@@ -181,27 +187,43 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     setAuthStatus(authMode === "login" ? "Signing in..." : "Creating account...");
 
     try {
-      const response = await fetch(`${apiBase}/api/auth/${authMode === "login" ? "login" : "register"}`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({
-          fullName: normalizedName,
-          email: normalizedEmail,
-          password: normalizedPassword,
-          inviteToken: authMode === "register" && inviteToken ? inviteToken : undefined,
-          schoolName: schoolName.trim() || undefined,
-        }),
+      const authResult = authMode === "login"
+        ? await signInWithSupabase(normalizedEmail, normalizedPassword)
+        : await signUpWithSupabase(normalizedEmail, normalizedPassword, {
+            full_name: normalizedName,
+            name: normalizedName,
+            school_name: schoolName.trim() || undefined,
+            invite_token: inviteToken || undefined,
+          });
+
+      if (!authResult.token) {
+        if (authMode === "register") {
+          setAuthStatus("Account created. Check your email to confirm your address, then sign in to continue.");
+          return;
+        }
+        throw new Error("Could not authenticate this account.");
+      }
+
+      storeAuthSession({
+        token: authResult.token,
+        email: authResult.email,
+        fullName: authResult.fullName,
+      });
+
+      const response = await fetch(`${apiBase}/api/auth/session`, {
+        headers: apiKeyHeader(),
       });
 
       const payload = await response.json() as AuthSessionPayload;
-      if (!response.ok || !payload.user || !payload.token) {
+      const token = payload.token ?? authResult.token;
+      if (!response.ok || !payload.user || !token) {
         throw new Error(payload.error || "Could not authenticate this account.");
       }
 
       storeAuthSession({
-        token: payload.token,
-        email: payload.user.email,
-        fullName: payload.user.fullName,
+        token,
+        email: payload.user.email ?? authResult.email,
+        fullName: payload.user.fullName ?? authResult.fullName,
         role: payload.user.role,
         schoolId: payload.user.schoolId,
         lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
@@ -231,6 +253,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   }
 
   async function handleSignOut() {
+    await signOutSupabase().catch(() => undefined);
     clearAuthSession();
     setAuthSession(null);
     setPassword("");

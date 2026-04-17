@@ -1,6 +1,6 @@
 import type { GameEvent } from "@bta/shared-schema";
 import { getEventTeamSide, removeEventById, upsertSortedEvent } from "../helpers/events.js";
-import { apiKeyHeader, fetchOperatorLinkSnapshot } from "../helpers/network.js";
+import { apiKeyHeader, fetchOperatorLinkSnapshot, mergeCoachLinkSnapshot } from "../helpers/network.js";
 import { loadAppData, saveAppData } from "../helpers/storage.js";
 import type { EventEditContext, FeedEventSelection, Modal } from "../types.js";
 import type { GameSetup } from "../types.js";
@@ -38,17 +38,11 @@ export function useEventEditor({
       return options?.clearStaleToken ? baseSetup : null;
     }
 
-    const payload = snapshot.payload;
-    const nextSetup: GameSetup = {
-      ...baseSetup,
-      connectionId: snapshot.connectionId,
-      syncedConnectionId: snapshot.connectionId,
-      schoolId: payload.schoolId?.trim() || baseSetup.schoolId,
-      apiKey: payload.operatorToken ?? baseSetup.apiKey,
-    };
+    const nextAppData = mergeCoachLinkSnapshot({ ...latest, gameSetup: baseSetup }, snapshot.payload);
+    const nextSetup: GameSetup = nextAppData.gameSetup;
 
-    if (nextSetup.apiKey !== latest.gameSetup.apiKey || nextSetup.schoolId !== latest.gameSetup.schoolId) {
-      saveAppData({ ...latest, gameSetup: nextSetup });
+    if (JSON.stringify(nextSetup) !== JSON.stringify(latest.gameSetup)) {
+      saveAppData(nextAppData);
     }
     return nextSetup;
   }

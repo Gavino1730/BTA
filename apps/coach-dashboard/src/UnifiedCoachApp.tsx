@@ -17,11 +17,16 @@ import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
 import { SetupPage } from "./SetupPage.js";
 import { SchoolOverviewPage } from "./SchoolOverviewPage.js";
+import { SchoolTeamsPage } from "./SchoolTeamsPage.js";
+import { SchoolStaffPage } from "./SchoolStaffPage.js";
+import { SchoolActivityPage } from "./SchoolActivityPage.js";
+import { SchoolSettingsPage } from "./SchoolSettingsPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
 import { TeamSettingsPage } from "./TeamSettingsPage.js";
 import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 import { BillingPage } from "./RouteShellPages.js";
+import { signOutSupabase } from "./supabase/client.js";
 import { fetchWorkspaceContext, saveWorkspaceContextPreference, type WorkspaceContext } from "./workspace.js";
 
 function buildSetupPathFromInviteQuery(): string {
@@ -85,6 +90,15 @@ function isTeamRoute(route: AppRoute): boolean {
     || route === "stats-trends"
     || route === "stats-insights"
     || route === "stats-settings";
+}
+
+function isSchoolRoute(route: AppRoute): boolean {
+  return route === "billing"
+    || route === "school-teams"
+    || route === "school-staff"
+    || route === "school-activity"
+    || route === "school-settings"
+    || route === "stats-overview";
 }
 
 function isSchoolAdminContext(context: WorkspaceContext | null, schoolId: string | null): boolean {
@@ -324,6 +338,17 @@ export function UnifiedCoachApp() {
       });
       window.history.replaceState({}, "", nextUrl);
       setRoute("stats-overview");
+      return;
+    }
+
+    if (activeContextType === "team" && isSchoolRoute(route)) {
+      const nextUrl = buildContextUrl("/live", {
+        schoolId: activeSchoolId ?? undefined,
+        teamId: activeTeamId ?? undefined,
+        contextType: "team",
+      });
+      window.history.replaceState({}, "", nextUrl);
+      setRoute("live");
     }
   }, [activeContextType, activeSchoolId, activeTeamId, isAuthenticated, requiresSetup, route]);
 
@@ -516,7 +541,7 @@ export function UnifiedCoachApp() {
       ) : null}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
-          <span className="coach-nav-logo">≡ BTA COURTSIDE</span>
+          <button type="button" className="coach-nav-logo" onClick={() => { window.location.href = marketingBase; }}>≡ BTA COURTSIDE</button>
 
           <div className="coach-nav-actions">
             <select
@@ -530,7 +555,7 @@ export function UnifiedCoachApp() {
                 const team = activeTeams.find((entry) => entry.id === id) ?? workspaceContext.teams.find((entry) => entry.id === id);
                 if (team?.schoolId) {
                   switchToTeam(team.schoolId, team.id);
-                  if (route === "stats-overview" || route === "billing") {
+                  if (isSchoolRoute(route)) {
                     navigate("/live");
                   } else {
                     navigate(window.location.pathname);
@@ -548,7 +573,11 @@ export function UnifiedCoachApp() {
             {activeContextType === "school" ? (
               <>
                 {navBtn("Overview", "stats-overview", "/stats")}
+                {canManageSchool ? navBtn("Teams", "school-teams", "/school/teams") : null}
+                {canManageSchool ? navBtn("Staff", "school-staff", "/school/staff") : null}
+                {canManageSchool ? navBtn("Activity", "school-activity", "/school/activity") : null}
                 {canManageSchool ? navBtn("Billing", "billing", "/billing") : null}
+                {canManageSchool ? navBtn("Settings", "school-settings", "/school/settings") : null}
               </>
             ) : (
               <>
@@ -566,6 +595,7 @@ export function UnifiedCoachApp() {
           <div className="coach-nav-actions">
             <StaticNavActions
               onSignOut={() => {
+                void signOutSupabase().catch(() => undefined);
                 clearAuthSession();
                 setIsAuthenticated(false);
                 setRequiresSetup(false);
@@ -586,6 +616,27 @@ export function UnifiedCoachApp() {
         <>
           {route === "billing" ? (
             <BillingPage onNavigate={navigate} />
+          ) : route === "school-teams" ? (
+            <SchoolTeamsPage
+              schoolId={activeSchoolId}
+              canManageSchool={canManageSchool}
+              onOpenTeam={(teamId) => {
+                switchToTeam(activeSchoolId, teamId);
+                navigate("/live");
+              }}
+            />
+          ) : route === "school-staff" ? (
+            <SchoolStaffPage
+              schoolId={activeSchoolId}
+              canManageSchool={canManageSchool}
+            />
+          ) : route === "school-activity" ? (
+            <SchoolActivityPage schoolId={activeSchoolId} />
+          ) : route === "school-settings" ? (
+            <SchoolSettingsPage
+              schoolId={activeSchoolId}
+              onNavigate={navigate}
+            />
           ) : (
             <SchoolOverviewPage
               schoolId={activeSchoolId}

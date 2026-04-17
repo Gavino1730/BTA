@@ -57,6 +57,7 @@ export interface Team {
 
 export interface GameSetup {
   gameId: string;
+  liveSessionId?: string;
   connectionId?: string;
   syncedConnectionId?: string;
   myTeamId: string;
@@ -92,6 +93,7 @@ export interface AppData {
 
 export interface OperatorLinkResponse {
   connectionId: string;
+  liveSessionId?: string;
   schoolId?: string;
   operatorToken?: string;
   setup?: {

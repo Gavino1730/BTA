@@ -52,6 +52,36 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+export async function getSupabaseSessionIdentity(): Promise<{
+  token: string | null;
+  email?: string;
+  fullName?: string;
+  userId?: string;
+} | null> {
+  const client = createSupabaseClient();
+  if (!client) {
+    return null;
+  }
+
+  const { data } = await client.auth.getSession();
+  const session = data.session;
+  const user = session?.user;
+  if (!session || !user) {
+    return null;
+  }
+
+  return {
+    token: session.access_token,
+    email: user.email ?? undefined,
+    fullName: typeof user.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name
+      : typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : undefined,
+    userId: user.id ?? undefined,
+  };
+}
+
 export async function signInWithSupabase(email: string, password: string): Promise<{
   token: string;
   email?: string;
@@ -122,4 +152,30 @@ export async function signOutSupabase(): Promise<void> {
   }
 
   await client.auth.signOut();
+}
+
+export async function requestSupabasePasswordReset(email: string, redirectTo: string): Promise<void> {
+  const client = createSupabaseClient();
+  if (!client) {
+    throw new Error("Supabase auth is not configured.");
+  }
+
+  const { error } = await client.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+  if (error) {
+    throw new Error(error.message || "Could not send password reset email.");
+  }
+}
+
+export async function updateSupabasePassword(password: string): Promise<void> {
+  const client = createSupabaseClient();
+  if (!client) {
+    throw new Error("Supabase auth is not configured.");
+  }
+
+  const { error } = await client.auth.updateUser({ password });
+  if (error) {
+    throw new Error(error.message || "Could not update password.");
+  }
 }

@@ -1,5 +1,6 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type { CreateGameInput } from "../store.js";
+import { findTrackedRosterTeamForGame, isTeamReadOnly, type GameStateLike, type WorkspaceRosterTeam } from "../helpers/team-billing-guards.js";
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
 
@@ -15,6 +16,7 @@ interface RegisterGameSessionRoutesOptions {
   requireApiKey: Middleware;
   requireWriteRole: Middleware;
   getSchoolIdFromRequest: (req: Request) => string;
+  getRosterTeamsByScope: (scope: { schoolId: string }) => WorkspaceRosterTeam[];
   getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
   getActiveGameState: (scope: { schoolId: string; teamId?: string }) => GameState | null;
   createGame: (input: CreateGameInput, scope?: { schoolId: string }) => unknown;
@@ -39,6 +41,20 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
 
     if (!gameId || !homeTeamId || !awayTeamId) {
       res.status(400).json({ error: "gameId, homeTeamId, awayTeamId are required" });
+      return;
+    }
+
+    const rosterTeams = options.getRosterTeamsByScope({ schoolId });
+    const requestedTeam = rosterTeams.find((team) => team.id === requestedTeamId)
+      ?? rosterTeams.find((team) => team.id === homeTeamId)
+      ?? rosterTeams.find((team) => team.id === awayTeamId)
+      ?? null;
+    if (isTeamReadOnly(requestedTeam)) {
+      res.status(402).json({
+        error: "This team is read-only until the school upgrades for additional active team capacity.",
+        code: "team_upgrade_required",
+        team: requestedTeam,
+      });
       return;
     }
 
@@ -133,6 +149,21 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
     const { startingLineupByTeam } = req.body ?? {};
     if (!startingLineupByTeam || typeof startingLineupByTeam !== "object") {
       res.status(400).json({ error: "startingLineupByTeam is required" });
+      return;
+    }
+
+    const currentState = options.getGameState(req.params.gameId, { schoolId }) as GameStateLike | null;
+    if (!currentState) {
+      res.status(404).json({ error: "game not found" });
+      return;
+    }
+    const trackedTeam = findTrackedRosterTeamForGame(currentState, options.getRosterTeamsByScope({ schoolId }));
+    if (isTeamReadOnly(trackedTeam)) {
+      res.status(402).json({
+        error: "This team is read-only until the school upgrades for additional active team capacity.",
+        code: "team_upgrade_required",
+        team: trackedTeam,
+      });
       return;
     }
 

@@ -1,5 +1,5 @@
-import { type FormEvent, useMemo, useState } from "react";
-import { apiBase, resolveActiveSchoolId } from "./platform.js";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { getSupabaseSessionIdentity, updateSupabasePassword } from "./supabase/client.js";
 
 interface ResetPasswordPageProps {
   onBackLogin: () => void;
@@ -8,29 +8,42 @@ interface ResetPasswordPageProps {
 
 export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPageProps) {
   const tokenFromUrl = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
-  const schoolId = resolveActiveSchoolId();
   const [token, setToken] = useState(tokenFromUrl);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [recoveryReady, setRecoveryReady] = useState(false);
   const [status, setStatus] = useState(
     tokenFromUrl
-      ? "Enter a new password to finish resetting your account."
-      : "Paste the reset token from your email to continue.",
+      ? "Legacy reset tokens are no longer supported here. Open the full reset link from your email."
+      : "Open the password reset link from your email to continue.",
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const session = await getSupabaseSessionIdentity().catch(() => null);
+      if (cancelled) {
+        return;
+      }
+      if (session?.token) {
+        setRecoveryReady(true);
+        setStatus("Enter a new password to finish resetting your account.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const normalizedToken = token.trim();
     const nextPassword = password.trim();
 
-    if (!schoolId) {
-      setStatus("Open your school workspace link first so we can validate the reset token.");
-      return;
-    }
-
-    if (!normalizedToken) {
-      setStatus("Reset token is required.");
+    if (!recoveryReady) {
+      setStatus("Open the password reset link from your email, then try again.");
       return;
     }
 
@@ -48,23 +61,10 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
     setStatus("Resetting password...");
 
     try {
-      const response = await fetch(`${apiBase}/api/auth/password-reset/confirm`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-school-id": schoolId,
-        },
-        body: JSON.stringify({ token: normalizedToken, password: nextPassword }),
-      });
-
-      const payload = await response.json() as { message?: string; error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not reset password.");
-      }
-
+      await updateSupabasePassword(nextPassword);
       setPassword("");
       setConfirmPassword("");
-      setStatus(payload.message || "Password reset successful. You can now sign in.");
+      setStatus("Password reset successful. You can now sign in.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not reset password.");
     } finally {
@@ -84,14 +84,10 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
           <p className="stats-page-eyebrow">Account Recovery</p>
           <h1>Reset Password</h1>
           <p className="stats-page-subtitle">
-            Enter the token from your email and choose a new password.
+            Open the full reset link from your email and choose a new password.
           </p>
 
           <form className="marketing-login-form" onSubmit={handleSubmit}>
-            <label className="stats-filter-field">
-              <span>Reset Token</span>
-              <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste reset token" />
-            </label>
             <label className="stats-filter-field">
               <span>New Password</span>
               <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" />
@@ -105,6 +101,10 @@ export function ResetPasswordPage({ onBackLogin, onBackForgot }: ResetPasswordPa
               {busy ? "Resetting..." : "Reset Password"}
             </button>
           </form>
+
+          {token ? (
+            <p className="stats-page-status">This page now uses Supabase recovery links instead of pasted reset tokens.</p>
+          ) : null}
 
           <p className="stats-page-status">{status}</p>
         </section>

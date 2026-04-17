@@ -1,6 +1,21 @@
 import { Pool } from "pg";
 import type { GameEvent } from "@bta/shared-schema";
-import type { CoachAiSettings, GameAiContext, LocalAuthAccount, OrganizationMember, OrganizationProfile, RosterTeam } from "./store.js";
+import type {
+  ActivityEvent,
+  BillingState,
+  CoachAiSettings,
+  GameAiContext,
+  LiveGameSessionRecord,
+  LocalAuthAccount,
+  OperatorSessionRecord,
+  OrganizationMember,
+  OrganizationProfile,
+  RosterTeam,
+  SchoolMembership,
+  SchoolRecord,
+  TeamMembership,
+  UserWorkspaceProfile,
+} from "./store.js";
 import { normalizeSchoolId } from "./school-id.js";
 import { logger } from "./logger.js";
 
@@ -25,6 +40,17 @@ export interface OrgDataResult {
   localAuth: Record<string, LocalAuthAccount[]>;
 }
 
+export interface WorkspaceDataResult {
+  schools: Record<string, SchoolRecord>;
+  userProfiles: Record<string, UserWorkspaceProfile>;
+  schoolMemberships: Record<string, SchoolMembership[]>;
+  teamMemberships: Record<string, TeamMembership[]>;
+  billingStates: Record<string, BillingState>;
+  activityEvents: Record<string, ActivityEvent[]>;
+  liveGameSessions: Record<string, LiveGameSessionRecord[]>;
+  operatorSessions: Record<string, OperatorSessionRecord>;
+}
+
 export interface PersistenceProvider {
   readonly kind: "postgres";
   load(): Promise<unknown | null>;
@@ -39,6 +65,17 @@ export interface PersistenceProvider {
   replaceOrgProfileForSchool(schoolId: string, profile: OrganizationProfile | null): Promise<void>;
   replaceOrgMembersForSchool(schoolId: string, members: OrganizationMember[]): Promise<void>;
   replaceLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuthAccount[]): Promise<void>;
+  loadWorkspaceData(): Promise<WorkspaceDataResult>;
+  replaceSchoolRecord(schoolId: string, record: SchoolRecord | null): Promise<void>;
+  replaceUserWorkspaceProfile(profile: UserWorkspaceProfile): Promise<void>;
+  replaceSchoolMembershipsForSchool(schoolId: string, memberships: SchoolMembership[]): Promise<void>;
+  replaceTeamMembershipsForSchool(schoolId: string, memberships: TeamMembership[]): Promise<void>;
+  replaceBillingStateForSchool(schoolId: string, billingState: BillingState | null): Promise<void>;
+  replaceActivityEventsForSchool(schoolId: string, events: ActivityEvent[]): Promise<void>;
+  replaceLiveGameSessionsForSchool(schoolId: string, sessions: LiveGameSessionRecord[]): Promise<void>;
+  replaceOperatorSessionsForSchool(schoolId: string, sessions: OperatorSessionRecord[]): Promise<void>;
+  clearSchoolData(schoolId: string): Promise<void>;
+  clearAllNormalizedData(): Promise<void>;
   close?(): Promise<void>;
 }
 
@@ -76,6 +113,13 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
   const orgProfilesTableName = `${tableName}_org_profiles`;
   const orgMembersTableName = `${tableName}_org_members`;
   const localAuthTableName = `${tableName}_local_auth`;
+  const schoolMembershipsTableName = `${tableName}_school_memberships`;
+  const teamMembershipsTableName = `${tableName}_team_memberships`;
+  const workspaceProfilesTableName = `${tableName}_workspace_profiles`;
+  const billingTableName = `${tableName}_billing`;
+  const activityTableName = `${tableName}_activity`;
+  const liveSessionsTableName = `${tableName}_live_sessions`;
+  const operatorSessionsTableName = `${tableName}_operator_sessions`;
   const pool = new Pool({ connectionString: options.connectionString });
   pool.on("error", (error) => {
     // Handle background/idle client disconnects so Node does not terminate
@@ -100,18 +144,36 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ${schoolsTableName} (
         id TEXT PRIMARY KEY,
+        name TEXT,
+        slug TEXT,
+        sport TEXT,
+        status TEXT,
+        created_at_iso TEXT,
+        updated_at_iso TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ADD COLUMN IF NOT EXISTS name TEXT`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ADD COLUMN IF NOT EXISTS slug TEXT`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ADD COLUMN IF NOT EXISTS sport TEXT`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ADD COLUMN IF NOT EXISTS status TEXT`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ADD COLUMN IF NOT EXISTS created_at_iso TEXT`);
+    await pool.query(`ALTER TABLE ${schoolsTableName} ADD COLUMN IF NOT EXISTS updated_at_iso TEXT`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ${teamsTableName} (
         school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
         id TEXT NOT NULL,
         name TEXT NOT NULL,
+        display_name TEXT,
         abbreviation TEXT NOT NULL,
         season TEXT,
         team_color TEXT,
+        sport TEXT,
+        gender TEXT,
+        level TEXT,
+        custom_label TEXT,
+        status TEXT,
         coach_style TEXT,
         playing_style TEXT,
         team_context TEXT,
@@ -124,10 +186,16 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     `);
 
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS season TEXT`);
+    await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS display_name TEXT`);
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS playing_style TEXT`);
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS team_context TEXT`);
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS custom_prompt TEXT`);
     await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS focus_insights JSONB`);
+    await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS sport TEXT`);
+    await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS gender TEXT`);
+    await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS level TEXT`);
+    await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS custom_label TEXT`);
+    await pool.query(`ALTER TABLE ${teamsTableName} ADD COLUMN IF NOT EXISTS status TEXT`);
     await pool.query(`ALTER TABLE ${playersTableName} ADD COLUMN IF NOT EXISTS weight TEXT`);
     await pool.query(`ALTER TABLE ${playersTableName} ADD COLUMN IF NOT EXISTS email TEXT`);
     await pool.query(`ALTER TABLE ${playersTableName} ADD COLUMN IF NOT EXISTS phone TEXT`);
@@ -275,6 +343,122 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${workspaceProfilesTableName} (
+        user_id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        full_name TEXT NOT NULL DEFAULT '',
+        last_school_id TEXT,
+        last_team_id TEXT,
+        last_context_type TEXT,
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${schoolMembershipsTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        membership_id TEXT NOT NULL,
+        user_id TEXT,
+        email TEXT NOT NULL,
+        full_name TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT 'school_admin',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, membership_id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${teamMembershipsTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        membership_id TEXT NOT NULL,
+        team_id TEXT NOT NULL,
+        user_id TEXT,
+        email TEXT NOT NULL,
+        full_name TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT 'viewer',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, membership_id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${billingTableName} (
+        school_id TEXT PRIMARY KEY REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        plan_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        included_active_team_limit INTEGER,
+        extra_active_team_seats INTEGER,
+        trial_started_at_iso TEXT,
+        trial_ends_at_iso TEXT,
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        current_period_ends_at_iso TEXT,
+        coupon_code TEXT,
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${activityTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        team_id TEXT,
+        type TEXT NOT NULL,
+        actor_user_id TEXT,
+        message TEXT NOT NULL,
+        created_at_iso TEXT NOT NULL,
+        metadata JSONB,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${liveSessionsTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        live_session_id TEXT NOT NULL,
+        team_id TEXT NOT NULL,
+        game_id TEXT NOT NULL,
+        opponent_name TEXT,
+        opponent_team_id TEXT,
+        status TEXT NOT NULL,
+        pairing_code TEXT NOT NULL,
+        created_by_user_id TEXT,
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, live_session_id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ${operatorSessionsTableName} (
+        school_id TEXT NOT NULL REFERENCES ${schoolsTableName}(id) ON DELETE CASCADE,
+        operator_session_id TEXT NOT NULL,
+        live_session_id TEXT NOT NULL,
+        team_id TEXT NOT NULL,
+        pairing_code TEXT NOT NULL,
+        operator_token TEXT NOT NULL,
+        expires_at_iso TEXT NOT NULL,
+        created_at_iso TEXT NOT NULL,
+        updated_at_iso TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (school_id, operator_session_id),
+        UNIQUE (live_session_id)
+      )
+    `);
+
     await pool.query(`ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${schoolsTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${teamsTableName} ENABLE ROW LEVEL SECURITY`);
@@ -284,6 +468,13 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     await pool.query(`ALTER TABLE ${orgProfilesTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${orgMembersTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${localAuthTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${workspaceProfilesTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${schoolMembershipsTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${teamMembershipsTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${billingTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${activityTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${liveSessionsTableName} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${operatorSessionsTableName} ENABLE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${tableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${schoolsTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${teamsTableName} FORCE ROW LEVEL SECURITY`);
@@ -293,6 +484,13 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
     await pool.query(`ALTER TABLE ${orgProfilesTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${orgMembersTableName} FORCE ROW LEVEL SECURITY`);
     await pool.query(`ALTER TABLE ${localAuthTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${workspaceProfilesTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${schoolMembershipsTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${teamMembershipsTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${billingTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${activityTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${liveSessionsTableName} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${operatorSessionsTableName} FORCE ROW LEVEL SECURITY`);
 
     await pool.query(`
       DO $$
@@ -428,6 +626,43 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
       END
       $$;
     `);
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = '${workspaceProfilesTableName}' AND policyname = '${workspaceProfilesTableName}_service_policy'
+        ) THEN
+          CREATE POLICY ${workspaceProfilesTableName}_service_policy ON ${workspaceProfilesTableName}
+            USING ((select current_setting('app.school_id', true)) = '*')
+            WITH CHECK ((select current_setting('app.school_id', true)) = '*');
+        END IF;
+      END
+      $$;
+    `);
+    for (const scopedTableName of [
+      schoolMembershipsTableName,
+      teamMembershipsTableName,
+      billingTableName,
+      activityTableName,
+      liveSessionsTableName,
+      operatorSessionsTableName,
+    ]) {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public' AND tablename = '${scopedTableName}' AND policyname = '${scopedTableName}_school_policy'
+          ) THEN
+            CREATE POLICY ${scopedTableName}_school_policy ON ${scopedTableName}
+              USING (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*')
+              WITH CHECK (school_id = (select current_setting('app.school_id', true)) OR (select current_setting('app.school_id', true)) = '*');
+          END IF;
+        END
+        $$;
+      `);
+    }
     schemaReady = true;
   }
 
@@ -649,9 +884,15 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
         school_id: string;
         team_id: string;
         team_name: string;
+        display_name: string | null;
         abbreviation: string;
         season: string | null;
         team_color: string | null;
+        sport: string | null;
+        gender: string | null;
+        level: string | null;
+        custom_label: string | null;
+        status: string | null;
         coach_style: string | null;
         playing_style: string | null;
         team_context: string | null;
@@ -674,9 +915,15 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
             t.school_id,
             t.id AS team_id,
             t.name AS team_name,
+            t.display_name,
             t.abbreviation,
             t.season,
             t.team_color,
+            t.sport,
+            t.gender,
+            t.level,
+            t.custom_label,
+            t.status,
             t.coach_style,
             t.playing_style,
             t.team_context,
@@ -716,9 +963,15 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
             id: row.team_id,
             schoolId: row.school_id,
             name: row.team_name,
+            displayName: row.display_name ?? undefined,
             abbreviation: row.abbreviation,
             season: row.season ?? undefined,
             teamColor: row.team_color ?? undefined,
+            sport: row.sport === "basketball" ? "basketball" : undefined,
+            gender: row.gender === "boys" || row.gender === "girls" || row.gender === "custom" ? row.gender : undefined,
+            level: row.level === "varsity" || row.level === "jv" || row.level === "freshman" || row.level === "custom" ? row.level : undefined,
+            customLabel: row.custom_label ?? undefined,
+            status: row.status === "archived" || row.status === "read_only" ? row.status : (row.status === "active" ? "active" : undefined),
             coachStyle: row.coach_style ?? undefined,
             playingStyle: row.playing_style ?? undefined,
             teamContext: row.team_context ?? undefined,
@@ -764,17 +1017,23 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
           await client.query(
             `
               INSERT INTO ${teamsTableName} (
-                school_id, id, name, abbreviation, season, team_color, coach_style, playing_style, team_context, custom_prompt, focus_insights, updated_at
+                school_id, id, name, display_name, abbreviation, season, team_color, sport, gender, level, custom_label, status, coach_style, playing_style, team_context, custom_prompt, focus_insights, updated_at
               )
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW())
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, NOW())
             `,
             [
               normalizedSchoolId,
               team.id,
               team.name,
+              "displayName" in team ? ((team as RosterTeam & { displayName?: string }).displayName ?? null) : null,
               team.abbreviation,
               team.season ?? null,
               team.teamColor ?? null,
+              "sport" in team ? ((team as RosterTeam & { sport?: string }).sport ?? null) : null,
+              "gender" in team ? ((team as RosterTeam & { gender?: string }).gender ?? null) : null,
+              "level" in team ? ((team as RosterTeam & { level?: string }).level ?? null) : null,
+              "customLabel" in team ? ((team as RosterTeam & { customLabel?: string }).customLabel ?? null) : null,
+              "status" in team ? ((team as RosterTeam & { status?: string }).status ?? null) : null,
               team.coachStyle ?? null,
               team.playingStyle ?? null,
               team.teamContext ?? null,
@@ -1060,6 +1319,401 @@ export function createPostgresPersistenceProvider(options: PostgresPersistenceOp
             ]
           );
         }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async loadWorkspaceData(): Promise<WorkspaceDataResult> {
+      await ensureSchema();
+      const client = await pool.connect();
+      try {
+        await setTenantContext(client, "*");
+        const [schoolRows, profileRows, schoolMembershipRows, teamMembershipRows, billingRows, activityRows, liveSessionRows, operatorSessionRows] = await Promise.all([
+          client.query(`SELECT * FROM ${schoolsTableName} WHERE name IS NOT NULL ORDER BY id`),
+          client.query(`SELECT * FROM ${workspaceProfilesTableName} ORDER BY user_id`),
+          client.query(`SELECT * FROM ${schoolMembershipsTableName} ORDER BY school_id, email`),
+          client.query(`SELECT * FROM ${teamMembershipsTableName} ORDER BY school_id, team_id, email`),
+          client.query(`SELECT * FROM ${billingTableName} ORDER BY school_id`),
+          client.query(`SELECT * FROM ${activityTableName} ORDER BY school_id, created_at_iso DESC`),
+          client.query(`SELECT * FROM ${liveSessionsTableName} ORDER BY school_id, updated_at_iso DESC`),
+          client.query(`SELECT * FROM ${operatorSessionsTableName} ORDER BY school_id, updated_at_iso DESC`),
+        ]);
+
+        const schools: Record<string, SchoolRecord> = {};
+        for (const row of schoolRows.rows as Array<Record<string, unknown>>) {
+          const schoolId = normalizeSchoolId(String(row.id ?? ""));
+          schools[schoolId] = {
+            schoolId,
+            name: String(row.name ?? schoolId),
+            slug: String(row.slug ?? schoolId),
+            sport: "basketball",
+            status: row.status === "active" ? "active" : "draft",
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          };
+        }
+
+        const userProfiles: Record<string, UserWorkspaceProfile> = {};
+        for (const row of profileRows.rows as Array<Record<string, unknown>>) {
+          const userId = String(row.user_id ?? "").trim();
+          if (!userId) continue;
+          userProfiles[userId] = {
+            userId,
+            email: String(row.email ?? "").toLowerCase(),
+            fullName: String(row.full_name ?? ""),
+            lastSchoolId: row.last_school_id ? String(row.last_school_id) : undefined,
+            lastTeamId: row.last_team_id ? String(row.last_team_id) : undefined,
+            lastContextType: row.last_context_type === "team" ? "team" : "school",
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          };
+        }
+
+        const schoolMemberships: Record<string, SchoolMembership[]> = {};
+        for (const row of schoolMembershipRows.rows as Array<Record<string, unknown>>) {
+          const schoolId = normalizeSchoolId(String(row.school_id ?? ""));
+          schoolMemberships[schoolId] ??= [];
+          schoolMemberships[schoolId].push({
+            membershipId: String(row.membership_id ?? ""),
+            schoolId,
+            userId: row.user_id ? String(row.user_id) : undefined,
+            email: String(row.email ?? "").toLowerCase(),
+            fullName: String(row.full_name ?? ""),
+            role: row.role === "owner" ? "owner" : "school_admin",
+            status: row.status === "invited" ? "invited" : "active",
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          });
+        }
+
+        const teamMemberships: Record<string, TeamMembership[]> = {};
+        for (const row of teamMembershipRows.rows as Array<Record<string, unknown>>) {
+          const schoolId = normalizeSchoolId(String(row.school_id ?? ""));
+          teamMemberships[schoolId] ??= [];
+          teamMemberships[schoolId].push({
+            membershipId: String(row.membership_id ?? ""),
+            schoolId,
+            teamId: String(row.team_id ?? ""),
+            userId: row.user_id ? String(row.user_id) : undefined,
+            email: String(row.email ?? "").toLowerCase(),
+            fullName: String(row.full_name ?? ""),
+            role: String(row.role ?? "viewer") as TeamMembership["role"],
+            status: row.status === "invited" ? "invited" : "active",
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          });
+        }
+
+        const billingStates: Record<string, BillingState> = {};
+        for (const row of billingRows.rows as Array<Record<string, unknown>>) {
+          const schoolId = normalizeSchoolId(String(row.school_id ?? ""));
+          billingStates[schoolId] = {
+            schoolId,
+            planId: String(row.plan_id ?? "trial"),
+            status: String(row.status ?? "trialing") as BillingState["status"],
+            includedActiveTeamLimit: row.included_active_team_limit === null ? undefined : Number(row.included_active_team_limit),
+            extraActiveTeamSeats: row.extra_active_team_seats === null ? undefined : Number(row.extra_active_team_seats),
+            trialStartedAtIso: row.trial_started_at_iso ? String(row.trial_started_at_iso) : undefined,
+            trialEndsAtIso: row.trial_ends_at_iso ? String(row.trial_ends_at_iso) : undefined,
+            stripeCustomerId: row.stripe_customer_id ? String(row.stripe_customer_id) : undefined,
+            stripeSubscriptionId: row.stripe_subscription_id ? String(row.stripe_subscription_id) : undefined,
+            currentPeriodEndsAtIso: row.current_period_ends_at_iso ? String(row.current_period_ends_at_iso) : undefined,
+            couponCode: row.coupon_code ? String(row.coupon_code) : undefined,
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          };
+        }
+
+        const activityEvents: Record<string, ActivityEvent[]> = {};
+        for (const row of activityRows.rows as Array<Record<string, unknown>>) {
+          const schoolId = normalizeSchoolId(String(row.school_id ?? ""));
+          activityEvents[schoolId] ??= [];
+          activityEvents[schoolId].push({
+            id: String(row.id ?? ""),
+            schoolId,
+            teamId: row.team_id ? String(row.team_id) : undefined,
+            type: String(row.type ?? "") as ActivityEvent["type"],
+            actorUserId: row.actor_user_id ? String(row.actor_user_id) : undefined,
+            message: String(row.message ?? ""),
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            metadata: (row.metadata as Record<string, unknown> | undefined) ?? undefined,
+          });
+        }
+
+        const liveGameSessions: Record<string, LiveGameSessionRecord[]> = {};
+        for (const row of liveSessionRows.rows as Array<Record<string, unknown>>) {
+          const schoolId = normalizeSchoolId(String(row.school_id ?? ""));
+          liveGameSessions[schoolId] ??= [];
+          liveGameSessions[schoolId].push({
+            liveSessionId: String(row.live_session_id ?? ""),
+            schoolId,
+            teamId: String(row.team_id ?? ""),
+            gameId: String(row.game_id ?? ""),
+            opponentName: row.opponent_name ? String(row.opponent_name) : undefined,
+            opponentTeamId: row.opponent_team_id ? String(row.opponent_team_id) : undefined,
+            status: row.status === "completed" ? "completed" : "active",
+            pairingCode: String(row.pairing_code ?? ""),
+            createdByUserId: row.created_by_user_id ? String(row.created_by_user_id) : undefined,
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          });
+        }
+
+        const operatorSessions: Record<string, OperatorSessionRecord> = {};
+        for (const row of operatorSessionRows.rows as Array<Record<string, unknown>>) {
+          const liveSessionId = String(row.live_session_id ?? "").trim();
+          if (!liveSessionId) continue;
+          operatorSessions[liveSessionId] = {
+            operatorSessionId: String(row.operator_session_id ?? ""),
+            liveSessionId,
+            schoolId: normalizeSchoolId(String(row.school_id ?? "")),
+            teamId: String(row.team_id ?? ""),
+            pairingCode: String(row.pairing_code ?? ""),
+            operatorToken: String(row.operator_token ?? ""),
+            expiresAtIso: String(row.expires_at_iso ?? new Date().toISOString()),
+            createdAtIso: String(row.created_at_iso ?? new Date().toISOString()),
+            updatedAtIso: String(row.updated_at_iso ?? new Date().toISOString()),
+          };
+        }
+
+        return { schools, userProfiles, schoolMemberships, teamMemberships, billingStates, activityEvents, liveGameSessions, operatorSessions };
+      } finally {
+        client.release();
+      }
+    },
+    async replaceSchoolRecord(schoolId: string, record: SchoolRecord | null): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      await setTenantContext(pool, normalizedSchoolId);
+      if (!record) {
+        await pool.query(`DELETE FROM ${schoolsTableName} WHERE id = $1`, [normalizedSchoolId]);
+        return;
+      }
+      await ensureSchool(pool, normalizedSchoolId);
+      await pool.query(
+        `UPDATE ${schoolsTableName}
+         SET name = $2, slug = $3, sport = $4, status = $5, created_at_iso = $6, updated_at_iso = $7
+         WHERE id = $1`,
+        [normalizedSchoolId, record.name, record.slug, record.sport, record.status, record.createdAtIso, record.updatedAtIso]
+      );
+    },
+    async replaceUserWorkspaceProfile(profile: UserWorkspaceProfile): Promise<void> {
+      await ensureSchema();
+      await setTenantContext(pool, "*");
+      await pool.query(
+        `
+          INSERT INTO ${workspaceProfilesTableName} (
+            user_id, email, full_name, last_school_id, last_team_id, last_context_type, created_at_iso, updated_at_iso, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            email = EXCLUDED.email,
+            full_name = EXCLUDED.full_name,
+            last_school_id = EXCLUDED.last_school_id,
+            last_team_id = EXCLUDED.last_team_id,
+            last_context_type = EXCLUDED.last_context_type,
+            updated_at_iso = EXCLUDED.updated_at_iso,
+            updated_at = NOW()
+        `,
+        [profile.userId, profile.email, profile.fullName, profile.lastSchoolId ?? null, profile.lastTeamId ?? null, profile.lastContextType ?? "school", profile.createdAtIso, profile.updatedAtIso]
+      );
+    },
+    async replaceSchoolMembershipsForSchool(schoolId: string, memberships: SchoolMembership[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${schoolMembershipsTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const membership of memberships) {
+          await client.query(
+            `INSERT INTO ${schoolMembershipsTableName} (
+              school_id, membership_id, user_id, email, full_name, role, status, created_at_iso, updated_at_iso, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+            [normalizedSchoolId, membership.membershipId, membership.userId ?? null, membership.email, membership.fullName, membership.role, membership.status, membership.createdAtIso, membership.updatedAtIso]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async replaceTeamMembershipsForSchool(schoolId: string, memberships: TeamMembership[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${teamMembershipsTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const membership of memberships) {
+          await client.query(
+            `INSERT INTO ${teamMembershipsTableName} (
+              school_id, membership_id, team_id, user_id, email, full_name, role, status, created_at_iso, updated_at_iso, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+            [normalizedSchoolId, membership.membershipId, membership.teamId, membership.userId ?? null, membership.email, membership.fullName, membership.role, membership.status, membership.createdAtIso, membership.updatedAtIso]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async replaceBillingStateForSchool(schoolId: string, billingState: BillingState | null): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      await setTenantContext(pool, normalizedSchoolId);
+      if (!billingState) {
+        await pool.query(`DELETE FROM ${billingTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        return;
+      }
+      await ensureSchool(pool, normalizedSchoolId);
+      await pool.query(
+        `
+          INSERT INTO ${billingTableName} (
+            school_id, plan_id, status, included_active_team_limit, extra_active_team_seats, trial_started_at_iso, trial_ends_at_iso,
+            stripe_customer_id, stripe_subscription_id, current_period_ends_at_iso, coupon_code, created_at_iso, updated_at_iso, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+          ON CONFLICT (school_id) DO UPDATE SET
+            plan_id = EXCLUDED.plan_id,
+            status = EXCLUDED.status,
+            included_active_team_limit = EXCLUDED.included_active_team_limit,
+            extra_active_team_seats = EXCLUDED.extra_active_team_seats,
+            trial_started_at_iso = EXCLUDED.trial_started_at_iso,
+            trial_ends_at_iso = EXCLUDED.trial_ends_at_iso,
+            stripe_customer_id = EXCLUDED.stripe_customer_id,
+            stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+            current_period_ends_at_iso = EXCLUDED.current_period_ends_at_iso,
+            coupon_code = EXCLUDED.coupon_code,
+            updated_at_iso = EXCLUDED.updated_at_iso,
+            updated_at = NOW()
+        `,
+        [normalizedSchoolId, billingState.planId, billingState.status, billingState.includedActiveTeamLimit ?? null, billingState.extraActiveTeamSeats ?? null, billingState.trialStartedAtIso ?? null, billingState.trialEndsAtIso ?? null, billingState.stripeCustomerId ?? null, billingState.stripeSubscriptionId ?? null, billingState.currentPeriodEndsAtIso ?? null, billingState.couponCode ?? null, billingState.createdAtIso, billingState.updatedAtIso]
+      );
+    },
+    async replaceActivityEventsForSchool(schoolId: string, events: ActivityEvent[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${activityTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const event of events) {
+          await client.query(
+            `INSERT INTO ${activityTableName} (
+              school_id, id, team_id, type, actor_user_id, message, created_at_iso, metadata, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())`,
+            [normalizedSchoolId, event.id, event.teamId ?? null, event.type, event.actorUserId ?? null, event.message, event.createdAtIso, JSON.stringify(event.metadata ?? null)]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async replaceLiveGameSessionsForSchool(schoolId: string, sessions: LiveGameSessionRecord[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${liveSessionsTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const session of sessions) {
+          await client.query(
+            `INSERT INTO ${liveSessionsTableName} (
+              school_id, live_session_id, team_id, game_id, opponent_name, opponent_team_id, status, pairing_code, created_by_user_id, created_at_iso, updated_at_iso, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+            [normalizedSchoolId, session.liveSessionId, session.teamId, session.gameId, session.opponentName ?? null, session.opponentTeamId ?? null, session.status, session.pairingCode, session.createdByUserId ?? null, session.createdAtIso, session.updatedAtIso]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async replaceOperatorSessionsForSchool(schoolId: string, sessions: OperatorSessionRecord[]): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, normalizedSchoolId);
+        await ensureSchool(client, normalizedSchoolId);
+        await client.query(`DELETE FROM ${operatorSessionsTableName} WHERE school_id = $1`, [normalizedSchoolId]);
+        for (const session of sessions) {
+          await client.query(
+            `INSERT INTO ${operatorSessionsTableName} (
+              school_id, operator_session_id, live_session_id, team_id, pairing_code, operator_token, expires_at_iso, created_at_iso, updated_at_iso, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+            [normalizedSchoolId, session.operatorSessionId, session.liveSessionId, session.teamId, session.pairingCode, session.operatorToken, session.expiresAtIso, session.createdAtIso, session.updatedAtIso]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async clearSchoolData(schoolId: string): Promise<void> {
+      await ensureSchema();
+      const normalizedSchoolId = normalizeSchoolId(schoolId);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, "*");
+        await client.query(
+          `
+            UPDATE ${workspaceProfilesTableName}
+            SET
+              last_school_id = CASE WHEN last_school_id = $1 THEN NULL ELSE last_school_id END,
+              last_team_id = CASE WHEN last_school_id = $1 THEN NULL ELSE last_team_id END,
+              updated_at_iso = CASE WHEN last_school_id = $1 THEN $2 ELSE updated_at_iso END,
+              updated_at = NOW()
+            WHERE last_school_id = $1
+          `,
+          [normalizedSchoolId, new Date().toISOString()]
+        );
+        await client.query(`DELETE FROM ${schoolsTableName} WHERE id = $1`, [normalizedSchoolId]);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async clearAllNormalizedData(): Promise<void> {
+      await ensureSchema();
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await setTenantContext(client, "*");
+        await client.query(`DELETE FROM ${workspaceProfilesTableName}`);
+        await client.query(`DELETE FROM ${schoolsTableName}`);
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");

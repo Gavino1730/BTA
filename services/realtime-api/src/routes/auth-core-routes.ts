@@ -31,6 +31,8 @@ interface RegisterAuthCoreRoutesOptions {
   resolveCurrentOrganizationMember: (req: Request, schoolId: string) => unknown;
   getLocalAuthAccountByEmail: (email: string, scope: { schoolId: string }) => any;
   buildAuthSessionResponse: (schoolId: string, account: any, currentMember: any, token?: string | null) => unknown;
+  getUserWorkspaceProfile: (userId: string) => { lastSchoolId?: string } | null;
+  listSchoolMembershipsForUser: (input: { userId?: string; email?: string }) => Array<{ schoolId: string; role: string }>;
   sanitizeTextField: (value: unknown, maxLength: number) => string;
   resolveAuthSchoolId: (req: Request, payload: Record<string, unknown>, email: string) => { schoolId?: string; error?: string; status?: number };
   pruneExpiredInvitationTokens: (now?: number) => void;
@@ -55,9 +57,22 @@ interface RegisterAuthCoreRoutesOptions {
   exposePasswordResetToken: boolean;
   getLocalAuthAccountsByScope: (scope: { schoolId: string }) => any[];
   billingGuardBeforeRegister?: (schoolId: string) => { allowed: boolean; error?: string; status?: number };
+  enableLegacyLocalAuth?: boolean;
 }
 
 export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRoutesOptions): void {
+  function rejectLegacyLocalAuth(res: Response, action: "register" | "login" | "password reset"): boolean {
+    if (options.enableLegacyLocalAuth !== false) {
+      return false;
+    }
+
+    res.status(410).json({
+      error: `Legacy local ${action} is disabled. Use Supabase auth flows instead.`,
+      code: "legacy_local_auth_disabled",
+    });
+    return true;
+  }
+
   app.get("/api/auth/session", (req, res) => {
     const schoolResolution = options.resolveRequestSchoolId(req, { suppressMissingScopeTelemetry: true });
     const schoolId = schoolResolution.schoolId;
@@ -80,29 +95,65 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
       return;
     }
 
-    if (!schoolId) {
+    if (!schoolId && !authContext) {
       res.status(schoolResolution.status ?? 400).json({ error: schoolResolution.error ?? "schoolId is required" });
       return;
     }
 
     if (!authContext) {
+      const resolvedSchoolId = schoolId ?? "";
       res.json({
         authenticated: false,
         token: null,
         user: null,
         currentMember: null,
-        onboarding: options.buildOnboardingCompletionSummary(schoolId),
+        onboarding: options.buildOnboardingCompletionSummary(resolvedSchoolId),
       });
       return;
     }
 
     const suggested = options.buildSuggestedCoachIdentity(authContext);
     const email = options.sanitizeTextField(suggested?.coachEmail, 160).toLowerCase();
-    const currentMember = options.resolveCurrentOrganizationMember(req, schoolId);
-    const localAccount = email ? options.getLocalAuthAccountByEmail(email, { schoolId }) : null;
+    const workspaceMemberships = options.listSchoolMembershipsForUser({
+      userId: options.sanitizeTextField((authContext as { subject?: string } | undefined)?.subject, 120) || undefined,
+      email: email || undefined,
+    });
+    const profile = options.getUserWorkspaceProfile(options.sanitizeTextField((authContext as { subject?: string } | undefined)?.subject, 120));
+    const resolvedSchoolId = schoolId
+      || (profile?.lastSchoolId && workspaceMemberships.some((membership) => membership.schoolId === profile.lastSchoolId)
+        ? profile.lastSchoolId
+        : workspaceMemberships[0]?.schoolId);
+
+    if (!resolvedSchoolId) {
+      res.json({
+        authenticated: true,
+        token: null,
+        user: {
+          accountId: options.sanitizeTextField((authContext as { subject?: string } | undefined)?.subject, 120) || email || "authenticated-user",
+          email: email || undefined,
+          fullName: options.sanitizeTextField(suggested?.coachName, 120) || undefined,
+          role: options.sanitizeTextField((authContext as { role?: string } | undefined)?.role, 40) || "coach",
+          status: "active",
+          schoolId: undefined,
+          lastLoginAtIso: null,
+        },
+        currentMember: null,
+        onboarding: {
+          completed: false,
+          hasAccount: true,
+          hasProfile: false,
+          hasTeam: false,
+          teamCount: 0,
+        },
+      });
+      return;
+    }
+
+    const currentMember = options.resolveCurrentOrganizationMember(req, resolvedSchoolId);
+    const localAccount = email ? options.getLocalAuthAccountByEmail(email, { schoolId: resolvedSchoolId }) : null;
 
     if (localAccount) {
-      res.json(options.buildAuthSessionResponse(schoolId, localAccount, currentMember));
+      res.json(options.buildAuthSessionResponse(resolvedSchoolId, localAccount, currentMember));
       return;
     }
 
@@ -115,16 +166,20 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
         fullName: options.sanitizeTextField(suggested?.coachName, 120) || undefined,
         role: (currentMember as { role?: string } | null)?.role ?? (options.sanitizeTextField((authContext as { role?: string } | undefined)?.role, 40) || "coach"),
         status: (currentMember as { status?: string } | null)?.status ?? "active",
-        schoolId,
+        schoolId: resolvedSchoolId,
         organizationId: (currentMember as { organizationId?: string } | null)?.organizationId,
         lastLoginAtIso: null,
       },
       currentMember,
-      onboarding: options.buildOnboardingCompletionSummary(schoolId),
+      onboarding: options.buildOnboardingCompletionSummary(resolvedSchoolId),
     });
   });
 
   app.post("/api/auth/register", options.authRateLimiter, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "register")) {
+      return;
+    }
+
     const payload = (req.body ?? {}) as Record<string, unknown>;
     const inviteToken = String(payload.inviteToken ?? "").trim();
     const fullName = options.sanitizeTextField(payload.fullName ?? payload.coachName, 120);
@@ -231,6 +286,10 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
   });
 
   app.post("/api/auth/login", options.authRateLimiter, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "login")) {
+      return;
+    }
+
     const payload = (req.body ?? {}) as Record<string, unknown>;
     const email = options.sanitizeTextField(payload.email, 160).toLowerCase();
     const password = String(payload.password ?? "").trim();
@@ -317,6 +376,10 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
   });
 
   app.post("/api/auth/password-reset/request", options.authRateLimiter, async (req, res) => {
+    if (rejectLegacyLocalAuth(res, "password reset")) {
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
     const payload = (req.body ?? {}) as Record<string, unknown>;
     const email = options.sanitizeTextField(payload.email, 160).toLowerCase();
@@ -365,6 +428,10 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
   });
 
   app.post("/api/auth/password-reset/confirm", options.authRateLimiter, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "password reset")) {
+      return;
+    }
+
     const schoolId = options.getSchoolIdFromRequest(req);
     const payload = (req.body ?? {}) as Record<string, unknown>;
     const token = String(payload.token ?? "").trim();

@@ -22,7 +22,8 @@ import {
   createPostgresPersistenceProvider,
   type OrgDataResult,
   type PersistedGameSessionRecord,
-  type PersistenceProvider
+  type PersistenceProvider,
+  type WorkspaceDataResult,
 } from "../persistence.js";
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "../school-id.js";
 import { logger } from "../logger.js";
@@ -3055,6 +3056,106 @@ function persistLocalAuthAccountsForSchool(schoolId: string, accounts: LocalAuth
   });
 }
 
+function persistUserWorkspaceProfile(profile: UserWorkspaceProfile): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceUserWorkspaceProfile(profile).catch((error) => {
+    logger.warn("persistence.workspace_profile_save_failed", { userId: profile.userId, error });
+  });
+}
+
+function persistSchoolRecord(schoolId: string, record: SchoolRecord | null): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceSchoolRecord(schoolId, record).catch((error) => {
+    logger.warn("persistence.school_record_save_failed", { schoolId, error });
+  });
+}
+
+function persistSchoolMembershipsForSchool(schoolId: string, memberships: SchoolMembership[]): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceSchoolMembershipsForSchool(schoolId, memberships).catch((error) => {
+    logger.warn("persistence.school_memberships_save_failed", { schoolId, error });
+  });
+}
+
+function persistTeamMembershipsForSchool(schoolId: string, memberships: TeamMembership[]): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceTeamMembershipsForSchool(schoolId, memberships).catch((error) => {
+    logger.warn("persistence.team_memberships_save_failed", { schoolId, error });
+  });
+}
+
+function persistBillingStateForSchool(schoolId: string, billingState: BillingState | null): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceBillingStateForSchool(schoolId, billingState).catch((error) => {
+    logger.warn("persistence.billing_state_save_failed", { schoolId, error });
+  });
+}
+
+function persistActivityEventsForSchool(schoolId: string, events: ActivityEvent[]): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceActivityEventsForSchool(schoolId, events).catch((error) => {
+    logger.warn("persistence.activity_events_save_failed", { schoolId, error });
+  });
+}
+
+function persistLiveGameSessionsForSchool(schoolId: string, sessionsForSchool: LiveGameSessionRecord[]): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceLiveGameSessionsForSchool(schoolId, sessionsForSchool).catch((error) => {
+    logger.warn("persistence.live_sessions_save_failed", { schoolId, error });
+  });
+}
+
+function persistOperatorSessionsForSchool(schoolId: string, sessionsForSchool: OperatorSessionRecord[]): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.replaceOperatorSessionsForSchool(schoolId, sessionsForSchool).catch((error) => {
+    logger.warn("persistence.operator_sessions_save_failed", { schoolId, error });
+  });
+}
+
+function clearNormalizedSchoolData(schoolId: string): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.clearSchoolData(schoolId).catch((error) => {
+    logger.warn("persistence.school_clear_failed", { schoolId, error });
+  });
+}
+
+function clearAllNormalizedData(): void {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  void persistenceProvider.clearAllNormalizedData().catch((error) => {
+    logger.warn("persistence.normalized_clear_failed", { error });
+  });
+}
+
 async function restoreOrgDataFromProvider(): Promise<void> {
   if (!persistenceProvider) {
     return;
@@ -3080,6 +3181,71 @@ async function restoreOrgDataFromProvider(): Promise<void> {
     const existing = localAuthAccountsBySchool.get(normalizeSchoolId(schoolId));
     if (!existing || existing.length === 0) {
       setLocalAuthAccountsForSchool(normalizeSchoolId(schoolId), accounts);
+    }
+  }
+}
+
+async function restoreWorkspaceDataFromProvider(): Promise<void> {
+  if (!persistenceProvider) {
+    return;
+  }
+
+  const data: WorkspaceDataResult = await persistenceProvider.loadWorkspaceData();
+
+  for (const school of Object.values(data.schools)) {
+    if (!schoolsById.has(normalizeSchoolId(school.schoolId))) {
+      setSchoolRecord(school);
+    }
+  }
+
+  for (const profile of Object.values(data.userProfiles)) {
+    if (!userWorkspaceProfilesById.has(trimProfileField(profile.userId, 120))) {
+      setUserWorkspaceProfile(profile);
+    }
+  }
+
+  for (const [schoolId, memberships] of Object.entries(data.schoolMemberships)) {
+    const normalizedSchoolId = normalizeSchoolId(schoolId);
+    const existing = schoolMembershipsBySchool.get(normalizedSchoolId);
+    if (!existing || existing.length === 0) {
+      setSchoolMembershipsForSchool(normalizedSchoolId, memberships);
+    }
+  }
+
+  for (const [schoolId, memberships] of Object.entries(data.teamMemberships)) {
+    const normalizedSchoolId = normalizeSchoolId(schoolId);
+    const existing = teamMembershipsBySchool.get(normalizedSchoolId);
+    if (!existing || existing.length === 0) {
+      setTeamMembershipsForSchool(normalizedSchoolId, memberships);
+    }
+  }
+
+  for (const [schoolId, billingState] of Object.entries(data.billingStates)) {
+    const normalizedSchoolId = normalizeSchoolId(schoolId);
+    if (!billingBySchool.has(normalizedSchoolId)) {
+      billingBySchool.set(normalizedSchoolId, billingState);
+    }
+  }
+
+  for (const [schoolId, events] of Object.entries(data.activityEvents)) {
+    const normalizedSchoolId = normalizeSchoolId(schoolId);
+    const existing = activityEventsBySchool.get(normalizedSchoolId);
+    if (!existing || existing.length === 0) {
+      setActivityEventsForSchool(normalizedSchoolId, events);
+    }
+  }
+
+  for (const [schoolId, sessionsForSchool] of Object.entries(data.liveGameSessions)) {
+    const normalizedSchoolId = normalizeSchoolId(schoolId);
+    const existing = liveGameSessionsBySchool.get(normalizedSchoolId);
+    if (!existing || existing.length === 0) {
+      setLiveGameSessionsForSchool(normalizedSchoolId, sessionsForSchool);
+    }
+  }
+
+  for (const [liveSessionId, session] of Object.entries(data.operatorSessions)) {
+    if (!operatorSessionsByLiveSession.has(liveSessionId)) {
+      operatorSessionsByLiveSession.set(liveSessionId, session);
     }
   }
 }
@@ -3190,7 +3356,7 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
     restoreSessionsFromFile();
   }
 
-  if (persistenceProvider) {
+  if (persistenceProvider && !restoredSnapshot) {
     try {
       await restoreRosterTeamsFromProvider();
     } catch (error) {
@@ -3201,13 +3367,24 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
     }
   }
 
-  if (persistenceProvider) {
+  if (persistenceProvider && !restoredSnapshot) {
     try {
       await restoreOrgDataFromProvider();
     } catch (error) {
       logger.warn("persistence.org_data_restore_failed", { error });
       if (failOnPersistenceError) {
         throw new Error("PostgreSQL org data restore failed during startup");
+      }
+    }
+  }
+
+  if (persistenceProvider && !restoredSnapshot) {
+    try {
+      await restoreWorkspaceDataFromProvider();
+    } catch (error) {
+      logger.warn("persistence.workspace_data_restore_failed", { error });
+      if (failOnPersistenceError) {
+        throw new Error("PostgreSQL workspace data restore failed during startup");
       }
     }
   }
@@ -3278,6 +3455,7 @@ export function resetAllData(scope?: TenantScope): void {
     operatorSessionsByLiveSession.clear();
     persistSessions();
     clearPersistedRosterTeams();
+    clearAllNormalizedData();
     return;
   }
 
@@ -3305,6 +3483,7 @@ export function resetAllData(scope?: TenantScope): void {
   }
   persistSessions();
   persistRosterTeamsForSchool(schoolId, []);
+  clearNormalizedSchoolData(schoolId);
 }
 
 const billingStore = createBillingStore({
@@ -3312,6 +3491,7 @@ const billingStore = createBillingStore({
   billingBySchool,
   processedStripeWebhookEvents,
   persistSessions,
+  persistBillingStateForSchool,
 });
 
 export const {
@@ -3348,6 +3528,10 @@ const membershipStore = createMembershipStore({
   setSchoolMembershipsForSchool,
   setTeamMembershipsForSchool,
   persistSessions,
+  persistUserWorkspaceProfile,
+  persistSchoolRecord,
+  persistSchoolMembershipsForSchool,
+  persistTeamMembershipsForSchool,
 });
 
 export const {
@@ -3421,6 +3605,9 @@ const activityStore = createActivityStore({
   setActivityEventsForSchool,
   setLiveGameSessionsForSchool,
   persistSessions,
+  persistActivityEventsForSchool,
+  persistLiveGameSessionsForSchool,
+  persistOperatorSessionsForSchool,
 });
 
 export const {

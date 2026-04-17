@@ -145,6 +145,42 @@ describe("school tenancy", () => {
   });
 });
 
+describe("read-only team enforcement", () => {
+  it("blocks game mutations when the tracked team is read-only", async () => {
+    const schoolId = "read-only-guard-school";
+    await resetSchool(schoolId);
+
+    const rosterRes = await fetch(`${API_BASE}/config/roster-teams`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-school-id": schoolId },
+      body: JSON.stringify({
+        teams: [
+          {
+            id: "vc-readonly",
+            name: "VC Varsity",
+            abbreviation: "VC",
+            status: "read_only",
+            players: [],
+          },
+        ],
+      }),
+    });
+    expect(rosterRes.status).toBe(200);
+
+    const createRes = await fetch(`${API_BASE}/api/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-school-id": schoolId },
+      body: JSON.stringify({
+        gameId: "readonly-game-1",
+        homeTeamId: "vc-readonly",
+        awayTeamId: "opp-team",
+      }),
+    });
+    expect(createRes.status).toBe(402);
+
+  });
+});
+
 describe("operator pairing endpoints", () => {
   it("returns coach-linked roster and game setup for a connection code", async () => {
     await resetSchool("pairing-school");

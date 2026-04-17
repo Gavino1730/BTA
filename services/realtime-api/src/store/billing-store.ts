@@ -5,6 +5,7 @@ interface BillingStoreDependencies {
   billingBySchool: Map<string, BillingState>;
   processedStripeWebhookEvents: Map<string, string>;
   persistSessions: () => void;
+  persistBillingStateForSchool: (schoolId: string, billingState: BillingState | null) => void | Promise<void>;
 }
 
 export function createBillingStore(deps: BillingStoreDependencies) {
@@ -71,6 +72,7 @@ export function createBillingStore(deps: BillingStoreDependencies) {
 
     deps.billingBySchool.set(schoolId, created);
     deps.persistSessions();
+    void deps.persistBillingStateForSchool(schoolId, created);
     return { ...created };
   };
 
@@ -103,6 +105,7 @@ export function createBillingStore(deps: BillingStoreDependencies) {
 
     deps.billingBySchool.set(schoolId, saved);
     deps.persistSessions();
+    void deps.persistBillingStateForSchool(schoolId, saved);
     return { ...saved };
   };
 

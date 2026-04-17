@@ -43,6 +43,10 @@ interface MembershipStoreDependencies {
   setSchoolMembershipsForSchool: (schoolId: string, memberships: SchoolMembership[]) => SchoolMembership[];
   setTeamMembershipsForSchool: (schoolId: string, memberships: TeamMembership[]) => TeamMembership[];
   persistSessions: () => void;
+  persistUserWorkspaceProfile: (profile: UserWorkspaceProfile) => void | Promise<void>;
+  persistSchoolRecord: (schoolId: string, record: SchoolRecord | null) => void | Promise<void>;
+  persistSchoolMembershipsForSchool: (schoolId: string, memberships: SchoolMembership[]) => void | Promise<void>;
+  persistTeamMembershipsForSchool: (schoolId: string, memberships: TeamMembership[]) => void | Promise<void>;
 }
 
 export function createMembershipStore(deps: MembershipStoreDependencies) {
@@ -108,6 +112,7 @@ export function createMembershipStore(deps: MembershipStoreDependencies) {
   ): UserWorkspaceProfile => {
     const saved = deps.setUserWorkspaceProfile(profile);
     deps.persistSessions();
+    void deps.persistUserWorkspaceProfile(saved);
     return saved;
   };
 
@@ -118,6 +123,7 @@ export function createMembershipStore(deps: MembershipStoreDependencies) {
   const saveSchoolRecord = (record: Partial<SchoolRecord> & Pick<SchoolRecord, "schoolId" | "name">): SchoolRecord => {
     const saved = deps.setSchoolRecord(record);
     deps.persistSessions();
+    void deps.persistSchoolRecord(saved.schoolId, saved);
     return saved;
   };
 
@@ -164,6 +170,7 @@ export function createMembershipStore(deps: MembershipStoreDependencies) {
       (membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail
     );
     deps.persistSessions();
+    void deps.persistSchoolMembershipsForSchool(schoolId, deps.schoolMembershipsBySchool.get(schoolId) ?? []);
     return saved!;
   };
 
@@ -178,6 +185,7 @@ export function createMembershipStore(deps: MembershipStoreDependencies) {
 
     deps.schoolMembershipsBySchool.set(schoolId, next);
     deps.persistSessions();
+    void deps.persistSchoolMembershipsForSchool(schoolId, next);
     return true;
   };
 
@@ -236,6 +244,7 @@ export function createMembershipStore(deps: MembershipStoreDependencies) {
       )
     );
     deps.persistSessions();
+    void deps.persistTeamMembershipsForSchool(schoolId, deps.teamMembershipsBySchool.get(schoolId) ?? []);
     return saved!;
   };
 
@@ -250,6 +259,7 @@ export function createMembershipStore(deps: MembershipStoreDependencies) {
 
     deps.teamMembershipsBySchool.set(schoolId, next);
     deps.persistSessions();
+    void deps.persistTeamMembershipsForSchool(schoolId, next);
     return true;
   };
 

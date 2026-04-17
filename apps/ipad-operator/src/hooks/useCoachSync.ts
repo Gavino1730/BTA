@@ -137,6 +137,7 @@ export function useCoachSync({
     try {
       const snapshot = await fetchOperatorLinkSnapshot({
         apiUrl: appData.gameSetup.apiUrl,
+        liveSessionId: appData.gameSetup.liveSessionId,
         connectionId: normalizedId,
         schoolId: appData.gameSetup.schoolId,
       });
