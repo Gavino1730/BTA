@@ -501,6 +501,9 @@ registerSocketAuth(io, {
   trackSecurityEvent: (event, details) => {
     trackSecurityEvent(event, details);
   },
+  loggerWarn: (message, context) => {
+    logger.warn(message, context);
+  },
 });
 
 const {

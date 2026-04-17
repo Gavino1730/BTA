@@ -86,13 +86,18 @@ export function useCoachSocket({
     const activeOperatorGameIdRef = { current: "" };
     const latestStateRef: { current: GameState | null } = { current: null };
     const socket = io(apiBase, {
+      path: "/socket.io",
       auth: {
         ...(schoolId ? { schoolId } : {}),
         ...(API_KEY ? { apiKey: API_KEY } : {}),
         ...(authSession?.token ? { token: authSession.token } : {}),
       },
       extraHeaders: apiKeyHeader(),
-      transports: ["websocket"],
+      transports: ["polling", "websocket"],
+      upgrade: true,
+      timeout: 20000,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
     });
 
     // Poll the presence channel every 5s so the coach dashboard can recover
@@ -127,6 +132,22 @@ export function useCoachSocket({
       // Preserve state so the scoreboard stays visible during brief reconnections.
       // The server re-pushes game:state on reconnect, keeping data fresh.
       setDashboardStatus("Reconnecting...");
+    });
+
+    socket.on("connect_error", (error) => {
+      const message = typeof error?.message === "string" && error.message.trim()
+        ? error.message.trim()
+        : "Realtime connection failed";
+      console.error("[coach-socket] connect_error", {
+        apiBase,
+        schoolId,
+        connectionId,
+        message,
+        details: error,
+      });
+      setServerConnected(false);
+      setDeviceConnected(false);
+      setDashboardStatus(message);
     });
 
     socket.emit("join:coach", { connectionId, gameId: gameIdRef.current });
@@ -258,6 +279,7 @@ export function useCoachSocket({
       socket.off("game:state");
       socket.off("game:insights");
       socket.off("roster:teams");
+      socket.off("connect_error");
       socket.disconnect();
     };
   }, [connectionId, setLastFinishedGameSummary, setupNames.myTeamName, setupNames.opponentName, setupNames.vcSide]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -2,7 +2,7 @@
 // Caches static assets so the app loads offline even in gym environments
 // with no connectivity. API and Socket.IO calls always go to the network.
 
-const CACHE_NAME = "bta-courtside-operator-v2";
+const CACHE_NAME = "bta-courtside-operator-v3";
 
 // Core app shell — always cache these on install.
 const SHELL_URLS = ["/", "/index.html"];
@@ -44,9 +44,46 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Immutable hashed assets (e.g. /assets/index-BLLPwzau.js) — cache-first.
+  // Vite content-hashes these filenames so they never change; safe to serve from cache forever.
+  const isHashedAsset = url.pathname.startsWith("/assets/");
+
+  if (isHashedAsset) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Navigation requests and HTML — network-first so the browser always gets the latest
+  // index.html with correct asset references. Fall back to cache only when offline.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match("/index.html"))
+    );
+    return;
+  }
+
+  // Everything else (manifest, icons, fonts subset, sw.js itself) — stale-while-revalidate.
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      // Return cached version immediately and revalidate in background (stale-while-revalidate).
       const networkFetch = fetch(event.request)
         .then((response) => {
           if (response.ok) {
@@ -55,13 +92,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => {
-          // Network failed — fall back to cached index.html for navigation requests.
-          if (event.request.mode === "navigate") {
-            return caches.match("/index.html");
-          }
-          return undefined;
-        });
+        .catch(() => undefined);
 
       return cached ?? networkFetch;
     })

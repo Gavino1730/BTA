@@ -9,6 +9,7 @@ interface RegisterSocketAuthOptions {
   isJwtAuthEnabled: () => boolean;
   allowAnonymousWhenUnconfigured?: boolean;
   trackSecurityEvent: (event: "unauthorizedSocket", details: Record<string, unknown>) => void;
+  loggerWarn?: (message: string, context?: Record<string, unknown>) => void;
 }
 
 function hasConfiguredSocketAuthPath(options: RegisterSocketAuthOptions): boolean {
@@ -18,15 +19,35 @@ function hasConfiguredSocketAuthPath(options: RegisterSocketAuthOptions): boolea
 export function registerSocketAuth(io: Server, options: RegisterSocketAuthOptions): void {
   io.use(async (socket, next) => {
     const auth = (socket.handshake.auth ?? {}) as Record<string, unknown>;
-
     const token = options.extractBearerToken(socket.handshake.headers as Record<string, unknown> | undefined, auth);
+    const origin = typeof socket.handshake.headers.origin === "string"
+      ? socket.handshake.headers.origin
+      : undefined;
+    const requestedSchoolId = typeof auth.schoolId === "string"
+      ? auth.schoolId
+      : typeof socket.handshake.headers["x-school-id"] === "string"
+        ? socket.handshake.headers["x-school-id"]
+        : undefined;
+
+    function reject(message: string, reason: string): void {
+      options.loggerWarn?.("socket.auth_rejected", {
+        reason,
+        message,
+        origin,
+        requestedSchoolId,
+        hasBearerToken: Boolean(token),
+        hasApiKey: typeof auth.apiKey === "string" || typeof socket.handshake.headers["x-api-key"] === "string",
+      });
+      next(new Error(message));
+    }
+
     if (token) {
       const authContext = await options.verifyBearerToken(token);
       if (authContext) {
         socket.data.authContext = authContext;
         const resolved = options.resolveSocketSchoolId(socket);
         if (!resolved.schoolId) {
-          next(new Error(resolved.error ?? "schoolId is required"));
+          reject(resolved.error ?? "schoolId is required", "missing-school-scope-after-jwt");
           return;
         }
         next();
@@ -44,13 +65,13 @@ export function registerSocketAuth(io: Server, options: RegisterSocketAuthOption
       if (options.allowAnonymousWhenUnconfigured) {
         const resolved = options.resolveSocketSchoolId(socket);
         if (!resolved.schoolId) {
-          next(new Error(resolved.error ?? "schoolId is required"));
+          reject(resolved.error ?? "schoolId is required", "missing-school-scope-anonymous");
           return;
         }
         next();
         return;
       }
-      next(new Error("Authentication is not configured for this protected socket"));
+      reject("Authentication is not configured for this protected socket", "auth-misconfigured");
       options.trackSecurityEvent("unauthorizedSocket", { reason: "auth-misconfigured" });
       return;
     }
@@ -58,14 +79,14 @@ export function registerSocketAuth(io: Server, options: RegisterSocketAuthOption
     if ((options.apiKey && provided === options.apiKey) || (options.writeApiKey && provided === options.writeApiKey)) {
       const resolved = options.resolveSocketSchoolId(socket);
       if (!resolved.schoolId) {
-        next(new Error(resolved.error ?? "schoolId is required"));
+        reject(resolved.error ?? "schoolId is required", "missing-school-scope-after-api-key");
         return;
       }
       next();
       return;
     }
 
-    next(new Error("Unauthorized — provide a valid bearer token or apiKey"));
+    reject("Unauthorized - provide a valid bearer token or apiKey", "missing-valid-credentials");
     options.trackSecurityEvent("unauthorizedSocket", { reason: "missing-valid-credentials" });
   });
 }
