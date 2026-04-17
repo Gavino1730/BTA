@@ -89,7 +89,7 @@ export function SetupGameCard({
                     key={team.id}
                     type="button"
                     className="shell-nav-link setup-team-pill"
-                    style={isSelected ? { borderColor: color, color, background: `${color}22` } : undefined}
+                    style={isSelected ? { borderColor: color, background: `${color}22` } : undefined}
                     onClick={() => {
                       setNewGameMyTeamId(team.id);
                       setNewGameStartingLineup(() => []);

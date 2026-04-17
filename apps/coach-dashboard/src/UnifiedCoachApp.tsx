@@ -10,6 +10,7 @@ import {
   apiBase,
   apiKeyHeader,
   clearAuthSession,
+  marketingBase,
   readStoredAuthSession,
 } from "./platform.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
@@ -408,7 +409,7 @@ export function UnifiedCoachApp() {
   if (route === "marketing" || route === "demo") {
     return (
       <LoginPage
-        onBackHome={() => navigate("/")}
+        onBackHome={() => { window.location.href = marketingBase; }}
         onCreateAccount={() => navigate(buildSetupPathFromInviteQuery())}
         onForgotPassword={() => navigate("/forgot-password")}
         onSuccess={() => void handleAuthSuccess()}
@@ -419,7 +420,7 @@ export function UnifiedCoachApp() {
   if (route === "login") {
     return (
       <LoginPage
-        onBackHome={() => navigate("/")}
+        onBackHome={() => { window.location.href = marketingBase; }}
         onCreateAccount={() => navigate(buildSetupPathFromInviteQuery())}
         onForgotPassword={() => navigate("/forgot-password")}
         onSuccess={() => void handleAuthSuccess()}
@@ -430,7 +431,7 @@ export function UnifiedCoachApp() {
   if (route === "forgot-password") {
     return (
       <ForgotPasswordPage
-        onBackHome={() => navigate("/")}
+        onBackHome={() => { window.location.href = marketingBase; }}
         onBackLogin={() => navigate("/login")}
       />
     );
@@ -515,6 +516,8 @@ export function UnifiedCoachApp() {
       ) : null}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
+          <span className="coach-nav-logo">≡ BTA COURTSIDE</span>
+
           <div className="coach-nav-actions">
             <select
               value={switcherValue}

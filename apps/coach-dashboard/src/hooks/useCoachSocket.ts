@@ -92,6 +92,7 @@ export function useCoachSocket({
         ...(authSession?.token ? { token: authSession.token } : {}),
       },
       extraHeaders: apiKeyHeader(),
+      transports: ["websocket"],
     });
 
     // Poll the presence channel every 5s so the coach dashboard can recover

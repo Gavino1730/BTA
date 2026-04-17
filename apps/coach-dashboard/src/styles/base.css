@@ -214,6 +214,7 @@
   body {
     margin: 0;
     background: var(--bta-bg-base);
+    color: var(--bta-text-primary);
     min-height: 100dvh;
     font-family: var(--bta-font-body);
   }

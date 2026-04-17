@@ -1778,6 +1778,12 @@
   flex-wrap: wrap;
 }
 
+.activity-feed-row {
+  border-left: 2px solid var(--bta-accent-cyan);
+  border-radius: 0 10px 10px 0;
+  padding-left: 1rem;
+}
+
 .settings-member-info {
   display: flex;
   align-items: center;
@@ -1883,6 +1889,11 @@ select option {
 .settings-status-active {
   background: var(--bta-success-soft);
   color: var(--bta-success);
+}
+
+.settings-status-live {
+  background: color-mix(in srgb, var(--bta-accent-cyan) 15%, transparent);
+  color: var(--bta-accent-cyan);
 }
 
 .settings-status-invited {

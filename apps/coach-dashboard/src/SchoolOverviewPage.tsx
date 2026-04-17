@@ -282,28 +282,28 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
       </section>
 
       <section className="stats-page-grid three-column">
-        <article className="stats-page-card">
-          <p className="stats-page-eyebrow">Billing</p>
-          <h3>{overview.summary.planId}</h3>
-          <p className="stats-page-subcopy">
+        <article className="stats-metric-card">
+          <p className="stats-metric-label">Billing</p>
+          <p className="stats-metric-value" style={{ fontSize: "1.35rem" }}>{overview.summary.planId}</p>
+          <p className="stats-metric-detail">
             Status: {overview.summary.billingStatus}
             {overview.summary.activeTeamLimit === null
               ? " / Unlimited active teams in trial"
               : ` / ${overview.summary.activeTeamsCount} of ${overview.summary.activeTeamLimit} active team slots used`}
           </p>
         </article>
-        <article className="stats-page-card">
-          <p className="stats-page-eyebrow">Teams</p>
-          <h3>{overview.summary.activeTeamsCount}</h3>
-          <p className="stats-page-subcopy">
+        <article className="stats-metric-card accent-blue">
+          <p className="stats-metric-label">Teams</p>
+          <p className="stats-metric-value">{overview.summary.activeTeamsCount}</p>
+          <p className="stats-metric-detail">
             Active team workspaces
             {overview.summary.overLimitTeamCount ? ` / ${overview.summary.overLimitTeamCount} read-only` : ""}
           </p>
         </article>
-        <article className="stats-page-card">
-          <p className="stats-page-eyebrow">Live Games</p>
-          <h3>{overview.summary.activeLiveGamesCount}</h3>
-          <p className="stats-page-subcopy">Current team sessions</p>
+        <article className="stats-metric-card">
+          <p className="stats-metric-label">Live Games</p>
+          <p className="stats-metric-value">{overview.summary.activeLiveGamesCount}</p>
+          <p className="stats-metric-detail">Current team sessions</p>
         </article>
       </section>
 
@@ -430,7 +430,7 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
                   {team.status === "read_only" ? (
                     <span className="settings-status-badge settings-status-invited">Read Only</span>
                   ) : null}
-                  <span className={`settings-status-badge settings-status-${team.liveSession ? "active" : "invited"}`}>
+                  <span className={`settings-status-badge settings-status-${team.liveSession ? "live" : "active"}`}>
                     {team.liveSession ? "Live" : "Ready"}
                   </span>
                   <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onOpenTeam(team.id)}>
@@ -555,7 +555,7 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
             {overview.activity.length === 0 ? (
               <p className="stats-empty-copy">No recent activity.</p>
             ) : overview.activity.map((event) => (
-              <div key={event.id} className="settings-member-row">
+              <div key={event.id} className="settings-member-row activity-feed-row">
                 <div className="settings-member-info">
                   <div>
                     <strong className="settings-member-name">{event.message}</strong>

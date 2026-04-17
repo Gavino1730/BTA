@@ -29,6 +29,8 @@ import { logger } from "../logger.js";
 import { createActivityStore } from "./activity-store.js";
 import { createAuthStore } from "./auth-store.js";
 import { createBillingStore } from "./billing-store.js";
+import { createGameStore } from "./game-store.js";
+import { createMembershipStore } from "./membership-store.js";
 import { createRosterStore } from "./roster-store.js";
 
 type WorkspaceRosterTeam = RosterTeam & {
@@ -340,7 +342,7 @@ export interface GameAiContext {
   clockEnabled: boolean;
   opponentStatsLimited: boolean;
   opponentTrackedStats: string[];
-  /** Per-game notes set before tip-off — mindset, opponent tendencies, etc. Cleared on game reset. */
+  /** Per-game notes set before tip-off â€” mindset, opponent tendencies, etc. Cleared on game reset. */
   preGameNotes: string;
 }
 
@@ -1547,7 +1549,7 @@ function combineInsights(session: GameSession): LiveInsight[] {
 }
 
 /**
- * Build a lookup map from player ID → "#number name" display label.
+ * Build a lookup map from player ID â†’ "#number name" display label.
  * Falls back to pretty-printing the raw ID if the player is not in the roster.
  */
 function buildPlayerLookup(rosterTeam: RosterTeam | null | undefined): Map<string, string> {
@@ -1595,7 +1597,7 @@ function describeEvent(event: GameEvent, lookup?: Map<string, string>): string {
     case "block":
       return `${event.teamId} block by ${pl(event.playerId)}`;
     case "substitution":
-      return `${event.teamId} substitution ${pl(event.playerOutId)} → ${pl(event.playerInId)}`;
+      return `${event.teamId} substitution ${pl(event.playerOutId)} â†’ ${pl(event.playerInId)}`;
     case "possession_start":
       return `possession starts for ${event.possessedByTeamId}`;
     case "possession_end":
@@ -1656,7 +1658,7 @@ function summarizeTeamState(
     activeLineup ? `Active lineup: ${activeLineup}` : ""
   ].filter(Boolean).join(", ");
 
-  // If opponent — note partial tracking
+  // If opponent â€” note partial tracking
   if (!isOurTeam && opponentStatsLimited) {
     return `${lines} [NOTE: opponent tracking may be score+fouls only]`;
   }
@@ -1732,10 +1734,10 @@ function buildShotQualityLines(
 
   const ourLine = `Us: 2PT ${us.twoMade}/${us.twoAtt} (${us.twoPct}%), 3PT ${us.threeMade}/${us.threeAtt} (${us.threePct}%)`;
   if (opponentStatsLimited) {
-    return `Shot quality — ${ourLine}; Opponent: limited tracking`;
+    return `Shot quality â€” ${ourLine}; Opponent: limited tracking`;
   }
   const theirLine = `Opponent: 2PT ${them.twoMade}/${them.twoAtt} (${them.twoPct}%), 3PT ${them.threeMade}/${them.threeAtt} (${them.threePct}%)`;
-  return `Shot quality — ${ourLine}; ${theirLine}`;
+  return `Shot quality â€” ${ourLine}; ${theirLine}`;
 }
 
 /**
@@ -1801,7 +1803,7 @@ function buildRecentSubstitutionLines(
     const lookup = e.teamId === ourTeamId ? playerLookup : emptyLookup;
     const pl = (id: string) => resolvePlayerDisplay(id, lookup);
     const label = e.teamId === ourTeamId ? "us" : "opp";
-    return `${label}: ${pl(e.playerOutId)} out → ${pl(e.playerInId)} in`;
+    return `${label}: ${pl(e.playerOutId)} out â†’ ${pl(e.playerInId)} in`;
   });
 
   return `Recent subs: ${lines.join(" | ")}`;
@@ -1890,7 +1892,7 @@ function buildGameContextBlock(params: {
   const recentSubsLine = buildRecentSubstitutionLines(orderedEvents, ourTeamId, playerLookup);
   const historicalLine = historicalContextSummary
     ? `Historical context from stats dashboard: ${historicalContextSummary}`
-    : "Historical context from stats dashboard: unavailable — AI relies on live game data only";
+    : "Historical context from stats dashboard: unavailable â€” AI relies on live game data only";
 
   const detailedStatBlock = includeDetailedPlayerStats
     ? `Current player stats (our team):\n${buildCurrentPlayerSnapshot(state, ourTeamId, playerLookup)}`
@@ -1898,13 +1900,13 @@ function buildGameContextBlock(params: {
 
   return [
     `Game: ${state.gameId}`,
-    `Period: ${state.currentPeriod}${isOT ? " [OVERTIME — 4-min period, 1 timeout per team per OT]" : ""}`,
+    `Period: ${state.currentPeriod}${isOT ? " [OVERTIME â€” 4-min period, 1 timeout per team per OT]" : ""}`,
     `Clock: ${clockStr}${latestEvent && clockSec === 0 ? " [clock at 0:00 in latest event]" : ""}`,
     clockTrackingLine,
     opponentTrackingLine,
-    `Sample context: ${openingSample ? "opening_small_sample — be conservative with conclusions" : "stabilized"}`,
+    `Sample context: ${openingSample ? "opening_small_sample â€” be conservative with conclusions" : "stabilized"}`,
     "",
-    `Score: ${homeLabel} ${state.scoreByTeam[session.homeTeamId] ?? 0} — ${awayLabel} ${state.scoreByTeam[session.awayTeamId] ?? 0}`,
+    `Score: ${homeLabel} ${state.scoreByTeam[session.homeTeamId] ?? 0} â€” ${awayLabel} ${state.scoreByTeam[session.awayTeamId] ?? 0}`,
     runSummary,
     "",
     "Team snapshots:",
@@ -1912,7 +1914,7 @@ function buildGameContextBlock(params: {
     summarizeTeamState(state, opponentTeamId, false, aiContext.opponentStatsLimited),
     "",
     shotQualityLine,
-    `Timeouts used — us: ${ourTimeouts}/${maxTimeouts}, them: ${oppTimeouts}/${maxTimeouts}`,
+    `Timeouts used â€” us: ${ourTimeouts}/${maxTimeouts}, them: ${oppTimeouts}/${maxTimeouts}`,
     "",
     styleLine,
     contextLine,
@@ -1965,12 +1967,12 @@ function buildAiInsightPrompt(
     const awayLabel = state.awayTeamId === ourTeamId ? "Our team (away)" : (state.opponentName || "Opponent (away)");
     const preGameNotesLine = aiContext.preGameNotes ? `Pre-game notes from coach: ${aiContext.preGameNotes}` : "";
     return [
-      "CONTEXT: Game has just started — minimal data available.",
+      "CONTEXT: Game has just started â€” minimal data available.",
       "Give ONE general pre-game readiness note only. Do not reference stats or runs.",
       `Home: ${homeLabel} | Away: ${awayLabel}`,
       preGameNotesLine,
       "IMPORTANT: Do not make assumptions about plays, strategies, or player roles without data.",
-      "IMPORTANT: Do NOT refer to players by raw IDs — use player names from roster context only.",
+      "IMPORTANT: Do NOT refer to players by raw IDs â€” use player names from roster context only.",
     ].filter(Boolean).join("\n");
   }
 
@@ -2000,13 +2002,13 @@ function buildAiInsightPrompt(
     "- Each insight must follow: Trigger | Action | Why-now, using concrete numbers from the context.",
     "- In clutch time (<= 30s, margin <= 3), always include one end-game management call (timeout/foul/2-for-1/quick-hit).",
     "- If multiple actions are reasonable, provide best call first and one fallback option.",
-    isOT ? "- This is OVERTIME — timeout urgency is critical (only 1 per team). Note if either team still has their OT timeout." : "",
+    isOT ? "- This is OVERTIME â€” timeout urgency is critical (only 1 per team). Note if either team still has their OT timeout." : "",
     openingSample
       ? "- Opening sample: keep claims conservative. No momentum/run language yet."
       : "- Data is stabilized: include decisive tactical calls grounded in provided stats only.",
     clockSec > 0 && clockSec <= 30 && !aiContext.clockEnabled
       ? ""
-      : "- If historical context is unavailable, base all strategy on live game data only — do not speculate about season tendencies.",
+      : "- If historical context is unavailable, base all strategy on live game data only â€” do not speculate about season tendencies.",
     "- Allowed insight types per call: timeout suggestion, sub suggestion, foul management, momentum, shot selection, ball security.",
     "- Multiple insights allowed if the situation clearly warrants distinct calls.",
     "- Keep each message concise, command-style, and immediately actionable.",
@@ -2209,7 +2211,7 @@ function buildAiChatPrompt(
     "- When recommending substitutions, name exactly who goes in/out and explain the trigger clearly.",
     "- Reference specific player foul counts, stats, and lineup context when making calls.",
     "- If opponent stats are limited, avoid assumptions about opponent rebounding, assists, or shot profile.",
-    "- If historical context is unavailable, base answers on live game data only — do not speculate about season tendencies.",
+    "- If historical context is unavailable, base answers on live game data only â€” do not speculate about season tendencies.",
     "- If data is incomplete, say so directly instead of guessing.",
     "- Keep answers concise and immediately actionable with concrete numbers.",
     "- Output strict JSON: {\"answer\":\"...\",\"suggestions\":[\"...\",\"...\"]}",
@@ -2484,7 +2486,7 @@ async function requestAiInsights(session: GameSession, orderedEvents: GameEvent[
             role: "system",
             content: [
               "You are a varsity basketball bench assistant speaking directly to coaches in real time.",
-              "Your job is to help OUR team win — all advice should benefit our team.",
+              "Your job is to help OUR team win â€” all advice should benefit our team.",
               "Use ONLY the provided game state and recent events. Never invent plays, tendencies, or player roles.",
               "NEVER guess tactical plays (e.g. pick and roll) unless that specific event type appeared in the data.",
               "Base player-specific advice only on stats (points, fouls, FG%) that appear in the context.",
@@ -3323,32 +3325,52 @@ export const {
   trimProcessedStripeWebhookEvents,
 } = billingStore;
 
-export function getOrganizationProfileByScope(scope?: TenantScope): OrganizationProfile | null {
-  return organizationProfilesBySchool.get(resolveSchoolId(scope)) ?? null;
-}
+const membershipStore = createMembershipStore({
+  resolveSchoolId,
+  normalizeSchoolId,
+  trimProfileField,
+  buildWorkspaceMembershipId,
+  organizationProfilesBySchool,
+  onboardingAccountsBySchool,
+  organizationMembersBySchool,
+  userWorkspaceProfilesById,
+  schoolsById,
+  schoolMembershipsBySchool,
+  teamMembershipsBySchool,
+  setOrganizationProfileForSchool,
+  persistOrgProfileForSchool,
+  setOnboardingAccountStateForSchool,
+  upsertOrganizationMemberForSchool,
+  setOrganizationMembersForSchool,
+  persistOrgMembersForSchool,
+  setUserWorkspaceProfile,
+  setSchoolRecord,
+  setSchoolMembershipsForSchool,
+  setTeamMembershipsForSchool,
+  persistSessions,
+});
 
-export function saveOrganizationProfile(profile: Partial<OrganizationProfile>, scope?: TenantScope): OrganizationProfile {
-  const schoolId = resolveSchoolId(scope);
-  const saved = setOrganizationProfileForSchool(schoolId, profile);
-  persistSessions();
-  persistOrgProfileForSchool(schoolId, saved);
-  return saved;
-}
-
-export function getOnboardingAccountStateByScope(scope?: TenantScope): OnboardingAccountState | null {
-  return onboardingAccountsBySchool.get(resolveSchoolId(scope)) ?? null;
-}
-
-export function saveOnboardingAccountState(accountState: OnboardingAccountInput, scope?: TenantScope): OnboardingAccountState {
-  const schoolId = resolveSchoolId(scope);
-  const saved = setOnboardingAccountStateForSchool(schoolId, accountState);
-  persistSessions();
-  return saved;
-}
-
-export function getOrganizationMembersByScope(scope?: TenantScope): OrganizationMember[] {
-  return organizationMembersBySchool.get(resolveSchoolId(scope)) ?? [];
-}
+export const {
+  getOrganizationProfileByScope,
+  saveOrganizationProfile,
+  getOnboardingAccountStateByScope,
+  saveOnboardingAccountState,
+  getOrganizationMembersByScope,
+  saveOrganizationMember,
+  deleteOrganizationMember,
+  getUserWorkspaceProfile,
+  saveUserWorkspaceProfile,
+  getSchoolRecord,
+  saveSchoolRecord,
+  getSchoolMembershipsByScope,
+  saveSchoolMembership,
+  deleteSchoolMembership,
+  getTeamMembershipsByScope,
+  saveTeamMembership,
+  deleteTeamMembership,
+  listSchoolMembershipsForUser,
+  listTeamMembershipsForUser,
+} = membershipStore;
 
 const authStore = createAuthStore({
   resolveSchoolId,
@@ -3388,181 +3410,6 @@ export async function setGameOverride(schoolId: string, override: GameEditOverri
   await flushSnapshotToDb();
 }
 
-export function saveOrganizationMember(member: OrganizationMemberInput, scope?: TenantScope): OrganizationMember {
-  const schoolId = resolveSchoolId(scope);
-  const organizationId = trimProfileField(member.organizationId, 80)
-    || onboardingAccountsBySchool.get(schoolId)?.organization.organizationId
-    || `org-${schoolId}`;
-  const saved = upsertOrganizationMemberForSchool(schoolId, member, organizationId);
-  persistSessions();
-  persistOrgMembersForSchool(schoolId, organizationMembersBySchool.get(schoolId) ?? []);
-  return saved;
-}
-
-export function deleteOrganizationMember(memberId: string, scope?: TenantScope): boolean {
-  const schoolId = resolveSchoolId(scope);
-  const members = organizationMembersBySchool.get(schoolId) ?? [];
-  const next = members.filter((member) => member.memberId !== memberId);
-  if (next.length === members.length) {
-    return false;
-  }
-
-  setOrganizationMembersForSchool(schoolId, next);
-  persistSessions();
-  persistOrgMembersForSchool(schoolId, next);
-  return true;
-}
-
-export function getUserWorkspaceProfile(userId: string): UserWorkspaceProfile | null {
-  const normalizedUserId = trimProfileField(userId, 120);
-  return normalizedUserId ? userWorkspaceProfilesById.get(normalizedUserId) ?? null : null;
-}
-
-export function saveUserWorkspaceProfile(profile: Partial<UserWorkspaceProfile> & Pick<UserWorkspaceProfile, "userId" | "email">): UserWorkspaceProfile {
-  const saved = setUserWorkspaceProfile(profile);
-  persistSessions();
-  return saved;
-}
-
-export function getSchoolRecord(schoolId: string): SchoolRecord | null {
-  return schoolsById.get(normalizeSchoolId(schoolId)) ?? null;
-}
-
-export function saveSchoolRecord(record: Partial<SchoolRecord> & Pick<SchoolRecord, "schoolId" | "name">): SchoolRecord {
-  const saved = setSchoolRecord(record);
-  persistSessions();
-  return saved;
-}
-
-export function getSchoolMembershipsByScope(scope?: TenantScope): SchoolMembership[] {
-  return schoolMembershipsBySchool.get(resolveSchoolId(scope)) ?? [];
-}
-
-export function saveSchoolMembership(membership: Partial<SchoolMembership> & Pick<SchoolMembership, "schoolId" | "email" | "fullName" | "role">): SchoolMembership {
-  const schoolId = normalizeSchoolId(membership.schoolId);
-  const current = schoolMembershipsBySchool.get(schoolId) ?? [];
-  const normalizedEmail = trimProfileField(membership.email, 160).toLowerCase();
-  const existing = current.find((entry) =>
-    (membership.userId && entry.userId === membership.userId)
-    || entry.email === normalizedEmail
-    || (membership.membershipId && entry.membershipId === membership.membershipId)
-  );
-  const createdMembership: SchoolMembership = {
-    membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${schoolId}:${membership.userId ?? membership.email}:${membership.role}`, "school-member"),
-    schoolId,
-    userId: trimProfileField(membership.userId, 120) || undefined,
-    email: normalizedEmail,
-    fullName: trimProfileField(membership.fullName, 120),
-    role: membership.role,
-    status: membership.status === "invited" ? "invited" : "active",
-    createdAtIso: new Date().toISOString(),
-    updatedAtIso: new Date().toISOString(),
-  };
-  const merged = existing
-    ? current.map((entry) => (entry.membershipId === existing.membershipId
-      ? { ...entry, ...membership, schoolId, email: normalizedEmail, fullName: trimProfileField(membership.fullName, 120), updatedAtIso: new Date().toISOString() }
-      : entry))
-    : [...current, createdMembership];
-  const saved = setSchoolMembershipsForSchool(schoolId, merged).find((entry) =>
-    (membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail
-  );
-  persistSessions();
-  return saved!;
-}
-
-export function deleteSchoolMembership(membershipId: string, scope?: TenantScope): boolean {
-  const schoolId = resolveSchoolId(scope);
-  const current = schoolMembershipsBySchool.get(schoolId) ?? [];
-  const normalizedMembershipId = trimProfileField(membershipId, 120);
-  const next = current.filter((entry) => entry.membershipId !== normalizedMembershipId);
-  if (next.length === current.length) {
-    return false;
-  }
-  schoolMembershipsBySchool.set(schoolId, next);
-  persistSessions();
-  return true;
-}
-
-export function getTeamMembershipsByScope(scope?: TenantScope): TeamMembership[] {
-  return teamMembershipsBySchool.get(resolveSchoolId(scope)) ?? [];
-}
-
-export function saveTeamMembership(membership: Partial<TeamMembership> & Pick<TeamMembership, "schoolId" | "teamId" | "email" | "fullName" | "role">): TeamMembership {
-  const schoolId = normalizeSchoolId(membership.schoolId);
-  const current = teamMembershipsBySchool.get(schoolId) ?? [];
-  const normalizedTeamId = trimProfileField(membership.teamId, 120);
-  const normalizedEmail = trimProfileField(membership.email, 160).toLowerCase();
-  const existing = current.find((entry) =>
-    (membership.membershipId && entry.membershipId === membership.membershipId)
-      || (
-        entry.teamId === normalizedTeamId
-        && (
-          (membership.userId && entry.userId === membership.userId)
-          || entry.email === normalizedEmail
-        )
-      )
-  );
-  const createdMembership: TeamMembership = {
-    membershipId: trimProfileField(membership.membershipId, 120) || buildWorkspaceMembershipId(`${schoolId}:${membership.teamId}:${membership.userId ?? membership.email}:${membership.role}`, "team-member"),
-    schoolId,
-    teamId: normalizedTeamId,
-    userId: trimProfileField(membership.userId, 120) || undefined,
-    email: normalizedEmail,
-    fullName: trimProfileField(membership.fullName, 120),
-    role: membership.role,
-    status: membership.status === "invited" ? "invited" : "active",
-    createdAtIso: new Date().toISOString(),
-    updatedAtIso: new Date().toISOString(),
-  };
-  const merged = existing
-    ? current.map((entry) => (entry.membershipId === existing.membershipId
-      ? { ...entry, ...membership, schoolId, teamId: normalizedTeamId, email: normalizedEmail, fullName: trimProfileField(membership.fullName, 120), updatedAtIso: new Date().toISOString() }
-      : entry))
-    : [...current, createdMembership];
-  const saved = setTeamMembershipsForSchool(schoolId, merged).find((entry) =>
-    (membership.membershipId && entry.membershipId === membership.membershipId)
-      || (
-        entry.teamId === normalizedTeamId
-        && ((membership.userId && entry.userId === membership.userId) || entry.email === normalizedEmail)
-      )
-  );
-  persistSessions();
-  return saved!;
-}
-
-export function deleteTeamMembership(membershipId: string, scope?: TenantScope): boolean {
-  const schoolId = resolveSchoolId(scope);
-  const current = teamMembershipsBySchool.get(schoolId) ?? [];
-  const normalizedMembershipId = trimProfileField(membershipId, 120);
-  const next = current.filter((entry) => entry.membershipId !== normalizedMembershipId);
-  if (next.length === current.length) {
-    return false;
-  }
-  teamMembershipsBySchool.set(schoolId, next);
-  persistSessions();
-  return true;
-}
-
-export function listSchoolMembershipsForUser(input: { userId?: string; email?: string }): SchoolMembership[] {
-  const normalizedUserId = trimProfileField(input.userId, 120);
-  const normalizedEmail = trimProfileField(input.email, 160).toLowerCase();
-  return [...schoolMembershipsBySchool.values()]
-    .flat()
-    .filter((membership) => (normalizedUserId && membership.userId === normalizedUserId) || (normalizedEmail && membership.email === normalizedEmail));
-}
-
-export function listTeamMembershipsForUser(input: { schoolId?: string; userId?: string; email?: string }): TeamMembership[] {
-  const normalizedSchoolId = trimProfileField(input.schoolId, 80);
-  const normalizedUserId = trimProfileField(input.userId, 120);
-  const normalizedEmail = trimProfileField(input.email, 160).toLowerCase();
-  const source = normalizedSchoolId
-    ? [teamMembershipsBySchool.get(normalizeSchoolId(normalizedSchoolId)) ?? []]
-    : [...teamMembershipsBySchool.values()];
-  return source
-    .flat()
-    .filter((membership) => (normalizedUserId && membership.userId === normalizedUserId) || (normalizedEmail && membership.email === normalizedEmail));
-}
-
 const activityStore = createActivityStore({
   resolveSchoolId,
   normalizeSchoolId,
@@ -3585,328 +3432,68 @@ export const {
   saveOperatorSessionRecord,
   getOperatorSessionByLiveSession,
 } = activityStore;
+const gameStore = createGameStore({
+  resolveSchoolId,
+  resolveRequiredSchoolId,
+  buildGameSessionKey,
+  sessions,
+  persistSessions,
+  defaultCoachAiSettings,
+  sanitizeGameAiContext,
+  defaultGameAiStatus,
+  getSession,
+  getMostRecentActiveSessionForSchool,
+  getMostRecentActiveSessionForTeam,
+  sanitizeCoachAiSettings,
+  liveAiModel: LIVE_AI_MODEL,
+  listOrderedEvents,
+  recomputeSession,
+  combineInsights,
+  buildSchoolAnalytics,
+  buildAiInsightPrompt,
+  trimToLength,
+  sanitizeAiChatHistory,
+  requestAiChatResponse,
+  getOpenAiApiKey,
+  markAiFailure,
+  historicalContextTtlMs: HISTORICAL_CONTEXT_TTL_MS,
+  liveAiMinEvents: LIVE_AI_MIN_EVENTS,
+  liveAiRefreshEveryEvents: LIVE_AI_REFRESH_EVERY_EVENTS,
+  liveAiMinIntervalMs: LIVE_AI_MIN_INTERVAL_MS,
+  fetchHistoricalContextSummary,
+  requestAiInsights,
+});
 
-export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {
-  const schoolId = resolveRequiredSchoolId(input.schoolId, scope);
-  const state = createInitialGameState(
-    input.gameId,
-    input.homeTeamId,
-    input.awayTeamId,
-    input.opponentName,
-    input.opponentTeamId
-  );
-
-  const seededLineups: Record<string, string[]> = {};
-
-  if (input.startingLineupByTeam) {
-    for (const [teamId, lineup] of Object.entries(input.startingLineupByTeam)) {
-      if (teamId !== input.homeTeamId && teamId !== input.awayTeamId) {
-        continue;
-      }
-
-      const seededLineup = Array.isArray(lineup)
-        ? [...new Set(lineup.map((playerId) => String(playerId).trim()).filter(Boolean))].slice(0, 5)
-        : [];
-
-      state.activeLineupsByTeam[teamId] = seededLineup;
-      seededLineups[teamId] = seededLineup;
-    }
-  }
-
-  if (Object.keys(seededLineups).length > 0) {
-    // Expose normalized starting lineups on state so they are safe for socket fanout.
-    state.startingLineupByTeam = seededLineups;
-  }
-
-  sessions.set(buildGameSessionKey(input.gameId, schoolId), {
-    schoolId,
-    homeTeamId: input.homeTeamId,
-    awayTeamId: input.awayTeamId,
-    opponentName: input.opponentName,
-    opponentTeamId: input.opponentTeamId,
-    startingLineupByTeam: Object.keys(seededLineups).length > 0 ? seededLineups : undefined,
-    aiSettings: defaultCoachAiSettings(),
-    aiContext: sanitizeGameAiContext(input.aiContext),
-    historicalContextSummary: "",
-    historicalContextFetchedAtMs: 0,
-    state,
-    eventsById: new Map<string, GameEvent>(),
-    eventIdsBySequence: new Map<number, string>(),
-    ruleInsights: [],
-    aiInsights: [],
-    aiRefreshInFlight: null,
-    aiStatus: defaultGameAiStatus(),
-    lastAiRefreshAtMs: 0,
-    lastAiEventCount: 0,
-    lastAiFingerprint: "",
-    submitted: false
-  });
-
-  persistSessions();
-
-  return state;
-}
-
-export function getActiveGameState(scope?: TenantScope): GameState | null {
-  const schoolId = resolveSchoolId(scope);
-  const activeSession = scope?.teamId
-    ? getMostRecentActiveSessionForTeam(schoolId, scope.teamId)
-    : getMostRecentActiveSessionForSchool(schoolId);
-  return activeSession?.state ?? null;
-}
-
-export function getActiveGameId(scope?: TenantScope): string | null {
-  return getActiveGameState(scope)?.gameId ?? null;
-}
-
-export function submitGame(gameId: string, scope?: TenantScope): boolean {
-  const session = getSession(gameId, scope);
-  if (!session) return false;
-  session.submitted = true;
-  persistSessions();
-  return true;
-}
-
-export function isGameSubmitted(gameId: string, scope?: TenantScope): boolean {
-  return getSession(gameId, scope)?.submitted === true;
-}
-
-export function deleteGame(gameId: string, scope?: TenantScope): boolean {
-  const removed = sessions.delete(buildGameSessionKey(gameId, resolveSchoolId(scope)));
-  if (removed) {
-    persistSessions();
-  }
-  return removed;
-}
-
-/**
- * Patch the active lineup for one or more teams without resetting game state or
- * replaying events.  Only fills in empty slots — if a team already has 5 players
- * on court the incoming lineup is ignored for that team.  Returns the updated
- * state, or null if the game doesn't exist.
- */
-export function patchGameLineup(
-  gameId: string,
-  startingLineupByTeam: Record<string, string[]>,
-  scope?: TenantScope
-): GameState | null {
-  const session = getSession(gameId, scope);
-  if (!session) return null;
-
-  let changed = false;
-  for (const [teamId, lineup] of Object.entries(startingLineupByTeam)) {
-    if (teamId !== session.homeTeamId && teamId !== session.awayTeamId) continue;
-    const existing = session.state.activeLineupsByTeam[teamId] ?? [];
-    if (existing.length >= 5) continue;
-
-    const incoming = [...new Set(lineup.map((id) => String(id).trim()).filter(Boolean))];
-    if (incoming.length === 0) continue;
-
-    const merged = [...existing];
-    for (const playerId of incoming) {
-      if (merged.length >= 5) {
-        break;
-      }
-      if (!merged.includes(playerId)) {
-        merged.push(playerId);
-      }
-    }
-
-    if (merged.length === existing.length) continue;
-
-    session.state = {
-      ...session.state,
-      activeLineupsByTeam: {
-        ...session.state.activeLineupsByTeam,
-        [teamId]: merged,
-      },
-    };
-    // Persist the starting lineup so it survives server restarts.
-    session.startingLineupByTeam = {
-      ...(session.startingLineupByTeam ?? {}),
-      [teamId]: merged,
-    };
-    changed = true;
-  }
-
-  if (changed) {
-    persistSessions();
-  }
-
-  return session.state;
-}
-
-export function getGameState(gameId: string, scope?: TenantScope): GameState | null {
-  return getSession(gameId, scope)?.state ?? null;
-}
-
-export function getGameStateByScope(gameId: string, scope?: TenantScope): GameState | null {
-  return getGameState(gameId, scope);
-}
-
-export function getGameAiSettings(gameId: string, scope?: TenantScope): CoachAiSettings | null {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-  return sanitizeCoachAiSettings(session.aiSettings);
-}
-
-export function getGameAiContext(gameId: string, scope?: TenantScope): GameAiContext | null {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-  return sanitizeGameAiContext(session.aiContext);
-}
-
-export function getGameAiStatus(gameId: string, scope?: TenantScope): GameAiStatus | null {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-  return { ...session.aiStatus, model: LIVE_AI_MODEL };
-}
-
-export function getAiUsageTotals(scope?: TenantScope): AiUsageTotals {
-  const schoolId = scope ? resolveSchoolId(scope) : null;
-  const sessionsToCount = schoolId
-    ? [...sessions.values()].filter((session) => session.schoolId === schoolId)
-    : [...sessions.values()];
-
-  return sessionsToCount.reduce<AiUsageTotals>((acc, session) => {
-    acc.activeGames += 1;
-    acc.totalTokensUsed += Math.max(0, Math.floor(Number(session.aiStatus.totalTokensUsed ?? 0)));
-    acc.totalEstimatedCostUsd = Number(
-      (acc.totalEstimatedCostUsd + Math.max(0, Number(session.aiStatus.totalEstimatedCostUsd ?? 0))).toFixed(6)
-    );
-    return acc;
-  }, {
-    activeGames: 0,
-    totalTokensUsed: 0,
-    totalEstimatedCostUsd: 0,
-  });
-}
-
-export function updateGameAiSettings(
-  gameId: string,
-  settings: Partial<CoachAiSettings>,
-  scope?: TenantScope
-): CoachAiSettings | null {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-
-  session.aiSettings = sanitizeCoachAiSettings({
-    ...session.aiSettings,
-    ...settings
-  });
-  // Force next AI refresh to include updated instructions.
-  session.lastAiFingerprint = "";
-  session.lastAiRefreshAtMs = 0;
-  persistSessions();
-  return session.aiSettings;
-}
-
-export function updateGameAiContext(
-  gameId: string,
-  context: Partial<GameAiContext>,
-  scope?: TenantScope
-): GameAiContext | null {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-
-  session.aiContext = sanitizeGameAiContext({
-    ...session.aiContext,
-    ...context
-  });
-  recomputeSession(session);
-  session.lastAiFingerprint = "";
-  session.lastAiRefreshAtMs = 0;
-  persistSessions();
-  return session.aiContext;
-}
-
-export function getGameAiPromptPreview(gameId: string, scope?: TenantScope): AiPromptPreview | null {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-
-  const orderedEvents = listOrderedEvents(session);
-  const coachSettings = sanitizeCoachAiSettings(session.aiSettings);
-  const userPrompt = buildAiInsightPrompt(
-    { ...session, aiSettings: coachSettings },
-    orderedEvents,
-    session.historicalContextSummary
-  );
-
-  return {
-    model: LIVE_AI_MODEL,
-    userPrompt,
-    systemGuide: [
-      "Uses only provided game state and recent events.",
-      "Prioritizes our team outcome and avoids speculative play calls.",
-      "Returns strict JSON coaching insights with trigger/action/why-now structure.",
-      "Keeps hidden internal safety and policy rules private."
-    ],
-    coachSettings,
-    recentEventCount: orderedEvents.length,
-    generatedAtIso: new Date().toISOString()
-  };
-}
-
-export async function answerGameAiChat(
-  gameId: string,
-  question: string,
-  history?: unknown,
-  scope?: TenantScope
-): Promise<CoachAiChatResponse | null> {
-  const session = getSession(gameId, scope);
-  const trimmedQuestion = trimToLength(question, 1200);
-  if (!session || !trimmedQuestion) {
-    return null;
-  }
-
-  return requestAiChatResponse(session, trimmedQuestion, sanitizeAiChatHistory(history));
-}
-
-export function getGameInsights(gameId: string, scope?: TenantScope): LiveInsight[] {
-  const session = getSession(gameId, scope);
-  return session ? combineInsights(session) : [];
-}
-
-export function getGameEvents(gameId: string, scope?: TenantScope): GameEvent[] {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return [];
-  }
-
-  return listOrderedEvents(session);
-}
-
-export function getSeasonTeamStats(scope?: TenantScope): SeasonTeamStats {
-  return buildSchoolAnalytics(scope).seasonTeamStats;
-}
-
-export function getSeasonGames(scope?: TenantScope): SeasonGameSummary[] {
-  return buildSchoolAnalytics(scope).games;
-}
-
-export function getSeasonPlayers(scope?: TenantScope): SeasonPlayerSummary[] {
-  return buildSchoolAnalytics(scope).players;
-}
-
-export function getLiveContext(scope?: TenantScope): LiveContextPayload {
-  return buildSchoolAnalytics(scope).liveContext;
-}
-
-export function getRosterPlayers(scope?: TenantScope): SeasonPlayerSummary[] {
-  return buildSchoolAnalytics(scope).players;
-}
+export const {
+  createGame,
+  getActiveGameState,
+  getActiveGameId,
+  submitGame,
+  isGameSubmitted,
+  deleteGame,
+  patchGameLineup,
+  getGameState,
+  getGameStateByScope,
+  getGameAiSettings,
+  getGameAiContext,
+  getGameAiStatus,
+  getAiUsageTotals,
+  updateGameAiSettings,
+  updateGameAiContext,
+  getGameAiPromptPreview,
+  answerGameAiChat,
+  getGameInsights,
+  getGameEvents,
+  getSeasonTeamStats,
+  getSeasonGames,
+  getSeasonPlayers,
+  getLiveContext,
+  getRosterPlayers,
+  refreshGameAiInsights,
+  ingestEvent,
+  deleteEvent,
+  updateEvent,
+} = gameStore;
 
 function listOrderedEvents(session: GameSession): GameEvent[] {
   return [...session.eventsById.values()].sort((left, right) => left.sequence - right.sequence);
@@ -4333,7 +3920,7 @@ function recomputeSession(session: GameSession): void {
 
   session.ruleInsights = finalInsights.slice(0, 15);
 
-  // Filter out sub suggestions for players who are already in the active lineup —
+  // Filter out sub suggestions for players who are already in the active lineup â€”
   // the insight engine may produce these for benched players who have since re-entered.
   const ourTeamIdForFilter = session.state.opponentTeamId
     ? (session.homeTeamId !== session.state.opponentTeamId ? session.homeTeamId : session.awayTeamId)
@@ -4347,224 +3934,3 @@ function recomputeSession(session: GameSession): void {
   );
 }
 
-export async function refreshGameAiInsights(
-  gameId: string,
-  options?: { force?: boolean },
-  scope?: TenantScope
-): Promise<LiveInsight[] | null> {
-  const session = getSession(gameId, scope);
-  if (!session) {
-    return null;
-  }
-
-  const forceRefresh = options?.force === true;
-
-  if (!getOpenAiApiKey()) {
-    markAiFailure(session, "missing_api_key", "OPENAI_API_KEY is not configured", 503);
-    return null;
-  }
-
-  const orderedEvents = listOrderedEvents(session);
-  const latestStoredEvent = orderedEvents[orderedEvents.length - 1];
-  const isPeriodTransition = latestStoredEvent?.type === "period_transition";
-  if (isPeriodTransition || Date.now() - session.historicalContextFetchedAtMs >= HISTORICAL_CONTEXT_TTL_MS) {
-    const summary = await fetchHistoricalContextSummary(session);
-    if (summary) {
-      session.historicalContextSummary = summary;
-      session.historicalContextFetchedAtMs = Date.now();
-    }
-  }
-
-  if (orderedEvents.length < LIVE_AI_MIN_EVENTS) {
-    if (session.aiInsights.length > 0) {
-      session.aiInsights = [];
-      session.lastAiEventCount = orderedEvents.length;
-      session.lastAiFingerprint = "";
-      persistSessions();
-      return combineInsights(session);
-    }
-
-    return null;
-  }
-
-  const latestEvent = orderedEvents[orderedEvents.length - 1];
-  if (!latestEvent) {
-    return null;
-  }
-
-  const fingerprint = [
-    orderedEvents.length,
-    latestEvent.id,
-    latestEvent.sequence,
-    session.state.currentPeriod,
-    latestEvent.clockSecondsRemaining,
-    ...Object.entries(session.state.scoreByTeam).flat()
-  ].join("|");
-
-  const now = Date.now();
-  const hasEnoughNewEvents = orderedEvents.length - session.lastAiEventCount >= LIVE_AI_REFRESH_EVERY_EVENTS;
-  const intervalElapsed = now - session.lastAiRefreshAtMs >= LIVE_AI_MIN_INTERVAL_MS;
-  const shouldRefresh = session.aiInsights.length === 0 || fingerprint !== session.lastAiFingerprint;
-
-  if (!forceRefresh && (!shouldRefresh || (!hasEnoughNewEvents && !intervalElapsed && session.aiInsights.length > 0))) {
-    return null;
-  }
-
-  if (session.aiRefreshInFlight) {
-    return session.aiRefreshInFlight;
-  }
-
-  session.aiRefreshInFlight = requestAiInsights(session, orderedEvents)
-    .then((aiInsights) => {
-      // Only update if we got new insights; preserve existing if API failed/timed out
-      if (aiInsights.length > 0) {
-        session.aiInsights = aiInsights;
-        session.lastAiRefreshAtMs = Date.now();
-        session.lastAiEventCount = orderedEvents.length;
-        session.lastAiFingerprint = fingerprint;
-        persistSessions();
-      } else {
-        // API failed/timed out: keep existing aiInsights, rule-based insights show as fallback
-        session.lastAiEventCount = orderedEvents.length;
-      }
-      return combineInsights(session);
-    })
-    .catch(() => {
-      // Network error: keep existing insights and show rule-based fallback
-      markAiFailure(session, "network_error", "AI insights refresh failed unexpectedly", 503);
-      return combineInsights(session);
-    })
-    .finally(() => {
-      session.aiRefreshInFlight = null;
-    });
-
-  return session.aiRefreshInFlight;
-}
-
-export function ingestEvent(rawEvent: unknown, scope?: TenantScope): {
-  event: GameEvent;
-  state: GameState;
-  insights: LiveInsight[];
-} {
-  const schoolId = resolveRequiredSchoolId((rawEvent as { schoolId?: unknown } | null)?.schoolId, scope);
-  const event = parseGameEvent({ ...(rawEvent as object), schoolId });
-  const session = getSession(event.gameId, { schoolId });
-
-  if (!session) {
-    throw new Error(`Game not found: ${event.gameId}`);
-  }
-
-  if (session.submitted) {
-    throw new Error(`Game already submitted: ${event.gameId}`);
-  }
-
-  const existingEventId = session.eventIdsBySequence.get(event.sequence);
-  if (existingEventId && existingEventId !== event.id) {
-    throw new Error(`Sequence ${event.sequence} already belongs to event ${existingEventId}`);
-  }
-
-  const existingEvent = session.eventsById.get(event.id);
-  if (existingEvent) {
-    if (JSON.stringify(existingEvent) !== JSON.stringify(event)) {
-      throw new Error(`Event ${event.id} already exists with different payload`);
-    }
-    return { event, state: session.state, insights: combineInsights(session) };
-  }
-
-  session.eventsById.set(event.id, event);
-  session.eventIdsBySequence.set(event.sequence, event.id);
-  recomputeSession(session);
-  persistSessions();
-
-  return {
-    event,
-    state: session.state,
-    insights: combineInsights(session)
-  };
-}
-
-export function deleteEvent(gameId: string, eventId: string, scope?: TenantScope, precondition?: EventMutationPrecondition): {
-  state: GameState;
-  insights: LiveInsight[];
-} {
-  const session = getSession(gameId, scope);
-
-  if (!session) {
-    throw new Error(`Game not found: ${gameId}`);
-  }
-
-  if (session.submitted) {
-    throw new Error(`Game already submitted: ${gameId}`);
-  }
-
-  const event = session.eventsById.get(eventId);
-  if (!event) {
-    throw new Error(`Event not found: ${eventId}`);
-  }
-
-  if (precondition?.expectedSequence !== undefined && event.sequence !== precondition.expectedSequence) {
-    throw new Error(`Event ${eventId} version mismatch: expected sequence ${precondition.expectedSequence}, actual ${event.sequence}`);
-  }
-
-  session.eventsById.delete(eventId);
-  session.eventIdsBySequence.delete(event.sequence);
-  recomputeSession(session);
-  persistSessions();
-
-  return {
-    state: session.state,
-    insights: combineInsights(session)
-  };
-}
-
-export function updateEvent(gameId: string, eventId: string, rawEvent: unknown, scope?: TenantScope, precondition?: EventMutationPrecondition): {
-  event: GameEvent;
-  state: GameState;
-  insights: LiveInsight[];
-} {
-  const schoolId = resolveRequiredSchoolId((rawEvent as { schoolId?: unknown } | null)?.schoolId, scope);
-  const session = getSession(gameId, { schoolId });
-  if (!session) {
-    throw new Error(`Game not found: ${gameId}`);
-  }
-
-  if (session.submitted) {
-    throw new Error(`Game already submitted: ${gameId}`);
-  }
-
-  const existing = session.eventsById.get(eventId);
-  if (!existing) {
-    throw new Error(`Event not found: ${eventId}`);
-  }
-
-  if (precondition?.expectedSequence !== undefined && existing.sequence !== precondition.expectedSequence) {
-    throw new Error(`Event ${eventId} version mismatch: expected sequence ${precondition.expectedSequence}, actual ${existing.sequence}`);
-  }
-
-  const parsed = parseGameEvent({
-    ...(rawEvent as object),
-    id: eventId,
-    gameId,
-    schoolId
-  });
-
-  const currentOwner = session.eventIdsBySequence.get(parsed.sequence);
-  if (currentOwner && currentOwner !== eventId) {
-    throw new Error(`Sequence ${parsed.sequence} already belongs to event ${currentOwner}`);
-  }
-
-  session.eventsById.set(eventId, parsed);
-  if (existing.sequence !== parsed.sequence) {
-    session.eventIdsBySequence.delete(existing.sequence);
-  }
-  session.eventIdsBySequence.set(parsed.sequence, eventId);
-
-  recomputeSession(session);
-  persistSessions();
-
-  return {
-    event: parsed,
-    state: session.state,
-    insights: combineInsights(session)
-  };
-}

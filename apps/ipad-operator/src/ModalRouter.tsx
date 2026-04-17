@@ -139,7 +139,7 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
             {allowTeamOnlyForOpponent && (
               <button
                 className="player-row team-row opponent-team-only-row"
-                style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
+                style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
                 onClick={() => (modal.kind === "shot" ? confirmShot(game.resolveTeamId(modal.teamId)) : confirmFreeThrow(game.resolveTeamId(modal.teamId)))}
               >
                 {tLabel(modal.teamId, team)}
@@ -174,12 +174,12 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
               <div className="modal-team-toggle">
                 <button
                   className={isTrackedSelection ? "team-color-active" : ""}
-                  style={isTrackedSelection ? { background: `${trackedTeamColor}26`, borderColor: trackedTeamColor, color: trackedTeamColor } : undefined}
+                  style={isTrackedSelection ? { background: `${trackedTeamColor}26`, borderColor: trackedTeamColor } : undefined}
                   onClick={() => setModal({ ...modal, teamId: trackedSide })}
                 >{team.vcSideSetup === "home" ? team.homeTeamName : team.awayTeamName}</button>
                 <button
                   className={!isTrackedSelection ? "team-color-active" : ""}
-                  style={!isTrackedSelection ? { background: `${opponentTeamColor}26`, borderColor: opponentTeamColor, color: opponentTeamColor } : undefined}
+                  style={!isTrackedSelection ? { background: `${opponentTeamColor}26`, borderColor: opponentTeamColor } : undefined}
                   onClick={() => {
                     if (allowOpponentForStat) setModal({ ...modal, teamId: team.opponentSide });
                   }}
@@ -215,7 +215,7 @@ export function ModalRouter({ modal, team, game, callbacks }: ModalRouterProps) 
             {!isTrackedSelection && (
               <button
                 className="player-row team-row opponent-team-only-row"
-                style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, color: selectedTeamColor, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
+                style={{ borderColor: `${selectedTeamColor}bf`, background: `${selectedTeamColor}2b`, boxShadow: `0 0 0 1px ${selectedTeamColor}59` }}
                 onClick={() => confirmStat(`${modal.teamId}-team`)}
               >
                 {tLabel(modal.teamId, team)}
@@ -620,7 +620,7 @@ export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, opponen
         <div className="chain-prompt-actions">
           <button
             className="chain-btn chain-btn-primary"
-            style={{ borderColor: teamColor, color: teamColor }}
+            style={{ borderColor: teamColor }}
             onClick={() => {
               onDismiss();
               setModal({ kind: "chain-assist", teamId: chainPrompt.forTeam, scorerPlayerId: chainPrompt.scorerPlayerId });
@@ -643,7 +643,7 @@ export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, opponen
         <div className="chain-prompt-actions">
           <button
             className="chain-btn chain-btn-primary"
-            style={{ borderColor: myTeamColor, color: myTeamColor }}
+            style={{ borderColor: myTeamColor }}
             onClick={() => {
               onDismiss();
               const rebStat = isMy ? "off_reb" : "def_reb";
@@ -654,7 +654,7 @@ export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, opponen
           </button>
           <button
             className="chain-btn chain-btn-secondary"
-            style={{ borderColor: oppTeamColor, color: oppTeamColor }}
+            style={{ borderColor: oppTeamColor }}
             onClick={() => {
               onDismiss();
               const rebStat = isMy ? "def_reb" : "off_reb";
@@ -683,7 +683,7 @@ export function ChainPromptBar({ chainPrompt, vcSideSetup, opponentSide, opponen
         <div className="chain-prompt-actions">
           <button
             className="chain-btn chain-btn-primary"
-            style={{ borderColor: stealTeamColor, color: stealTeamColor }}
+            style={{ borderColor: stealTeamColor }}
             onClick={() => {
               onDismiss();
               setModal({ kind: "stat", stat: "steal", teamId: stealTeamSide });

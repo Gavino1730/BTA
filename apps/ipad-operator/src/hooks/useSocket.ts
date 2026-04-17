@@ -90,6 +90,7 @@ export function useSocket({
     const socket = io(gameSetup.apiUrl, {
       auth: socketAuth,
       extraHeaders: apiKeyHeader(gameSetup),
+      transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
