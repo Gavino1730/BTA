@@ -23,6 +23,7 @@ import { SchoolActivityPage } from "./SchoolActivityPage.js";
 import { SchoolSettingsPage } from "./SchoolSettingsPage.js";
 import { StatsOverviewPage } from "./StatsOverviewPage.js";
 import { TeamSettingsPage } from "./TeamSettingsPage.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 import { BillingPage } from "./RouteShellPages.js";
@@ -97,8 +98,7 @@ function isSchoolRoute(route: AppRoute): boolean {
     || route === "school-teams"
     || route === "school-staff"
     || route === "school-activity"
-    || route === "school-settings"
-    || route === "stats-overview";
+    || route === "school-settings";
 }
 
 function isSchoolAdminContext(context: WorkspaceContext | null, schoolId: string | null): boolean {
@@ -486,11 +486,11 @@ export function UnifiedCoachApp() {
 
   if (requiresSetup === null || isAuthenticated === null) {
     return (
-      <div className="stats-page">
-        <section className="stats-page-card">
-          <p className="stats-page-status">Loading workspace...</p>
-        </section>
-      </div>
+      <WorkspaceStateCard
+        eyebrow="Workspace"
+        title="Loading workspace"
+        message="Resolving your account session and workspace context."
+      />
     );
   }
 
@@ -506,11 +506,11 @@ export function UnifiedCoachApp() {
 
   if (!workspaceContext || !activeSchoolId || (!activeContextType && !requiresSetup)) {
     return (
-      <div className="stats-page">
-        <section className="stats-page-card">
-          <p className="stats-page-status">Loading workspace context...</p>
-        </section>
-      </div>
+      <WorkspaceStateCard
+        eyebrow="Workspace"
+        title="Loading workspace context"
+        message="Finalizing school and team access for this session."
+      />
     );
   }
 
@@ -544,6 +544,16 @@ export function UnifiedCoachApp() {
     : activeTeamId
       ? `team:${activeTeamId}`
       : "";
+  const currentContextTitle = activeContextType === "school"
+    ? `${activeSchool?.name ?? "School"} Overview`
+    : currentTeam?.displayName ?? currentTeam?.name ?? "Team Workspace";
+  const currentContextMeta = activeContextType === "school"
+    ? `${activeTeams.length} team${activeTeams.length === 1 ? "" : "s"} available`
+    : currentTeam?.status === "read_only"
+      ? "Read-only team workspace"
+      : currentTeam?.level
+        ? `${currentTeam.level} basketball workspace`
+        : "Team workspace";
 
   const gameShellKey = `${activeSchoolId}:${activeContextType}:${activeTeamId ?? "school"}`;
   const shellChrome = (
@@ -553,40 +563,53 @@ export function UnifiedCoachApp() {
       ) : null}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
-          <button type="button" className="coach-nav-logo" onClick={() => { window.location.href = marketingBase; }}>&#8801; BTA COURTSIDE</button>
+          <div className="coach-nav-brand">
+            <button type="button" className="coach-nav-logo" onClick={() => { window.location.href = marketingBase; }}>
+              <img src="/favicon.png" alt="" className="coach-nav-logo-icon" />
+              <span>BTA COURTSIDE</span>
+            </button>
+            <div className="coach-context-summary">
+              <span className="coach-context-kicker">{activeContextType === "school" ? "School Context" : "Team Context"}</span>
+              <strong>{currentContextTitle}</strong>
+              <span>{currentContextMeta}</span>
+            </div>
+          </div>
 
-          <div className="coach-nav-actions">
-            <select
-              value={switcherValue}
-              onChange={(event) => {
-                const [type, id] = event.target.value.split(":");
-                if (type === "school" && id) {
-                  switchToSchool(id);
-                  return;
-                }
-                const team = activeTeams.find((entry) => entry.id === id) ?? workspaceContext.teams.find((entry) => entry.id === id);
-                if (team?.schoolId) {
-                  switchToTeam(team.schoolId, team.id);
-                  if (isSchoolRoute(route)) {
-                    navigate("/live", {
-                      schoolId: team.schoolId,
-                      teamId: team.id,
-                      contextType: "team",
-                    });
-                  } else {
-                    navigate(window.location.pathname, {
-                      schoolId: team.schoolId,
-                      teamId: team.id,
-                      contextType: "team",
-                    });
+          <div className="coach-nav-actions coach-nav-context-zone">
+            <label className="coach-context-switcher">
+              <span className="coach-context-switcher-label">Workspace</span>
+              <select
+                value={switcherValue}
+                onChange={(event) => {
+                  const [type, id] = event.target.value.split(":");
+                  if (type === "school" && id) {
+                    switchToSchool(id);
+                    return;
                   }
-                }
-              }}
-            >
-              {switcherOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+                  const team = activeTeams.find((entry) => entry.id === id) ?? workspaceContext.teams.find((entry) => entry.id === id);
+                  if (team?.schoolId) {
+                    switchToTeam(team.schoolId, team.id);
+                    if (isSchoolRoute(route)) {
+                      navigate("/live", {
+                        schoolId: team.schoolId,
+                        teamId: team.id,
+                        contextType: "team",
+                      });
+                    } else {
+                      navigate(window.location.pathname, {
+                        schoolId: team.schoolId,
+                        teamId: team.id,
+                        contextType: "team",
+                      });
+                    }
+                  }
+                }}
+              >
+                {switcherOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <ul className="coach-nav-links">

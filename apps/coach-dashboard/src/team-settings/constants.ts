@@ -9,7 +9,6 @@ export const SETTINGS_SECTIONS: Array<{ key: SettingsSection; label: string }> =
   { key: "profile", label: "Profile" },
   { key: "ai", label: "AI Context" },
   { key: "members", label: "Members" },
-  { key: "billing", label: "Billing" },
 ];
 
 export const MEMBER_ROLE_OPTIONS: Array<{ value: AppMemberRole; label: string }> = [

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { EmptyState } from "./EmptyState.js";
 import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 
 interface GameTeamStats {
   fg?: number;
@@ -668,6 +671,17 @@ export function GamesPage() {
       .sort(compareGamesMostRecent);
   }, [games, query, resultFilter]);
 
+  if (games.length === 0 && /^could not|^waiting|^loading/i.test(status)) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="Game archive"
+        title="Loading team games"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
+    );
+  }
+
   function handleSaved(updated: GameSummary) {
     setGames(prev => prev.map(g => String(g.gameId) === String(updated.gameId) ? updated : g));
     setSelectedGame(updated);
@@ -691,13 +705,12 @@ export function GamesPage() {
         />
       )}
 
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>Games</h1>
-          <p className="stats-page-subtitle">Full season history. Open any game to view details and make edits.</p>
-        </div>
-        {status && <p className="stats-page-status">{status}</p>}
-      </section>
+      <TeamWorkspaceHeader
+        eyebrow="Game archive"
+        title="Games"
+        subtitle="Full season history for the current team. Open any game to review details, edit stats, and finalize box scores."
+        status={status}
+      />
 
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
@@ -717,7 +730,10 @@ export function GamesPage() {
 
       {filteredGames.length === 0 ? (
         <section className="stats-page-card">
-          <p className="stats-empty-copy">No games match the current filters.</p>
+          <EmptyState
+            title="No games match the current filters"
+            message="Adjust the opponent search or result filter to see archived games for this team."
+          />
         </section>
       ) : (
         <section className="stats-game-grid">

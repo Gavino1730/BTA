@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SchoolActivitySection, SchoolPageHeader, SchoolSectionIntro } from "./SchoolAdminSections.js";
 import { fetchSchoolOverview, type SchoolOverviewPayload } from "./workspace.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 
 export function SchoolActivityPage({ schoolId }: { schoolId: string }) {
   const [overview, setOverview] = useState<SchoolOverviewPayload | null>(null);
@@ -28,11 +29,12 @@ export function SchoolActivityPage({ schoolId }: { schoolId: string }) {
 
   if (!overview) {
     return (
-      <div className="stats-page">
-        <section className="stats-page-card">
-          <p className="stats-page-status">{status}</p>
-        </section>
-      </div>
+      <WorkspaceStateCard
+        eyebrow="School activity"
+        title="Loading activity feed"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
     );
   }
 

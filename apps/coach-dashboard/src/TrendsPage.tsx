@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { EmptyState } from "./EmptyState.js";
 import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak } from "./stats-page-utils.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 
 interface TrendsPayload {
   games?: Array<string | number>;
@@ -491,15 +494,25 @@ export function TrendsPage() {
 
   const playerOptions = players.map((player) => player.full_name ?? player.name ?? "Unknown Player");
 
+  if (rows.length === 0 && /^could not|^waiting|^loading/i.test(status)) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="Trend analysis"
+        title="Loading trends"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
+    );
+  }
+
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>Trends</h1>
-          <p className="stats-page-subtitle">Team charts, player form, and side-by-side comparisons are back in the merged workspace.</p>
-        </div>
-        {status && <p className="stats-page-status">{status}</p>}
-      </section>
+      <TeamWorkspaceHeader
+        eyebrow="Trend analysis"
+        title="Trends"
+        subtitle="Track team charts, player form, and side-by-side comparisons inside the current team workspace."
+        status={status}
+      />
 
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
@@ -557,7 +570,10 @@ export function TrendsPage() {
 
       {rows.length === 0 ? (
         <section className="stats-page-card">
-          <p className="stats-empty-copy">No trend data available yet.</p>
+          <EmptyState
+            title="No trend data available yet"
+            message="Trends will appear after this team has a few completed games with box score data."
+          />
         </section>
       ) : (
         <>
@@ -600,7 +616,10 @@ export function TrendsPage() {
               <h3>{selectedPlayerLabel} Game Log</h3>
             </div>
             {playerRows.length === 0 ? (
-              <p className="stats-empty-copy">No player trend data available yet.</p>
+              <EmptyState
+                title="No player trend data available yet"
+                message="Select a player with logged games to see a detailed trend log here."
+              />
             ) : (
               <div className="stats-game-list">
                 {playerRows.map((row) => (

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AddTeamModal,
   buildStaffRows,
+  InviteStaffModal,
   SchoolActivitySection,
   SchoolPageHeader,
   SchoolQuickActions,
@@ -10,7 +12,9 @@ import {
   type MembershipEditorState,
   type StaffAccessOption,
   type StaffRow,
+  type TeamTemplateOption,
 } from "./SchoolAdminSections.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 import {
   createSchoolTeam,
   fetchSchoolOverview,
@@ -27,7 +31,7 @@ interface SchoolOverviewPageProps {
   onOpenTeam: (teamId: string) => void;
 }
 
-const TEAM_TEMPLATES = [
+const TEAM_TEMPLATES: TeamTemplateOption[] = [
   { label: "Boys Varsity", gender: "boys" as const, level: "varsity" as const },
   { label: "Boys JV", gender: "boys" as const, level: "jv" as const },
   { label: "Boys Freshman", gender: "boys" as const, level: "freshman" as const },
@@ -220,11 +224,12 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
 
   if (!overview) {
     return (
-      <div className="stats-page">
-        <section className="stats-page-card">
-          <p className="stats-page-status">{status}</p>
-        </section>
-      </div>
+      <WorkspaceStateCard
+        eyebrow="School overview"
+        title="Loading school workspace"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
     );
   }
 
@@ -286,97 +291,40 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         />
       </section>
 
-      {showAddTeam ? (
-        <section className="stats-page-card settings-section-card">
-          <div className="stats-page-card-head">
-            <div>
-              <h3>Add Team</h3>
-              <p className="settings-section-desc">Create a basketball team workspace under this school.</p>
-            </div>
-          </div>
-          <div className="setup-grid">
-            <label className="stats-filter-field">
-              <span>Template</span>
-              <select value={templateLabel} onChange={(event) => setTemplateLabel(event.target.value)}>
-                {TEAM_TEMPLATES.map((template) => (
-                  <option key={template.label} value={template.label}>{template.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="stats-filter-field">
-              <span>Display Name</span>
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Boys Varsity" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Abbreviation</span>
-              <input value={abbreviation} onChange={(event) => setAbbreviation(event.target.value.toUpperCase())} placeholder="BVAR" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Team Color</span>
-              <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} />
-            </label>
-            {selectedTemplate.gender === "custom" || selectedTemplate.level === "custom" ? (
-              <label className="stats-filter-field">
-                <span>Custom Label</span>
-                <input value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="Girls Development" />
-              </label>
-            ) : null}
-          </div>
-          <div className="settings-header-actions">
-            <button type="button" className="shell-nav-link" onClick={() => setShowAddTeam(false)} disabled={busy}>Cancel</button>
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void handleCreateTeam()} disabled={busy}>
-              {busy ? "Creating..." : "Create Team"}
-            </button>
-          </div>
-        </section>
-      ) : null}
+      <AddTeamModal
+        open={showAddTeam}
+        busy={busy}
+        templates={TEAM_TEMPLATES}
+        templateLabel={templateLabel}
+        onTemplateChange={setTemplateLabel}
+        displayName={displayName}
+        onDisplayNameChange={setDisplayName}
+        abbreviation={abbreviation}
+        onAbbreviationChange={setAbbreviation}
+        teamColor={teamColor}
+        onTeamColorChange={setTeamColor}
+        customLabel={customLabel}
+        onCustomLabelChange={setCustomLabel}
+        showCustomLabel={selectedTemplate.gender === "custom" || selectedTemplate.level === "custom"}
+        onClose={() => setShowAddTeam(false)}
+        onCreate={() => void handleCreateTeam()}
+      />
 
-      {showInviteStaff ? (
-        <section className="stats-page-card settings-section-card">
-          <div className="stats-page-card-head">
-            <div>
-              <h3>Invite Staff</h3>
-              <p className="settings-section-desc">Invite school admins or team staff into this workspace.</p>
-            </div>
-          </div>
-          <div className="setup-grid">
-            <label className="stats-filter-field">
-              <span>Full Name</span>
-              <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Assistant Coach Lee" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Email</span>
-              <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="coach@school.org" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Access</span>
-              <select value={inviteAccess} onChange={(event) => setInviteAccess(event.target.value as StaffAccessOption)}>
-                <option value="school_admin">School Admin</option>
-                <option value="head_coach">Head Coach</option>
-                <option value="assistant_coach">Assistant Coach</option>
-                <option value="operator">Operator</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </label>
-            {inviteAccess !== "school_admin" ? (
-              <label className="stats-filter-field">
-                <span>Team</span>
-                <select value={inviteTeamId} onChange={(event) => setInviteTeamId(event.target.value)}>
-                  {overview.teams.map((team) => (
-                    <option key={team.id} value={team.id}>{team.displayName ?? team.name}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
-          <div className="settings-header-actions">
-            <button type="button" className="shell-nav-link" onClick={() => setShowInviteStaff(false)} disabled={busy}>Cancel</button>
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void handleInviteStaff()} disabled={busy}>
-              {busy ? "Sending..." : "Send Invite"}
-            </button>
-          </div>
-        </section>
-      ) : null}
+      <InviteStaffModal
+        open={showInviteStaff}
+        busy={busy}
+        inviteName={inviteName}
+        onInviteNameChange={setInviteName}
+        inviteEmail={inviteEmail}
+        onInviteEmailChange={setInviteEmail}
+        inviteAccess={inviteAccess}
+        onInviteAccessChange={setInviteAccess}
+        inviteTeamId={inviteTeamId}
+        onInviteTeamChange={setInviteTeamId}
+        teams={overview.teams}
+        onClose={() => setShowInviteStaff(false)}
+        onSend={() => void handleInviteStaff()}
+      />
 
       <SchoolTeamsSection
         overview={overview}

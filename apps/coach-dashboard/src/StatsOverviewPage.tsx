@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { EmptyState } from "./EmptyState.js";
 import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
 import { computeAverageMargin, computeCurrentStreak, formatRecord } from "./stats-page-utils.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 
 interface SeasonStats {
   win: number;
@@ -228,15 +231,25 @@ export function StatsOverviewPage() {
     ? Number(seasonStats?.apg ?? 0) / Math.max(Number(seasonStats?.to_avg ?? 0), 1)
     : Number(seasonStats?.apg ?? 0);
 
+  if (!seasonStats && !leaderboards && games.length === 0) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="Team overview"
+        title="Loading season overview"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
+    );
+  }
+
   return (
     <div className="stats-page">
-      <section className="stats-page-hero">
-        <div>
-          <h1>Season Overview</h1>
-          <p className="stats-page-subtitle">Your full season snapshot: record, efficiency, splits, recent form, and leaderboards.</p>
-        </div>
-        <p className="stats-page-status">{status}</p>
-      </section>
+      <TeamWorkspaceHeader
+        eyebrow="Team overview"
+        title="Season Overview"
+        subtitle="Your full season snapshot: record, efficiency, splits, recent form, and leaderboards."
+        status={status}
+      />
 
       <section className="stats-metric-grid stats-metric-grid-overview">
         <div className="stats-metric-card accent-blue">
@@ -288,7 +301,10 @@ export function StatsOverviewPage() {
             <span className="stats-page-status">Last {recentGames.length || 0}</span>
           </div>
           {recentGames.length === 0 ? (
-            <p className="stats-empty-copy">No games recorded yet.</p>
+            <EmptyState
+              title="No games recorded yet"
+              message="Once this team logs completed games, the latest results and scoring margins will show here."
+            />
           ) : (
             <div className="stats-game-list">
               {recentGames.map((game) => {

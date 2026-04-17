@@ -7,6 +7,7 @@ import { LineupUnitPanel } from "./LineupUnitPanel.js";
 import { RotationPanel } from "./RotationPanel.js";
 import { ScoreboardSection } from "./ScoreboardSection.js";
 import { SetupGameCard } from "./SetupGameCard.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
 
 export function LivePage() {
   const {
@@ -71,6 +72,20 @@ export function LivePage() {
 
   return (
     <div className="page">
+      <div className="stats-page">
+        <TeamWorkspaceHeader
+          eyebrow="Game day"
+          title="Live Workspace"
+          subtitle="Run the bench, operator pairing, box score, and live insights from one team-specific control surface."
+          status={dashboardStatus}
+          actions={gameId ? (
+            <div className="team-workspace-hero-actions">
+              <span className="team-workspace-chip is-primary">Game ID: {gameId}</span>
+              <span className="team-workspace-chip">Operators: {connectedOperatorCount}</span>
+            </div>
+          ) : undefined}
+        />
+      </div>
       <div className="live-subnav">
         <button
           className={activePage === "live" && liveSubPage === "scoreboard" ? "nav-active" : ""}
@@ -93,7 +108,7 @@ export function LivePage() {
         </button>
       </div>
       {!gameId && activePage === "ai" && (
-        <div className="idle-screen">
+        <div className="idle-screen live-idle-card">
           <div className="idle-screen-icon">||</div>
           <p className="idle-screen-title">No Active Game</p>
           <p className="idle-screen-sub">Start a game on the Live tab to enable AI insights.</p>
@@ -140,7 +155,7 @@ export function LivePage() {
         </>
       )}
       {!gameId && activePage === "live" && liveSubPage === "operators" && (
-        <div className="idle-screen">
+        <div className="idle-screen live-idle-card">
           <div className="idle-screen-icon">+</div>
           <p className="idle-screen-title">No Active Game</p>
           <p className="idle-screen-sub">Start a game from the Scoreboard tab before managing operator connections.</p>
@@ -152,11 +167,20 @@ export function LivePage() {
             <div className="stats-page-card-head">
               <div>
                 <h3>Live Game Controls</h3>
-                <p className="settings-section-desc">Game ID: {gameId}</p>
-                <p className="settings-section-desc operators-online-indicator">Operators online: {connectedOperatorCount}</p>
-                <div className="settings-pairing-display">
-                  <p className="settings-section-desc">Operator Pairing Code</p>
-                  <span className="settings-pairing-code">{connectionId}</span>
+                <p className="settings-section-desc">Manage the current session, pairing code, and operator activity without leaving the scoreboard.</p>
+                <div className="live-controls-meta-grid">
+                  <div className="live-controls-meta-card">
+                    <span className="live-controls-meta-label">Game ID</span>
+                    <strong className="live-controls-meta-value">{gameId}</strong>
+                  </div>
+                  <div className="live-controls-meta-card">
+                    <span className="live-controls-meta-label">Operators</span>
+                    <strong className="live-controls-meta-value operators-online-indicator">{connectedOperatorCount} online</strong>
+                  </div>
+                  <div className="live-controls-meta-card live-controls-meta-card-pairing">
+                    <span className="live-controls-meta-label">Pairing Code</span>
+                    <span className="settings-pairing-code">{connectionId}</span>
+                  </div>
                 </div>
               </div>
               <div className="settings-header-actions">
@@ -177,12 +201,20 @@ export function LivePage() {
                 </button>
               </div>
             </div>
-            {endGameStatus ? <p className="settings-section-desc">{endGameStatus}</p> : null}
+            {endGameStatus ? <p className="settings-section-desc live-controls-status">{endGameStatus}</p> : null}
           </section>
           {isEndGamePromptOpen ? (
             <section className="card settings-section-card finalize-game-card" aria-label="Finalize Game Details">
-              <p className="eyebrow finalize-game-eyebrow">Game Over</p>
-              <h3 className="finalize-game-title">Finalize game details</h3>
+              <div className="finalize-game-header">
+                <div>
+                  <p className="eyebrow finalize-game-eyebrow">Game Over</p>
+                  <h3 className="finalize-game-title">Finalize game details</h3>
+                  <p className="settings-section-desc">Confirm the opponent, date, and final score before submitting the game record.</p>
+                </div>
+                <div className="finalize-game-stage">
+                  <span className="team-workspace-chip is-primary">Finalize</span>
+                </div>
+              </div>
 
               <div className="finalize-game-grid">
                 <label className="finalize-game-field">
@@ -236,14 +268,16 @@ export function LivePage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="shell-nav-link shell-nav-link-active finalize-game-save-btn"
-                onClick={() => void saveFinalizeDetailsFromDashboard()}
-                disabled={isSavingFinalizeDetails || isEndingGame}
-              >
-                {isSavingFinalizeDetails ? "Saving..." : "Save Name/Date/Score Changes"}
-              </button>
+              <div className="finalize-game-primary-action">
+                <button
+                  type="button"
+                  className="shell-nav-link shell-nav-link-active finalize-game-save-btn"
+                  onClick={() => void saveFinalizeDetailsFromDashboard()}
+                  disabled={isSavingFinalizeDetails || isEndingGame}
+                >
+                  {isSavingFinalizeDetails ? "Saving..." : "Save Name/Date/Score Changes"}
+                </button>
+              </div>
 
               {endGameStatus ? <p className="settings-section-desc finalize-game-status">{endGameStatus}</p> : null}
 

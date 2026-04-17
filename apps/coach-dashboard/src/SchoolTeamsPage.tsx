@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { SchoolPageHeader, SchoolSectionIntro, SchoolTeamsSection } from "./SchoolAdminSections.js";
+import { AddTeamModal, SchoolPageHeader, SchoolSectionIntro, SchoolTeamsSection, type TeamTemplateOption } from "./SchoolAdminSections.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 import { createSchoolTeam, fetchSchoolOverview, type SchoolOverviewPayload } from "./workspace.js";
 
 interface SchoolTeamsPageProps {
@@ -8,7 +9,7 @@ interface SchoolTeamsPageProps {
   onOpenTeam: (teamId: string) => void;
 }
 
-const TEAM_TEMPLATES = [
+const TEAM_TEMPLATES: TeamTemplateOption[] = [
   { label: "Boys Varsity", gender: "boys" as const, level: "varsity" as const },
   { label: "Boys JV", gender: "boys" as const, level: "jv" as const },
   { label: "Boys Freshman", gender: "boys" as const, level: "freshman" as const },
@@ -96,11 +97,12 @@ export function SchoolTeamsPage({ schoolId, canManageSchool, onOpenTeam }: Schoo
 
   if (!overview) {
     return (
-      <div className="stats-page">
-        <section className="stats-page-card">
-          <p className="stats-page-status">{status}</p>
-        </section>
-      </div>
+      <WorkspaceStateCard
+        eyebrow="School teams"
+        title="Loading team workspaces"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
     );
   }
 
@@ -125,50 +127,24 @@ export function SchoolTeamsPage({ schoolId, canManageSchool, onOpenTeam }: Schoo
         metricValue={String(overview.summary.activeTeamsCount)}
       />
 
-      {showAddTeam ? (
-        <section className="stats-page-card settings-section-card">
-          <div className="stats-page-card-head">
-            <div>
-              <h3>Add Team</h3>
-              <p className="settings-section-desc">Create a basketball team workspace under this school.</p>
-            </div>
-          </div>
-          <div className="setup-grid">
-            <label className="stats-filter-field">
-              <span>Template</span>
-              <select value={templateLabel} onChange={(event) => setTemplateLabel(event.target.value)}>
-                {TEAM_TEMPLATES.map((template) => (
-                  <option key={template.label} value={template.label}>{template.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="stats-filter-field">
-              <span>Display Name</span>
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Boys Varsity" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Abbreviation</span>
-              <input value={abbreviation} onChange={(event) => setAbbreviation(event.target.value.toUpperCase())} placeholder="BVAR" />
-            </label>
-            <label className="stats-filter-field">
-              <span>Team Color</span>
-              <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} />
-            </label>
-            {selectedTemplate.gender === "custom" || selectedTemplate.level === "custom" ? (
-              <label className="stats-filter-field">
-                <span>Custom Label</span>
-                <input value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="Girls Development" />
-              </label>
-            ) : null}
-          </div>
-          <div className="settings-header-actions">
-            <button type="button" className="shell-nav-link" onClick={() => setShowAddTeam(false)} disabled={busy}>Cancel</button>
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void handleCreateTeam()} disabled={busy}>
-              {busy ? "Creating..." : "Create Team"}
-            </button>
-          </div>
-        </section>
-      ) : null}
+      <AddTeamModal
+        open={showAddTeam}
+        busy={busy}
+        templates={TEAM_TEMPLATES}
+        templateLabel={templateLabel}
+        onTemplateChange={setTemplateLabel}
+        displayName={displayName}
+        onDisplayNameChange={setDisplayName}
+        abbreviation={abbreviation}
+        onAbbreviationChange={setAbbreviation}
+        teamColor={teamColor}
+        onTeamColorChange={setTeamColor}
+        customLabel={customLabel}
+        onCustomLabelChange={setCustomLabel}
+        showCustomLabel={selectedTemplate.gender === "custom" || selectedTemplate.level === "custom"}
+        onClose={() => setShowAddTeam(false)}
+        onCreate={() => void handleCreateTeam()}
+      />
 
       <SchoolTeamsSection
         overview={overview}

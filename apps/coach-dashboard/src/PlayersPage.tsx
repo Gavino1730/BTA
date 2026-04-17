@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { EmptyState } from "./EmptyState.js";
 import { apiBase, apiKeyHeader, formatSchoolNameFromId, resolveActiveSchoolId } from "./platform.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 import {
   buildPlayerGameHistory,
   type GamePlayerStat,
@@ -599,6 +602,17 @@ export function PlayersPage() {
     });
   }, [minimumGames, players, query, sortBy]);
 
+  if (players.length === 0 && /^could not|^waiting|^loading/i.test(status)) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="Roster analysis"
+        title="Loading players"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
+    );
+  }
+
   const selectedHistory = useMemo(() => {
     return selectedPlayer ? buildPlayerGameHistory(selectedPlayer, games) : [];
   }, [games, selectedPlayer]);
@@ -614,13 +628,12 @@ export function PlayersPage() {
         />
       ) : null}
 
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>Players</h1>
-          <p className="stats-page-subtitle">Open any player card for season breakdowns and game logs.</p>
-        </div>
-        <p className="stats-page-status">{status}</p>
-      </section>
+      <TeamWorkspaceHeader
+        eyebrow="Roster analysis"
+        title="Players"
+        subtitle="Open any player card for season breakdowns, efficiency context, and recovered game logs."
+        status={status}
+      />
 
       <section className="stats-filter-bar">
         <label className="stats-filter-field">
@@ -650,7 +663,10 @@ export function PlayersPage() {
 
       {filtered.length === 0 ? (
         <section className="stats-page-card">
-          <p className="stats-empty-copy">No players match the current filters.</p>
+          <EmptyState
+            title="No players match the current filters"
+            message="Try a different search, sort, or minimum-games threshold to find roster players."
+          />
         </section>
       ) : (
         <section className="stats-game-grid">

@@ -21,6 +21,7 @@ import { useBillingSummary } from "./team-settings/useBillingSummary.js";
 import { useSettingsSectionState } from "./team-settings/useSettingsSectionState.js";
 import { useTeamSettingsActions } from "./team-settings/useTeamSettingsActions.js";
 import { useTeamSettingsData } from "./team-settings/useTeamSettingsData.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
 
 export function TeamSettingsPage() {
   const activeSchoolId = resolveActiveSchoolId();
@@ -152,6 +153,12 @@ export function TeamSettingsPage() {
 
   return (
     <div className="stats-page">
+      <TeamWorkspaceHeader
+        eyebrow="Team settings"
+        title="Team Configuration"
+        subtitle="Manage roster, members, operator pairing, AI context, and billing without leaving the current team workspace."
+        status={status}
+      />
       <SettingsHeader status={status} />
       <SettingsTabNav activeSection={activeSection} onSelectSection={setActiveSection} />
 

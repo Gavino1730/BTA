@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { SchoolPageHeader, SchoolSectionIntro } from "./SchoolAdminSections.js";
 import { fetchSchoolOverview, type SchoolOverviewPayload } from "./workspace.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 
 interface SchoolSettingsPageProps {
   schoolId: string;
@@ -44,11 +46,12 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
 
   if (!overview) {
     return (
-      <div className="stats-page">
-        <section className="stats-page-card">
-          <p className="stats-page-status">{status}</p>
-        </section>
-      </div>
+      <WorkspaceStateCard
+        eyebrow="School settings"
+        title="Loading school settings"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
     );
   }
 
@@ -59,18 +62,24 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
 
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>{overview.school.name}</h1>
-          <p className="stats-page-subtitle">School Settings</p>
-        </div>
-        <div className="settings-header-actions">
+      <SchoolPageHeader
+        eyebrow="School settings"
+        title={overview.school.name}
+        subtitle="Review tenant identity, access policy, billing behavior, and game-day model for this school workspace."
+        status={status}
+        actions={(
           <button type="button" className="shell-nav-link" onClick={() => onNavigate("/billing")}>
             Open Billing
           </button>
-          <p className="stats-page-status">{status}</p>
-        </div>
-      </section>
+        )}
+      />
+
+      <SchoolSectionIntro
+        title="School workspace policy"
+        description="This page is the administrative reference for how this school is identified, billed, and allowed to operate across teams and live sessions."
+        metricLabel="Total teams"
+        metricValue={String(overview.teams.length)}
+      />
 
       <section className="stats-page-grid two-column">
         <article className="stats-page-card settings-section-card">

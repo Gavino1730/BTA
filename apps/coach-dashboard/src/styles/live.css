@@ -1579,23 +1579,65 @@
 }
 
 .live-controls-card {
-  padding-top: 0.85rem;
-  padding-bottom: 0.75rem;
+  padding-top: 0.95rem;
+  padding-bottom: 0.9rem;
+  background:
+    radial-gradient(circle at top right, rgba(79, 140, 255, 0.12), transparent 26%),
+    linear-gradient(160deg, rgba(15, 24, 46, 0.98), rgba(10, 17, 33, 0.96));
 }
 
 .live-controls-card .stats-page-card-head {
   margin-bottom: 0;
-  padding-bottom: 0.55rem;
+  padding-bottom: 0.7rem;
 }
 
-.live-controls-card .settings-pairing-display {
-  margin-top: 0.6rem;
-  gap: 0.25rem;
+.live-controls-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.live-controls-meta-card {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+}
+
+.live-controls-meta-card-pairing {
+  background: linear-gradient(135deg, rgba(110,91,255,0.15), rgba(79,140,255,0.1));
+}
+
+.live-controls-meta-label {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.live-controls-meta-value {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .live-controls-card .settings-pairing-code {
-  font-size: 2rem;
+  font-size: 1.55rem;
   line-height: 1;
+  letter-spacing: 0.14em;
+}
+
+.live-controls-status {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
 }
 
 /* Profile two-column grid */
@@ -2214,6 +2256,21 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  background:
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 26%),
+    linear-gradient(160deg, rgba(18, 20, 32, 0.98), rgba(11, 14, 24, 0.96));
+}
+
+.finalize-game-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.finalize-game-stage {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .finalize-game-eyebrow {
@@ -2314,6 +2371,10 @@ h3 { font-size: 0.95rem; font-weight: 700; }
   width: 100%;
 }
 
+.finalize-game-primary-action {
+  display: flex;
+}
+
 .finalize-game-status {
   border: 1px solid var(--border-hi);
   border-radius: 10px;
@@ -2346,6 +2407,14 @@ h3 { font-size: 0.95rem; font-weight: 700; }
 }
 
 @media (max-width: 700px) {
+  .live-controls-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .finalize-game-header {
+    flex-direction: column;
+  }
+
   .finalize-game-grid {
     grid-template-columns: 1fr;
   }
