@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   buildStaffRows,
   SchoolActivitySection,
+  SchoolPageHeader,
+  SchoolQuickActions,
+  SchoolSectionIntro,
   SchoolStaffSection,
   SchoolTeamsSection,
   type MembershipEditorState,
@@ -227,25 +230,22 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
 
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>{overview.school.name}</h1>
-          <p className="stats-page-subtitle">School Overview</p>
-        </div>
-        <div className="settings-header-actions">
-          {canManageSchool ? (
-            <>
-              <button type="button" className="shell-nav-link" onClick={() => setShowInviteStaff((current) => !current)}>
-                Invite Staff
-              </button>
-              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam((current) => !current)}>
-                Add Team
-              </button>
-            </>
-          ) : null}
-          <p className="stats-page-status">{status}</p>
-        </div>
-      </section>
+      <SchoolPageHeader
+        eyebrow="School control"
+        title={overview.school.name}
+        subtitle="This is the admin control center for teams, staff access, live operations, and billing capacity."
+        status={status}
+        actions={canManageSchool ? (
+          <>
+            <button type="button" className="shell-nav-link" onClick={() => setShowInviteStaff((current) => !current)}>
+              Invite Staff
+            </button>
+            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam((current) => !current)}>
+              Add Team
+            </button>
+          </>
+        ) : undefined}
+      />
 
       <section className="stats-page-grid three-column">
         <article className="stats-metric-card">
@@ -271,6 +271,19 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
           <p className="stats-metric-value">{overview.summary.activeLiveGamesCount}</p>
           <p className="stats-metric-detail">Current team sessions</p>
         </article>
+      </section>
+
+      <section className="stats-page-grid two-column school-overview-top-grid">
+        <SchoolQuickActions
+          onAddTeam={() => setShowAddTeam(true)}
+          onInviteStaff={() => setShowInviteStaff(true)}
+        />
+        <SchoolSectionIntro
+          title="Capacity and access"
+          description="School billing controls which teams stay fully active. Over-limit teams remain visible but become read-only instead of disappearing."
+          metricLabel="School staff"
+          metricValue={String(overview.summary.staffCount)}
+        />
       </section>
 
       {showAddTeam ? (

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildStaffRows,
+  SchoolPageHeader,
+  SchoolSectionIntro,
   SchoolStaffSection,
   type MembershipEditorState,
   type StaffAccessOption,
@@ -169,20 +171,24 @@ export function SchoolStaffPage({ schoolId, canManageSchool }: SchoolStaffPagePr
 
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>{overview.school.name}</h1>
-          <p className="stats-page-subtitle">Staff</p>
-        </div>
-        <div className="settings-header-actions">
-          {canManageSchool ? (
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowInviteStaff((current) => !current)}>
-              Invite Staff
-            </button>
-          ) : null}
-          <p className="stats-page-status">{status}</p>
-        </div>
-      </section>
+      <SchoolPageHeader
+        eyebrow="People and permissions"
+        title={overview.school.name}
+        subtitle="Assign school-wide admins, team-specific coaches and operators, and keep access scoped to the right teams."
+        status={status}
+        actions={canManageSchool ? (
+          <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowInviteStaff((current) => !current)}>
+            Invite Staff
+          </button>
+        ) : undefined}
+      />
+
+      <SchoolSectionIntro
+        title="Access map"
+        description="School admins inherit access to every team. Coaches and operators only see the teams they are explicitly assigned to."
+        metricLabel="Memberships"
+        metricValue={String(staffRows.length)}
+      />
 
       {showInviteStaff ? (
         <section className="stats-page-card settings-section-card">

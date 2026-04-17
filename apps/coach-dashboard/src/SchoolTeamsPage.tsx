@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SchoolTeamsSection } from "./SchoolAdminSections.js";
+import { SchoolPageHeader, SchoolSectionIntro, SchoolTeamsSection } from "./SchoolAdminSections.js";
 import { createSchoolTeam, fetchSchoolOverview, type SchoolOverviewPayload } from "./workspace.js";
 
 interface SchoolTeamsPageProps {
@@ -106,20 +106,24 @@ export function SchoolTeamsPage({ schoolId, canManageSchool, onOpenTeam }: Schoo
 
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>{overview.school.name}</h1>
-          <p className="stats-page-subtitle">Teams</p>
-        </div>
-        <div className="settings-header-actions">
-          {canManageSchool ? (
-            <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam((current) => !current)}>
-              Add Team
-            </button>
-          ) : null}
-          <p className="stats-page-status">{status}</p>
-        </div>
-      </section>
+      <SchoolPageHeader
+        eyebrow="Team workspaces"
+        title={overview.school.name}
+        subtitle="Each basketball team gets its own live, roster, and insights workspace while still rolling up to the school."
+        status={status}
+        actions={canManageSchool ? (
+          <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => setShowAddTeam((current) => !current)}>
+            Add Team
+          </button>
+        ) : undefined}
+      />
+
+      <SchoolSectionIntro
+        title="Team inventory"
+        description="Use this page to see every school team, spot read-only capacity issues, and jump straight into the right workspace."
+        metricLabel="Active teams"
+        metricValue={String(overview.summary.activeTeamsCount)}
+      />
 
       {showAddTeam ? (
         <section className="stats-page-card settings-section-card">

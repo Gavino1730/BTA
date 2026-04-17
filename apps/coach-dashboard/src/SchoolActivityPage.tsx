@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SchoolActivitySection } from "./SchoolAdminSections.js";
+import { SchoolActivitySection, SchoolPageHeader, SchoolSectionIntro } from "./SchoolAdminSections.js";
 import { fetchSchoolOverview, type SchoolOverviewPayload } from "./workspace.js";
 
 export function SchoolActivityPage({ schoolId }: { schoolId: string }) {
@@ -38,15 +38,18 @@ export function SchoolActivityPage({ schoolId }: { schoolId: string }) {
 
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>{overview.school.name}</h1>
-          <p className="stats-page-subtitle">Activity</p>
-        </div>
-        <div className="settings-header-actions">
-          <p className="stats-page-status">{status}</p>
-        </div>
-      </section>
+      <SchoolPageHeader
+        eyebrow="Audit trail"
+        title={overview.school.name}
+        subtitle="Track invites, team creation, membership changes, and live session activity from one running feed."
+        status={status}
+      />
+      <SchoolSectionIntro
+        title="Recent school activity"
+        description="This feed should show the highest-signal operational events so an athletic director can understand what changed without digging into team pages."
+        metricLabel="Events"
+        metricValue={String(overview.activity.length)}
+      />
       <SchoolActivitySection overview={overview} />
     </div>
   );

@@ -533,15 +533,14 @@ export function UnifiedCoachApp() {
       : "";
 
   const gameShellKey = `${activeSchoolId}:${activeContextType}:${activeTeamId ?? "school"}`;
-
-  return (
-    <GameSessionProvider key={gameShellKey}>
+  const shellChrome = (
+    <>
       {showTutorial ? (
         <TutorialOverlay onDismiss={() => setShowTutorial(false)} />
       ) : null}
       <nav className="coach-navbar">
         <div className="coach-nav-container">
-          <button type="button" className="coach-nav-logo" onClick={() => { window.location.href = marketingBase; }}>≡ BTA COURTSIDE</button>
+          <button type="button" className="coach-nav-logo" onClick={() => { window.location.href = marketingBase; }}>&#8801; BTA COURTSIDE</button>
 
           <div className="coach-nav-actions">
             <select
@@ -611,55 +610,61 @@ export function UnifiedCoachApp() {
           </div>
         </div>
       </nav>
+    </>
+  );
 
-      {activeContextType === "school" ? (
-        <>
-          {route === "billing" ? (
-            <BillingPage onNavigate={navigate} />
-          ) : route === "school-teams" ? (
-            <SchoolTeamsPage
-              schoolId={activeSchoolId}
-              canManageSchool={canManageSchool}
-              onOpenTeam={(teamId) => {
-                switchToTeam(activeSchoolId, teamId);
-                navigate("/live");
-              }}
-            />
-          ) : route === "school-staff" ? (
-            <SchoolStaffPage
-              schoolId={activeSchoolId}
-              canManageSchool={canManageSchool}
-            />
-          ) : route === "school-activity" ? (
-            <SchoolActivityPage schoolId={activeSchoolId} />
-          ) : route === "school-settings" ? (
-            <SchoolSettingsPage
-              schoolId={activeSchoolId}
-              onNavigate={navigate}
-            />
-          ) : (
-            <SchoolOverviewPage
-              schoolId={activeSchoolId}
-              canManageSchool={canManageSchool}
-              onOpenTeam={(teamId) => {
-                switchToTeam(activeSchoolId, teamId);
-                navigate("/live");
-              }}
-            />
-          )}
-        </>
-      ) : (
-        <>
-          {route === "live" && <LivePage />}
-          {route === "stats-overview" && <StatsOverviewPage />}
-          {route === "stats-games" && <GamesPage />}
-          {route === "stats-players" && <PlayersPage />}
-          {route === "stats-trends" && <TrendsPage />}
-          {route === "stats-insights" && <AiInsightsPage />}
-          {route === "stats-settings" && <TeamSettingsPage />}
-          {!currentTeam && route === "billing" ? <BillingPage onNavigate={navigate} /> : null}
-        </>
-      )}
+  if (activeContextType === "school") {
+    return (
+      <>
+        {shellChrome}
+        {route === "billing" ? (
+          <BillingPage onNavigate={navigate} />
+        ) : route === "school-teams" ? (
+          <SchoolTeamsPage
+            schoolId={activeSchoolId}
+            canManageSchool={canManageSchool}
+            onOpenTeam={(teamId) => {
+              switchToTeam(activeSchoolId, teamId);
+              navigate("/live");
+            }}
+          />
+        ) : route === "school-staff" ? (
+          <SchoolStaffPage
+            schoolId={activeSchoolId}
+            canManageSchool={canManageSchool}
+          />
+        ) : route === "school-activity" ? (
+          <SchoolActivityPage schoolId={activeSchoolId} />
+        ) : route === "school-settings" ? (
+          <SchoolSettingsPage
+            schoolId={activeSchoolId}
+            onNavigate={navigate}
+          />
+        ) : (
+          <SchoolOverviewPage
+            schoolId={activeSchoolId}
+            canManageSchool={canManageSchool}
+            onOpenTeam={(teamId) => {
+              switchToTeam(activeSchoolId, teamId);
+              navigate("/live");
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <GameSessionProvider key={gameShellKey}>
+      {shellChrome}
+      {route === "live" && <LivePage />}
+      {route === "stats-overview" && <StatsOverviewPage />}
+      {route === "stats-games" && <GamesPage />}
+      {route === "stats-players" && <PlayersPage />}
+      {route === "stats-trends" && <TrendsPage />}
+      {route === "stats-insights" && <AiInsightsPage />}
+      {route === "stats-settings" && <TeamSettingsPage />}
+      {!currentTeam && route === "billing" ? <BillingPage onNavigate={navigate} /> : null}
     </GameSessionProvider>
   );
 }

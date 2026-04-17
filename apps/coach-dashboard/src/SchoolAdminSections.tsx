@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { SchoolOverviewPayload } from "./workspace.js";
 
 export type StaffAccessOption = "school_admin" | "head_coach" | "assistant_coach" | "operator" | "viewer";
@@ -17,6 +17,113 @@ export interface StaffRow {
   status: "active" | "invited";
   teamId?: string;
   teamName?: string;
+}
+
+function formatMembershipRole(role: string): string {
+  return role.replace(/_/g, " ");
+}
+
+function formatActivityTypeLabel(type: string): string {
+  return type.replace(/_/g, " ");
+}
+
+export function SchoolPageHeader({
+  eyebrow,
+  title,
+  subtitle,
+  status,
+  actions,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <section className="stats-page-hero compact school-page-hero">
+      <div className="school-page-hero-copy">
+        <p className="stats-page-eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        <p className="stats-page-subtitle">{subtitle}</p>
+      </div>
+      <div className="school-page-hero-side">
+        {actions ? <div className="settings-header-actions school-page-hero-actions">{actions}</div> : null}
+        <p className="stats-page-status school-page-status">{status}</p>
+      </div>
+    </section>
+  );
+}
+
+export function SchoolSectionIntro({
+  title,
+  description,
+  metricLabel,
+  metricValue,
+}: {
+  title: string;
+  description: string;
+  metricLabel: string;
+  metricValue: string;
+}) {
+  return (
+    <section className="stats-page-card school-section-intro">
+      <div>
+        <p className="school-section-intro-label">{metricLabel}</p>
+        <h2 className="school-section-intro-title">{title}</h2>
+        <p className="school-section-intro-copy">{description}</p>
+      </div>
+      <div className="school-section-intro-metric">
+        <span>{metricLabel}</span>
+        <strong>{metricValue}</strong>
+      </div>
+    </section>
+  );
+}
+
+export function SchoolQuickActions({
+  onAddTeam,
+  onInviteStaff,
+  onOpenLive,
+  onImportRoster,
+}: {
+  onAddTeam: () => void;
+  onInviteStaff: () => void;
+  onOpenLive?: () => void;
+  onImportRoster?: () => void;
+}) {
+  return (
+    <section className="stats-page-card school-quick-actions-card">
+      <div className="stats-page-card-head">
+        <div>
+          <h3>Quick Actions</h3>
+          <p className="settings-section-desc">The core admin actions should stay one click away.</p>
+        </div>
+      </div>
+      <div className="school-quick-actions-grid">
+        <button type="button" className="school-quick-action" onClick={onAddTeam}>
+          <span className="school-quick-action-kicker">Teams</span>
+          <strong>Add Team</strong>
+          <p>Create a new basketball workspace and route directly into it.</p>
+        </button>
+        <button type="button" className="school-quick-action" onClick={onInviteStaff}>
+          <span className="school-quick-action-kicker">Staff</span>
+          <strong>Invite Staff</strong>
+          <p>Grant school-wide or team-specific access without leaving overview.</p>
+        </button>
+        <button type="button" className="school-quick-action" onClick={onOpenLive} disabled={!onOpenLive}>
+          <span className="school-quick-action-kicker">Game Day</span>
+          <strong>Start Live Game</strong>
+          <p>Pick a team and launch a live session with operator pairing.</p>
+        </button>
+        <button type="button" className="school-quick-action" onClick={onImportRoster} disabled={!onImportRoster}>
+          <span className="school-quick-action-kicker">Roster</span>
+          <strong>Import Roster</strong>
+          <p>Use roster setup after entry instead of blocking onboarding.</p>
+        </button>
+      </div>
+    </section>
+  );
 }
 
 export function buildStaffRows(overview: SchoolOverviewPayload): StaffRow[] {
@@ -74,12 +181,16 @@ export function SchoolTeamsSection({
       ) : (
         <div className="settings-members-list">
           {overview.teams.map((team) => (
-            <div key={team.id} className="settings-member-row">
+            <div key={team.id} className="settings-member-row school-team-row">
               <div className="settings-member-info">
-                <div className="settings-member-avatar">{(team.displayName ?? team.name).charAt(0)}</div>
+                <div className="settings-member-avatar school-team-avatar">{(team.displayName ?? team.name).charAt(0)}</div>
                 <div>
                   <strong className="settings-member-name">{team.displayName ?? team.name}</strong>
-                  <span className="settings-member-email">{team.rosterCount ?? team.players.length} players · {team.staffCount ?? 0} staff</span>
+                  <div className="school-inline-metadata">
+                    <span className="settings-member-email">{team.rosterCount ?? team.players.length} players</span>
+                    <span className="settings-member-email">{team.staffCount ?? 0} staff</span>
+                    <span className="settings-member-email">{team.level ?? "custom"} level</span>
+                  </div>
                 </div>
               </div>
               <div className="settings-member-controls">
@@ -140,7 +251,7 @@ export function SchoolStaffSection({
         {staffRows.length === 0 ? (
           <p className="stats-empty-copy">No staff memberships yet.</p>
         ) : staffRows.map((membership) => (
-          <div key={`${membership.membershipType}:${membership.membershipId}`} className="settings-member-row">
+          <div key={`${membership.membershipType}:${membership.membershipId}`} className="settings-member-row school-staff-row">
             <div className="settings-member-info">
               <div className="settings-member-avatar">{membership.fullName.charAt(0)}</div>
               <div>
@@ -193,8 +304,11 @@ export function SchoolStaffSection({
                 </>
               ) : (
                 <>
+                  <span className="settings-status-badge school-role-badge">
+                    {formatMembershipRole(membership.role)}
+                  </span>
                   <span className={`settings-status-badge settings-status-${membership.status === "active" ? "active" : "invited"}`}>
-                    {membership.role}
+                    {membership.status}
                   </span>
                   {canManageSchool ? (
                     <button
@@ -244,10 +358,14 @@ export function SchoolActivitySection({ overview }: { overview: SchoolOverviewPa
         {overview.activity.length === 0 ? (
           <p className="stats-empty-copy">No recent activity.</p>
         ) : overview.activity.map((event) => (
-          <div key={event.id} className="settings-member-row activity-feed-row">
+          <div key={event.id} className="settings-member-row activity-feed-row school-activity-row">
             <div className="settings-member-info">
               <div>
                 <strong className="settings-member-name">{event.message}</strong>
+                <div className="school-inline-metadata">
+                  <span className="settings-status-badge school-activity-badge">{formatActivityTypeLabel(event.type)}</span>
+                  {event.teamId ? <span className="settings-member-email">Team: {event.teamId}</span> : null}
+                </div>
                 <span className="settings-member-email">{new Date(event.createdAtIso).toLocaleString()}</span>
               </div>
             </div>
