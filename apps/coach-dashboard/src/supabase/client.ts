@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { apiBase, apiKeyHeader } from "../platform.js";
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -201,16 +202,25 @@ export async function signOutSupabase(): Promise<void> {
 }
 
 export async function requestSupabasePasswordReset(email: string, redirectTo: string): Promise<void> {
-  const client = createSupabaseClient();
-  if (!client) {
-    throw new Error("Supabase auth is not configured.");
-  }
-
-  const { error } = await client.auth.resetPasswordForEmail(email, {
-    redirectTo,
+  const response = await fetch(`${apiBase}/api/auth/password-reset/email`, {
+    method: "POST",
+    headers: apiKeyHeader(true),
+    body: JSON.stringify({
+      email,
+      redirectTo,
+    }),
   });
-  if (error) {
-    throw new Error(error.message || "Could not send password reset email.");
+
+  const payload = await response.json().catch(() => ({})) as {
+    error?: string;
+    emailDelivery?: { reason?: string };
+  };
+  if (!response.ok) {
+    throw new Error(
+      payload.error
+      || payload.emailDelivery?.reason
+      || "Could not send password reset email.",
+    );
   }
 }
 

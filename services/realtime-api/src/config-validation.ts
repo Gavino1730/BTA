@@ -11,6 +11,8 @@ export interface RuntimeConfig {
   emailProvider: string;
   emailFromConfigured: boolean;
   resendApiKeyConfigured: boolean;
+  supabaseUrlConfigured: boolean;
+  supabasePublishableKeyConfigured: boolean;
 }
 
 export interface RuntimeValidationResult {
@@ -36,6 +38,19 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     emailProvider,
     emailFromConfigured: Boolean(process.env.BTA_EMAIL_FROM?.trim()),
     resendApiKeyConfigured: Boolean(process.env.RESEND_API_KEY?.trim()),
+    supabaseUrlConfigured: Boolean(
+      process.env.SUPABASE_URL?.trim()
+      || process.env.VITE_SUPABASE_URL?.trim()
+      || process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+    ),
+    supabasePublishableKeyConfigured: Boolean(
+      process.env.SUPABASE_PUBLISHABLE_KEY?.trim()
+      || process.env.SUPABASE_ANON_KEY?.trim()
+      || process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+      || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY?.trim()
+      || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
+      || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+    ),
   };
 }
 
@@ -92,6 +107,13 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
     if (config.emailProvider === "resend" && !config.resendApiKeyConfigured) {
       warnings.push("RESEND_API_KEY is not set; Resend email delivery is disabled.");
     }
+  }
+
+  if (!config.supabaseUrlConfigured || !config.supabasePublishableKeyConfigured) {
+    warnings.push(
+      "Supabase auth email proxy is not fully configured on the API service. " +
+      "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or their public equivalents) so password reset emails can be sent."
+    );
   }
 
   return { errors, warnings };

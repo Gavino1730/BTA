@@ -94,6 +94,7 @@ import {
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
 import { sendTransactionalEmail } from "./email.js";
+import { requestSupabasePasswordResetEmail } from "./supabase-auth-email.js";
 import {
   hasWriteRole,
   normalizeSchoolId,
@@ -305,6 +306,25 @@ function hasConfiguredWriteAuthPath(): boolean {
 
 function isReadOnlyRequest(req: Request): boolean {
   return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
+}
+
+function resolvePasswordResetRedirect(req: Request, requestedRedirectTo: string | undefined): string {
+  const baseUrl = new URL(resolveCoachRedirectOrigin(req));
+  const fallback = new URL("/reset-password", `${baseUrl.toString().replace(/\/+$/, "")}/`);
+  const candidate = (requestedRedirectTo ?? "").trim();
+  if (!candidate) {
+    return fallback.toString();
+  }
+
+  try {
+    const parsed = new URL(candidate, `${baseUrl.toString().replace(/\/+$/, "")}/`);
+    if (parsed.origin !== fallback.origin) {
+      return fallback.toString();
+    }
+    return parsed.toString();
+  } catch {
+    return fallback.toString();
+  }
 }
 
 function readAuthClaimValue(authContext: AuthContext | undefined, path: string): unknown {
@@ -686,6 +706,55 @@ registerHealthRoute(app, {
 // Keep /api probe tenant-agnostic so platform health checks can use it.
 app.get("/api", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.post("/api/auth/password-reset/email", authRateLimiter, async (req, res) => {
+  const payload = (req.body ?? {}) as Record<string, unknown>;
+  const email = sanitizeTextField(payload.email, 160).toLowerCase();
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+
+  const redirectTo = resolvePasswordResetRedirect(
+    req,
+    typeof payload.redirectTo === "string" ? payload.redirectTo : undefined,
+  );
+  const emailDelivery = await requestSupabasePasswordResetEmail({
+    email,
+    redirectTo,
+  });
+
+  if (emailDelivery.delivered) {
+    res.json({
+      message: "If this email exists, a password reset link has been sent.",
+      emailDelivery,
+    });
+    return;
+  }
+
+  if (emailDelivery.skipped) {
+    logger.warn("auth.password_reset_email_unavailable", {
+      email,
+      reason: emailDelivery.reason,
+      redirectTo,
+    });
+    res.status(503).json({
+      error: emailDelivery.reason || "Password reset email is not configured.",
+      emailDelivery,
+    });
+    return;
+  }
+
+  logger.warn("auth.password_reset_email_failed", {
+    email,
+    reason: emailDelivery.reason,
+    redirectTo,
+  });
+  res.status(502).json({
+    error: emailDelivery.reason || "Could not send password reset email.",
+    emailDelivery,
+  });
 });
 
 app.use(attachAuthContext);

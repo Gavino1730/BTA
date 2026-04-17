@@ -14,7 +14,9 @@ function baseConfig(): RuntimeConfig {
     localAuthSecretConfigured: true,
     emailProvider: "",
     emailFromConfigured: false,
-    resendApiKeyConfigured: false
+    resendApiKeyConfigured: false,
+    supabaseUrlConfigured: true,
+    supabasePublishableKeyConfigured: true,
   };
 }
 

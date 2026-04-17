@@ -45,34 +45,48 @@ async function sendViaResend(message: EmailMessage): Promise<EmailDeliveryResult
     };
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [message.to],
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-      reply_to: message.replyTo,
-    }),
-  });
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [message.to],
+        subject: message.subject,
+        html: message.html,
+        text: message.text,
+        reply_to: message.replyTo,
+      }),
+    });
 
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Resend delivery failed (${response.status}): ${details || "unknown error"}`);
+    if (!response.ok) {
+      const details = await response.text().catch(() => "");
+      return {
+        delivered: false,
+        skipped: false,
+        provider: "resend",
+        reason: `Resend delivery failed (${response.status})${details ? `: ${details}` : ""}`,
+      };
+    }
+
+    const payload = await response.json() as { id?: string };
+    return {
+      delivered: true,
+      skipped: false,
+      provider: "resend",
+      id: payload.id,
+    };
+  } catch (error) {
+    return {
+      delivered: false,
+      skipped: false,
+      provider: "resend",
+      reason: error instanceof Error ? error.message : "Resend delivery failed.",
+    };
   }
-
-  const payload = await response.json() as { id?: string };
-  return {
-    delivered: true,
-    skipped: false,
-    provider: "resend",
-    id: payload.id,
-  };
 }
 
 export async function sendTransactionalEmail(message: EmailMessage): Promise<EmailDeliveryResult> {
