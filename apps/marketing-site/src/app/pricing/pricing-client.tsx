@@ -77,29 +77,29 @@ export function PricingClientPage(): JSX.Element {
                 <span className="font-display text-6xl font-semibold leading-none text-(--text-primary)">{formatPrice(plan.monthly)}</span>
                 <span className="mb-1 text-xl text-(--text-tertiary)">/mo</span>
               </div>
-              <p className="mt-2 text-sm text-(--text-tertiary)">Choose monthly or yearly billing at checkout.</p>
-              <p className="mt-1 text-xs text-(--accent-secondary)">No demo required. Checkout is fully self-serve.</p>
+              <p className="mt-2 text-sm text-(--text-tertiary)">Billing is set up after your account is created.</p>
+              <p className="mt-1 text-xs text-(--accent-secondary)">No demo required. Sign up directly.</p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 <Link
-                  href="/get-started?cycle=monthly"
+                  href="/get-started"
                   className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                     plan.featured
                       ? "border-(--accent-primary) bg-(--accent-primary) text-(--accent-on) hover:bg-[#7C6BFF]"
                       : "border-(--border-soft) bg-[rgba(28,35,64,0.9)] text-(--text-primary) hover:bg-[rgba(35,44,79,0.95)]"
                   }`}
                 >
-                  Start Monthly Signup
+                  Get Started
                 </Link>
                 <Link
-                  href="/get-started?cycle=yearly"
+                  href="/get-started"
                   className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                     plan.featured
                       ? "border-(--border-soft) bg-transparent text-(--text-primary) hover:bg-[rgba(28,35,64,0.9)]"
                       : "border-(--border-soft) bg-[rgba(28,35,64,0.9)] text-(--text-primary) hover:bg-[rgba(35,44,79,0.95)]"
                   }`}
                 >
-                  Start Yearly Signup
+                  Create Account
                 </Link>
               </div>
 

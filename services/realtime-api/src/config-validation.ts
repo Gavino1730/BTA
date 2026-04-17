@@ -13,6 +13,7 @@ export interface RuntimeConfig {
   resendApiKeyConfigured: boolean;
   supabaseUrlConfigured: boolean;
   supabasePublishableKeyConfigured: boolean;
+  supabaseServiceRoleKeyConfigured: boolean;
 }
 
 export interface RuntimeValidationResult {
@@ -50,6 +51,9 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
       || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY?.trim()
       || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
       || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+    ),
+    supabaseServiceRoleKeyConfigured: Boolean(
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
     ),
   };
 }
@@ -113,6 +117,13 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
     warnings.push(
       "Supabase auth email proxy is not fully configured on the API service. " +
       "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or their public equivalents) so password reset emails can be sent."
+    );
+  }
+  if (!config.supabaseServiceRoleKeyConfigured) {
+    warnings.push(
+      "SUPABASE_SERVICE_ROLE_KEY is not set on the API service. Password reset emails can fall back to Supabase's " +
+      "built-in recover endpoint, but missing-user cases remain intentionally silent. Set the service role key to " +
+      "generate reset links server-side and send them through your transactional email provider."
     );
   }
 

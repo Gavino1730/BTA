@@ -194,7 +194,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             name: normalizedName,
             school_name: schoolName.trim() || undefined,
             invite_token: inviteToken || undefined,
-          });
+          }, `${window.location.origin}/login`);
 
       if (!authResult.token) {
         if (authMode === "register") {

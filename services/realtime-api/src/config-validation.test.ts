@@ -17,6 +17,7 @@ function baseConfig(): RuntimeConfig {
     resendApiKeyConfigured: false,
     supabaseUrlConfigured: true,
     supabasePublishableKeyConfigured: true,
+    supabaseServiceRoleKeyConfigured: true,
   };
 }
 

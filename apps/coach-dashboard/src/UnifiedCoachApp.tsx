@@ -199,6 +199,7 @@ export function UnifiedCoachApp() {
 
     const schoolTeams = context.teams.filter((team) => team.schoolId === resolvedSchoolId);
     const availableTeamIds = new Set(schoolTeams.map((team) => team.id));
+    const hasExplicitRequestedTeam = Boolean(requestedTeamId && availableTeamIds.has(requestedTeamId));
     const resolvedTeamId = availableTeamIds.has(requestedTeamId)
       ? requestedTeamId
       : (context.profile?.lastTeamId && availableTeamIds.has(context.profile.lastTeamId))
@@ -212,7 +213,9 @@ export function UnifiedCoachApp() {
         && (membership.role === "owner" || membership.role === "school_admin"),
     );
 
-    const nextContextType = adminInSchool && context.defaultContext.type === "school"
+    const nextContextType = hasExplicitRequestedTeam
+      ? "team"
+      : adminInSchool && context.defaultContext.type === "school"
       ? "school"
       : resolvedTeamId
         ? "team"
@@ -404,7 +407,11 @@ export function UnifiedCoachApp() {
     persistContextPreference({ schoolId, teamId, contextType: "team" });
   }, [persistContextPreference]);
 
-  function navigate(nextPath: string) {
+  function navigate(nextPath: string, contextOverride?: {
+    schoolId?: string;
+    teamId?: string;
+    contextType?: "school" | "team" | null;
+  }) {
     let routePath = nextPath.split("?")[0] ?? nextPath;
 
     if (requiresSetup && !isAuthenticated && !isPublicRoute(resolveCoachRoute(routePath)) && routePath !== "/setup") {
@@ -418,9 +425,15 @@ export function UnifiedCoachApp() {
     }
 
     const nextUrl = buildContextUrl(nextPath, {
-      schoolId: activeSchoolId ?? undefined,
-      teamId: activeContextType === "team" ? activeTeamId ?? undefined : undefined,
-      contextType: activeContextType,
+      schoolId: contextOverride?.schoolId ?? activeSchoolId ?? undefined,
+      teamId: contextOverride?.contextType === "team"
+        ? contextOverride.teamId ?? undefined
+        : contextOverride
+          ? undefined
+          : activeContextType === "team"
+            ? activeTeamId ?? undefined
+            : undefined,
+      contextType: contextOverride?.contextType ?? activeContextType,
     });
 
     if (`${window.location.pathname}${window.location.search}` === nextUrl) {
@@ -555,9 +568,17 @@ export function UnifiedCoachApp() {
                 if (team?.schoolId) {
                   switchToTeam(team.schoolId, team.id);
                   if (isSchoolRoute(route)) {
-                    navigate("/live");
+                    navigate("/live", {
+                      schoolId: team.schoolId,
+                      teamId: team.id,
+                      contextType: "team",
+                    });
                   } else {
-                    navigate(window.location.pathname);
+                    navigate(window.location.pathname, {
+                      schoolId: team.schoolId,
+                      teamId: team.id,
+                      contextType: "team",
+                    });
                   }
                 }
               }}
@@ -625,7 +646,11 @@ export function UnifiedCoachApp() {
             canManageSchool={canManageSchool}
             onOpenTeam={(teamId) => {
               switchToTeam(activeSchoolId, teamId);
-              navigate("/live");
+              navigate("/live", {
+                schoolId: activeSchoolId,
+                teamId,
+                contextType: "team",
+              });
             }}
           />
         ) : route === "school-staff" ? (
@@ -646,7 +671,11 @@ export function UnifiedCoachApp() {
             canManageSchool={canManageSchool}
             onOpenTeam={(teamId) => {
               switchToTeam(activeSchoolId, teamId);
-              navigate("/live");
+              navigate("/live", {
+                schoolId: activeSchoolId,
+                teamId,
+                contextType: "team",
+              });
             }}
           />
         )}

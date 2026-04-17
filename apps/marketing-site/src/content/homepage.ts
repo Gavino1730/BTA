@@ -120,7 +120,7 @@ export const footerGroups = [
     title: "Access",
     links: [
       { label: "Coach Login", href: "https://dashboard.btaintel.com/login" },
-      { label: "Start Signup", href: "/get-started" },
+      { label: "Create Account", href: "/get-started" },
       { label: "Contact Team", href: "/contact" },
       { label: "Support", href: "/support" },
     ],

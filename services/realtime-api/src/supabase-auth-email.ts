@@ -1,3 +1,4 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { EmailDeliveryResult } from "./email.js";
 
 function readFirstEnv(...names: string[]): string {
@@ -16,13 +17,17 @@ function withTimeout(timeoutMs: number): AbortSignal | undefined {
   }
 
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), timeoutMs).unref?.();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof (timer as NodeJS.Timeout).unref === "function") {
+    (timer as NodeJS.Timeout).unref();
+  }
   return controller.signal;
 }
 
 export function readSupabaseEmailConfig(): {
   supabaseUrl: string;
   supabasePublishableKey: string;
+  supabaseServiceRoleKey: string;
 } {
   return {
     supabaseUrl: readFirstEnv(
@@ -38,7 +43,25 @@ export function readSupabaseEmailConfig(): {
       "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     ),
+    supabaseServiceRoleKey: readFirstEnv(
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ),
   };
+}
+
+function createSupabaseAdminClient(): SupabaseClient | null {
+  const { supabaseUrl, supabaseServiceRoleKey } = readSupabaseEmailConfig();
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
 }
 
 export async function requestSupabasePasswordResetEmail(input: {
@@ -99,4 +122,68 @@ export async function requestSupabasePasswordResetEmail(input: {
       reason: error instanceof Error ? error.message : "Supabase password reset request failed.",
     };
   }
+}
+
+export async function sendSupabasePasswordResetEmail(input: {
+  email: string;
+  redirectTo: string;
+  sendEmail: (message: {
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+  }) => Promise<EmailDeliveryResult>;
+}): Promise<EmailDeliveryResult> {
+  const adminClient = createSupabaseAdminClient();
+  if (!adminClient) {
+    return requestSupabasePasswordResetEmail({
+      email: input.email,
+      redirectTo: input.redirectTo,
+    });
+  }
+
+  const { data, error } = await adminClient.auth.admin.generateLink({
+    type: "recovery",
+    email: input.email,
+    options: {
+      redirectTo: input.redirectTo,
+    },
+  });
+
+  if (error) {
+    return {
+      delivered: false,
+      skipped: false,
+      provider: "supabase-admin",
+      reason: error.message || "Could not generate a password reset link.",
+    };
+  }
+
+  const actionLink = typeof data?.properties?.action_link === "string"
+    ? data.properties.action_link.trim()
+    : "";
+  if (!actionLink) {
+    return {
+      delivered: false,
+      skipped: false,
+      provider: "supabase-admin",
+      reason: "Supabase did not return a password reset link.",
+    };
+  }
+
+  return input.sendEmail({
+    to: input.email,
+    subject: "Reset your BTA password",
+    text: [
+      "We received a request to reset your BTA password.",
+      `Use this secure link to choose a new password: ${actionLink}`,
+      "",
+      "If you were invited but never created your account, use the invite email instead.",
+    ].join("\n"),
+    html: [
+      "<p>We received a request to reset your BTA password.</p>",
+      `<p><a href="${actionLink}">Choose a new password</a></p>`,
+      "<p>If you were invited but never created your account, use the invite email instead.</p>",
+    ].join(""),
+  });
 }

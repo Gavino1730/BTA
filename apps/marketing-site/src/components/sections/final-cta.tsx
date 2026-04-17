@@ -44,7 +44,7 @@ export function FinalCta(): JSX.Element {
             Bring stats, film, and coaching intelligence into one live command center.
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-[var(--text-secondary)]">
-            Start your subscription, create your coach account, and launch today, no demo call required.
+            Create your coach account and launch today, no demo call required.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button size="lg" onClick={() => window.location.assign("/get-started")}>Get Started Now</Button>

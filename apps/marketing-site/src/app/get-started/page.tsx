@@ -6,7 +6,7 @@ import { GetStartedClientPage } from "./start-client";
 export const metadata: Metadata = buildPageMetadata({
   title: "Get Started | BTA Courtside",
   description:
-    "Start your BTA Courtside subscription and launch your coach account directly from checkout.",
+    "Sign in or create your BTA Courtside coach account to get started.",
   path: "/get-started",
 });
 

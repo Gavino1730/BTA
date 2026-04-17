@@ -94,7 +94,7 @@ import {
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
 import { sendTransactionalEmail } from "./email.js";
-import { requestSupabasePasswordResetEmail } from "./supabase-auth-email.js";
+import { sendSupabasePasswordResetEmail } from "./supabase-auth-email.js";
 import {
   hasWriteRole,
   normalizeSchoolId,
@@ -720,9 +720,10 @@ app.post("/api/auth/password-reset/email", authRateLimiter, async (req, res) => 
     req,
     typeof payload.redirectTo === "string" ? payload.redirectTo : undefined,
   );
-  const emailDelivery = await requestSupabasePasswordResetEmail({
+  const emailDelivery = await sendSupabasePasswordResetEmail({
     email,
     redirectTo,
+    sendEmail: sendTransactionalEmail,
   });
 
   if (emailDelivery.delivered) {

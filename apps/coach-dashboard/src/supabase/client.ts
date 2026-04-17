@@ -158,7 +158,7 @@ export async function signInWithSupabase(email: string, password: string): Promi
   };
 }
 
-export async function signUpWithSupabase(email: string, password: string, metadata?: Record<string, unknown>): Promise<{
+export async function signUpWithSupabase(email: string, password: string, metadata?: Record<string, unknown>, emailRedirectTo?: string): Promise<{
   token: string | null;
   email?: string;
   fullName?: string;
@@ -174,6 +174,7 @@ export async function signUpWithSupabase(email: string, password: string, metada
     password,
     options: {
       data: metadata,
+      emailRedirectTo,
     },
   });
   if (error) {
