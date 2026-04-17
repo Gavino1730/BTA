@@ -1864,11 +1864,17 @@
 
 .setup-game-head {
   margin-bottom: 1rem;
+  align-items: flex-start;
 }
 
 .setup-game-head-copy h3 {
   font-size: clamp(1.28rem, 2.5vw, 1.6rem);
   letter-spacing: -0.02em;
+}
+
+.setup-game-head-status {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .setup-game-head-desc {
@@ -1902,6 +1908,13 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+.setup-inline-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
 }
 
 .setup-game-section-label {
@@ -1967,6 +1980,107 @@
   border-color: rgba(102,219,197,0.25);
 }
 
+.setup-subsection-card,
+.setup-preview-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+}
+
+.setup-preview-card {
+  border-color: rgba(79,140,255,0.18);
+  background:
+    radial-gradient(circle at top right, rgba(79,140,255,0.12), transparent 42%),
+    rgba(255,255,255,0.035);
+}
+
+.setup-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.setup-preview-title {
+  margin: 0.2rem 0 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--bta-text-primary);
+}
+
+.setup-preview-grid {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.setup-preview-item {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.65rem 0.72rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(7,14,28,0.42);
+}
+
+.setup-preview-item.is-complete {
+  border-color: rgba(20,184,166,0.32);
+  background: rgba(20,184,166,0.08);
+}
+
+.setup-preview-item-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.setup-preview-item-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--bta-text-primary);
+}
+
+.setup-preview-colors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.setup-preview-color-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(7,14,28,0.42);
+}
+
+.setup-preview-color-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.setup-preview-color-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.setup-preview-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.34);
+  flex: 0 0 auto;
+}
+
 .setup-team-pill-grid,
 .setup-lineup-grid {
   display: flex;
@@ -1981,9 +2095,36 @@
   font-weight: 600;
 }
 
+.setup-team-pill {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.setup-team-pill-title,
+.setup-lineup-pill-name {
+  display: block;
+}
+
+.setup-team-pill-meta,
+.setup-lineup-pill-number {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .setup-lineup-wrap {
   padding-top: 0.85rem;
   border-top: 1px solid rgba(255,255,255,0.09);
+}
+
+.setup-lineup-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
 }
 
 .setup-lineup-head {
@@ -2143,18 +2284,30 @@
 }
 
 .setup-game-launch-wrap {
-  margin-top: 1.15rem;
+  display: grid;
+  gap: 0.18rem;
 }
 
 .setup-launch-help {
   margin: 0;
 }
 
+.setup-launch-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 0.9rem;
+  align-items: center;
+  margin-top: 1.15rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+}
+
 .setup-launch-btn {
   position: relative;
   width: 100%;
   min-height: 58px;
-  margin-top: 0.65rem;
   border: 1px solid rgba(115,226,195,0.75);
   border-radius: 14px;
   color: var(--bta-make-text-soft);
@@ -2183,7 +2336,7 @@
 }
 
 .setup-status-copy {
-  margin-top: 0.85rem;
+  margin-top: 0;
 }
 
 @keyframes setup-card-fade {
@@ -2241,6 +2394,11 @@
   .setup-game-grid {
     grid-template-columns: 1fr;
   }
+
+  .setup-launch-panel,
+  .setup-preview-colors {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2256,6 +2414,15 @@
   .setup-jersey-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .setup-preview-head,
+  .setup-game-head {
+    flex-direction: column;
+  }
+
+  .setup-game-head-status {
+    justify-content: flex-start;
   }
 
   .setup-launch-btn {

@@ -5,7 +5,7 @@ import {
   resolveActiveSchoolId,
 } from "./platform.js";
 import { CONNECTION_CODE_STORAGE_KEY } from "./team-settings/constants.js";
-import { createDefaultTeam, createEmptyNewPlayer, getInitialConnectionCode, persistConnectionCode } from "./team-settings/helpers.js";
+import { createDefaultTeam, createEmptyNewPlayer, getInitialConnectionCode, navigateWithinCoachApp, persistConnectionCode } from "./team-settings/helpers.js";
 import {
   AiSection,
   BillingSection,
@@ -13,7 +13,6 @@ import {
   PairingSection,
   ProfileSection,
   RosterSection,
-  SettingsHeader,
   SettingsTabNav,
 } from "./team-settings/sections.js";
 import type { AppMemberRole, NewPlayerFormState, OrganizationMemberDto, OrganizationProfileDto, RosterEditRow, TeamDto } from "./team-settings/types.js";
@@ -159,7 +158,6 @@ export function TeamSettingsPage() {
         subtitle="Manage roster, members, operator pairing, AI context, and billing without leaving the current team workspace."
         status={status}
       />
-      <SettingsHeader status={status} />
       <SettingsTabNav activeSection={activeSection} onSelectSection={setActiveSection} />
 
       {activeSection === "pairing" ? (

@@ -1,5 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, apiKeyHeader, resolveActiveSchoolId } from "./platform.js";
+import { EmptyState } from "./EmptyState.js";
+import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 
 interface RecommendationEntry {
   category?: string;
@@ -432,20 +435,30 @@ export function AiInsightsPage() {
     return "";
   };
 
+  if (!insights && !analysis && /^could not|^waiting|^loading/i.test(status)) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="AI insights"
+        title="Loading AI workspace"
+        message={status}
+        tone={/^could not/i.test(status) ? "warning" : "neutral"}
+      />
+    );
+  }
+
   return (
     <div className="stats-page">
-      <section className="stats-page-hero compact">
-        <div>
-          <h1>AI Insights</h1>
-          <p className="stats-page-subtitle">Season analysis, coaching recommendations, player spotlights, and live guidance.</p>
-        </div>
-        <div className="ai-hero-actions">
-          <p className="stats-page-status">{status}</p>
+      <TeamWorkspaceHeader
+        eyebrow="AI insights"
+        title="AI Insights"
+        subtitle="Season analysis, coaching recommendations, player spotlights, and live guidance for the current team."
+        status={status}
+        actions={(
           <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => void refreshSeasonSummary()}>
             Refresh Analysis
           </button>
-        </div>
-      </section>
+        )}
+      />
 
       {/* Live Game Banner */}
       {liveContext?.gameActive && (
@@ -558,7 +571,10 @@ export function AiInsightsPage() {
             <h3>Coaching Recommendations</h3>
           </div>
           {(insights?.recommendations ?? []).length === 0 ? (
-            <p className="stats-empty-copy">No recommendations yet.</p>
+            <EmptyState
+              title="No recommendations yet"
+              message="As more season and live context is available, coaching recommendations will appear here."
+            />
           ) : (
             <ul className="stats-list">
               {(insights?.recommendations ?? []).map((item, index) => (
@@ -684,7 +700,10 @@ export function AiInsightsPage() {
           <span className="stats-page-status">Per-game breakdowns</span>
         </div>
         {recentGameAnalysis.length === 0 ? (
-          <p className="stats-empty-copy">No per-game analysis yet.</p>
+          <EmptyState
+            title="No per-game analysis yet"
+            message="Per-game AI breakdowns will appear once the analysis service has processed completed games."
+          />
         ) : (
           <div className="stats-game-list">
             {recentGameAnalysis.map((entry, index) => (

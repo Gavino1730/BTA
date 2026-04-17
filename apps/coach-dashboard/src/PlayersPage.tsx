@@ -602,6 +602,10 @@ export function PlayersPage() {
     });
   }, [minimumGames, players, query, sortBy]);
 
+  const selectedHistory = useMemo(() => {
+    return selectedPlayer ? buildPlayerGameHistory(selectedPlayer, games) : [];
+  }, [games, selectedPlayer]);
+
   if (players.length === 0 && /^could not|^waiting|^loading/i.test(status)) {
     return (
       <WorkspaceStateCard
@@ -612,10 +616,6 @@ export function PlayersPage() {
       />
     );
   }
-
-  const selectedHistory = useMemo(() => {
-    return selectedPlayer ? buildPlayerGameHistory(selectedPlayer, games) : [];
-  }, [games, selectedPlayer]);
 
   return (
     <div className="stats-page">

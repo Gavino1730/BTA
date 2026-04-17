@@ -37,7 +37,7 @@ export function SettingsTabNav({ activeSection, onSelectSection }: SettingsTabNa
           className={`settings-tab-btn${activeSection === section.key ? " settings-tab-btn-active" : ""}`}
           onClick={() => onSelectSection(section.key)}
         >
-          {section.label}
+          <span className="settings-tab-btn-label">{section.label}</span>
         </button>
       ))}
     </nav>
@@ -72,6 +72,10 @@ export function PairingSection({ connectionCode, copyConfirmed, onCopyCode, onGe
       <div className="settings-pairing-display">
         <span className="settings-pairing-code">{connectionCode}</span>
         <p className="settings-pairing-hint">Enter this code in the Score Operator app under <strong>Connect to Dashboard</strong>.</p>
+        <div className="settings-inline-chip-row">
+          <span className="team-workspace-chip is-primary">6-digit secure code</span>
+          <span className="team-workspace-chip">Generate a new code any time</span>
+        </div>
       </div>
     </section>
   );
@@ -168,9 +172,14 @@ export function RosterSection({
             </div>
           ))}
         </div>
-      ) : null}
+      ) : (
+        <EmptyState
+          title="No players on this roster yet"
+          message="Add your first player below to start building the active team roster and AI context."
+        />
+      )}
 
-      <form className="settings-add-player-form" onSubmit={onAddPlayer}>
+      <form className="settings-add-player-form settings-subsection-card" onSubmit={onAddPlayer}>
         <h4 className="settings-sub-heading">Add Player</h4>
         <div className="setup-grid">
           <label className="stats-filter-field"><span>Name *</span><input value={newPlayer.name} onChange={(event) => onNewPlayerChange({ name: event.target.value })} placeholder="Player name" /></label>
@@ -379,9 +388,14 @@ export function MembersSection({
             </div>
           ))}
         </div>
-      ) : null}
+      ) : (
+        <EmptyState
+          title="No team members yet"
+          message="Invite coaches, operators, or viewers below so this workspace is accessible to the right staff."
+        />
+      )}
 
-      <form className="settings-invite-form" onSubmit={onInviteMember}>
+      <form className="settings-invite-form settings-subsection-card" onSubmit={onInviteMember}>
         <h4 className="settings-sub-heading">Invite Member</h4>
         <div className="setup-grid">
           <label className="stats-filter-field"><span>Full Name</span><input value={inviteName} onChange={(event) => onInviteNameChange(event.target.value)} placeholder="Assistant Coach Lee" /></label>
@@ -439,16 +453,15 @@ export function BillingSection({
         />
       ) : (
         <>
-          <p className="stats-page-subcopy" style={{ marginTop: 0 }}>
+          <div className="settings-inline-chip-row settings-billing-chip-row">
+            <span className={`team-workspace-chip ${billingEntitlement?.accessActive ? "is-primary" : "is-warning"}`}>
+              {billingEntitlement?.accessActive ? "Access Active" : "Access Limited"}
+            </span>
+            {billingEntitlement?.status ? <span className="team-workspace-chip">Status: {billingEntitlement.status}</span> : null}
+          </div>
+          <p className="stats-page-subcopy settings-billing-copy">
             {billingStatus}
           </p>
-          {billingEntitlement ? (
-            <p className="stats-page-subcopy" style={{ marginTop: "0.35rem" }}>
-              Current status: <strong>{billingEntitlement.status}</strong>
-              {" - "}
-              {billingEntitlement.accessActive ? "Access active" : "Access limited"}
-            </p>
-          ) : null}
           <div className="settings-form-footer" style={{ marginTop: "1rem" }}>
             <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => navigateWithinCoachApp("/billing")} disabled={billingLoading}>
               Open Billing from Stripe
