@@ -1308,25 +1308,6 @@
 }
 
 /* Billing page visual refresh (scoped) */
-.billing-page {
-  position: relative;
-}
-
-.billing-page::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto auto 50%;
-  width: min(980px, 95vw);
-  height: 380px;
-  transform: translateX(-50%);
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--bta-accent-cyan) 20%, transparent), transparent 58%),
-    radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--bta-accent-violet) 26%, transparent), transparent 62%);
-  filter: blur(4px);
-  opacity: 0.75;
-}
-
 .billing-page .stats-page-card {
   border-color: color-mix(in srgb, var(--bta-accent-violet) 22%, var(--bta-border-soft));
   box-shadow: 0 16px 36px rgba(2, 8, 24, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -1441,11 +1422,11 @@
 }
 
 .billing-page .billing-cta-button {
-  min-width: 192px;
+  min-width: 140px;
   border-radius: 12px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.01em;
-  min-height: 46px;
+  min-height: 38px;
   justify-content: center;
 }
 

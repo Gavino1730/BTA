@@ -1,3 +1,4 @@
+import Stripe from "stripe";
 import type { Express, Request } from "express";
 import type { BillingState, OrganizationProfile } from "../store.js";
 type Middleware = (req: Request, res: import("express").Response, next: import("express").NextFunction) => void | Promise<void>;
@@ -471,7 +472,7 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
 
   // GET /api/billing/portal-session
   // Returns a Stripe billing portal session URL.
-  app.get("/api/billing/portal-session", options.requireApiKey, (req, res) => {
+  app.get("/api/billing/portal-session", options.requireApiKey, async (req, res) => {
     if (!options.paywallEnabled) {
       res.status(400).json({ error: "Billing is not enabled" });
       return;
@@ -493,7 +494,22 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
       return;
     }
 
-    // Non-test mode: real Stripe portal session call would go here
-    res.status(503).json({ error: "Stripe portal is not configured" });
+    if (!options.stripeSecretKey) {
+      res.status(503).json({ error: "Stripe portal is not configured" });
+      return;
+    }
+
+    try {
+      const stripe = new Stripe(options.stripeSecretKey);
+      const session = await stripe.billingPortal.sessions.create({
+        customer: billingState.stripeCustomerId,
+        return_url: returnUrl,
+      });
+      options.loggerInfo("billing.portal_session_created", { schoolId });
+      res.json({ url: session.url });
+    } catch (err) {
+      options.loggerError("billing.portal_session_error", { schoolId, error: String(err) });
+      res.status(502).json({ error: "Could not create portal session. Please try again." });
+    }
   });
 }

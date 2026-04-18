@@ -381,6 +381,7 @@
   grid-template-columns: minmax(0, 1.7fr) auto;
   gap: 1rem;
   align-items: center;
+  margin-bottom: 1.25rem;
 }
 
 .school-section-intro-label {

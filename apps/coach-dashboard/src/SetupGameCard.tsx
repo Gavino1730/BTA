@@ -57,11 +57,6 @@ export function SetupGameCard({
       detail: selectedTeam?.displayName ?? selectedTeam?.name ?? "Choose a team workspace",
     },
     {
-      label: "Opponent named",
-      complete: !!newGameOpponent.trim(),
-      detail: newGameOpponent.trim() || "Add the opponent school/team",
-    },
-    {
       label: "Five starters locked",
       complete: newGameStartingLineup.length === 5,
       detail: `${newGameStartingLineup.length}/5 starters selected`,
@@ -87,7 +82,7 @@ export function SetupGameCard({
         </div>
         <div className="setup-game-head-status">
           <span className={`team-workspace-chip ${canLaunch ? "is-primary" : ""}`}>
-            {canLaunch ? "Ready to launch" : `${readyCount}/4 setup checks complete`}
+            {canLaunch ? "Ready to launch" : `${readyCount}/3 setup checks complete`}
           </span>
         </div>
       </div>
