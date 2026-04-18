@@ -460,7 +460,25 @@
   transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
-.school-quick-action:hover:not(:disabled) {
+.school-quick-action--primary {
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 28%, transparent);
+  background: linear-gradient(180deg, rgba(79,213,255,0.08), rgba(255,255,255,0.025));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.school-quick-action--primary:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--bta-accent-cyan) 55%, transparent);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22), 0 0 0 1px color-mix(in srgb, var(--bta-accent-cyan) 20%, transparent);
+  background: linear-gradient(180deg, rgba(79,213,255,0.14), rgba(255,255,255,0.04));
+}
+
+.school-quick-action--primary:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.school-quick-action:hover:not(:disabled):not(.school-quick-action--primary) {
   transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--bta-accent-violet) 34%, transparent);
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
@@ -490,6 +508,14 @@
   color: var(--bta-text-muted);
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.school-quick-action-cta {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--bta-accent-cyan);
+  letter-spacing: 0.02em;
 }
 
 .school-inline-metadata {

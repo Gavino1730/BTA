@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   apiBase,
   apiKeyHeader,
@@ -43,15 +43,6 @@ interface AuthSessionPayload {
   error?: string;
 }
 
-const TEAM_TEMPLATES = [
-  { label: "Boys Varsity", gender: "boys" as const, level: "varsity" as const },
-  { label: "Boys JV", gender: "boys" as const, level: "jv" as const },
-  { label: "Boys Freshman", gender: "boys" as const, level: "freshman" as const },
-  { label: "Girls Varsity", gender: "girls" as const, level: "varsity" as const },
-  { label: "Girls JV", gender: "girls" as const, level: "jv" as const },
-  { label: "Custom Team", gender: "custom" as const, level: "custom" as const },
-];
-
 function slugifySchoolId(value: string): string {
   return value
     .trim()
@@ -68,9 +59,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [schoolName, setSchoolName] = useState("");
   const [coachName, setCoachName] = useState("");
   const [coachEmail, setCoachEmail] = useState(inviteEmail);
-  const [templateLabel, setTemplateLabel] = useState("Boys Varsity");
-  const [displayName, setDisplayName] = useState("Boys Varsity");
-  const [customLabel, setCustomLabel] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
   const [teamColor, setTeamColor] = useState("#1d4ed8");
   const [status, setStatus] = useState("Create your account, confirm the school, and create the first team.");
@@ -81,18 +70,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [authSession, setAuthSession] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState("Create your coach account to unlock the school workspace.");
   const [authBusy, setAuthBusy] = useState(false);
-
-  const selectedTemplate = useMemo(
-    () => TEAM_TEMPLATES.find((template) => template.label === templateLabel) ?? TEAM_TEMPLATES[0],
-    [templateLabel],
-  );
-
-  useEffect(() => {
-    setDisplayName(selectedTemplate.label);
-    if (selectedTemplate.gender !== "custom" && selectedTemplate.level !== "custom") {
-      setCustomLabel("");
-    }
-  }, [selectedTemplate]);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const sessionRestoredRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,6 +111,12 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         const context = await fetchWorkspaceContext().catch(() => null);
         if (!cancelled && context && context.schools.length > 0 && context.teams.length > 0) {
           onComplete();
+          return;
+        }
+
+        if (!cancelled && !sessionRestoredRef.current) {
+          sessionRestoredRef.current = true;
+          setStep(2);
         }
       } catch {
         // best effort session restore only
@@ -171,36 +156,35 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     ],
     [authSession?.email, displayName, schoolName],
   );
-  const customTemplateSelected = selectedTemplate.gender === "custom" || selectedTemplate.level === "custom";
 
-  async function handleAuthSubmit() {
+  async function handleAuthSubmit(): Promise<boolean> {
     const normalizedName = coachName.trim();
     const normalizedEmail = coachEmail.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
     if (!normalizedEmail || !normalizedPassword || (authMode === "register" && !normalizedName)) {
       setAuthStatus("Coach name, email, and password are required.");
-      return;
+      return false;
     }
 
     if (authMode === "register" && !schoolName.trim()) {
       setAuthStatus("School name is required.");
-      return;
+      return false;
     }
 
     if (!normalizedEmail.includes("@")) {
       setAuthStatus("Enter a valid coach email address.");
-      return;
+      return false;
     }
 
     if (authMode === "register") {
       if (normalizedPassword.length < 8) {
         setAuthStatus("Password must be at least 8 characters.");
-        return;
+        return false;
       }
       if (normalizedPassword !== confirmPassword.trim()) {
         setAuthStatus("Password confirmation does not match.");
-        return;
+        return false;
       }
     }
 
@@ -220,7 +204,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       if (!authResult.token) {
         if (authMode === "register") {
           setAuthStatus("Account created. Check your email to confirm your address, then sign in to continue.");
-          return;
+          return false;
         }
         throw new Error("Could not authenticate this account.");
       }
@@ -266,11 +250,32 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       if (payload.onboarding?.completed) {
         onComplete();
       }
+      return true;
     } catch (error) {
       setAuthStatus(error instanceof Error ? error.message : "Could not authenticate this account.");
+      return false;
     } finally {
       setAuthBusy(false);
     }
+  }
+
+  async function handleStep1Continue() {
+    if (authSession) {
+      setStep(2);
+      return;
+    }
+    const success = await handleAuthSubmit();
+    if (success) {
+      setStep(2);
+    }
+  }
+
+  function handleStep2Continue() {
+    if (!schoolName.trim()) {
+      setStatus("School name is required to continue.");
+      return;
+    }
+    setStep(3);
   }
 
   async function handleSignOut() {
@@ -281,6 +286,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     setConfirmPassword("");
     setAuthMode("login");
     setAuthStatus("Signed out. Sign back in to continue.");
+    setStep(1);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -291,7 +297,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     }
 
     const normalizedSchoolName = schoolName.trim();
-    const normalizedDisplayName = displayName.trim() || selectedTemplate.label;
+    const normalizedDisplayName = displayName.trim();
     const normalizedSchoolId = authSession.schoolId?.trim() || slugifySchoolId(normalizedSchoolName);
     if (!normalizedSchoolName || !normalizedSchoolId || !normalizedDisplayName) {
       setStatus("School name and first team are required.");
@@ -313,10 +319,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
       setStatus("Creating first team...");
       const teamResult = await createSchoolTeam(normalizedSchoolId, {
-        gender: selectedTemplate.gender,
-        level: selectedTemplate.level,
+        gender: "custom",
+        level: "custom",
         displayName: normalizedDisplayName,
-        customLabel: customLabel.trim() || undefined,
         abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
         teamColor,
       });
@@ -342,7 +347,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         <div className="setup-hero-copy">
           <p className="stats-page-eyebrow">School onboarding</p>
           <h1>Launch Your School Workspace</h1>
-          <p className="stats-page-subtitle">Two required steps: confirm the school, then create the first basketball team.</p>
+          <p className="stats-page-subtitle">Three steps: create your account, confirm the school, then add the first team.</p>
           <div className="setup-hero-ribbon-row">
             <span className="team-workspace-chip is-primary">No billing during signup</span>
             <span className="team-workspace-chip">Basketball-only setup</span>
@@ -357,20 +362,25 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
       <form className="stats-page-card setup-form setup-form-shell" onSubmit={handleSubmit}>
         <section className="setup-progress-strip" aria-label="Onboarding progress">
-          {setupChecklist.map((item, index) => (
-            <article key={item.label} className={`setup-progress-card${item.complete ? " is-complete" : ""}`}>
-              <div className="setup-progress-card-head">
-                <span className="setup-progress-index">0{index + 1}</span>
-                <span className={`setup-progress-state${item.complete ? " is-complete" : ""}`}>
-                  {item.complete ? "Ready" : "Pending"}
-                </span>
-              </div>
-              <strong>{item.label}</strong>
-              <p>{item.detail}</p>
-            </article>
-          ))}
+          {setupChecklist.map((item, index) => {
+            const stepNum = (index + 1) as 1 | 2 | 3;
+            const isActive = stepNum === step;
+            return (
+              <article key={item.label} className={`setup-progress-card${item.complete ? " is-complete" : ""}${isActive ? " is-active" : ""}`}>
+                <div className="setup-progress-card-head">
+                  <span className="setup-progress-index">0{stepNum}</span>
+                  <span className={`setup-progress-state${item.complete ? " is-complete" : ""}${isActive && !item.complete ? " is-active" : ""}`}>
+                    {item.complete ? "Ready" : isActive ? "Current" : "Pending"}
+                  </span>
+                </div>
+                <strong>{item.label}</strong>
+                <p>{item.detail}</p>
+              </article>
+            );
+          })}
         </section>
 
+        {step === 1 && (
         <section className="setup-section setup-auth-section">
           <div className="setup-section-head setup-section-head-inline">
             <div>
@@ -450,17 +460,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   ) : null}
                 </div>
 
-                <div className="setup-auth-actions">
-                  <button
-                    type="button"
-                    className="shell-nav-link shell-nav-link-active setup-auth-submit"
-                    onClick={() => void handleAuthSubmit()}
-                    disabled={authBusy}
-                  >
-                    {authBusy ? (authMode === "login" ? "Signing In..." : "Creating Account...") : (authMode === "login" ? "Sign In" : "Create Account")}
-                  </button>
-                  <p className="stats-page-status">{authStatus}</p>
-                </div>
+                <p className="stats-page-status">{authStatus}</p>
               </>
             )}
             </div>
@@ -480,10 +480,26 @@ export function SetupPage({ onComplete }: SetupPageProps) {
               </div>
             </aside>
           </div>
-        </section>
 
-        <section className="setup-stage-grid">
-          <section className="setup-section setup-stage-card">
+          <div className="setup-actions">
+            <button
+              type="button"
+              className="shell-nav-link shell-nav-link-active setup-auth-submit"
+              onClick={() => void handleStep1Continue()}
+              disabled={authBusy}
+            >
+              {authSession
+                ? "Continue to School"
+                : authBusy
+                  ? (authMode === "login" ? "Signing In..." : "Creating Account...")
+                  : (authMode === "login" ? "Sign In & Continue" : "Create Account & Continue")}
+            </button>
+          </div>
+        </section>
+        )}
+
+        {step === 2 && (
+        <section className="setup-section setup-stage-card">
             <div className="setup-section-head">
               <div>
                 <h3>Step 2: School Details</h3>
@@ -503,9 +519,20 @@ export function SetupPage({ onComplete }: SetupPageProps) {
               <strong>{schoolName.trim() || "Confirm school"}</strong>
               <p>Admins land in School Overview first, with billing, staff, activity, and team controls in one place.</p>
             </div>
-          </section>
 
-          <section className="setup-section setup-stage-card">
+            <div className="setup-actions">
+              <button type="button" className="shell-nav-link" onClick={() => setStep(1)}>
+                Back
+              </button>
+              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={handleStep2Continue}>
+                Continue to First Team
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 3 && (
+        <section className="setup-section setup-stage-card">
             <div className="stats-page-card-head setup-section-head setup-section-head-inline">
               <div>
                 <h3>Step 3: First Team</h3>
@@ -518,15 +545,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
             <div className="setup-grid">
               <label className="stats-filter-field">
-                <span>Template *</span>
-                <select value={templateLabel} onChange={(event) => setTemplateLabel(event.target.value)}>
-                  {TEAM_TEMPLATES.map((template) => (
-                    <option key={template.label} value={template.label}>{template.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="stats-filter-field">
-                <span>Display Name *</span>
+                <span>Team Name *</span>
                 <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Boys Varsity" required />
               </label>
               <label className="stats-filter-field">
@@ -547,31 +566,24 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   </div>
                 </div>
               </label>
-              {customTemplateSelected ? (
-                <label className="stats-filter-field">
-                  <span>Custom Label</span>
-                  <input value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="Girls Development" />
-                </label>
-              ) : null}
             </div>
 
             <div className="setup-summary-card">
               <span className="setup-summary-label">First Team Preview</span>
-              <strong>{displayName.trim() || selectedTemplate.label}</strong>
-              <p>
-                {customTemplateSelected
-                  ? "Custom teams can still use the same school-wide navigation, permissions, and live game workflow."
-                  : `${selectedTemplate.label} is ready to become the first team workspace under this school.`}
-              </p>
+              <strong>{displayName.trim() || "Your team name"}</strong>
+              <p>This team workspace will be created under the school. Roster import can happen after entry.</p>
             </div>
-          </section>
-        </section>
 
-        <div className="setup-actions">
-          <button type="submit" className="shell-nav-link shell-nav-link-active setup-submit-button" disabled={saving}>
-            {saving ? "Creating Workspace..." : "Create School Workspace"}
-          </button>
-        </div>
+          <div className="setup-actions">
+            <button type="button" className="shell-nav-link" onClick={() => setStep(2)} disabled={saving}>
+              Back
+            </button>
+            <button type="submit" className="shell-nav-link shell-nav-link-active setup-submit-button" disabled={saving}>
+              {saving ? "Creating Workspace..." : "Create School Workspace"}
+            </button>
+          </div>
+        </section>
+        )}
       </form>
     </div>
   );

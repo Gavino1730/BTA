@@ -302,13 +302,9 @@ export function SchoolSectionIntro({
 export function SchoolQuickActions({
   onAddTeam,
   onInviteStaff,
-  onOpenLive,
-  onImportRoster,
 }: {
   onAddTeam: () => void;
   onInviteStaff: () => void;
-  onOpenLive?: () => void;
-  onImportRoster?: () => void;
 }) {
   return (
     <section className="stats-page-card school-quick-actions-card">
@@ -319,25 +315,17 @@ export function SchoolQuickActions({
         </div>
       </div>
       <div className="school-quick-actions-grid">
-        <button type="button" className="school-quick-action" onClick={onAddTeam}>
+        <button type="button" className="school-quick-action school-quick-action--primary" onClick={onAddTeam}>
           <span className="school-quick-action-kicker">Teams</span>
           <strong>Add Team</strong>
           <p>Create a new basketball workspace and route directly into it.</p>
+          <span className="school-quick-action-cta">Get started →</span>
         </button>
-        <button type="button" className="school-quick-action" onClick={onInviteStaff}>
+        <button type="button" className="school-quick-action school-quick-action--primary" onClick={onInviteStaff}>
           <span className="school-quick-action-kicker">Staff</span>
           <strong>Invite Staff</strong>
           <p>Grant school-wide or team-specific access without leaving overview.</p>
-        </button>
-        <button type="button" className="school-quick-action" onClick={onOpenLive} disabled={!onOpenLive}>
-          <span className="school-quick-action-kicker">Game Day</span>
-          <strong>Start Live Game</strong>
-          <p>Pick a team and launch a live session with operator pairing.</p>
-        </button>
-        <button type="button" className="school-quick-action" onClick={onImportRoster} disabled={!onImportRoster}>
-          <span className="school-quick-action-kicker">Roster</span>
-          <strong>Import Roster</strong>
-          <p>Use roster setup after entry instead of blocking onboarding.</p>
+          <span className="school-quick-action-cta">Invite now →</span>
         </button>
       </div>
     </section>

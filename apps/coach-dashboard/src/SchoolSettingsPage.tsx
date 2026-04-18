@@ -86,7 +86,6 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
           <div className="stats-page-card-head">
             <div>
               <h3>School Profile</h3>
-              <p className="settings-section-desc">Current identity and workspace scope for this school tenant.</p>
             </div>
           </div>
           <div className="setup-grid">
@@ -113,7 +112,6 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
           <div className="stats-page-card-head">
             <div>
               <h3>Access Model</h3>
-              <p className="settings-section-desc">School-wide vs team-scoped access and current staff footprint.</p>
             </div>
           </div>
           <div className="settings-members-list">
@@ -144,7 +142,6 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
           <div className="stats-page-card-head">
             <div>
               <h3>Billing Policy</h3>
-              <p className="settings-section-desc">How this school is currently gated for team capacity and trial state.</p>
             </div>
           </div>
           <div className="settings-members-list">
@@ -181,7 +178,6 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
           <div className="stats-page-card-head">
             <div>
               <h3>Game Day Model</h3>
-              <p className="settings-section-desc">Current operator and live-session behavior for this school.</p>
             </div>
           </div>
           <div className="settings-members-list">

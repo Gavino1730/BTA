@@ -672,7 +672,6 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             <article className="stats-page-card billing-summary-card billing-summary-card-accent">
               <span className="billing-summary-label">Plan Status</span>
               <strong>{planLabel}</strong>
-              <p>{status}</p>
               <div className="billing-summary-chip-row">
                 <span className={`team-workspace-chip ${billingEntitlement?.accessActive ? "is-primary" : ""}`}>
                   {billingEntitlement?.accessActive ? "Access active" : "Access limited"}
@@ -684,21 +683,11 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             <article className="stats-page-card billing-summary-card">
               <span className="billing-summary-label">Team Capacity</span>
               <strong>{usageMetricValue}</strong>
-              <p>
-                {activeTeamLimit === null
-                  ? "Trial access currently allows multiple teams so the school can evaluate the workspace."
-                  : `The current plan supports ${activeTeamLimit} active team${activeTeamLimit === 1 ? "" : "s"} before additional teams become read-only.`}
-              </p>
             </article>
 
             <article className="stats-page-card billing-summary-card">
               <span className="billing-summary-label">Read-only Teams</span>
               <strong>{String(overLimitTeamCount)}</strong>
-              <p>
-                {overLimitTeamCount > 0
-                  ? "Some team workspaces are visible but restricted until billing capacity increases."
-                  : "No teams are currently restricted by billing limits."}
-              </p>
             </article>
           </section>
 
@@ -707,11 +696,6 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
               <div className="stats-page-card-head">
                 <div>
                   <h3>Subscription Control</h3>
-                  <p className="settings-section-desc">
-                    {showPortal
-                      ? "Open the Stripe billing portal to update payment details, invoices, and subscription state."
-                      : "Start or restart checkout to activate school-wide access and unlock the correct team capacity."}
-                  </p>
                 </div>
               </div>
               <div className="billing-action-stack">
@@ -740,17 +724,12 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                   </>
                 )}
               </div>
-              <div className="billing-note-card">
-                <strong>Promo codes</strong>
-                <p>Promo and discount codes are entered directly in Stripe-hosted checkout. They are no longer applied inside the dashboard.</p>
-              </div>
             </article>
 
             <article className="stats-page-card billing-detail-card">
               <div className="stats-page-card-head">
                 <div>
                   <h3>Team Access Impact</h3>
-                  <p className="settings-section-desc">Billing is school-scoped, but enforcement is visible at the team workspace level.</p>
                 </div>
               </div>
               <div className="billing-impact-list">
@@ -792,54 +771,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
             </article>
           </section>
 
-          <section className="stats-page-grid two-column billing-layout-grid">
-            <article className="stats-page-card billing-detail-card">
-              <div className="stats-page-card-head">
-                <div>
-                  <h3>How Billing Works</h3>
-                  <p className="settings-section-desc">This page should explain the actual product behavior, not generic subscription copy.</p>
-                </div>
-              </div>
-              <div className="billing-rule-list">
-                <div className="billing-rule-item">
-                  <strong>School is the billing entity</strong>
-                  <p>Billing lives at the school level while coaches and operators continue working inside team-specific workspaces.</p>
-                </div>
-                <div className="billing-rule-item">
-                  <strong>Trials preserve evaluation</strong>
-                  <p>Trial schools can create more than one team so admins can evaluate the system before converting.</p>
-                </div>
-                <div className="billing-rule-item">
-                  <strong>Over-limit teams stay visible</strong>
-                  <p>Teams above the active limit remain in the switcher but become read-only instead of disappearing.</p>
-                </div>
-              </div>
-            </article>
-
-            <article className="stats-page-card billing-detail-card">
-              <div className="stats-page-card-head">
-                <div>
-                  <h3>Recovery and Next Steps</h3>
-                  <p className="settings-section-desc">Use this when the school needs to restore access or move back into a clean paid state.</p>
-                </div>
-              </div>
-              <div className="billing-note-card">
-                <strong>{showPortal ? "Use the billing portal for changes" : checkoutSectionTitle}</strong>
-                <p>
-                  {showPortal
-                    ? "Stripe portal is the correct place to update payment method, view invoices, cancel, or reactivate a paid subscription."
-                    : "Stripe checkout handles first-time activation, reactivation, and recovery from canceled or past-due billing states."}
-                </p>
-              </div>
-              {(entitlementStatus === "past_due" || entitlementStatus === "unpaid") ? (
-                <div className="billing-note-card billing-note-card-warning">
-                  <strong>Past-due recovery</strong>
-                  <p>Once Stripe confirms successful payment, school access should recover and restricted teams can move back to active state.</p>
-                </div>
-              ) : null}
-            </article>
-          </section>
-        </>
+          </>
       ) : null}
     </div>
   );
