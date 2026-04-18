@@ -33,6 +33,7 @@ Recommended settings:
 - Health check path: `/health`
 
 Paste the values from `.env.production.example` into Railway.
+Keep `BTA_PERSISTENCE_STARTUP_STRICT=1` enabled so production boot fails closed if Postgres init/restore fails.
 
 Optional AI budget controls:
 - `BTA_OPENAI_MAX_TOKENS_PER_GAME`
@@ -103,6 +104,7 @@ Recommended:
 
 Run the full preflight and rollout verification in `RELEASE_CHECKLIST.md` sections 1 and 3.
 Use `RELEASE_CHECKLIST.md` section 4 for AI degradation rollback actions.
+Attach a passing `npm run verify:hosted` artifact/report for staging and the release-window production continuity check.
 
 ## Gym use note
 

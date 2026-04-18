@@ -4,7 +4,7 @@ import {
   getGameState,
   getGameInsights,
   isGameSubmitted,
-  patchGameLineup,
+  patchGameLineupDurable,
   refreshGameAiInsights,
 } from "../store.js";
 import {
@@ -186,7 +186,7 @@ export function registerAllRoutes(
     emitPresenceForDevice,
     connectionRoom,
     emitPresenceForConnection,
-    patchGameLineup,
+    patchGameLineup: patchGameLineupDurable,
     emitToGameRooms,
     isGameSubmitted,
     getGameState,

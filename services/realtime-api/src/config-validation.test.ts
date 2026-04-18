@@ -11,6 +11,8 @@ function baseConfig(): RuntimeConfig {
     writeApiKeyPresent: false,
     allowedOriginsConfigured: true,
     databaseUrlConfigured: true,
+    databaseUrlUsesPooler: true,
+    strictPersistenceStartupConfigured: true,
     localAuthSecretConfigured: true,
     emailProvider: "",
     emailFromConfigured: false,
@@ -106,6 +108,28 @@ describe("runtime config validation", () => {
 
     const result = validateRuntimeConfig(config);
     expect(result.errors.some((error) => error.includes("DATABASE_URL"))).toBe(true);
+  });
+
+  it("rejects production when DATABASE_URL is not using the Supabase pooler", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      databaseUrlUsesPooler: false,
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.errors.some((error) => error.includes("pooler"))).toBe(true);
+  });
+
+  it("rejects production when strict persistence startup is not explicitly enabled", () => {
+    const config: RuntimeConfig = {
+      ...baseConfig(),
+      nodeEnv: "production",
+      strictPersistenceStartupConfigured: false,
+    };
+
+    const result = validateRuntimeConfig(config);
+    expect(result.errors.some((error) => error.includes("BTA_PERSISTENCE_STARTUP_STRICT=1"))).toBe(true);
   });
 
   it("warns in production when local auth signing is not configured", () => {

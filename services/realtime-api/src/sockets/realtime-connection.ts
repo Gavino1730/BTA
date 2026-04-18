@@ -30,7 +30,7 @@ interface RegisterRealtimeConnectionHandlersOptions {
   emitPresenceForDevice: (schoolId: string, deviceId: string) => void;
   connectionRoom: (schoolId: string, connectionId: string) => string;
   emitPresenceForConnection: (schoolId: string, connectionId: string) => void;
-  patchGameLineup: (gameId: string, lineupByTeam: Record<string, string[]>, scope: { schoolId: string }) => unknown | null;
+  patchGameLineup: (gameId: string, lineupByTeam: Record<string, string[]>, scope: { schoolId: string }) => Promise<unknown | null>;
   emitToGameRooms: (schoolId: string, gameId: string, eventName: string, payload: unknown) => void;
   isGameSubmitted: (gameId: string, scope: { schoolId: string }) => boolean;
   getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
@@ -50,7 +50,7 @@ export function registerRealtimeConnectionHandlers(io: Server, options: Register
     const socketSchoolId = schoolId;
     socket.join(options.schoolRoom(socketSchoolId));
 
-    function registerOperator(rawPayload: unknown): void {
+    async function registerOperator(rawPayload: unknown): Promise<void> {
       const payload = (rawPayload ?? {}) as Record<string, unknown>;
       const deviceId = typeof payload.deviceId === "string" ? payload.deviceId.trim() : "";
       const deviceName = typeof payload.deviceName === "string" ? payload.deviceName.trim() : "";
@@ -145,19 +145,30 @@ export function registerRealtimeConnectionHandlers(io: Server, options: Register
       // has an empty active lineup (e.g. after an API restart).
       const rawLineupByTeam = payload.startingLineupByTeam;
       if (rawLineupByTeam && typeof rawLineupByTeam === "object" && !Array.isArray(rawLineupByTeam)) {
-        const updated = options.patchGameLineup(gameId, rawLineupByTeam as Record<string, string[]>, { schoolId: socketSchoolId });
-        if (updated) {
-          options.emitToGameRooms(socketSchoolId, gameId, "game:state", updated);
+        try {
+          const updated = await options.patchGameLineup(
+            gameId,
+            rawLineupByTeam as Record<string, string[]>,
+            { schoolId: socketSchoolId },
+          );
+          if (updated) {
+            options.emitToGameRooms(socketSchoolId, gameId, "game:state", updated);
+          }
+        } catch (error) {
+          socket.emit("error", {
+            error: error instanceof Error ? error.message : "durable lineup resync failed",
+            code: "persistence_unavailable",
+          });
         }
       }
     }
 
     socket.on("operator:register", (payload: unknown) => {
-      registerOperator(payload);
+      void registerOperator(payload);
     });
 
     socket.on("operator:heartbeat", (payload: unknown) => {
-      registerOperator(payload);
+      void registerOperator(payload);
     });
 
     socket.on("join:game", (gameId: string) => {

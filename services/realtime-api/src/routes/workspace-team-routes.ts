@@ -61,7 +61,7 @@ export interface RegisterTeamRoutesOptions extends WorkspaceSharedOptions {
     opponentName?: string;
     opponentTeamId?: string;
     startingLineupByTeam?: Record<string, string[]>;
-  }, scope?: { schoolId: string }) => unknown;
+  }, scope?: { schoolId: string }) => Promise<unknown>;
   setOperatorLinkSetup?: (schoolId: string, connectionId: string, setup: {
     gameId?: string;
     myTeamId?: string;
@@ -177,7 +177,7 @@ export function registerTeamRoutes(app: Express, options: RegisterTeamRoutesOpti
     res.json({ team: updated });
   });
 
-  app.post("/api/teams/:teamId/live-sessions", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.post("/api/teams/:teamId/live-sessions", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const authUser = options.getAuthUser(req);
     const teamId = options.sanitizeTextField(req.params.teamId, 120);
     const rawTeam = options.getTeamById(teamId);
@@ -246,15 +246,21 @@ export function registerTeamRoutes(app: Express, options: RegisterTeamRoutesOpti
       createdByUserId: authUser.userId,
     });
 
-    options.createGame({
-      schoolId,
-      gameId,
-      homeTeamId,
-      awayTeamId,
-      opponentName,
-      opponentTeamId,
-      startingLineupByTeam,
-    }, { schoolId });
+    try {
+      await options.createGame({
+        schoolId,
+        gameId,
+        homeTeamId,
+        awayTeamId,
+        opponentName,
+        opponentTeamId,
+        startingLineupByTeam,
+      }, { schoolId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "durable live session game creation failed";
+      res.status(503).json({ error: message, code: "persistence_unavailable" });
+      return;
+    }
 
     const operatorToken = options.issueLocalAuthToken({
       subject: `operator:${liveSessionId}`,

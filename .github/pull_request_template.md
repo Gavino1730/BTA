@@ -31,6 +31,7 @@ Describe the change and why it is needed.
 - [ ] `npm run build`
 - [ ] `npm run test`
 - [ ] `npm run validate:env` (if API/env behavior changed)
+- [ ] `npm run verify:hosted -- --environment staging` or release note explains why hosted proof is deferred
 - [ ] Invite create/resend flow validated (`emailDelivery` + warning behavior)
 - [ ] Billing checkout session flow validated in staging (tax/billing collection)
 

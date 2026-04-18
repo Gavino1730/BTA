@@ -152,14 +152,28 @@ describe("server security hardening integration", () => {
     expect(response.status).toBe(200);
 
     const payload = await response.json() as {
-      persistence?: { backend?: string; durable?: boolean; warning?: string };
+      persistence?: {
+        backend?: string;
+        durable?: boolean;
+        connected?: boolean;
+        lastRestoreAtIso?: string | null;
+        lastSuccessfulWriteAtIso?: string | null;
+        warning?: string;
+      };
       auth?: { apiKey?: boolean; writeApiKey?: boolean; jwt?: boolean };
+      runtime?: { strictPersistenceInit?: boolean };
+      build?: { commitSha?: string };
     };
 
     expect(payload.persistence?.backend).toBe("memory");
     expect(payload.persistence?.durable).toBe(false);
+    expect(payload.persistence?.connected).toBe(false);
+    expect(payload.persistence?.lastRestoreAtIso).toBeNull();
+    expect(payload.persistence?.lastSuccessfulWriteAtIso).toBeNull();
     expect(payload.persistence?.warning).toContain("Data will be lost");
     expect(payload.auth?.apiKey).toBe(true);
     expect(payload.auth?.writeApiKey).toBe(true);
+    expect(payload.runtime?.strictPersistenceInit).toBe(false);
+    expect(typeof payload.build?.commitSha).toBe("string");
   });
 });

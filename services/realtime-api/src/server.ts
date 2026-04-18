@@ -113,6 +113,13 @@ const API_KEY = process.env.BTA_API_KEY?.trim() || undefined;
 const WRITE_API_KEY = process.env.BTA_WRITE_API_KEY?.trim() || undefined;
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
+const STRICT_PERSISTENCE_INIT = (process.env.NODE_ENV ?? "development") === "production"
+  || process.env.BTA_PERSISTENCE_STARTUP_STRICT === "1";
+const BUILD_COMMIT_SHA = process.env.BTA_BUILD_COMMIT_SHA?.trim()
+  || process.env.VERCEL_GIT_COMMIT_SHA?.trim()
+  || process.env.RAILWAY_GIT_COMMIT_SHA?.trim()
+  || process.env.GITHUB_SHA?.trim()
+  || "unknown";
 const FAIL_CLOSED_ON_AUTH_MISCONFIG = process.env.BTA_FAIL_CLOSED_ON_MISCONFIG === "1";
 const ALLOW_UNCONFIGURED_AUTH_IN_TESTS = !FAIL_CLOSED_ON_AUTH_MISCONFIG && (process.env.NODE_ENV ?? "development") === "test";
 const BILLING_PAYWALL_ENABLED = process.env.BTA_PAYWALL_ENABLED?.trim()
@@ -221,7 +228,9 @@ app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
 });
 
 registerHealthRoute(app, {
-  persistenceStatus: getPersistenceStatus(),
+  getPersistenceStatus,
+  strictPersistenceInit: STRICT_PERSISTENCE_INIT,
+  buildCommitSha: BUILD_COMMIT_SHA,
   apiKey: API_KEY,
   writeApiKey: WRITE_API_KEY,
   isJwtAuthEnabled,

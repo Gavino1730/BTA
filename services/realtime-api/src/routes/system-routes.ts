@@ -3,12 +3,17 @@ import type { Express, NextFunction, Request, Response } from "express";
 type Middleware = (req: Request, res: Response, next: NextFunction) => void | Promise<void>;
 
 interface RegisterHealthRouteOptions {
-  persistenceStatus: {
+  getPersistenceStatus: () => {
     backend: string;
     durable: boolean;
+    connected: boolean;
+    lastRestoreAtIso: string | null;
+    lastSuccessfulWriteAtIso: string | null;
     warning?: string;
     dataFile?: string;
   };
+  strictPersistenceInit: boolean;
+  buildCommitSha: string;
   apiKey?: string;
   writeApiKey?: string;
   isJwtAuthEnabled: () => boolean;
@@ -35,19 +40,29 @@ interface RegisterAdminRoutesOptions {
 
 export function registerHealthRoute(app: Express, options: RegisterHealthRouteOptions): void {
   app.get("/health", (_req, res) => {
+    const persistenceStatus = options.getPersistenceStatus();
     res.json({
       status: "ok",
       uptime: Math.round(process.uptime()),
       persistence: {
-        backend: options.persistenceStatus.backend,
-        durable: options.persistenceStatus.durable,
-        warning: options.persistenceStatus.warning,
-        dataFile: options.persistenceStatus.dataFile,
+        backend: persistenceStatus.backend,
+        durable: persistenceStatus.durable,
+        connected: persistenceStatus.connected,
+        lastRestoreAtIso: persistenceStatus.lastRestoreAtIso,
+        lastSuccessfulWriteAtIso: persistenceStatus.lastSuccessfulWriteAtIso,
+        warning: persistenceStatus.warning,
+        dataFile: persistenceStatus.dataFile,
       },
       auth: {
         apiKey: Boolean(options.apiKey),
         writeApiKey: Boolean(options.writeApiKey),
         jwt: options.isJwtAuthEnabled(),
+      },
+      runtime: {
+        strictPersistenceInit: options.strictPersistenceInit,
+      },
+      build: {
+        commitSha: options.buildCommitSha,
       },
     });
   });

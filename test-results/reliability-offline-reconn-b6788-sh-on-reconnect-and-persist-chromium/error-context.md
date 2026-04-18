@@ -1,0 +1,193 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: reliability-offline-reconnect.spec.ts >> offline operator events flush on reconnect and persist
+- Location: e2e\reliability-offline-reconnect.spec.ts:212:5
+
+# Error details
+
+```
+Test timeout of 120000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic:
+    - generic: BTA Courtside
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - generic [ref=e7]: BTA COURTSIDE
+          - generic [ref=e8]:
+            - generic [ref=e9]: Team Context
+            - strong [ref=e10]: Test Team
+            - generic [ref=e11]: varsity basketball workspace
+        - generic [ref=e13]:
+          - generic [ref=e14]: Workspace
+          - combobox "Workspace" [ref=e15] [cursor=pointer]:
+            - option "E2E High School Overview"
+            - option "Test Team" [selected]
+        - list [ref=e16]:
+          - listitem [ref=e17]:
+            - button "Live" [ref=e18] [cursor=pointer]
+          - listitem [ref=e19]:
+            - button "Overview" [ref=e20] [cursor=pointer]
+          - listitem [ref=e21]:
+            - button "Games" [ref=e22] [cursor=pointer]
+          - listitem [ref=e23]:
+            - button "Players" [ref=e24] [cursor=pointer]
+          - listitem [ref=e25]:
+            - button "Trends" [ref=e26] [cursor=pointer]
+          - listitem [ref=e27]:
+            - button "AI Insights" [ref=e28] [cursor=pointer]
+          - listitem [ref=e29]:
+            - button "Settings" [ref=e30] [cursor=pointer]
+        - generic [ref=e31]:
+          - button "Sign Out" [ref=e32] [cursor=pointer]
+          - button "Open help and tutorial" [ref=e33] [cursor=pointer]: "?"
+    - generic [ref=e34]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - paragraph [ref=e38]: Game day
+          - heading "Live Workspace" [level=1] [ref=e39]
+          - paragraph [ref=e40]: Test Team
+          - paragraph [ref=e41]: Run the bench, operator pairing, box score, and live insights from one team-specific control surface.
+          - generic [ref=e42]:
+            - generic [ref=e43]: Active Workspace
+            - generic [ref=e44]: "School: E2E High School"
+            - generic [ref=e45]: Varsity basketball
+            - generic [ref=e46]: 5 players
+            - generic [ref=e47]: No live session
+        - generic [ref=e48]:
+          - paragraph [ref=e49]: Waiting for connection 752664
+          - paragraph [ref=e50]: Workspace metadata loaded.
+      - generic [ref=e51]:
+        - button "Scoreboard" [ref=e52] [cursor=pointer]
+        - button "AI Insights" [ref=e53] [cursor=pointer]
+        - button "Manage Operators (0)" [ref=e54] [cursor=pointer]
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - paragraph [ref=e58]: Game Control
+            - heading "Start New Game" [level=3] [ref=e59]
+            - paragraph [ref=e60]: Set up your game connection, then hand your operator the pairing code to begin live tracking.
+          - generic [ref=e62]: 2/3 setup checks complete
+        - generic [ref=e63]:
+          - generic [ref=e64]:
+            - paragraph [ref=e65]: Operator Pairing Code
+            - paragraph [ref=e66]: Have the iPad operator enter this to sync setup.
+            - paragraph [ref=e67]:
+              - text: Enter this code in the Score Operator app under
+              - strong [ref=e68]: Connect to Dashboard
+              - text: .
+            - generic [ref=e69]:
+              - generic [ref=e70]: Operator enters code on iPad
+              - generic [ref=e71]: Regenerate if you switch devices
+          - generic [ref=e73]: "752664"
+          - generic [ref=e74]:
+            - button "Copy Code" [ref=e75] [cursor=pointer]
+            - button "New Code" [ref=e76] [cursor=pointer]
+        - generic [ref=e77]:
+          - generic [ref=e78]:
+            - generic [ref=e79]:
+              - paragraph [ref=e80]: Your Team
+              - button "Test Team 5 players" [ref=e82] [cursor=pointer]:
+                - generic [ref=e83]: Test Team
+                - generic [ref=e84]: 5 players
+            - generic [ref=e85]:
+              - generic [ref=e86]:
+                - paragraph [ref=e87]: Starting Lineup
+                - generic [ref=e88]: 0/5
+              - paragraph [ref=e89]: Select exactly 5 players for tip-off.
+              - paragraph [ref=e91]: No starters selected yet.
+              - generic [ref=e92]:
+                - button "#1 Ava Lane" [ref=e93] [cursor=pointer]:
+                  - generic [ref=e94]: "#1"
+                  - generic [ref=e95]: Ava Lane
+                - button "#2 Nora Cruz" [ref=e96] [cursor=pointer]:
+                  - generic [ref=e97]: "#2"
+                  - generic [ref=e98]: Nora Cruz
+                - button "#3 Maya Cole" [ref=e99] [cursor=pointer]:
+                  - generic [ref=e100]: "#3"
+                  - generic [ref=e101]: Maya Cole
+                - button "#4 Jade King" [ref=e102] [cursor=pointer]:
+                  - generic [ref=e103]: "#4"
+                  - generic [ref=e104]: Jade King
+                - button "#5 Lina Park" [ref=e105] [cursor=pointer]:
+                  - generic [ref=e106]: "#5"
+                  - generic [ref=e107]: Lina Park
+          - generic [ref=e108]:
+            - generic [ref=e109]:
+              - generic [ref=e110]:
+                - generic [ref=e111]:
+                  - paragraph [ref=e112]: Game Preview
+                  - heading "Test Team vs Opponent" [level=4] [ref=e113]
+                - generic [ref=e114]: Home
+              - generic [ref=e115]:
+                - generic [ref=e116]:
+                  - generic [ref=e117]: Team selected
+                  - strong [ref=e118]: Test Team
+                - generic [ref=e119]:
+                  - generic [ref=e120]: Five starters locked
+                  - strong [ref=e121]: 0/5 starters selected
+                - generic [ref=e122]:
+                  - generic [ref=e123]: Pairing code ready
+                  - strong [ref=e124]: "752664"
+              - generic [ref=e125]:
+                - generic [ref=e126]:
+                  - generic [ref=e127]: Your color
+                  - strong [ref=e130]: "#1D4ED8"
+                - generic [ref=e131]:
+                  - generic [ref=e132]: Opponent jersey
+                  - strong [ref=e135]: Red
+            - generic [ref=e136]:
+              - paragraph [ref=e137]: Your Side
+              - group "Choose your side" [ref=e138]:
+                - button "Home" [ref=e139] [cursor=pointer]
+                - button "Away" [ref=e140] [cursor=pointer]
+            - generic [ref=e141]:
+              - paragraph [ref=e142]: Opponent
+              - textbox "e.g. Opponent" [ref=e143]
+            - generic [ref=e144]:
+              - generic [ref=e145]:
+                - paragraph [ref=e146]: Opponent Jersey
+                - generic [ref=e149]: Red
+              - listbox "Choose opponent jersey color" [ref=e150]:
+                - generic [ref=e151]:
+                  - button "Red" [pressed] [ref=e152] [cursor=pointer]
+                  - generic: Red
+                - generic [ref=e153]:
+                  - button "Orange" [ref=e154] [cursor=pointer]
+                  - generic: Orange
+                - generic [ref=e155]:
+                  - button "Green" [ref=e156] [cursor=pointer]
+                  - generic: Green
+                - generic [ref=e157]:
+                  - button "Blue" [ref=e158] [cursor=pointer]
+                  - generic: Blue
+                - generic [ref=e159]:
+                  - button "Violet" [ref=e160] [cursor=pointer]
+                  - generic: Violet
+                - generic [ref=e161]:
+                  - button "Teal" [ref=e162] [cursor=pointer]
+                  - generic: Teal
+                - generic [ref=e163]:
+                  - button "White" [ref=e164] [cursor=pointer]
+                  - generic: White
+                - generic "Custom jersey color" [ref=e165]:
+                  - generic [ref=e166]: Custom
+                  - textbox "Custom" [ref=e167] [cursor=pointer]: "#f87171"
+        - generic [ref=e168]:
+          - generic [ref=e169]:
+            - paragraph [ref=e170]: Select all 5 starters to launch the game.
+            - paragraph [ref=e171]: Waiting for connection 752664
+          - button "Launch Live Game" [disabled] [ref=e172]
+```

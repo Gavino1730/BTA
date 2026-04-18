@@ -524,7 +524,7 @@ interface PersistedGameSession {
   submitted?: boolean;
 }
 
-interface EventMutationPrecondition {
+export interface EventMutationPrecondition {
   expectedSequence?: number;
 }
 
@@ -635,9 +635,25 @@ const persistenceProvider: PersistenceProvider | null = persistenceEnabled && DA
 export interface PersistenceStatus {
   backend: "postgres" | "file_snapshot" | "memory";
   durable: boolean;
+  connected: boolean;
+  lastRestoreAtIso: string | null;
+  lastSuccessfulWriteAtIso: string | null;
   warning?: string;
   dataFile?: string;
 }
+
+type NormalizedPersistenceWaiter = {
+  sequence: number;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+};
+
+let persistenceConnected = false;
+let lastRestoreAtIso: string | null = null;
+let lastSuccessfulWriteAtIso: string | null = null;
+let normalizedSessionsPersistSequence = 0;
+let normalizedSessionsPersistCompletedSequence = 0;
+const normalizedSessionsPersistWaiters: NormalizedPersistenceWaiter[] = [];
 const OPENAI_API_URL = process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
 const LIVE_AI_MODEL = process.env.BTA_LIVE_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const LIVE_AI_TIMEOUT_MS = readEnvNumber("BTA_LIVE_INSIGHT_TIMEOUT_MS", 12000);
@@ -3083,10 +3099,82 @@ function flushRosterTeamsPersistence(schoolId: string): void {
 let normalizedSessionsPersistInFlight = false;
 let normalizedSessionsPersistQueued = false;
 
-function persistNormalizedSessions(): void {
+function resolveNormalizedPersistenceWaitersUpTo(sequence: number): void {
+  const ready = normalizedSessionsPersistWaiters.filter((waiter) => waiter.sequence <= sequence);
+  if (ready.length === 0) {
+    return;
+  }
+
+  for (const waiter of ready) {
+    const index = normalizedSessionsPersistWaiters.indexOf(waiter);
+    if (index >= 0) {
+      normalizedSessionsPersistWaiters.splice(index, 1);
+    }
+    waiter.resolve();
+  }
+}
+
+function rejectNormalizedPersistenceWaitersUpTo(sequence: number, error: unknown): void {
+  const ready = normalizedSessionsPersistWaiters.filter((waiter) => waiter.sequence <= sequence);
+  if (ready.length === 0) {
+    return;
+  }
+
+  for (const waiter of ready) {
+    const index = normalizedSessionsPersistWaiters.indexOf(waiter);
+    if (index >= 0) {
+      normalizedSessionsPersistWaiters.splice(index, 1);
+    }
+    waiter.reject(error);
+  }
+}
+
+function waitForNormalizedPersistence(sequence: number): Promise<void> {
+  if (!persistenceProvider || sequence <= normalizedSessionsPersistCompletedSequence) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    normalizedSessionsPersistWaiters.push({ sequence, resolve, reject });
+  });
+}
+
+function flushNormalizedSessionsPersistence(sequence: number): void {
   if (!persistenceProvider) {
     return;
   }
+
+  normalizedSessionsPersistInFlight = true;
+  void persistenceProvider
+    .replacePersistedSessions(buildPersistedSessions())
+    .then(() => {
+      normalizedSessionsPersistCompletedSequence = sequence;
+      persistenceConnected = true;
+      lastSuccessfulWriteAtIso = new Date().toISOString();
+      resolveNormalizedPersistenceWaitersUpTo(sequence);
+    })
+    .catch((error) => {
+      persistenceConnected = false;
+      rejectNormalizedPersistenceWaitersUpTo(sequence, error);
+      logger.warn("persistence.normalized_sessions_save_failed", { error });
+    })
+    .finally(() => {
+      normalizedSessionsPersistInFlight = false;
+      if (normalizedSessionsPersistQueued) {
+        normalizedSessionsPersistQueued = false;
+        flushNormalizedSessionsPersistence(normalizedSessionsPersistSequence);
+      }
+    });
+}
+
+function persistNormalizedSessions(): Promise<void> {
+  if (!persistenceProvider) {
+    return Promise.resolve();
+  }
+
+  normalizedSessionsPersistSequence += 1;
+  const sequence = normalizedSessionsPersistSequence;
+  const waitForSequence = waitForNormalizedPersistence(sequence);
 
   // If a write is already running, mark that we need another pass once it
   // finishes rather than launching a second concurrent transaction.  This
@@ -3094,22 +3182,11 @@ function persistNormalizedSessions(): void {
   // the deadlocks that arise when concurrent DELETE+INSERT transactions race.
   if (normalizedSessionsPersistInFlight) {
     normalizedSessionsPersistQueued = true;
-    return;
+    return waitForSequence;
   }
 
-  normalizedSessionsPersistInFlight = true;
-  void persistenceProvider
-    .replacePersistedSessions(buildPersistedSessions())
-    .catch((error) => {
-      logger.warn("persistence.normalized_sessions_save_failed", { error });
-    })
-    .finally(() => {
-      normalizedSessionsPersistInFlight = false;
-      if (normalizedSessionsPersistQueued) {
-        normalizedSessionsPersistQueued = false;
-        persistNormalizedSessions();
-      }
-    });
+  flushNormalizedSessionsPersistence(sequence);
+  return waitForSequence;
 }
 
 function clearPersistedRosterTeams(): void {
@@ -3346,9 +3423,9 @@ async function restoreWorkspaceDataFromProvider(): Promise<void> {
   }
 }
 
-function persistSessions() {
+function persistSessions(): Promise<void> {
   if (!persistenceEnabled) {
-    return;
+    return Promise.resolve();
   }
 
   mkdirSync(dataDirectory, { recursive: true });
@@ -3362,7 +3439,7 @@ function persistSessions() {
     });
   }
 
-  persistNormalizedSessions();
+  return persistNormalizedSessions();
 }
 
 async function flushSnapshotToDb(): Promise<void> {
@@ -3426,7 +3503,9 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
         applyPersistedSnapshot(payload as PersistedSnapshot | PersistedGameSession[]);
         restoredSnapshot = true;
       }
+      persistenceConnected = true;
     } catch (error) {
+      persistenceConnected = false;
       logger.warn("persistence.snapshot_restore_failed", { error });
       if (failOnPersistenceError) {
         throw new Error("PostgreSQL snapshot restore failed during startup");
@@ -3437,7 +3516,9 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
   if (!restoredSnapshot && persistenceProvider) {
     try {
       restoredSnapshot = await restoreSessionsFromProvider();
+      persistenceConnected = true;
     } catch (error) {
+      persistenceConnected = false;
       logger.warn("persistence.normalized_sessions_restore_failed", { error });
       if (failOnPersistenceError) {
         throw new Error("PostgreSQL game session restore failed during startup");
@@ -3455,7 +3536,9 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
   if (persistenceProvider && !restoredSnapshot) {
     try {
       await restoreRosterTeamsFromProvider();
+      persistenceConnected = true;
     } catch (error) {
+      persistenceConnected = false;
       logger.warn("persistence.roster_restore_failed", { error });
       if (failOnPersistenceError) {
         throw new Error("PostgreSQL roster restore failed during startup");
@@ -3466,7 +3549,9 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
   if (persistenceProvider && !restoredSnapshot) {
     try {
       await restoreOrgDataFromProvider();
+      persistenceConnected = true;
     } catch (error) {
+      persistenceConnected = false;
       logger.warn("persistence.org_data_restore_failed", { error });
       if (failOnPersistenceError) {
         throw new Error("PostgreSQL org data restore failed during startup");
@@ -3477,12 +3562,18 @@ export async function initializeStore(options: { failOnPersistenceError?: boolea
   if (persistenceProvider && !restoredSnapshot) {
     try {
       await restoreWorkspaceDataFromProvider();
+      persistenceConnected = true;
     } catch (error) {
+      persistenceConnected = false;
       logger.warn("persistence.workspace_data_restore_failed", { error });
       if (failOnPersistenceError) {
         throw new Error("PostgreSQL workspace data restore failed during startup");
       }
     }
+  }
+
+  if (persistenceProvider && persistenceConnected) {
+    lastRestoreAtIso = new Date().toISOString();
   }
 
   setupRetentionMaintenance();
@@ -3495,6 +3586,9 @@ export function getPersistenceStatus(): PersistenceStatus {
     return {
       backend: "postgres",
       durable: true,
+      connected: persistenceConnected,
+      lastRestoreAtIso,
+      lastSuccessfulWriteAtIso,
     };
   }
 
@@ -3502,6 +3596,9 @@ export function getPersistenceStatus(): PersistenceStatus {
     return {
       backend: "file_snapshot",
       durable: false,
+      connected: true,
+      lastRestoreAtIso: null,
+      lastSuccessfulWriteAtIso: null,
       dataFile,
       warning: "Using local file snapshot persistence. Data durability depends on host-local storage.",
     };
@@ -3510,6 +3607,9 @@ export function getPersistenceStatus(): PersistenceStatus {
   return {
     backend: "memory",
     durable: false,
+    connected: false,
+    lastRestoreAtIso: null,
+    lastSuccessfulWriteAtIso: null,
     warning: "Persistence is disabled. Data will be lost when the process exits.",
   };
 }
@@ -3747,14 +3847,14 @@ const gameStore = createGameStore({
   requestAiInsights,
 });
 
-export const {
-  createGame,
+const {
+  createGame: createGameSync,
   getActiveGameState,
   getActiveGameId,
-  submitGame,
+  submitGame: submitGameSync,
   isGameSubmitted,
-  deleteGame,
-  patchGameLineup,
+  deleteGame: deleteGameSync,
+  patchGameLineup: patchGameLineupSync,
   getGameState,
   getGameStateByScope,
   getGameAiSettings,
@@ -3773,10 +3873,172 @@ export const {
   getLiveContext,
   getRosterPlayers,
   refreshGameAiInsights,
-  ingestEvent,
-  deleteEvent,
-  updateEvent,
+  ingestEvent: ingestEventSync,
+  deleteEvent: deleteEventSync,
+  updateEvent: updateEventSync,
 } = gameStore;
+
+export {
+  getActiveGameState,
+  getActiveGameId,
+  isGameSubmitted,
+  getGameState,
+  getGameStateByScope,
+  getGameAiSettings,
+  getGameAiContext,
+  getGameAiStatus,
+  getAiUsageTotals,
+  updateGameAiSettings,
+  updateGameAiContext,
+  getGameAiPromptPreview,
+  answerGameAiChat,
+  getGameInsights,
+  getGameEvents,
+  getSeasonTeamStats,
+  getSeasonGames,
+  getSeasonPlayers,
+  getLiveContext,
+  getRosterPlayers,
+  refreshGameAiInsights,
+};
+
+export function createGame(input: CreateGameInput, scope?: TenantScope): GameState {
+  return createGameSync(input, scope);
+}
+
+export function submitGame(gameId: string, scope?: TenantScope): boolean {
+  return submitGameSync(gameId, scope);
+}
+
+export function deleteGame(gameId: string, scope?: TenantScope): boolean {
+  return deleteGameSync(gameId, scope);
+}
+
+export function patchGameLineup(
+  gameId: string,
+  startingLineupByTeam: Record<string, string[]>,
+  scope?: TenantScope,
+): GameState | null {
+  return patchGameLineupSync(gameId, startingLineupByTeam, scope);
+}
+
+export function ingestEvent(
+  rawEvent: unknown,
+  scope?: TenantScope,
+): {
+  event: GameEvent;
+  state: GameState;
+  insights: LiveInsight[];
+} {
+  return ingestEventSync(rawEvent, scope);
+}
+
+export function deleteEvent(
+  gameId: string,
+  eventId: string,
+  scope?: TenantScope,
+  precondition?: EventMutationPrecondition,
+): {
+  state: GameState;
+  insights: LiveInsight[];
+} {
+  return deleteEventSync(gameId, eventId, scope, precondition);
+}
+
+export function updateEvent(
+  gameId: string,
+  eventId: string,
+  rawEvent: unknown,
+  scope?: TenantScope,
+  precondition?: EventMutationPrecondition,
+): {
+  event: GameEvent;
+  state: GameState;
+  insights: LiveInsight[];
+} {
+  return updateEventSync(gameId, eventId, rawEvent, scope, precondition);
+}
+
+export async function awaitReplayStateDurability(): Promise<void> {
+  await waitForNormalizedPersistence(normalizedSessionsPersistSequence);
+}
+
+export async function createGameDurable(input: CreateGameInput, scope?: TenantScope): Promise<GameState> {
+  const state = createGameSync(input, scope);
+  await awaitReplayStateDurability();
+  return state;
+}
+
+export async function submitGameDurable(gameId: string, scope?: TenantScope): Promise<boolean> {
+  const submitted = submitGameSync(gameId, scope);
+  if (submitted) {
+    await awaitReplayStateDurability();
+  }
+  return submitted;
+}
+
+export async function deleteGameDurable(gameId: string, scope?: TenantScope): Promise<boolean> {
+  const deleted = deleteGameSync(gameId, scope);
+  if (deleted) {
+    await awaitReplayStateDurability();
+  }
+  return deleted;
+}
+
+export async function patchGameLineupDurable(
+  gameId: string,
+  startingLineupByTeam: Record<string, string[]>,
+  scope?: TenantScope,
+): Promise<GameState | null> {
+  const state = patchGameLineupSync(gameId, startingLineupByTeam, scope);
+  if (state) {
+    await awaitReplayStateDurability();
+  }
+  return state;
+}
+
+export async function ingestEventDurable(
+  rawEvent: unknown,
+  scope?: TenantScope,
+): Promise<{
+  event: GameEvent;
+  state: GameState;
+  insights: LiveInsight[];
+}> {
+  const result = ingestEventSync(rawEvent, scope);
+  await awaitReplayStateDurability();
+  return result;
+}
+
+export async function deleteEventDurable(
+  gameId: string,
+  eventId: string,
+  scope?: TenantScope,
+  precondition?: EventMutationPrecondition,
+): Promise<{
+  state: GameState;
+  insights: LiveInsight[];
+}> {
+  const result = deleteEventSync(gameId, eventId, scope, precondition);
+  await awaitReplayStateDurability();
+  return result;
+}
+
+export async function updateEventDurable(
+  gameId: string,
+  eventId: string,
+  rawEvent: unknown,
+  scope?: TenantScope,
+  precondition?: EventMutationPrecondition,
+): Promise<{
+  event: GameEvent;
+  state: GameState;
+  insights: LiveInsight[];
+}> {
+  const result = updateEventSync(gameId, eventId, rawEvent, scope, precondition);
+  await awaitReplayStateDurability();
+  return result;
+}
 
 function listOrderedEvents(session: GameSession): GameEvent[] {
   return [...session.eventsById.values()].sort((left, right) => left.sequence - right.sequence);

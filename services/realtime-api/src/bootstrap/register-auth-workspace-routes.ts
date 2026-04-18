@@ -38,7 +38,7 @@ import {
   deleteTeamMembership,
   getSchoolMembershipsByScope,
   getTeamMembershipsByScope,
-  createGame,
+  createGameDurable,
   getSeasonPlayers,
   getRosterPlayers,
 } from "../store.js";
@@ -245,7 +245,7 @@ export function registerAuthAndWorkspaceRoutes(
     issueLocalAuthToken,
     getBillingStateByScope,
     saveBillingState,
-    createGame,
+    createGame: createGameDurable,
     setOperatorLinkSetup,
     issueWorkspaceInvitation,
     emitTeamDeleted: (schoolId, teamId) => {

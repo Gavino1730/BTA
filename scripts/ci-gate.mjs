@@ -67,4 +67,6 @@ if (shouldRunE2EGate()) {
   console.log("[ci-gate] Skipping smoke-test and audit:ui (set BTA_RUN_E2E_GATE=1 to enable).");
 }
 
+console.log("[ci-gate] Hosted verification remains a release-time gate: run `npm run verify:hosted -- --environment staging|production` with hosted env vars.");
+
 console.log("[ci-gate] All checks passed.");

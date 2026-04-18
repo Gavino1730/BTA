@@ -32,6 +32,7 @@ Use the stack as follows for live gym scorekeeping and coach fanout:
 - `NODE_ENV=production`
 - `BTA_REQUIRE_TENANT=1`
 - `BTA_JWT_WRITE_REQUIRED=1`
+- `BTA_PERSISTENCE_STARTUP_STRICT=1`
 
 Choose at least one authentication path:
 
@@ -139,6 +140,22 @@ If `BTA_SECURITY_METRICS_PUSH_URL` is configured, counters are also pushed at a 
 ## Rollout Sequence
 
 Use the ordered rollout verification in `RELEASE_CHECKLIST.md` section 3.
+
+## Hosted Verification Runner
+
+Use the hosted verifier to attach repeatable durability evidence to each release:
+
+- `npm run verify:hosted -- --environment staging`
+- `npm run verify:hosted -- --environment production`
+
+Required environment variables:
+
+- `BTA_HOSTED_API_URL`
+- `BTA_HOSTED_COACH_URL`
+- `BTA_HOSTED_OPERATOR_URL`
+- staging only: `BTA_HOSTED_RESTART_COMMAND`
+
+Artifacts are written to `artifacts/hosted-verification/<timestamp>/`.
 
 ## Optional DB Integration Test Setup
 

@@ -42,6 +42,19 @@ async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedRe
   expect(registerRes.ok()).toBeTruthy();
   const registerBody = (await registerRes.json()) as { token: string };
 
+  const bootstrapRes = await api.post(`${API_BASE}/api/schools/bootstrap`, {
+    headers: {
+      Authorization: `Bearer ${registerBody.token}`,
+      "Content-Type": "application/json",
+      "x-school-id": schoolId,
+    },
+    data: {
+      schoolId,
+      schoolName: "E2E High School",
+    },
+  });
+  expect(bootstrapRes.ok()).toBeTruthy();
+
   const players = [
     { id: "p-1", name: "Ava Lane", number: "1", position: "G", grade: "11" },
     { id: "p-2", name: "Nora Cruz", number: "2", position: "G", grade: "11" },
@@ -187,6 +200,15 @@ async function fetchGameEvents(
     .sort((left, right) => left.sequence - right.sequence);
 }
 
+function expectEventLogIntegrity(events: Array<{ id: string; sequence: number }>): void {
+  const uniqueIds = new Set(events.map((event) => event.id));
+  expect(uniqueIds.size).toBe(events.length);
+
+  for (let index = 0; index < events.length; index += 1) {
+    expect(events[index]?.sequence).toBe(index + 1);
+  }
+}
+
 test("offline operator events flush on reconnect and persist", async ({ browser, request }) => {
   const seed = await seedCoachAccountAndRoster(request);
   let coachContext = null;
@@ -257,7 +279,62 @@ test("offline operator events flush on reconnect and persist", async ({ browser,
       });
     });
 
-    await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
+    await coachPage.route("**/api/me/context**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: {
+            userId: `acct-${seed.schoolId}`,
+            email: seed.coachEmail,
+            fullName: "Offline Sync Coach",
+          },
+          profile: {
+            lastSchoolId: seed.schoolId,
+            lastTeamId: seed.team.id,
+            lastContextType: "team",
+          },
+          schools: [
+            {
+              schoolId: seed.schoolId,
+              name: "E2E High School",
+              slug: "e2e-high-school",
+              sport: "basketball",
+              status: "active",
+            },
+          ],
+          schoolMemberships: [
+            {
+              membershipId: `school-membership-${seed.schoolId}`,
+              schoolId: seed.schoolId,
+              userId: `acct-${seed.schoolId}`,
+              email: seed.coachEmail,
+              fullName: "Offline Sync Coach",
+              role: "owner",
+              status: "active",
+            },
+          ],
+          teamMemberships: [],
+          teams: [
+            {
+              ...seed.team,
+              schoolId: seed.schoolId,
+              sport: "basketball",
+              gender: "girls",
+              level: "varsity",
+              status: "active",
+            },
+          ],
+          defaultContext: {
+            type: "team",
+            schoolId: seed.schoolId,
+            teamId: seed.team.id,
+          },
+        }),
+      });
+    });
+
+    await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}&teamId=${seed.team.id}`, { waitUntil: "domcontentloaded" });
     await expect(coachPage.getByRole("heading", { name: "Start New Game" })).toBeVisible({ timeout: 15_000 });
 
     await coachPage.getByRole("button", { name: seed.team.name, exact: true }).click();
@@ -429,7 +506,62 @@ test("reconnect reconciliation drops already-synced queued duplicate without dou
       });
     });
 
-    await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
+    await coachPage.route("**/api/me/context**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: {
+            userId: `acct-${seed.schoolId}`,
+            email: seed.coachEmail,
+            fullName: "Offline Sync Coach",
+          },
+          profile: {
+            lastSchoolId: seed.schoolId,
+            lastTeamId: seed.team.id,
+            lastContextType: "team",
+          },
+          schools: [
+            {
+              schoolId: seed.schoolId,
+              name: "E2E High School",
+              slug: "e2e-high-school",
+              sport: "basketball",
+              status: "active",
+            },
+          ],
+          schoolMemberships: [
+            {
+              membershipId: `school-membership-${seed.schoolId}`,
+              schoolId: seed.schoolId,
+              userId: `acct-${seed.schoolId}`,
+              email: seed.coachEmail,
+              fullName: "Offline Sync Coach",
+              role: "owner",
+              status: "active",
+            },
+          ],
+          teamMemberships: [],
+          teams: [
+            {
+              ...seed.team,
+              schoolId: seed.schoolId,
+              sport: "basketball",
+              gender: "girls",
+              level: "varsity",
+              status: "active",
+            },
+          ],
+          defaultContext: {
+            type: "team",
+            schoolId: seed.schoolId,
+            teamId: seed.team.id,
+          },
+        }),
+      });
+    });
+
+    await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}&teamId=${seed.team.id}`, { waitUntil: "domcontentloaded" });
     await expect(coachPage.getByRole("heading", { name: "Start New Game" })).toBeVisible({ timeout: 15_000 });
 
     await coachPage.getByRole("button", { name: seed.team.name, exact: true }).click();
@@ -565,8 +697,7 @@ test("reconnect reconciliation drops already-synced queued duplicate without dou
     }, { timeout: 15_000 }).toBe(beforeEvents.length + 1);
 
     const finalEvents = await fetchGameEvents(request, gameId, seed.token, seed.schoolId);
-    const uniqueIds = new Set(finalEvents.map((event) => event.id));
-    expect(uniqueIds.size).toBe(finalEvents.length);
+    expectEventLogIntegrity(finalEvents);
   } finally {
     await operatorContext?.close().catch(() => undefined);
     await coachContext?.close().catch(() => undefined);

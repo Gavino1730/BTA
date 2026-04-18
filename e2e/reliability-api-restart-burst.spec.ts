@@ -47,6 +47,19 @@ async function seedCoachAccountAndRoster(api: APIRequestContext): Promise<SeedRe
   expect(registerRes.ok()).toBeTruthy();
   const registerBody = (await registerRes.json()) as { token: string };
 
+  const bootstrapRes = await api.post(`${API_BASE}/api/schools/bootstrap`, {
+    headers: {
+      Authorization: `Bearer ${registerBody.token}`,
+      "Content-Type": "application/json",
+      "x-school-id": schoolId,
+    },
+    data: {
+      schoolId,
+      schoolName: "E2E High School",
+    },
+  });
+  expect(bootstrapRes.ok()).toBeTruthy();
+
   const players = [
     { id: "p-1", name: "Ava Lane", number: "1", position: "G", grade: "11" },
     { id: "p-2", name: "Nora Cruz", number: "2", position: "G", grade: "11" },
@@ -170,6 +183,15 @@ async function fetchGameEvents(
     .sort((left, right) => left.sequence - right.sequence);
 }
 
+function expectEventLogIntegrity(events: GameEventRow[]): void {
+  const uniqueIds = new Set(events.map((event) => event.id));
+  expect(uniqueIds.size).toBe(events.length);
+
+  for (let index = 0; index < events.length; index += 1) {
+    expect(events[index]?.sequence).toBe(index + 1);
+  }
+}
+
 test("high-frequency ingest survives API restart-style outage and replays queued events", async ({ browser, request }) => {
   const seed = await seedCoachAccountAndRoster(request);
   let coachContext = null;
@@ -240,7 +262,62 @@ test("high-frequency ingest survives API restart-style outage and replays queued
       });
     });
 
-    await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}`, { waitUntil: "domcontentloaded" });
+    await coachPage.route("**/api/me/context**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: {
+            userId: `acct-${seed.schoolId}`,
+            email: seed.coachEmail,
+            fullName: "API Restart Coach",
+          },
+          profile: {
+            lastSchoolId: seed.schoolId,
+            lastTeamId: seed.team.id,
+            lastContextType: "team",
+          },
+          schools: [
+            {
+              schoolId: seed.schoolId,
+              name: "E2E High School",
+              slug: "e2e-high-school",
+              sport: "basketball",
+              status: "active",
+            },
+          ],
+          schoolMemberships: [
+            {
+              membershipId: `school-membership-${seed.schoolId}`,
+              schoolId: seed.schoolId,
+              userId: `acct-${seed.schoolId}`,
+              email: seed.coachEmail,
+              fullName: "API Restart Coach",
+              role: "owner",
+              status: "active",
+            },
+          ],
+          teamMemberships: [],
+          teams: [
+            {
+              ...seed.team,
+              schoolId: seed.schoolId,
+              sport: "basketball",
+              gender: "girls",
+              level: "varsity",
+              status: "active",
+            },
+          ],
+          defaultContext: {
+            type: "team",
+            schoolId: seed.schoolId,
+            teamId: seed.team.id,
+          },
+        }),
+      });
+    });
+
+    await coachPage.goto(`${COACH_BASE}/live?schoolId=${seed.schoolId}&teamId=${seed.team.id}`, { waitUntil: "domcontentloaded" });
     await expect(coachPage.getByRole("heading", { name: "Start New Game" })).toBeVisible({ timeout: 15_000 });
 
     await coachPage.getByRole("button", { name: seed.team.name, exact: true }).click();
@@ -357,13 +434,7 @@ test("high-frequency ingest survives API restart-style outage and replays queued
     }, { timeout: 30_000 }).toBeGreaterThanOrEqual(beforeOutageEvents.length + burstSize);
 
     const finalEvents = await fetchGameEvents(request, gameId, seed.token, seed.schoolId);
-    const sequences = finalEvents.map((event) => event.sequence);
-    const uniqueSequences = new Set(sequences);
-
-    expect(uniqueSequences.size).toBe(sequences.length);
-    for (let index = 1; index < sequences.length; index += 1) {
-      expect(sequences[index]).toBeGreaterThan(sequences[index - 1]);
-    }
+    expectEventLogIntegrity(finalEvents);
   } finally {
     await operatorContext?.close().catch(() => undefined);
     await coachContext?.close().catch(() => undefined);

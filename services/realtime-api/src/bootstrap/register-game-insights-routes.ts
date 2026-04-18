@@ -6,18 +6,18 @@ import {
   saveRosterTeams,
   getGameState,
   getActiveGameState,
-  createGame,
+  createGameDurable,
   getSeasonTeamStats,
   getGameOverrideMap,
   setGameOverride,
-  deleteGame,
-  submitGame,
+  deleteGameDurable,
+  submitGameDurable,
   resetAllData,
   getGameEvents,
-  ingestEvent,
-  deleteEvent,
-  updateEvent,
-  patchGameLineup,
+  ingestEventDurable,
+  deleteEventDurable,
+  updateEventDurable,
+  patchGameLineupDurable,
   getLiveContext,
   getGameInsights,
   refreshGameAiInsights,
@@ -143,8 +143,8 @@ export function registerGameAndInsightsRoutes(
   registerGameManagementRoutes(app, {
     requireApiKey, requireWriteRole, getSchoolIdFromRequest, getRosterTeamsByScope,
     getGameState, getSeasonTeamStats, buildGamesPayload, getGameOverrideMap,
-    sanitizeTextField, resolveGameResult, setGameOverride, deleteGame,
-    emitToGameRooms, submitGame, resetAllData,
+    sanitizeTextField, resolveGameResult, setGameOverride, deleteGame: deleteGameDurable,
+    emitToGameRooms, submitGame: submitGameDurable, resetAllData,
   });
 
   registerLiveInsightsRoutes(app, {
@@ -201,8 +201,8 @@ export function registerGameAndInsightsRoutes(
 
   registerGameSessionRoutes(app, {
     requireApiKey, requireWriteRole, getSchoolIdFromRequest, getRosterTeamsByScope,
-    getGameState, getActiveGameState, createGame, emitToGameRooms,
-    getLatestOperatorLinkSetup, patchGameLineup,
+    getGameState, getActiveGameState, createGame: createGameDurable, emitToGameRooms,
+    getLatestOperatorLinkSetup, patchGameLineup: patchGameLineupDurable,
   });
 
   registerGameAiRoutes(app, {
@@ -214,7 +214,7 @@ export function registerGameAndInsightsRoutes(
 
   registerGameEventRoutes(app, {
     requireApiKey, requireWriteRole, eventRateLimiter, getSchoolIdFromRequest,
-    getRosterTeamsByScope, getGameState, getGameEvents, ingestEvent, emitToGameRooms,
-    broadcastGameStateWithDebounce, refreshAndBroadcastInsights, deleteEvent, updateEvent,
+    getRosterTeamsByScope, getGameState, getGameEvents, ingestEvent: ingestEventDurable, emitToGameRooms,
+    broadcastGameStateWithDebounce, refreshAndBroadcastInsights, deleteEvent: deleteEventDurable, updateEvent: updateEventDurable,
   });
 }

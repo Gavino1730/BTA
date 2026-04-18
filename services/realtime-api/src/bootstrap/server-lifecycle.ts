@@ -36,9 +36,10 @@ export function createServerLifecycle(opts: ServerLifecycleOptions) {
 
     assertRuntimeConfig(readRuntimeConfig(isJwtAuthEnabled()));
 
-    const strictPersistenceInit = process.env.BTA_PERSISTENCE_STARTUP_STRICT === "1";
+    const strictPersistenceInit = (process.env.NODE_ENV ?? "development") === "production"
+      || process.env.BTA_PERSISTENCE_STARTUP_STRICT === "1";
     try {
-      await initializeStore();
+      await initializeStore({ failOnPersistenceError: strictPersistenceInit });
     } catch (error) {
       logger.error("startup.store_initialize_failed", { strictPersistenceInit, error });
       if (strictPersistenceInit) {

@@ -26,6 +26,7 @@
     "test:e2e:ios": "playwright test --project=ios-webkit",
     "stress-test": "node scripts/stress-test.mjs",
     "test:full-sim": "node scripts/full-sim.mjs",
+    "verify:hosted": "node scripts/verify-hosted.mjs",
     "audit:ui": "node scripts/ui-audit.mjs",
     "check:silent-errors": "node scripts/check-silent-errors.mjs",
     "check:critical-backlog": "node scripts/check-critical-backlog.mjs",

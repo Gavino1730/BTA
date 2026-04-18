@@ -79,7 +79,7 @@ export interface RegisterWorkspaceRoutesOptions {
     opponentName?: string;
     opponentTeamId?: string;
     startingLineupByTeam?: Record<string, string[]>;
-  }, scope?: { schoolId: string }) => unknown;
+  }, scope?: { schoolId: string }) => Promise<unknown>;
   setOperatorLinkSetup?: (schoolId: string, connectionId: string, setup: {
     gameId?: string;
     myTeamId?: string;

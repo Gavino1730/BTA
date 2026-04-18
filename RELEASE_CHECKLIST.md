@@ -21,8 +21,9 @@ Set and verify before deployment:
 - `NODE_ENV=production`
 - `BTA_REQUIRE_TENANT=1`
 - `BTA_JWT_WRITE_REQUIRED=1`
+- `BTA_PERSISTENCE_STARTUP_STRICT=1`
 - `ALLOWED_ORIGINS=<explicit comma-separated production origins>`
-- `DATABASE_URL=<durable Postgres connection>`
+- `DATABASE_URL=<Supabase pooler durable Postgres connection>`
 
 Authentication path:
 
@@ -63,6 +64,10 @@ After deployment, verify in this order:
    - `POST /api/org/members/:memberId/resend-invite` succeeds for invited members.
 9. Billing checkout session flow opens with tax and billing collection enabled.
 10. Persistence survives restart with expected game/session data.
+11. Hosted verification evidence is attached for this release:
+   - staging: `npm run verify:hosted -- --environment staging`
+   - production continuity check: `npm run verify:hosted -- --environment production`
+   - latest report/artifact path is recorded in the release notes
 
 ## 4. AI Degradation Rollback Matrix
 
@@ -110,5 +115,6 @@ A release is complete only when:
 
 - Preflight passed
 - Rollout verification passed
+- Latest passing hosted verification artifact/report ID is attached to the release
 - AI degraded-mode rollback path was validated this cycle
 - On-call owner confirms metrics and logs are healthy

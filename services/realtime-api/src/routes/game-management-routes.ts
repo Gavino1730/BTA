@@ -16,9 +16,9 @@ interface RegisterGameManagementRoutesOptions {
   sanitizeTextField: (value: unknown, maxLength: number) => string;
   resolveGameResult: (vcScore: number, oppScore: number) => "W" | "L" | "T";
   setGameOverride: (schoolId: string, override: GameEditOverride) => Promise<void>;
-  deleteGame: (gameId: string, scope: { schoolId: string }) => boolean;
+  deleteGame: (gameId: string, scope: { schoolId: string }) => Promise<boolean>;
   emitToGameRooms: (schoolId: string, gameId: string, event: "game:deleted" | "game:submitted", payload: { gameId: string }) => void;
-  submitGame: (gameId: string, scope: { schoolId: string }) => boolean;
+  submitGame: (gameId: string, scope: { schoolId: string }) => Promise<boolean>;
   resetAllData: (scope: { schoolId: string }) => void;
 }
 
@@ -128,37 +128,47 @@ export function registerGameManagementRoutes(app: Express, options: RegisterGame
     res.json({ message: "Game updated successfully", game: override });
   });
 
-  app.delete("/api/games/:gameId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.delete("/api/games/:gameId", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const gameId = String(req.params.gameId);
     if (rejectReadOnlyTeamMutation(res, schoolId, gameId)) {
       return;
     }
-    const removedFromState = options.deleteGame(gameId, { schoolId });
-    const removedOverride = options.getGameOverrideMap(schoolId).delete(gameId);
-    if (!removedFromState && !removedOverride) {
-      res.status(404).json({ error: "Game not found" });
-      return;
-    }
+    try {
+      const removedFromState = await options.deleteGame(gameId, { schoolId });
+      const removedOverride = options.getGameOverrideMap(schoolId).delete(gameId);
+      if (!removedFromState && !removedOverride) {
+        res.status(404).json({ error: "Game not found" });
+        return;
+      }
 
-    options.emitToGameRooms(schoolId, gameId, "game:deleted", { gameId });
-    res.json({ message: "Game deleted successfully", gameId });
+      options.emitToGameRooms(schoolId, gameId, "game:deleted", { gameId });
+      res.json({ message: "Game deleted successfully", gameId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "durable game delete failed";
+      res.status(503).json({ error: message, code: "persistence_unavailable" });
+    }
   });
 
-  app.post("/api/games/:gameId/submit", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.post("/api/games/:gameId/submit", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const gameId = String(req.params.gameId);
     if (rejectReadOnlyTeamMutation(res, schoolId, gameId)) {
       return;
     }
-    const ok = options.submitGame(gameId, { schoolId });
-    if (!ok) {
-      res.status(404).json({ error: "Game not found" });
-      return;
-    }
+    try {
+      const ok = await options.submitGame(gameId, { schoolId });
+      if (!ok) {
+        res.status(404).json({ error: "Game not found" });
+        return;
+      }
 
-    options.emitToGameRooms(schoolId, gameId, "game:submitted", { gameId });
-    res.json({ message: "Game submitted successfully", gameId });
+      options.emitToGameRooms(schoolId, gameId, "game:submitted", { gameId });
+      res.json({ message: "Game submitted successfully", gameId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "durable game submit failed";
+      res.status(503).json({ error: message, code: "persistence_unavailable" });
+    }
   });
 
   app.post("/api/reset", options.requireApiKey, options.requireWriteRole, (req, res) => {

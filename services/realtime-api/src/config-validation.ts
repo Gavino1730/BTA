@@ -7,6 +7,8 @@ export interface RuntimeConfig {
   writeApiKeyPresent: boolean;
   allowedOriginsConfigured: boolean;
   databaseUrlConfigured: boolean;
+  databaseUrlUsesPooler: boolean;
+  strictPersistenceStartupConfigured: boolean;
   localAuthSecretConfigured: boolean;
   emailProvider: string;
   emailFromConfigured: boolean;
@@ -24,6 +26,7 @@ export interface RuntimeValidationResult {
 export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
   const nodeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
   const emailProvider = (process.env.BTA_EMAIL_PROVIDER ?? "").trim().toLowerCase();
+  const databaseUrl = process.env.DATABASE_URL?.trim() ?? "";
   return {
     nodeEnv,
     requireTenant: process.env.BTA_REQUIRE_TENANT !== "0",
@@ -32,7 +35,9 @@ export function readRuntimeConfig(jwtEnabled: boolean): RuntimeConfig {
     apiKeyPresent: Boolean(process.env.BTA_API_KEY?.trim()),
     writeApiKeyPresent: Boolean(process.env.BTA_WRITE_API_KEY?.trim()),
     allowedOriginsConfigured: Boolean(process.env.ALLOWED_ORIGINS?.trim()),
-    databaseUrlConfigured: Boolean(process.env.DATABASE_URL?.trim()),
+    databaseUrlConfigured: Boolean(databaseUrl),
+    databaseUrlUsesPooler: /\.pooler\.supabase\.com(?::\d+)?(?:\/|$)/i.test(databaseUrl),
+    strictPersistenceStartupConfigured: process.env.BTA_PERSISTENCE_STARTUP_STRICT === "1",
     localAuthSecretConfigured: Boolean(
       process.env.BTA_LOCAL_AUTH_SECRET?.trim() || process.env.BTA_AUTH_SECRET?.trim()
     ),
@@ -95,6 +100,17 @@ export function validateRuntimeConfig(config: RuntimeConfig): RuntimeValidationR
 
   if (!config.databaseUrlConfigured) {
     errors.push("Production requires DATABASE_URL so persistence does not fall back to local file storage.");
+  }
+
+  if (config.databaseUrlConfigured && !config.databaseUrlUsesPooler) {
+    errors.push(
+      "Production requires the Supabase Session/Connection Pooler DATABASE_URL " +
+      "(.pooler.supabase.com) so hosted startup does not depend on direct IPv6 database access."
+    );
+  }
+
+  if (!config.strictPersistenceStartupConfigured) {
+    errors.push("Production requires BTA_PERSISTENCE_STARTUP_STRICT=1 so startup fails closed on persistence restore/init errors.");
   }
 
   if (!config.localAuthSecretConfigured) {

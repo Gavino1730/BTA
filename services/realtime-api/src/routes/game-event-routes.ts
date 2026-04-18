@@ -11,12 +11,12 @@ interface RegisterGameEventRoutesOptions {
   getRosterTeamsByScope: (scope: { schoolId: string }) => WorkspaceRosterTeam[];
   getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
   getGameEvents: (gameId: string, scope: { schoolId: string }) => unknown[];
-  ingestEvent: (payload: Record<string, unknown>, scope: { schoolId: string }) => { event: { gameId: string }; state: unknown; insights: unknown };
+  ingestEvent: (payload: Record<string, unknown>, scope: { schoolId: string }) => Promise<{ event: { gameId: string }; state: unknown; insights: unknown }>;
   emitToGameRooms: (schoolId: string, gameId: string, event: string, payload: unknown) => void;
   broadcastGameStateWithDebounce: (schoolId: string, gameId: string, state: unknown, insights: unknown) => void;
   refreshAndBroadcastInsights: (schoolId: string, gameId: string) => Promise<void>;
-  deleteEvent: (gameId: string, eventId: string, scope: { schoolId: string }) => { state: unknown; insights: unknown };
-  updateEvent: (gameId: string, eventId: string, patch: unknown, scope: { schoolId: string }) => { event: unknown; state: unknown; insights: unknown };
+  deleteEvent: (gameId: string, eventId: string, scope: { schoolId: string }) => Promise<{ state: unknown; insights: unknown }>;
+  updateEvent: (gameId: string, eventId: string, patch: unknown, scope: { schoolId: string }) => Promise<{ event: unknown; state: unknown; insights: unknown }>;
 }
 
 export function registerGameEventRoutes(app: Express, options: RegisterGameEventRoutesOptions): void {
@@ -56,7 +56,7 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
     res.json(allEvents);
   });
 
-  app.post("/api/games/:gameId/events", options.requireApiKey, options.requireWriteRole, options.eventRateLimiter, (req, res) => {
+  app.post("/api/games/:gameId/events", options.requireApiKey, options.requireWriteRole, options.eventRateLimiter, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     if (rejectReadOnlyTeamMutation(res, schoolId, req.params.gameId)) {
       return;
@@ -68,7 +68,7 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
         schoolId,
       };
 
-      const { event, state, insights } = options.ingestEvent(payload, { schoolId });
+      const { event, state, insights } = await options.ingestEvent(payload, { schoolId });
 
       options.emitToGameRooms(schoolId, event.gameId, "game:event", event);
       options.broadcastGameStateWithDebounce(schoolId, event.gameId, state, insights);
@@ -93,17 +93,21 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
         });
         return;
       }
+      if (/persist|postgres|connection|durab/i.test(message)) {
+        res.status(503).json({ error: message, code: "persistence_unavailable" });
+        return;
+      }
       res.status(400).json({ error: message });
     }
   });
 
-  app.delete("/api/games/:gameId/events/:eventId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.delete("/api/games/:gameId/events/:eventId", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     if (rejectReadOnlyTeamMutation(res, schoolId, req.params.gameId)) {
       return;
     }
     try {
-      const { state, insights } = options.deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
+      const { state, insights } = await options.deleteEvent(req.params.gameId, req.params.eventId, { schoolId });
 
       options.emitToGameRooms(schoolId, req.params.gameId, "game:event:deleted", { eventId: req.params.eventId });
       options.broadcastGameStateWithDebounce(schoolId, req.params.gameId, state, insights);
@@ -116,17 +120,21 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
         res.status(409).json({ error: message });
         return;
       }
+      if (/persist|postgres|connection|durab/i.test(message)) {
+        res.status(503).json({ error: message, code: "persistence_unavailable" });
+        return;
+      }
       res.status(400).json({ error: message });
     }
   });
 
-  app.put("/api/games/:gameId/events/:eventId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.put("/api/games/:gameId/events/:eventId", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     if (rejectReadOnlyTeamMutation(res, schoolId, req.params.gameId)) {
       return;
     }
     try {
-      const { event, state, insights } = options.updateEvent(
+      const { event, state, insights } = await options.updateEvent(
         req.params.gameId,
         req.params.eventId,
         req.body ?? {},
@@ -143,6 +151,10 @@ export function registerGameEventRoutes(app: Express, options: RegisterGameEvent
       const message = error instanceof Error ? error.message : "update failed";
       if (/^Game already submitted:/i.test(message)) {
         res.status(409).json({ error: message });
+        return;
+      }
+      if (/persist|postgres|connection|durab/i.test(message)) {
+        res.status(503).json({ error: message, code: "persistence_unavailable" });
         return;
       }
       res.status(400).json({ error: message });

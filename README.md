@@ -62,6 +62,7 @@ npm run dev:all
 - `npm run smoke-test`: Run smoke test script
 - `npm run audit:ui`: Run UI audit script
 - `npm run validate:env`: Validate API environment configuration
+- `npm run verify:hosted`: Run hosted durability/failover verification against staging or production
 
 ## Transactional email
 
@@ -85,6 +86,25 @@ When email delivery is not configured, the API still creates invite/reset tokens
 
 - Deployment runbook: `DEPLOYMENT.md`
 - Hosting setup quickstart: `HOSTING_SETUP.md`
+- Canonical release checklist: `RELEASE_CHECKLIST.md`
+
+## Hosted durability verification
+
+Use the hosted verifier before release sign-off:
+
+```bash
+npm run verify:hosted -- --environment staging
+npm run verify:hosted -- --environment production
+```
+
+Required environment variables:
+
+- `BTA_HOSTED_API_URL`
+- `BTA_HOSTED_COACH_URL`
+- `BTA_HOSTED_OPERATOR_URL`
+- staging only: `BTA_HOSTED_RESTART_COMMAND`
+
+Artifacts are written to `artifacts/hosted-verification/<timestamp>/`.
 
 ## Contributing
 

@@ -43,8 +43,18 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev:all",
+    env: {
+      ...ENV,
+      NODE_ENV: "test",
+      BTA_PAYWALL_ENABLED: "0",
+      BTA_ENABLE_LEGACY_LOCAL_AUTH: "1",
+      VITE_API: "http://localhost:4000",
+      VITE_OPERATOR_CONSOLE: "http://localhost:5174",
+      VITE_COACH_DASHBOARD: "http://localhost:5173",
+      VITE_STATS_DASHBOARD: "http://localhost:4000",
+    },
     url: "http://localhost:4000/health",
     timeout: 180_000,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
   },
 });

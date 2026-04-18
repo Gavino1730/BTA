@@ -19,14 +19,14 @@ interface RegisterGameSessionRoutesOptions {
   getRosterTeamsByScope: (scope: { schoolId: string }) => WorkspaceRosterTeam[];
   getGameState: (gameId: string, scope: { schoolId: string }) => unknown | null;
   getActiveGameState: (scope: { schoolId: string; teamId?: string }) => GameState | null;
-  createGame: (input: CreateGameInput, scope?: { schoolId: string }) => unknown;
+  createGame: (input: CreateGameInput, scope?: { schoolId: string }) => Promise<unknown>;
   emitToGameRooms: (schoolId: string, gameId: string, eventName: string, payload: unknown) => void;
   getLatestOperatorLinkSetup: (schoolId: string, options?: { gameId?: string }) => { connectionId: string; setup: OperatorLinkSetup } | null;
-  patchGameLineup: (gameId: string, startingLineupByTeam: Record<string, string[]>, scope?: { schoolId: string }) => unknown | null;
+  patchGameLineup: (gameId: string, startingLineupByTeam: Record<string, string[]>, scope?: { schoolId: string }) => Promise<unknown | null>;
 }
 
 export function registerGameSessionRoutes(app: Express, options: RegisterGameSessionRoutesOptions): void {
-  app.post(["/games", "/api/games"], options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.post(["/games", "/api/games"], options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const requestedTeamId = typeof req.body?.teamId === "string" ? req.body.teamId.trim() : "";
     const {
@@ -75,21 +75,26 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
       return;
     }
 
-    const state = options.createGame({
-      schoolId,
-      gameId,
-      homeTeamId,
-      awayTeamId,
-      opponentName,
-      opponentTeamId,
-      startingLineupByTeam,
-      aiContext,
-    }, { schoolId });
+    try {
+      const state = await options.createGame({
+        schoolId,
+        gameId,
+        homeTeamId,
+        awayTeamId,
+        opponentName,
+        opponentTeamId,
+        startingLineupByTeam,
+        aiContext,
+      }, { schoolId });
 
-    options.emitToGameRooms(schoolId, gameId, "game:state", state);
-    options.emitToGameRooms(schoolId, gameId, "game:insights", []);
+      options.emitToGameRooms(schoolId, gameId, "game:state", state);
+      options.emitToGameRooms(schoolId, gameId, "game:insights", []);
 
-    res.status(201).json(state);
+      res.status(201).json(state);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "durable game creation failed";
+      res.status(503).json({ error: message, code: "persistence_unavailable" });
+    }
   });
 
   app.get("/api/games/active/state", options.requireApiKey, (req, res) => {
@@ -144,7 +149,7 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
     res.json(state);
   });
 
-  app.patch("/api/games/:gameId/lineup", options.requireApiKey, options.requireWriteRole, (req, res) => {
+  app.patch("/api/games/:gameId/lineup", options.requireApiKey, options.requireWriteRole, async (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const { startingLineupByTeam } = req.body ?? {};
     if (!startingLineupByTeam || typeof startingLineupByTeam !== "object") {
@@ -167,13 +172,22 @@ export function registerGameSessionRoutes(app: Express, options: RegisterGameSes
       return;
     }
 
-    const state = options.patchGameLineup(req.params.gameId, startingLineupByTeam as Record<string, string[]>, { schoolId });
-    if (!state) {
-      res.status(404).json({ error: "game not found" });
-      return;
-    }
+    try {
+      const state = await options.patchGameLineup(
+        req.params.gameId,
+        startingLineupByTeam as Record<string, string[]>,
+        { schoolId },
+      );
+      if (!state) {
+        res.status(404).json({ error: "game not found" });
+        return;
+      }
 
-    options.emitToGameRooms(schoolId, req.params.gameId, "game:state", state);
-    res.json(state);
+      options.emitToGameRooms(schoolId, req.params.gameId, "game:state", state);
+      res.json(state);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "durable lineup update failed";
+      res.status(503).json({ error: message, code: "persistence_unavailable" });
+    }
   });
 }
