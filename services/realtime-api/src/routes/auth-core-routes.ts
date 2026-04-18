@@ -30,6 +30,7 @@ interface RegisterAuthCoreRoutesOptions {
   buildSuggestedCoachIdentity: (authContext: any) => { coachName?: string; coachEmail?: string } | null;
   resolveCurrentOrganizationMember: (req: Request, schoolId: string) => unknown;
   getLocalAuthAccountByEmail: (email: string, scope: { schoolId: string }) => any;
+  getLocalAuthAccountsByEmailAcrossSchools: (email: string) => any[];
   buildAuthSessionResponse: (schoolId: string, account: any, currentMember: any, token?: string | null) => unknown;
   getUserWorkspaceProfile: (userId: string) => { lastSchoolId?: string } | null;
   listSchoolMembershipsForUser: (input: { userId?: string; email?: string }) => Array<{ schoolId: string; role: string }>;
@@ -233,6 +234,12 @@ export function registerAuthCoreRoutes(app: Express, options: RegisterAuthCoreRo
 
     if (options.getLocalAuthAccountByEmail(email, { schoolId })) {
       res.status(409).json({ error: "An account with that email already exists" });
+      return;
+    }
+
+    const crossSchoolAccounts = options.getLocalAuthAccountsByEmailAcrossSchools(email);
+    if (crossSchoolAccounts.length > 0) {
+      res.status(409).json({ error: "An account with that email already exists. Sign in instead." });
       return;
     }
 

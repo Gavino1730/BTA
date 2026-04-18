@@ -773,6 +773,7 @@ registerAuthCoreRoutes(app, {
   buildSuggestedCoachIdentity,
   resolveCurrentOrganizationMember,
   getLocalAuthAccountByEmail,
+  getLocalAuthAccountsByEmailAcrossSchools,
   buildAuthSessionResponse,
   getUserWorkspaceProfile,
   listSchoolMembershipsForUser,

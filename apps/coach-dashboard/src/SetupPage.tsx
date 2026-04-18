@@ -151,6 +151,27 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     ].filter(Boolean).length;
     return Math.round((completed / 3) * 100);
   }, [authSession?.email, schoolName, displayName]);
+  const setupChecklist = useMemo(
+    () => [
+      {
+        label: "Account",
+        complete: Boolean(authSession?.email),
+        detail: authSession?.email ?? "Create or sign in to a coach account",
+      },
+      {
+        label: "School",
+        complete: Boolean(schoolName.trim()),
+        detail: schoolName.trim() || "Confirm the school workspace",
+      },
+      {
+        label: "First Team",
+        complete: Boolean(displayName.trim()),
+        detail: displayName.trim() || "Create the first basketball team",
+      },
+    ],
+    [authSession?.email, displayName, schoolName],
+  );
+  const customTemplateSelected = selectedTemplate.gender === "custom" || selectedTemplate.level === "custom";
 
   async function handleAuthSubmit() {
     const normalizedName = coachName.trim();
@@ -316,12 +337,17 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   }
 
   return (
-    <div className="stats-page">
+    <div className="stats-page setup-page">
       <section className="stats-page-hero setup-hero">
-        <div>
+        <div className="setup-hero-copy">
           <p className="stats-page-eyebrow">School onboarding</p>
           <h1>Launch Your School Workspace</h1>
           <p className="stats-page-subtitle">Two required steps: confirm the school, then create the first basketball team.</p>
+          <div className="setup-hero-ribbon-row">
+            <span className="team-workspace-chip is-primary">No billing during signup</span>
+            <span className="team-workspace-chip">Basketball-only setup</span>
+            {inviteToken ? <span className="team-workspace-chip">Invite attached</span> : null}
+          </div>
         </div>
         <div className="setup-hero-status">
           <span className="setup-status-pill">{completionPercent}% ready</span>
@@ -330,6 +356,21 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       </section>
 
       <form className="stats-page-card setup-form setup-form-shell" onSubmit={handleSubmit}>
+        <section className="setup-progress-strip" aria-label="Onboarding progress">
+          {setupChecklist.map((item, index) => (
+            <article key={item.label} className={`setup-progress-card${item.complete ? " is-complete" : ""}`}>
+              <div className="setup-progress-card-head">
+                <span className="setup-progress-index">0{index + 1}</span>
+                <span className={`setup-progress-state${item.complete ? " is-complete" : ""}`}>
+                  {item.complete ? "Ready" : "Pending"}
+                </span>
+              </div>
+              <strong>{item.label}</strong>
+              <p>{item.detail}</p>
+            </article>
+          ))}
+        </section>
+
         <section className="setup-section setup-auth-section">
           <div className="setup-section-head setup-section-head-inline">
             <div>
@@ -341,7 +382,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             </span>
           </div>
 
-          <div className="setup-auth-card">
+          <div className="setup-auth-layout">
+            <div className="setup-auth-card">
             {authSession ? (
               <div className="setup-auth-signed-in">
                 <div>
@@ -373,6 +415,13 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     Sign In
                   </button>
                 </div>
+
+                {inviteToken ? (
+                  <div className="setup-inline-note">
+                    <strong>Invite detected</strong>
+                    <p>Use the invited email so this account attaches to the correct school or team membership.</p>
+                  </div>
+                ) : null}
 
                 <div className="setup-grid">
                   <label className="stats-filter-field">
@@ -414,92 +463,108 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                 </div>
               </>
             )}
-          </div>
-        </section>
-
-        <div className="setup-summary-grid">
-          <article className="setup-summary-card setup-summary-card-accent">
-            <span className="setup-summary-label">School</span>
-            <strong>{schoolName.trim() || "Confirm school"}</strong>
-            <p>This becomes the billing and admin entity.</p>
-          </article>
-          <article className="setup-summary-card">
-            <span className="setup-summary-label">First Team</span>
-            <strong>{displayName.trim() || "Create first team"}</strong>
-            <p>Default templates are optimized for high school basketball.</p>
-          </article>
-          <article className="setup-summary-card">
-            <span className="setup-summary-label">Next Steps</span>
-            <strong>Invite staff</strong>
-            <p>Roster import and live game setup happen after entry, not during signup.</p>
-          </article>
-        </div>
-
-        <section className="setup-section">
-          <div className="setup-section-head">
-            <div>
-              <h3>Step 2: School Details</h3>
-              <p className="setup-section-copy">This creates the school workspace and admin control center.</p>
             </div>
-          </div>
 
-          <div className="setup-grid">
-            <label className="stats-filter-field">
-              <span>School Name *</span>
-              <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder || "Lincoln High School"} required />
-            </label>
-          </div>
-        </section>
-
-        <section className="setup-section">
-          <div className="stats-page-card-head setup-section-head setup-section-head-inline">
-            <div>
-              <h3>Step 3: First Team</h3>
-              <p className="setup-section-copy">Create the first team workspace. Roster import can happen after entry.</p>
-            </div>
-            <div className="setup-roster-toolbar">
-              <span className="setup-count-badge">Basketball only</span>
-            </div>
-          </div>
-
-          <div className="setup-grid">
-            <label className="stats-filter-field">
-              <span>Template *</span>
-              <select value={templateLabel} onChange={(event) => setTemplateLabel(event.target.value)}>
-                {TEAM_TEMPLATES.map((template) => (
-                  <option key={template.label} value={template.label}>{template.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="stats-filter-field">
-              <span>Display Name *</span>
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Boys Varsity" required />
-            </label>
-            <label className="stats-filter-field">
-              <span>Abbreviation</span>
-              <input
-                value={teamAbbreviation}
-                onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
-                placeholder="BVAR"
-              />
-            </label>
-            <label className="stats-filter-field setup-color-field">
-              <span>Team Color</span>
-              <div className="setup-color-control">
-                <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} aria-label="Team color" />
-                <div className="setup-color-preview">
-                  <span className="setup-color-swatch" style={{ backgroundColor: teamColor }} />
-                  <strong>{teamColor.toUpperCase()}</strong>
-                </div>
+            <aside className="setup-sidecard">
+              <span className="setup-sidecard-label">What happens next</span>
+              <h4>{authSession ? "Account is attached" : "Account unlocks the workspace"}</h4>
+              <p>
+                {authSession
+                  ? "After account setup, the next step creates the school workspace and first basketball team."
+                  : "This account becomes the initial school owner. Staff invites and roster import happen after entry."}
+              </p>
+              <div className="setup-sidecard-list">
+                <span className="team-workspace-chip is-primary">School overview for admins</span>
+                <span className="team-workspace-chip">Team workspace for coaches</span>
+                <span className="team-workspace-chip">Operator pairing after entry</span>
               </div>
-            </label>
-            {selectedTemplate.gender === "custom" || selectedTemplate.level === "custom" ? (
-              <label className="stats-filter-field">
-                <span>Custom Label</span>
-                <input value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="Girls Development" />
-              </label>
-            ) : null}
+            </aside>
           </div>
+        </section>
+
+        <section className="setup-stage-grid">
+          <section className="setup-section setup-stage-card">
+            <div className="setup-section-head">
+              <div>
+                <h3>Step 2: School Details</h3>
+                <p className="setup-section-copy">This becomes the billing and admin entity for every team workspace in the school.</p>
+              </div>
+            </div>
+
+            <div className="setup-grid">
+              <label className="stats-filter-field">
+                <span>School Name *</span>
+                <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder || "Lincoln High School"} required />
+              </label>
+            </div>
+
+            <div className="setup-summary-card setup-summary-card-accent">
+              <span className="setup-summary-label">School Workspace</span>
+              <strong>{schoolName.trim() || "Confirm school"}</strong>
+              <p>Admins land in School Overview first, with billing, staff, activity, and team controls in one place.</p>
+            </div>
+          </section>
+
+          <section className="setup-section setup-stage-card">
+            <div className="stats-page-card-head setup-section-head setup-section-head-inline">
+              <div>
+                <h3>Step 3: First Team</h3>
+                <p className="setup-section-copy">Create the first basketball team workspace. Roster import can happen after entry.</p>
+              </div>
+              <div className="setup-roster-toolbar">
+                <span className="setup-count-badge">Basketball only</span>
+              </div>
+            </div>
+
+            <div className="setup-grid">
+              <label className="stats-filter-field">
+                <span>Template *</span>
+                <select value={templateLabel} onChange={(event) => setTemplateLabel(event.target.value)}>
+                  {TEAM_TEMPLATES.map((template) => (
+                    <option key={template.label} value={template.label}>{template.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="stats-filter-field">
+                <span>Display Name *</span>
+                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Boys Varsity" required />
+              </label>
+              <label className="stats-filter-field">
+                <span>Abbreviation</span>
+                <input
+                  value={teamAbbreviation}
+                  onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
+                  placeholder="BVAR"
+                />
+              </label>
+              <label className="stats-filter-field setup-color-field">
+                <span>Team Color</span>
+                <div className="setup-color-control">
+                  <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} aria-label="Team color" />
+                  <div className="setup-color-preview">
+                    <span className="setup-color-swatch" style={{ backgroundColor: teamColor }} />
+                    <strong>{teamColor.toUpperCase()}</strong>
+                  </div>
+                </div>
+              </label>
+              {customTemplateSelected ? (
+                <label className="stats-filter-field">
+                  <span>Custom Label</span>
+                  <input value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} placeholder="Girls Development" />
+                </label>
+              ) : null}
+            </div>
+
+            <div className="setup-summary-card">
+              <span className="setup-summary-label">First Team Preview</span>
+              <strong>{displayName.trim() || selectedTemplate.label}</strong>
+              <p>
+                {customTemplateSelected
+                  ? "Custom teams can still use the same school-wide navigation, permissions, and live game workflow."
+                  : `${selectedTemplate.label} is ready to become the first team workspace under this school.`}
+              </p>
+            </div>
+          </section>
         </section>
 
         <div className="setup-actions">

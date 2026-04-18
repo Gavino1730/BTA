@@ -2,6 +2,9 @@ import { useMemo, useState, useEffect } from "react";
 import { EmptyState } from "./EmptyState.js";
 import { apiBase, apiKeyHeader, fetchBillingEntitlement, fetchBillingPortalUrl, validateCoupon, applyCoupon, type BillingEntitlement } from "./platform.js";
 import { AuthRouteFrame, PolicyPage, ShellPage, type RoutedPageProps } from "./RouteShellShared.js";
+import { SchoolPageHeader, SchoolSectionIntro } from "./SchoolAdminSections.js";
+import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
+import { fetchSchoolOverview, fetchWorkspaceContext, type SchoolOverviewPayload } from "./workspace.js";
 export { SupportPage, ContactPage, DemoBookingPage, DataDeletionPage } from "./RouteShellIntakePages.js";
 
 function readAuthQueryValue(key: string): string {
@@ -433,11 +436,8 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
   const [submittingPortal, setSubmittingPortal] = useState(false);
   const [status, setStatus] = useState("Loading billing information...");
   const [billingEntitlement, setBillingEntitlement] = useState<BillingEntitlement | null>(null);
+  const [schoolOverview, setSchoolOverview] = useState<SchoolOverviewPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [couponCode, setCouponCode] = useState("");
-  const [validatingCoupon, setValidatingCoupon] = useState(false);
-  const [couponStatus, setCouponStatus] = useState("");
-  const [couponError, setCouponError] = useState("");
   const [billingLoadFailed, setBillingLoadFailed] = useState(false);
   const [billingRefreshKey, setBillingRefreshKey] = useState(0);
 
@@ -445,23 +445,43 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
     const loadBilling = async () => {
       setLoading(true);
       setBillingLoadFailed(false);
-      const entitlement = await fetchBillingEntitlement();
-      setBillingEntitlement(entitlement);
-      if (!entitlement) {
-        setBillingLoadFailed(true);
-        setStatus("Could not load billing state. You can still retry checkout or open billing portal when available.");
-      } else if (entitlement.status === "active") {
-        setStatus("Your subscription is active. Use the button below to manage your plan through Stripe.");
-      } else if (entitlement.status === "trialing") {
-        setStatus("You are currently in trial. Open the portal to add payment details or start checkout to avoid interruption.");
-      } else if (entitlement.status === "past_due" || entitlement.status === "unpaid") {
-        setStatus("Your account is past due. Update payment details in the billing portal or restart checkout to restore full access.");
-      } else if (entitlement.status === "canceled") {
-        setStatus("Your subscription is canceled. Start checkout to reactivate access.");
-      } else {
-        setStatus("No active subscription found. Start checkout to activate access.");
+      try {
+        const [entitlement, workspaceContext] = await Promise.all([
+          fetchBillingEntitlement(),
+          fetchWorkspaceContext().catch(() => null),
+        ]);
+        setBillingEntitlement(entitlement);
+
+        const resolvedSchoolId =
+          workspaceContext?.profile?.lastSchoolId
+          ?? workspaceContext?.defaultContext?.schoolId
+          ?? workspaceContext?.schools[0]?.schoolId
+          ?? "";
+
+        if (resolvedSchoolId) {
+          const overview = await fetchSchoolOverview(resolvedSchoolId).catch(() => null);
+          setSchoolOverview(overview);
+        } else {
+          setSchoolOverview(null);
+        }
+
+        if (!entitlement) {
+          setBillingLoadFailed(true);
+          setStatus("Could not load billing state. You can still retry checkout or open billing portal when available.");
+        } else if (entitlement.status === "active") {
+          setStatus("School billing is active. Use Stripe to manage plan details, payment methods, and renewal state.");
+        } else if (entitlement.status === "trialing") {
+          setStatus("This school is in trial. Use billing now to lock in payment details before team access becomes restricted.");
+        } else if (entitlement.status === "past_due" || entitlement.status === "unpaid") {
+          setStatus("Billing needs attention. Update payment details in Stripe or restart checkout to restore full access.");
+        } else if (entitlement.status === "canceled") {
+          setStatus("The prior subscription is canceled. Start a new checkout session to reactivate school access.");
+        } else {
+          setStatus("No active subscription found. Start checkout to activate school-level access.");
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     void loadBilling();
   }, [billingRefreshKey]);
@@ -562,22 +582,64 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
       : entitlementStatus === "canceled"
         ? "Your previous subscription is canceled. Reactivate to unlock premium features again."
         : "Subscription access is managed through Stripe checkout. Activate a plan to unlock full app access.";
+  const activeTeamsCount = schoolOverview?.summary.activeTeamsCount ?? schoolOverview?.teams.filter((team) => team.status !== "archived").length ?? 0;
+  const activeTeamLimit = schoolOverview?.summary.activeTeamLimit ?? billingEntitlement?.activeTeamLimit ?? null;
+  const overLimitTeamCount = schoolOverview?.summary.overLimitTeamCount ?? schoolOverview?.teams.filter((team) => team.status === "read_only").length ?? 0;
+  const totalTeams = schoolOverview?.teams.length ?? 0;
+  const readOnlyTeams = schoolOverview?.teams.filter((team) => team.status === "read_only") ?? [];
+  const schoolName = schoolOverview?.school.name ?? "School Billing";
+  const usageMetricValue = activeTeamLimit === null
+    ? `${activeTeamsCount} active`
+    : `${activeTeamsCount}/${activeTeamLimit}`;
+  const planLabel = entitlementStatus === "trialing"
+    ? "Trial"
+    : entitlementStatus === "active"
+      ? "Paid Plan"
+      : entitlementStatus === "past_due" || entitlementStatus === "unpaid"
+        ? "Billing Attention Needed"
+        : entitlementStatus === "canceled"
+          ? "Canceled"
+          : "No Active Plan";
+
+  if (loading && !billingEntitlement && !schoolOverview) {
+    return (
+      <WorkspaceStateCard
+        eyebrow="Billing"
+        title="Loading school billing"
+        message={status}
+        tone="neutral"
+      />
+    );
+  }
 
   return (
-    <div className="stats-page policy-page billing-page">
-      <section className="stats-page-card policy-page-hero billing-page-hero-card">
-        <p className="stats-page-eyebrow">Billing</p>
-        <h1>Billing</h1>
-        <p className="stats-page-subtitle">{subtitle}</p>
-        <div className="billing-hero-meta">
-          <span className="billing-hero-chip">Stripe Checkout</span>
-          <span className="billing-hero-chip">Org Entitlements</span>
-          <span className="billing-hero-chip">Promo Support</span>
-        </div>
-      </section>
+    <div className="stats-page billing-page">
+      <SchoolPageHeader
+        eyebrow="School billing"
+        title={schoolName}
+        subtitle={subtitle}
+        status={status}
+        actions={(
+          <>
+            <button type="button" className="shell-nav-link" onClick={() => setBillingRefreshKey((value) => value + 1)} disabled={loading}>
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+            <button type="button" className="shell-nav-link" onClick={() => onNavigate("/school/settings")}>
+              School Settings
+            </button>
+          </>
+        )}
+      />
+
+      <SchoolSectionIntro
+        title="School billing control"
+        description="Billing is attached to the school, while access and live game limits are enforced at the team level."
+        metricLabel="Active team usage"
+        metricValue={usageMetricValue}
+      />
 
       {billingLoadFailed && (
-        <section className="stats-page-card policy-page-section billing-page-section">
+        <section className="stats-page-card billing-page-section">
           <EmptyState
             title="Billing details unavailable"
             message={status}
@@ -594,7 +656,7 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
                 <button
                   type="button"
                   className="shell-nav-link"
-                  onClick={() => onNavigate("/stats/settings")}
+                  onClick={() => onNavigate("/school/settings")}
                 >
                   Back to Settings
                 </button>
@@ -604,105 +666,181 @@ export function BillingPage({ onNavigate }: RoutedPageProps) {
         </section>
       )}
 
-      {!billingLoadFailed && showPortal && (
-        <section className="stats-page-card policy-page-section billing-page-section">
-          <h3 className="policy-section-heading">Manage Subscription</h3>
-          <p className="stats-page-subcopy policy-section-body">{status}</p>
-          <ul className="policy-section-list">
-            <li>View and manage your subscription in the Stripe billing portal.</li>
-            <li>Update your payment method or billing address.</li>
-            <li>Cancel or change your plan anytime.</li>
-          </ul>
-        </section>
-      )}
-
-      {!billingLoadFailed && showCheckout && (
+      {!billingLoadFailed ? (
         <>
-          <section className="stats-page-card policy-page-section billing-page-section billing-page-promo">
-            <h3 className="policy-section-heading">Have a Promo Code?</h3>
-            <p className="stats-page-subcopy policy-section-body">Enter your coupon code to get a discount on your first plan.</p>
-            <form onSubmit={(e) => void validateAndApplyCoupon(e)} className="coupon-form">
-              <div className="coupon-form-row">
-                <input
-                  type="text"
-                  value={couponCode}
-                  onChange={(e) => {
-                    setCouponCode(e.target.value);
-                    setCouponError("");
-                  }}
-                  placeholder="Enter coupon code"
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={validatingCoupon}
-                  className="coupon-input"
-                />
-                <button
-                  type="submit"
-                  disabled={validatingCoupon || !couponCode.trim()}
-                  className="bta-btn bta-btn-primary bta-btn-sm billing-coupon-apply"
-                >
-                  {validatingCoupon ? "Validating..." : "Apply"}
-                </button>
+          <section className="billing-summary-grid">
+            <article className="stats-page-card billing-summary-card billing-summary-card-accent">
+              <span className="billing-summary-label">Plan Status</span>
+              <strong>{planLabel}</strong>
+              <p>{status}</p>
+              <div className="billing-summary-chip-row">
+                <span className={`team-workspace-chip ${billingEntitlement?.accessActive ? "is-primary" : ""}`}>
+                  {billingEntitlement?.accessActive ? "Access active" : "Access limited"}
+                </span>
+                {entitlementStatus ? <span className="team-workspace-chip">Status: {entitlementStatus}</span> : null}
               </div>
-              {couponStatus && <p className="bta-status bta-status-success">{couponStatus}</p>}
-              {couponError && <p className="bta-status bta-status-error">{couponError}</p>}
-            </form>
+            </article>
+
+            <article className="stats-page-card billing-summary-card">
+              <span className="billing-summary-label">Team Capacity</span>
+              <strong>{usageMetricValue}</strong>
+              <p>
+                {activeTeamLimit === null
+                  ? "Trial access currently allows multiple teams so the school can evaluate the workspace."
+                  : `The current plan supports ${activeTeamLimit} active team${activeTeamLimit === 1 ? "" : "s"} before additional teams become read-only.`}
+              </p>
+            </article>
+
+            <article className="stats-page-card billing-summary-card">
+              <span className="billing-summary-label">Read-only Teams</span>
+              <strong>{String(overLimitTeamCount)}</strong>
+              <p>
+                {overLimitTeamCount > 0
+                  ? "Some team workspaces are visible but restricted until billing capacity increases."
+                  : "No teams are currently restricted by billing limits."}
+              </p>
+            </article>
           </section>
 
-          <section className="stats-page-card policy-page-section billing-page-section">
-            <h3 className="policy-section-heading">{checkoutSectionTitle}</h3>
-            <p className="stats-page-subcopy policy-section-body">{status}</p>
-            <ul className="policy-section-list">
-              <li>Monthly and yearly checkout are available in Stripe-hosted checkout.</li>
-              <li>After checkout, return to the dashboard and refresh if access does not update immediately.</li>
-              {(entitlementStatus === "past_due" || entitlementStatus === "unpaid") && (
-                <li>Past-due access can recover automatically after successful payment confirmation.</li>
+          <section className="stats-page-grid two-column billing-layout-grid">
+            <article className="stats-page-card billing-detail-card">
+              <div className="stats-page-card-head">
+                <div>
+                  <h3>Subscription Control</h3>
+                  <p className="settings-section-desc">
+                    {showPortal
+                      ? "Open the Stripe billing portal to update payment details, invoices, and subscription state."
+                      : "Start or restart checkout to activate school-wide access and unlock the correct team capacity."}
+                  </p>
+                </div>
+              </div>
+              <div className="billing-action-stack">
+                {showPortal ? (
+                  <button type="button" className="shell-nav-link shell-nav-link-active billing-cta-button billing-cta-button-primary" onClick={() => void openPortal()}>
+                    {submittingPortal ? "Opening Portal..." : "Manage Subscription"}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="shell-nav-link shell-nav-link-active billing-cta-button billing-cta-button-primary"
+                      onClick={() => void startCheckout("monthly")}
+                      disabled={submittingCycle !== null}
+                    >
+                      {submittingCycle === "monthly" ? "Starting Monthly..." : `${checkoutLabel} (Monthly)`}
+                    </button>
+                    <button
+                      type="button"
+                      className="shell-nav-link billing-cta-button billing-cta-button-secondary"
+                      onClick={() => void startCheckout("yearly")}
+                      disabled={submittingCycle !== null}
+                    >
+                      {submittingCycle === "yearly" ? "Starting Yearly..." : `${checkoutLabel} (Yearly)`}
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="billing-note-card">
+                <strong>Promo codes</strong>
+                <p>Promo and discount codes are entered directly in Stripe-hosted checkout. They are no longer applied inside the dashboard.</p>
+              </div>
+            </article>
+
+            <article className="stats-page-card billing-detail-card">
+              <div className="stats-page-card-head">
+                <div>
+                  <h3>Team Access Impact</h3>
+                  <p className="settings-section-desc">Billing is school-scoped, but enforcement is visible at the team workspace level.</p>
+                </div>
+              </div>
+              <div className="billing-impact-list">
+                <div className="billing-impact-row">
+                  <span className="billing-impact-label">Total teams</span>
+                  <strong>{String(totalTeams)}</strong>
+                </div>
+                <div className="billing-impact-row">
+                  <span className="billing-impact-label">Active team workspaces</span>
+                  <strong>{String(activeTeamsCount)}</strong>
+                </div>
+                <div className="billing-impact-row">
+                  <span className="billing-impact-label">Current team limit</span>
+                  <strong>{activeTeamLimit === null ? "Unlimited" : String(activeTeamLimit)}</strong>
+                </div>
+                <div className="billing-impact-row">
+                  <span className="billing-impact-label">Restricted teams</span>
+                  <strong>{String(overLimitTeamCount)}</strong>
+                </div>
+              </div>
+              {readOnlyTeams.length > 0 ? (
+                <div className="billing-team-list">
+                  {readOnlyTeams.map((team) => (
+                    <div key={team.id} className="billing-team-row">
+                      <div>
+                        <strong>{team.displayName ?? team.name}</strong>
+                        <p>{team.level ?? "custom"} team workspace</p>
+                      </div>
+                      <span className="settings-status-badge settings-status-invited">Read Only</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="billing-note-card">
+                  <strong>No restricted teams</strong>
+                  <p>All current team workspaces have active billing access.</p>
+                </div>
               )}
-            </ul>
+            </article>
+          </section>
+
+          <section className="stats-page-grid two-column billing-layout-grid">
+            <article className="stats-page-card billing-detail-card">
+              <div className="stats-page-card-head">
+                <div>
+                  <h3>How Billing Works</h3>
+                  <p className="settings-section-desc">This page should explain the actual product behavior, not generic subscription copy.</p>
+                </div>
+              </div>
+              <div className="billing-rule-list">
+                <div className="billing-rule-item">
+                  <strong>School is the billing entity</strong>
+                  <p>Billing lives at the school level while coaches and operators continue working inside team-specific workspaces.</p>
+                </div>
+                <div className="billing-rule-item">
+                  <strong>Trials preserve evaluation</strong>
+                  <p>Trial schools can create more than one team so admins can evaluate the system before converting.</p>
+                </div>
+                <div className="billing-rule-item">
+                  <strong>Over-limit teams stay visible</strong>
+                  <p>Teams above the active limit remain in the switcher but become read-only instead of disappearing.</p>
+                </div>
+              </div>
+            </article>
+
+            <article className="stats-page-card billing-detail-card">
+              <div className="stats-page-card-head">
+                <div>
+                  <h3>Recovery and Next Steps</h3>
+                  <p className="settings-section-desc">Use this when the school needs to restore access or move back into a clean paid state.</p>
+                </div>
+              </div>
+              <div className="billing-note-card">
+                <strong>{showPortal ? "Use the billing portal for changes" : checkoutSectionTitle}</strong>
+                <p>
+                  {showPortal
+                    ? "Stripe portal is the correct place to update payment method, view invoices, cancel, or reactivate a paid subscription."
+                    : "Stripe checkout handles first-time activation, reactivation, and recovery from canceled or past-due billing states."}
+                </p>
+              </div>
+              {(entitlementStatus === "past_due" || entitlementStatus === "unpaid") ? (
+                <div className="billing-note-card billing-note-card-warning">
+                  <strong>Past-due recovery</strong>
+                  <p>Once Stripe confirms successful payment, school access should recover and restricted teams can move back to active state.</p>
+                </div>
+              ) : null}
+            </article>
           </section>
         </>
-      )}
-
-      <section className="stats-page-card policy-page-section billing-page-section">
-        <h3 className="policy-section-heading">Current Rollout</h3>
-        <p className="stats-page-subcopy policy-section-body">This phase includes core checkout and subscription management.</p>
-        <ul className="policy-section-list">
-          <li>Hosted checkout for monthly and yearly plans</li>
-          <li>Org-level entitlement and billing portal</li>
-          <li>Subscription-based paywall enforcement</li>
-          <li>Promo code support</li>
-        </ul>
-      </section>
-
-      <section className="stats-page-card policy-page-actions-wrap billing-page-actions-wrap">
-        <div className="policy-page-actions billing-page-actions">
-          {showPortal && (
-            <button type="button" className="shell-nav-link shell-nav-link-active billing-cta-button billing-cta-button-primary" onClick={() => void openPortal()}>
-              {submittingPortal ? "Opening Portal..." : "Manage Subscription"}
-            </button>
-          )}
-          {showCheckout && (
-            <>
-              <button
-                type="button"
-                className="shell-nav-link shell-nav-link-active billing-cta-button billing-cta-button-primary"
-                onClick={() => void startCheckout("monthly")}
-                disabled={submittingCycle !== null}
-              >
-                {submittingCycle === "monthly" ? "Starting Monthly..." : `${checkoutLabel} (Monthly)`}
-              </button>
-              <button
-                type="button"
-                className="shell-nav-link billing-cta-button billing-cta-button-secondary"
-                onClick={() => void startCheckout("yearly")}
-                disabled={submittingCycle !== null}
-              >
-                {submittingCycle === "yearly" ? "Starting Yearly..." : `${checkoutLabel} (Yearly)`}
-              </button>
-            </>
-          )}
-        </div>
-      </section>
+      ) : null}
     </div>
   );
 }

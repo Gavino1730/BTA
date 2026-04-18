@@ -1527,6 +1527,26 @@
   color: var(--text-muted, rgba(244, 246, 251, 0.68));
 }
 
+.setup-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.setup-hero-copy {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 58rem;
+}
+
+.setup-hero-ribbon-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .setup-form-shell {
   position: relative;
   overflow: hidden;
@@ -1557,6 +1577,73 @@
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.setup-progress-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.setup-progress-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(15, 24, 52, 0.82);
+}
+
+.setup-progress-card.is-complete {
+  border-color: color-mix(in srgb, var(--bta-success) 45%, transparent);
+  background: linear-gradient(180deg, rgba(17, 65, 68, 0.28), rgba(10, 23, 44, 0.9));
+}
+
+.setup-progress-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.setup-progress-index {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-dim, rgba(244,246,251,0.45));
+}
+
+.setup-progress-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-muted, rgba(244,246,251,0.68));
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.setup-progress-state.is-complete {
+  border-color: color-mix(in srgb, var(--bta-success) 42%, transparent);
+  background: color-mix(in srgb, var(--bta-success) 16%, transparent);
+  color: var(--bta-success);
+}
+
+.setup-progress-card strong {
+  font-size: 1rem;
+  color: var(--bta-text-primary);
+}
+
+.setup-progress-card p {
+  margin: 0;
+  color: var(--text-muted, rgba(244,246,251,0.68));
+  line-height: 1.4;
 }
 
 .setup-summary-card {
@@ -1605,6 +1692,12 @@
   background: rgba(16, 25, 55, 0.84);
 }
 
+.setup-auth-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.8fr);
+  gap: 0.9rem;
+}
+
 .setup-auth-pill {
   display: inline-flex;
   align-items: center;
@@ -1648,6 +1741,28 @@
   flex-wrap: wrap;
 }
 
+.setup-inline-note {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0.82rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--bta-warning) 32%, transparent);
+  background: color-mix(in srgb, var(--bta-warning) 12%, rgba(255,255,255,0.03));
+}
+
+.setup-inline-note strong {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bta-warning);
+}
+
+.setup-inline-note p {
+  margin: 0;
+  line-height: 1.42;
+  color: var(--text-muted, rgba(244,246,251,0.68));
+}
+
 .setup-auth-actions {
   display: flex;
   align-items: center;
@@ -1679,15 +1794,70 @@
   color: var(--text-muted, rgba(244, 246, 251, 0.68));
 }
 
+.setup-sidecard {
+  display: grid;
+  align-content: start;
+  gap: 0.7rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--bta-accent-cyan) 20%, transparent);
+  background:
+    radial-gradient(circle at top right, rgba(73, 211, 255, 0.12), transparent 42%),
+    rgba(12, 21, 47, 0.88);
+}
+
+.setup-sidecard-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bta-accent-cyan);
+}
+
+.setup-sidecard h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.setup-sidecard p {
+  margin: 0;
+  color: var(--text-muted, rgba(244,246,251,0.68));
+  line-height: 1.45;
+}
+
+.setup-sidecard-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .setup-section {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
 }
 
+.setup-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.setup-stage-card {
+  padding: 0.95rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(14, 23, 50, 0.76);
+}
+
 .setup-section + .setup-section {
   padding-top: 1rem;
   border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+}
+
+.setup-stage-grid .setup-section + .setup-section {
+  padding-top: 0.95rem;
 }
 
 .setup-page .setup-section h3,
@@ -1785,6 +1955,33 @@
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.45);
   box-shadow: 0 0 0 3px rgba(255,255,255,0.05);
+}
+
+@media (max-width: 960px) {
+  .setup-progress-strip,
+  .setup-stage-grid,
+  .setup-auth-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .setup-hero,
+  .setup-section-head-inline,
+  .setup-auth-actions,
+  .setup-auth-signed-in {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .setup-progress-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .setup-auth-submit {
+    width: 100%;
+  }
 }
 
 .setup-game-color-swatch {

@@ -55,21 +55,21 @@ export function ProductPillars(): JSX.Element {
                     {(() => {
                       const Icon = pillarIcons[index % pillarIcons.length];
                       return (
-                        <div className="mb-3 inline-flex items-center justify-center rounded-xl border border-[var(--border-soft)] bg-[rgba(110,91,255,0.14)] p-2.5">
-                          <Icon className="size-5 text-[var(--accent-secondary)]" />
+                        <div className="mb-3 inline-flex items-center justify-center rounded-xl border border-(--border-soft) bg-[rgba(110,91,255,0.14)] p-2.5">
+                          <Icon className="size-5 text-(--accent-secondary)" />
                         </div>
                       );
                     })()}
-                    <h3 className="font-display text-3xl leading-tight text-[var(--text-primary)]">{pillar.title}</h3>
+                    <h3 className="font-display text-3xl leading-tight text-(--text-primary)">{pillar.title}</h3>
                   </div>
                   <DataChip label="Outcome" value={pillar.stat} className="shrink-0" />
                 </div>
-                <p className="mb-5 text-[var(--text-secondary)]">{pillar.summary}</p>
+                <p className="mb-5 text-(--text-secondary)">{pillar.summary}</p>
                 <div className="space-y-2">
                   {pillar.outcomes.map((outcome) => (
                     <p
                       key={outcome}
-                      className="rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                      className="rounded-lg border border-(--border-soft) px-3 py-2 text-sm text-(--text-secondary)"
                       style={{ background: outcomeTints[index % outcomeTints.length] }}
                     >
                       {outcome}

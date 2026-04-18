@@ -33,12 +33,12 @@ export function Navbar(): JSX.Element {
       transition={{ duration: 0.5 }}
       className="sticky top-3 z-50 mx-auto w-[min(1200px,92vw)]"
     >
-      <div className="relative rounded-2xl border border-[var(--border-soft)] bg-[rgba(13,16,32,0.72)] px-5 py-3 backdrop-blur-xl md:px-7">
+      <div className="relative rounded-2xl border border-(--border-soft) bg-[rgba(13,16,32,0.72)] px-5 py-3 backdrop-blur-xl md:px-7">
         <div className="absolute inset-0 bg-[radial-gradient(130%_160%_at_14%_0%,rgba(110,91,255,0.14),transparent_42%),linear-gradient(180deg,rgba(70,215,255,0.06),transparent_55%)]" />
         <nav className="relative flex items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2.5" aria-label="BTA Courtside home">
             <img src="/brand-icon.png" alt="BTA Courtside" className="h-8 w-auto md:h-9" />
-            <span className="hidden font-display text-sm text-[var(--text-primary)] md:block">
+            <span className="hidden font-display text-sm text-(--text-primary) md:block">
               BTA Courtside
             </span>
           </Link>
@@ -48,7 +48,7 @@ export function Navbar(): JSX.Element {
               <Link
                 key={link.label}
                 href={link.href}
-                className="text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                className="text-sm text-(--text-secondary) transition-colors hover:text-(--text-primary)"
               >
                 {link.label}
               </Link>
@@ -80,7 +80,7 @@ export function Navbar(): JSX.Element {
             <button
               type="button"
               onClick={() => setIsOpen((prev) => !prev)}
-              className="inline-grid size-10 place-items-center rounded-lg border border-[var(--border-soft)] bg-[rgba(28,35,64,0.85)] text-[var(--text-primary)] lg:hidden"
+              className="inline-grid size-10 place-items-center rounded-lg border border-(--border-soft) bg-[rgba(28,35,64,0.85)] text-(--text-primary) lg:hidden"
               aria-label="Toggle menu"
               aria-expanded={isOpen}
             >
@@ -99,19 +99,19 @@ export function Navbar(): JSX.Element {
           transition={{ duration: 0.22, ease: "easeOut" }}
           className="overflow-hidden lg:hidden"
         >
-          <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--panel-2)] p-3">
+          <div className="rounded-xl border border-(--border-soft) bg-(--panel-2) p-3">
             <div className="grid gap-1">
               <Link
                 href="/get-started"
                 onClick={() => setIsOpen(false)}
-                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--panel-1)]"
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-(--text-primary) transition-colors hover:bg-(--panel-1)"
               >
                 Get Started
               </Link>
               <CrossAppLink
                 href={dashboardLoginUrl}
                 onClick={() => setIsOpen(false)}
-                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--panel-1)]"
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-(--text-primary) transition-colors hover:bg-(--panel-1)"
               >
                 Login
               </CrossAppLink>
@@ -120,7 +120,7 @@ export function Navbar(): JSX.Element {
                   key={link.label}
                   href={link.href}
                   onClick={() => setIsOpen(false)}
-                  className="rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--panel-1)] hover:text-[var(--text-primary)]"
+                  className="rounded-lg px-3 py-2 text-sm text-(--text-secondary) transition-colors hover:bg-(--panel-1) hover:text-(--text-primary)"
                 >
                   {link.label}
                 </Link>

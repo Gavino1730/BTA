@@ -32,6 +32,10 @@ function resolveFromAddress(): string {
   return (process.env.BTA_EMAIL_FROM ?? "").trim();
 }
 
+function resolveReplyTo(): string {
+  return (process.env.BTA_EMAIL_REPLY_TO ?? "").trim();
+}
+
 async function sendViaResend(message: EmailMessage): Promise<EmailDeliveryResult> {
   const apiKey = (process.env.RESEND_API_KEY ?? "").trim();
   const from = resolveFromAddress();
@@ -58,7 +62,7 @@ async function sendViaResend(message: EmailMessage): Promise<EmailDeliveryResult
         subject: message.subject,
         html: message.html,
         text: message.text,
-        reply_to: message.replyTo,
+        reply_to: message.replyTo ?? resolveReplyTo() || undefined,
       }),
     });
 

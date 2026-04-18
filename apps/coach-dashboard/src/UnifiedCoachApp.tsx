@@ -564,10 +564,10 @@ export function UnifiedCoachApp() {
       <nav className="coach-navbar">
         <div className="coach-nav-container">
           <div className="coach-nav-brand">
-            <button type="button" className="coach-nav-logo" onClick={() => { window.location.href = marketingBase; }}>
+            <div className="coach-nav-logo">
               <img src="/favicon.png" alt="" className="coach-nav-logo-icon" />
               <span>BTA COURTSIDE</span>
-            </button>
+            </div>
             <div className="coach-context-summary">
               <span className="coach-context-kicker">{activeContextType === "school" ? "School Context" : "Team Context"}</span>
               <strong>{currentContextTitle}</strong>

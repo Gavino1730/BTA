@@ -488,10 +488,11 @@ export interface BillingEntitlement {
   paywallEnabled: boolean;
   accessActive: boolean;
   status: "trialing" | "active" | "past_due" | "canceled" | "unpaid" | "incomplete";
-  planId: string;
-  trialEndsAtIso: string | null;
-  currentPeriodEndsAtIso: string | null;
   reason: "paywall_disabled" | "trial_active" | "subscription_active" | "trial_expired" | "inactive_subscription";
+  activeTeamLimit?: number | null;
+  planId?: string;
+  trialEndsAtIso?: string | null;
+  currentPeriodEndsAtIso?: string | null;
 }
 
 export async function fetchBillingEntitlement(): Promise<BillingEntitlement | null> {
