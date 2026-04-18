@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { apiBase, apiKeyHeader } from "../platform.js";
 import { buildProfileState, formatFocusInsights, mapCurrentMember, mapOrganizationMembers, mapRosterPayloadToRows } from "./helpers.js";
 import type {
-  AiSettingsDto,
   OnboardingAccountResponse,
   OrganizationProfileDto,
   OrganizationMemberDto,
@@ -34,19 +33,17 @@ export function useTeamSettingsData(activeSchoolId: string, activeTeamId?: strin
     async function load() {
       setStatus("Loading team settings...");
       try {
-        const [teamsResponse, aiResponse, profileResponse, membersResponse] = await Promise.all([
+        const [teamsResponse, profileResponse, membersResponse] = await Promise.all([
           fetch(`${apiBase}/api/teams`, { headers: apiKeyHeader() }),
-          fetch(`${apiBase}/api/ai-settings`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/onboarding/account`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/org/members`, { headers: apiKeyHeader() }),
         ]);
 
-        if (!teamsResponse.ok || !aiResponse.ok || !profileResponse.ok || !membersResponse.ok) {
+        if (!teamsResponse.ok || !profileResponse.ok || !membersResponse.ok) {
           throw new Error("Failed to load settings");
         }
 
         const teamsPayload = await teamsResponse.json() as { teams?: TeamDto[] };
-        const aiPayload = await aiResponse.json() as AiSettingsDto;
         const profilePayload = await profileResponse.json() as OnboardingAccountResponse;
         const membersPayload = await membersResponse.json() as OrganizationMembersResponse;
         const allTeams = Array.isArray(teamsPayload.teams) ? teamsPayload.teams : [];
@@ -58,13 +55,13 @@ export function useTeamSettingsData(activeSchoolId: string, activeTeamId?: strin
 
         setTeam(primaryTeam);
         setProfile(buildProfileState(profilePayload));
-        setPlayingStyle(aiPayload.playingStyle ?? primaryTeam?.playingStyle ?? "");
-        setTeamContext(aiPayload.teamContext ?? primaryTeam?.teamContext ?? "");
-        setCustomPrompt(aiPayload.customPrompt ?? primaryTeam?.customPrompt ?? "");
+        setPlayingStyle(primaryTeam?.playingStyle ?? "");
+        setTeamContext(primaryTeam?.teamContext ?? "");
+        setCustomPrompt(primaryTeam?.customPrompt ?? "");
         setCurrentMember(mapCurrentMember(membersPayload.currentMember));
         setMembers(mapOrganizationMembers(membersPayload.members));
         setRoster(mapRosterPayloadToRows(primaryTeam?.players ?? []));
-        setFocusInsightsText(formatFocusInsights(aiPayload.focusInsights ?? primaryTeam?.focusInsights));
+        setFocusInsightsText(formatFocusInsights(primaryTeam?.focusInsights));
         setStatus("Settings synced.");
       } catch {
         if (!cancelled) {

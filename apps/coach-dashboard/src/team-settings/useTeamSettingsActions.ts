@@ -89,13 +89,18 @@ export function useTeamSettingsActions({
       setStatus("Team profile unavailable. Complete setup first.");
       return;
     }
+    const teamId = team.id;
+    if (!teamId) {
+      setStatus("No active team selected.");
+      return;
+    }
 
     setSaving(true);
     setStatus("Saving team profile...");
 
     try {
-      const response = await fetch(`${apiBase}/api/team`, {
-        method: "POST",
+      const response = await fetch(`${apiBase}/api/teams/${encodeURIComponent(teamId)}`, {
+        method: "PUT",
         headers: apiKeyHeader(true),
         body: JSON.stringify({
           name: team.name.trim(),
@@ -121,11 +126,17 @@ export function useTeamSettingsActions({
   }
 
   async function saveAiSettings() {
+    const teamId = team?.id;
+    if (!teamId) {
+      setStatus("No active team selected.");
+      return;
+    }
+
     setSaving(true);
     setStatus("Saving AI settings...");
 
     try {
-      const response = await fetch(`${apiBase}/api/ai-settings`, {
+      const response = await fetch(`${apiBase}/api/teams/${encodeURIComponent(teamId)}`, {
         method: "PUT",
         headers: apiKeyHeader(true),
         body: JSON.stringify({

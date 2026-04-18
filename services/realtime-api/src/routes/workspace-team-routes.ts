@@ -114,6 +114,62 @@ export function registerTeamRoutes(app: Express, options: RegisterTeamRoutesOpti
     });
   });
 
+  app.put("/api/teams/:teamId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    const teamId = options.sanitizeTextField(req.params.teamId, 120);
+    const rawTeam = options.getTeamById(teamId);
+    if (!rawTeam?.schoolId) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    const schoolId = rawTeam.schoolId;
+    const authUser = options.getAuthUser(req);
+    const schoolMembership = options.getSchoolMembershipsByScope({ schoolId }).find((membership) =>
+      (authUser.userId && membership.userId === authUser.userId) || (authUser.email && membership.email === authUser.email),
+    );
+    const teamMembership = options.getTeamMembershipsByScope({ schoolId }).find((membership) =>
+      membership.teamId === rawTeam.id
+        && (
+          (authUser.userId && membership.userId === authUser.userId)
+          || (authUser.email && membership.email === authUser.email)
+        ),
+    );
+    if (!isSchoolAdmin(schoolMembership?.role) && !teamMembership) {
+      res.status(403).json({ error: "Team access required" });
+      return;
+    }
+
+    const payload = (req.body ?? {}) as Record<string, unknown>;
+    const teams = options.getRosterTeamsByScope({ schoolId });
+    const teamIndex = teams.findIndex((t) => t.id === teamId);
+    if (teamIndex < 0) {
+      res.status(404).json({ error: "Team not found in school" });
+      return;
+    }
+
+    const existing = teams[teamIndex]!;
+    const focusInsights = Array.isArray(payload.focusInsights)
+      ? (payload.focusInsights as unknown[]).map((v) => options.sanitizeTextField(v, 200)).filter(Boolean)
+      : existing.focusInsights;
+
+    const updated = {
+      ...existing,
+      ...(payload.name !== undefined && { name: options.sanitizeTextField(payload.name, 120) || existing.name }),
+      ...(payload.abbreviation !== undefined && { abbreviation: options.sanitizeTextField(payload.abbreviation, 12) || existing.abbreviation }),
+      ...(payload.season !== undefined && { season: options.sanitizeTextField(payload.season, 40) || undefined }),
+      ...(payload.teamColor !== undefined && { teamColor: options.normalizeTeamColor(payload.teamColor) }),
+      ...(payload.playingStyle !== undefined && { playingStyle: options.sanitizeTextField(payload.playingStyle, 500) || undefined }),
+      ...(payload.teamContext !== undefined && { teamContext: options.sanitizeTextField(payload.teamContext, 1200) || undefined }),
+      ...(payload.customPrompt !== undefined && { customPrompt: options.sanitizeTextField(payload.customPrompt, 1200) || undefined }),
+      ...(payload.focusInsights !== undefined && { focusInsights: focusInsights as string[] | undefined }),
+    };
+
+    const nextTeams = [...teams];
+    nextTeams[teamIndex] = updated;
+    options.saveRosterTeams(nextTeams, { schoolId });
+
+    res.json({ team: updated });
+  });
+
   app.post("/api/teams/:teamId/live-sessions", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const authUser = options.getAuthUser(req);
     const teamId = options.sanitizeTextField(req.params.teamId, 120);
