@@ -94,14 +94,6 @@ export function SchoolSettingsPage({ schoolId, onNavigate }: SchoolSettingsPageP
               <input value={overview.school.name} readOnly />
             </label>
             <label className="stats-filter-field">
-              <span>School ID</span>
-              <input value={overview.school.schoolId} readOnly />
-            </label>
-            <label className="stats-filter-field">
-              <span>Slug</span>
-              <input value={overview.school.slug} readOnly />
-            </label>
-            <label className="stats-filter-field">
               <span>Status</span>
               <input value={overview.school.status} readOnly />
             </label>

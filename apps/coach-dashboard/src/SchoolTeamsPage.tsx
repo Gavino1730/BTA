@@ -27,7 +27,6 @@ export function SchoolTeamsPage({ schoolId, canManageSchool, onOpenTeam }: Schoo
   const [displayName, setDisplayName] = useState("Boys Varsity");
   const [customLabel, setCustomLabel] = useState("");
   const [abbreviation, setAbbreviation] = useState("");
-  const [teamColor, setTeamColor] = useState("#1d4ed8");
 
   async function reloadOverview(nextStatus?: string) {
     setStatus(nextStatus ?? "Loading teams...");
@@ -93,13 +92,14 @@ export function SchoolTeamsPage({ schoolId, canManageSchool, onOpenTeam }: Schoo
     setStatus("Creating team...");
     try {
       const nextDisplayName = displayName.trim() || selectedTemplate.label;
+      const schoolColor = overview.teams[0]?.teamColor ?? "#1d4ed8";
       const result = await createSchoolTeam(overview.school.schoolId, {
         gender: selectedTemplate.gender,
         level: selectedTemplate.level,
         displayName: nextDisplayName,
         customLabel: customLabel.trim() || undefined,
         abbreviation: abbreviation.trim().toUpperCase() || undefined,
-        teamColor,
+        teamColor: schoolColor,
       });
       await reloadOverview(result.billingNotice ?? `${result.team.displayName ?? result.team.name} created.`);
       setShowAddTeam(false);
@@ -153,8 +153,6 @@ export function SchoolTeamsPage({ schoolId, canManageSchool, onOpenTeam }: Schoo
         onDisplayNameChange={setDisplayName}
         abbreviation={abbreviation}
         onAbbreviationChange={setAbbreviation}
-        teamColor={teamColor}
-        onTeamColorChange={setTeamColor}
         customLabel={customLabel}
         onCustomLabelChange={setCustomLabel}
         showCustomLabel={selectedTemplate.gender === "custom" || selectedTemplate.level === "custom"}

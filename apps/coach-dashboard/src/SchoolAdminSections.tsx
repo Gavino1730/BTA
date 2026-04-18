@@ -120,8 +120,6 @@ export function AddTeamModal({
   onDisplayNameChange,
   abbreviation,
   onAbbreviationChange,
-  teamColor,
-  onTeamColorChange,
   customLabel,
   onCustomLabelChange,
   showCustomLabel,
@@ -137,8 +135,6 @@ export function AddTeamModal({
   onDisplayNameChange: (value: string) => void;
   abbreviation: string;
   onAbbreviationChange: (value: string) => void;
-  teamColor: string;
-  onTeamColorChange: (value: string) => void;
   customLabel: string;
   onCustomLabelChange: (value: string) => void;
   showCustomLabel: boolean;
@@ -176,13 +172,6 @@ export function AddTeamModal({
         <label className="stats-filter-field">
           <span>Abbreviation</span>
           <input value={abbreviation} onChange={(event) => onAbbreviationChange(event.target.value.toUpperCase())} placeholder="BVAR" />
-        </label>
-        <label className="stats-filter-field school-color-field">
-          <span>Team Color</span>
-          <div className="school-color-control">
-            <input type="color" value={teamColor} onChange={(event) => onTeamColorChange(event.target.value)} />
-            <code>{teamColor.toUpperCase()}</code>
-          </div>
         </label>
         {showCustomLabel ? (
           <label className="stats-filter-field">

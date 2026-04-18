@@ -61,7 +61,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [coachEmail, setCoachEmail] = useState(inviteEmail);
   const [displayName, setDisplayName] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
-  const [teamColor, setTeamColor] = useState("#1d4ed8");
+  const [schoolColor, setSchoolColor] = useState("#1d4ed8");
   const [status, setStatus] = useState("Create your account, confirm the school, and create the first team.");
   const [saving, setSaving] = useState(false);
   const [authMode, setAuthMode] = useState<"register" | "login">(inviteToken ? "register" : "register");
@@ -104,14 +104,15 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         setCoachEmail(payload.user.email ?? inviteEmail);
         setAuthStatus(`Signed in as ${payload.user.email ?? payload.user.fullName ?? "coach"}.`);
 
-        if (payload.user.schoolId && !schoolName) {
-          setSchoolName(formatSchoolNameFromId(payload.user.schoolId));
-        }
-
         const context = await fetchWorkspaceContext().catch(() => null);
         if (!cancelled && context && context.schools.length > 0 && context.teams.length > 0) {
           onComplete();
           return;
+        }
+
+        // Pre-fill school name from actual workspace data, not from a slug derived from the user's email
+        if (!cancelled && context?.schools[0]?.name && !schoolName) {
+          setSchoolName(context.schools[0].name);
         }
 
         if (!cancelled && !sessionRestoredRef.current) {
@@ -198,10 +199,28 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
       if (!authResult.token) {
         if (authMode === "register") {
-          setAuthStatus("Account created. Check your email to confirm your address, then sign in to continue.");
-          return false;
+          // Email confirmation may be required — attempt an immediate sign-in so the
+          // user is not blocked. If Supabase auto-confirms the account this succeeds
+          // right away. If email confirmation is still pending the sign-in will throw
+          // and we fall through to the informational message.
+          try {
+            const immediateSignIn = await signInWithSupabase(normalizedEmail, normalizedPassword);
+            if (immediateSignIn.token) {
+              authResult.token = immediateSignIn.token;
+              authResult.email = immediateSignIn.email ?? authResult.email;
+              authResult.fullName = immediateSignIn.fullName ?? authResult.fullName;
+            }
+          } catch {
+            // sign-in failed (email not confirmed yet); fall through
+          }
         }
-        throw new Error("Could not authenticate this account.");
+        if (!authResult.token) {
+          if (authMode === "register") {
+            setAuthStatus("Account created. Check your email to confirm your address, then sign in to continue.");
+            return false;
+          }
+          throw new Error("Could not authenticate this account.");
+        }
       }
 
       storeAuthSession({
@@ -233,9 +252,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       setConfirmPassword("");
       setCoachName(payload.user.fullName ?? normalizedName);
       setCoachEmail(payload.user.email ?? normalizedEmail);
-      if (payload.user.schoolId && !schoolName.trim()) {
-        setSchoolName(formatSchoolNameFromId(payload.user.schoolId));
-      }
+
       setAuthStatus(
         payload.onboarding?.completed
           ? "Account ready. Redirecting..."
@@ -293,7 +310,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
     const normalizedSchoolName = schoolName.trim();
     const normalizedDisplayName = displayName.trim();
-    const normalizedSchoolId = authSession.schoolId?.trim() || slugifySchoolId(normalizedSchoolName);
+    const normalizedSchoolId = slugifySchoolId(normalizedSchoolName) || authSession.schoolId?.trim();
     if (!normalizedSchoolName || !normalizedSchoolId || !normalizedDisplayName) {
       setStatus("School name and first team are required.");
       return;
@@ -332,7 +349,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           level: "custom",
           displayName: normalizedDisplayName,
           abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
-          teamColor,
+          teamColor: schoolColor,
         });
         activeTeamId = teamResult.team.id;
       }
@@ -494,6 +511,16 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                 <span>School Name *</span>
                 <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder || "Lincoln High School"} required />
               </label>
+              <label className="stats-filter-field setup-color-field">
+                <span>School Color</span>
+                <div className="setup-color-control">
+                  <input type="color" value={schoolColor} onChange={(event) => setSchoolColor(event.target.value)} aria-label="School color" />
+                  <div className="setup-color-preview">
+                    <span className="setup-color-swatch" style={{ backgroundColor: schoolColor }} />
+                    <strong>{schoolColor.toUpperCase()}</strong>
+                  </div>
+                </div>
+              </label>
             </div>
 
             <div className="setup-summary-card setup-summary-card-accent">
@@ -537,16 +564,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   onChange={(event) => setTeamAbbreviation(event.target.value.toUpperCase().slice(0, 12))}
                   placeholder="BVAR"
                 />
-              </label>
-              <label className="stats-filter-field setup-color-field">
-                <span>Team Color</span>
-                <div className="setup-color-control">
-                  <input type="color" value={teamColor} onChange={(event) => setTeamColor(event.target.value)} aria-label="Team color" />
-                  <div className="setup-color-preview">
-                    <span className="setup-color-swatch" style={{ backgroundColor: teamColor }} />
-                    <strong>{teamColor.toUpperCase()}</strong>
-                  </div>
-                </div>
               </label>
             </div>
 

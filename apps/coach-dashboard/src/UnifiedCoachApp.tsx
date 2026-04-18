@@ -228,7 +228,7 @@ export function UnifiedCoachApp() {
     setActiveContextType(nextContextType);
   }, []);
 
-  const syncWorkspaceState = useCallback(async () => {
+  const syncWorkspaceState = useCallback(async (): Promise<{ needsSetup: boolean; authenticated: boolean }> => {
     const sessionResponse = await fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() });
     const sessionPayload = sessionResponse.ok
       ? await sessionResponse.json() as AuthSessionPayload
@@ -242,7 +242,7 @@ export function UnifiedCoachApp() {
       setActiveSchoolId(null);
       setActiveTeamId(null);
       setActiveContextType(null);
-      return;
+      return { needsSetup: false, authenticated: false };
     }
 
     const storedSession = readStoredAuthSession();
@@ -254,7 +254,7 @@ export function UnifiedCoachApp() {
     if (!authenticated) {
       setRequiresSetup(false);
       setWorkspaceContext(null);
-      return;
+      return { needsSetup: false, authenticated: false };
     }
 
     const context = await fetchWorkspaceContext();
@@ -262,6 +262,7 @@ export function UnifiedCoachApp() {
     const needsSetup = context.schools.length === 0 || context.teams.length === 0;
     setRequiresSetup(needsSetup);
     applyResolvedContext(context);
+    return { needsSetup, authenticated: true };
   }, [applyResolvedContext]);
 
   useEffect(() => {
@@ -379,8 +380,12 @@ export function UnifiedCoachApp() {
   }, [applyResolvedContext, workspaceContext]);
 
   const handleAuthSuccess = useCallback(async () => {
-    await syncWorkspaceState();
-  }, [syncWorkspaceState]);
+    const { needsSetup, authenticated } = await syncWorkspaceState();
+    if (authenticated && needsSetup && route !== "setup") {
+      navigate("/setup");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncWorkspaceState, route]);
 
   const persistContextPreference = useCallback((input: {
     schoolId: string;

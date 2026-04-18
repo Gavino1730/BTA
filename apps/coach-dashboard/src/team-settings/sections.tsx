@@ -245,16 +245,6 @@ export function ProfileSection({ profile, team, saving, onProfileChange, onTeamC
           <label className="stats-filter-field"><span>Team Name</span><input value={teamState.name} onChange={(event) => onTeamChange({ name: event.target.value })} placeholder="Varsity Boys Basketball" /></label>
           <label className="stats-filter-field"><span>Abbreviation</span><input value={teamState.abbreviation ?? ""} onChange={(event) => onTeamChange({ abbreviation: event.target.value.toUpperCase().slice(0, 12) })} placeholder="VC" /></label>
           <label className="stats-filter-field"><span>Season</span><input value={teamState.season ?? ""} onChange={(event) => onTeamChange({ season: event.target.value })} placeholder="2026" /></label>
-          <label className="stats-filter-field setup-color-field">
-            <span>Team Color</span>
-            <div className="setup-color-control">
-              <input type="color" value={teamState.teamColor || "#1d4ed8"} onChange={(event) => onTeamChange({ teamColor: event.target.value })} aria-label="Team color" />
-              <div className="setup-color-preview">
-                <span className="setup-color-swatch" style={{ backgroundColor: teamState.teamColor || "#1d4ed8" }} />
-                <strong>{(teamState.teamColor || "#1d4ed8").toUpperCase()}</strong>
-              </div>
-            </div>
-          </label>
         </div>
       </form>
     </div>
