@@ -62,7 +62,7 @@ async function sendViaResend(message: EmailMessage): Promise<EmailDeliveryResult
         subject: message.subject,
         html: message.html,
         text: message.text,
-        reply_to: message.replyTo ?? resolveReplyTo() || undefined,
+        reply_to: (message.replyTo ?? resolveReplyTo()) || undefined,
       }),
     });
 
