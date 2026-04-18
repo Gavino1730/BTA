@@ -172,6 +172,7 @@ describe("server billing entitlement integration", () => {
     const response = await fetch(`${API_BASE}/api/billing/portal-session`, {
       method: "GET",
       headers: {
+        "x-api-key": "entitlement-test-api-key",
         "Content-Type": "application/json",
       },
     });

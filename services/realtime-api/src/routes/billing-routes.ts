@@ -126,7 +126,7 @@ export function registerBillingRoutes(app: Express, options: RegisterBillingRout
   // GET /api/billing/entitlement
   // Returns billing entitlement for the current school.
   // Suppresses missingTenantScope telemetry for this specific path.
-  app.get("/api/billing/entitlement", (req, res) => {
+  app.get("/api/billing/entitlement", options.requireApiKey, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
     const billingState = options.getBillingStateByScope({ schoolId });
     const entitlement = buildBillingEntitlement(options.paywallEnabled, billingState);

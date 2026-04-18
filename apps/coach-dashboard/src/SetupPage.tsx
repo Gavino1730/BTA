@@ -347,12 +347,11 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         <div className="setup-hero-copy">
           <p className="stats-page-eyebrow">School onboarding</p>
           <h1>Launch Your School Workspace</h1>
-          <p className="stats-page-subtitle">Three steps: create your account, confirm the school, then add the first team.</p>
-          <div className="setup-hero-ribbon-row">
-            <span className="team-workspace-chip is-primary">No billing during signup</span>
-            <span className="team-workspace-chip">Basketball-only setup</span>
-            {inviteToken ? <span className="team-workspace-chip">Invite attached</span> : null}
-          </div>
+          {inviteToken ? (
+            <div className="setup-hero-ribbon-row">
+              <span className="team-workspace-chip">Invite attached</span>
+            </div>
+          ) : null}
         </div>
         <div className="setup-hero-status">
           <span className="setup-status-pill">{completionPercent}% ready</span>
@@ -465,20 +464,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             )}
             </div>
 
-            <aside className="setup-sidecard">
-              <span className="setup-sidecard-label">What happens next</span>
-              <h4>{authSession ? "Account is attached" : "Account unlocks the workspace"}</h4>
-              <p>
-                {authSession
-                  ? "After account setup, the next step creates the school workspace and first basketball team."
-                  : "This account becomes the initial school owner. Staff invites and roster import happen after entry."}
-              </p>
-              <div className="setup-sidecard-list">
-                <span className="team-workspace-chip is-primary">School overview for admins</span>
-                <span className="team-workspace-chip">Team workspace for coaches</span>
-                <span className="team-workspace-chip">Operator pairing after entry</span>
-              </div>
-            </aside>
+
           </div>
 
           <div className="setup-actions">

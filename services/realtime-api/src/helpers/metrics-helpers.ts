@@ -114,5 +114,5 @@ export function scheduleMetricsPush(): void {
 export function trackSecurityEvent(event: SecurityMetricKey, details: Record<string, unknown>): void {
   securityTelemetry[event] += 1;
   scheduleMetricsPush();
-  console.warn("[realtime-api] security", { event, ...details });
+  console.warn(JSON.stringify({ ts: new Date().toISOString(), level: "warn", service: "realtime-api", message: "security.event", context: { event, ...details } }));
 }

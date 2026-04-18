@@ -1,5 +1,5 @@
 ﻿import cors from "cors";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, { type Request } from "express";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import path from "path";
@@ -15,10 +15,7 @@ import {
   saveOrganizationMember,
   getRosterTeamsByScope,
   saveRosterTeams,
-  getSchoolMembershipsByScope,
-  getTeamMembershipsByScope,
   getPersistenceStatus,
-  refreshGameAiInsights,
   getSchoolRecord,
 } from "./store.js";
 import {
@@ -26,12 +23,10 @@ import {
   isJwtAuthEnabled,
   isLocalTokenAuthEnabled,
   verifyBearerToken,
-  type AuthContext,
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
 import { sendTransactionalEmail } from "./email.js";
 import { sendSupabasePasswordResetEmail } from "./supabase-auth-email.js";
-import { hasWriteRole } from "./tenant-guards.js";
 import { registerHealthRoute } from "./routes/system-routes.js";
 import { logger } from "./logger.js";
 import {
@@ -52,20 +47,17 @@ import {
 } from "./helpers/string-helpers.js";
 import { trackSecurityEvent } from "./helpers/metrics-helpers.js";
 import {
-  type ScopedRequest,
   schoolRoom,
   gameRoom,
   deviceRoom,
   connectionRoom,
-  isOptionalTenantScopeRequest,
-  shouldSuppressMissingTenantTelemetry,
-  resolveRequestSchoolId,
   resolveSocketSchoolId,
   getSchoolIdFromRequest,
 } from "./helpers/tenant-helpers.js";
 import { createRealtimeApiRateLimiters } from "./bootstrap/request-rate-limit.js";
 import { createTenantCompositionHelpers } from "./bootstrap/tenant-composition.js";
 import { createAuthSessionBootstrap } from "./bootstrap/auth-session.js";
+import { createServerMiddleware } from "./bootstrap/server-middleware.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -111,10 +103,19 @@ const tenantComposition = createTenantCompositionHelpers({
 // ---------------------------------------------------------------------------
 // Optional API-key auth. Set BTA_API_KEY env var to enable.
 // ---------------------------------------------------------------------------
+function resolveCoachRedirectOrigin(req: Request): string {
+  const configured = process.env.COACH_DASHBOARD_ORIGIN?.trim();
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+  if ((process.env.NODE_ENV ?? "development") === "production") {
+    return `${req.protocol}://${req.get("host") ?? ""}`.replace(/\/$/, "");
+  }
+  return "http://localhost:5173";
+}
+
 const API_KEY = process.env.BTA_API_KEY?.trim() || undefined;
 const WRITE_API_KEY = process.env.BTA_WRITE_API_KEY?.trim() || undefined;
-const DATABASE_URL = process.env.DATABASE_URL?.trim();
-const DEFAULT_SCHOOL_ID = String(process.env.BTA_DEFAULT_SCHOOL_ID ?? "default").trim().toLowerCase() || "default";
 const REQUIRE_TENANT = process.env.BTA_REQUIRE_TENANT !== "0";
 const JWT_WRITE_REQUIRED = process.env.BTA_JWT_WRITE_REQUIRED !== "0";
 const FAIL_CLOSED_ON_AUTH_MISCONFIG = process.env.BTA_FAIL_CLOSED_ON_MISCONFIG === "1";
@@ -132,225 +133,20 @@ const ENABLE_LEGACY_LOCAL_AUTH = process.env.BTA_ENABLE_LEGACY_LOCAL_AUTH?.trim(
   ? process.env.BTA_ENABLE_LEGACY_LOCAL_AUTH !== "0"
   : ((process.env.NODE_ENV ?? "development") === "test" || !isJwtAuthEnabled());
 
-function hasValidApiKeyRequest(req: Request): boolean {
-  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
-  const candidate = Array.isArray(provided) ? provided[0] : provided;
-  return Boolean(API_KEY && candidate === API_KEY);
-}
-
-function hasValidWriteApiKeyRequest(req: Request): boolean {
-  const provided = req.headers["x-api-key"] ?? req.query.apiKey;
-  const candidate = Array.isArray(provided) ? provided[0] : provided;
-  return Boolean(WRITE_API_KEY && candidate === WRITE_API_KEY);
-}
-
-function hasConfiguredHttpAuthPath(): boolean {
-  return Boolean(API_KEY || WRITE_API_KEY || isJwtAuthEnabled());
-}
-
-function hasConfiguredWriteAuthPath(): boolean {
-  return Boolean(WRITE_API_KEY || isJwtAuthEnabled());
-}
-
-function isReadOnlyRequest(req: Request): boolean {
-  return req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
-}
-
-function resolvePasswordResetRedirect(req: Request, requestedRedirectTo: string | undefined): string {
-  const baseUrl = new URL(resolveCoachRedirectOrigin(req));
-  const fallback = new URL("/reset-password", `${baseUrl.toString().replace(/\/+$/, "")}/`);
-  const candidate = (requestedRedirectTo ?? "").trim();
-  if (!candidate) {
-    return fallback.toString();
-  }
-
-  try {
-    const parsed = new URL(candidate, `${baseUrl.toString().replace(/\/+$/, "")}/`);
-    if (parsed.origin !== fallback.origin) {
-      return fallback.toString();
-    }
-    return parsed.toString();
-  } catch {
-    return fallback.toString();
-  }
-}
-
-function readAuthClaimValue(authContext: AuthContext | undefined, path: string): unknown {
-  const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
-  let current: unknown = authContext?.claims;
-  for (const part of parts) {
-    if (!current || typeof current !== "object" || !(part in current)) {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
-function getAuthUserFromContext(authContext: AuthContext | undefined): { userId?: string; email?: string; fullName?: string } {
-  const email = sanitizeTextField(
-    readAuthClaimValue(authContext, "email")
-      ?? readAuthClaimValue(authContext, "user.email")
-      ?? readAuthClaimValue(authContext, "preferred_username"),
-    160,
-  ).toLowerCase();
-  const fullName = sanitizeTextField(
-    readAuthClaimValue(authContext, "name")
-      ?? [
-        sanitizeTextField(readAuthClaimValue(authContext, "given_name"), 80),
-        sanitizeTextField(readAuthClaimValue(authContext, "family_name"), 80),
-      ].filter(Boolean).join(" "),
-    120,
-  );
-
-  return {
-    userId: sanitizeTextField(authContext?.subject, 120) || undefined,
-    email: email || undefined,
-    fullName: fullName || undefined,
-  };
-}
-
-async function requireApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const scopedReq = req as ScopedRequest;
-  if (scopedReq.authContext) {
-    next();
-    return;
-  }
-
-  if (isJwtAuthEnabled() && JWT_WRITE_REQUIRED && isReadOnlyRequest(req)) {
-    next();
-    return;
-  }
-
-  if (!hasConfiguredHttpAuthPath()) {
-    if (ALLOW_UNCONFIGURED_AUTH_IN_TESTS) {
-      next();
-      return;
-    }
-    trackSecurityEvent("unauthorizedHttp", { reason: "auth-misconfigured", path: req.path, method: req.method });
-    res.status(503).json({ error: "Authentication is not configured for this protected route" });
-    return;
-  }
-
-  if (hasValidApiKeyRequest(req) || hasValidWriteApiKeyRequest(req)) {
-    next();
-    return;
-  }
-
-  const reason = isJwtAuthEnabled() && JWT_WRITE_REQUIRED && !isReadOnlyRequest(req)
-    ? "jwt-write-required"
-    : "missing-valid-credentials";
-  trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
-  res.status(401).json({ error: "Unauthorized â€” provide a valid bearer token or x-api-key" });
-}
-
-async function attachAuthContext(req: Request, _res: Response, next: NextFunction): Promise<void> {
-  const scopedReq = req as ScopedRequest;
-  if (scopedReq.authContext) {
-    next();
-    return;
-  }
-
-  const token = extractBearerToken(req.headers, undefined);
-  if (!token) {
-    next();
-    return;
-  }
-
-  const authContext = await verifyBearerToken(token);
-  if (authContext) {
-    scopedReq.authContext = authContext;
-  }
-
-  next();
-}
-
-function requireTenantScope(req: Request, res: Response, next: NextFunction): void {
-  const scopedReq = req as ScopedRequest;
-  const optionalTenantScope = isOptionalTenantScopeRequest(req);
-  const suppressMissingScopeTelemetry = optionalTenantScope || shouldSuppressMissingTenantTelemetry(req);
-  const resolved = resolveRequestSchoolId(req, {
-    suppressMissingScopeTelemetry,
-  });
-
-  if (optionalTenantScope && resolved.error === "schoolId is required") {
-    next();
-    return;
-  }
-
-  if (!resolved.schoolId) {
-    res.status(resolved.status ?? 400).json({ error: resolved.error ?? "schoolId is required" });
-    return;
-  }
-
-  scopedReq.tenantSchoolId = resolved.schoolId;
-  next();
-}
-
-function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-  if (hasValidWriteApiKeyRequest(req)) {
-    next();
-    return;
-  }
-
-  // When no separate write API key is configured, the regular API key grants write access too
-  if (!WRITE_API_KEY && hasValidApiKeyRequest(req)) {
-    next();
-    return;
-  }
-
-  if (!hasConfiguredWriteAuthPath()) {
-    if (ALLOW_UNCONFIGURED_AUTH_IN_TESTS) {
-      next();
-      return;
-    }
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "write-auth-misconfigured" });
-    res.status(503).json({ error: "Write authorization is not configured for this protected route" });
-    return;
-  }
-
-  if (!isJwtAuthEnabled()) {
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: null, reason: "missing-write-credential" });
-    res.status(403).json({ error: "Insufficient role for write access" });
-    return;
-  }
-
-  const scopedReq = req as ScopedRequest;
-  const claimRole = scopedReq.authContext?.role?.trim().toLowerCase();
-  if (hasWriteRole(claimRole)) {
-    next();
-    return;
-  }
-
-  const schoolId = scopedReq.tenantSchoolId ?? resolveRequestSchoolId(req, {
-    suppressMissingScopeTelemetry: isOptionalTenantScopeRequest(req) || shouldSuppressMissingTenantTelemetry(req),
-  }).schoolId;
-  const authUser = getAuthUserFromContext(scopedReq.authContext);
-  const schoolMembership = schoolId
-    ? getSchoolMembershipsByScope({ schoolId }).find((membership) =>
-        (authUser.userId && membership.userId === authUser.userId)
-        || (authUser.email && membership.email === authUser.email)
-      )
-    : null;
-  const canWriteFromSchoolMembership = schoolMembership?.role === "owner" || schoolMembership?.role === "school_admin";
-  const canWriteFromTeamMembership = schoolId
-    ? getTeamMembershipsByScope({ schoolId }).some((membership) =>
-        membership.role !== "viewer"
-          && (
-            (authUser.userId && membership.userId === authUser.userId)
-            || (authUser.email && membership.email === authUser.email)
-          )
-      )
-    : false;
-
-  if (!canWriteFromSchoolMembership && !canWriteFromTeamMembership) {
-    trackSecurityEvent("forbiddenWriteRole", { path: req.path, method: req.method, role: claimRole ?? null, schoolId: schoolId ?? null });
-    res.status(403).json({ error: "Insufficient role for write access" });
-    return;
-  }
-
-  next();
-}
+const {
+  requireApiKey,
+  requireWriteRole,
+  attachAuthContext,
+  requireTenantScope,
+  getAuthUserFromContext,
+  resolvePasswordResetRedirect,
+} = createServerMiddleware({
+  API_KEY,
+  WRITE_API_KEY,
+  JWT_WRITE_REQUIRED,
+  ALLOW_UNCONFIGURED_AUTH_IN_TESTS,
+  resolveCoachRedirectOrigin,
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -426,13 +222,6 @@ const {
   activateKnownMemberForAccount,
 } = tenantComposition;
 
-async function refreshAndBroadcastInsights(schoolId: string, gameId: string): Promise<void> {
-  const insights = await refreshGameAiInsights(gameId, undefined, { schoolId });
-  if (insights) {
-    emitToGameRooms(schoolId, gameId, "game:insights", insights);
-  }
-}
-
 // Serve the built coach-dashboard SPA from the same origin.
 const COACH_DIST = path.join(__dirname, "..", "..", "..", "apps", "coach-dashboard", "dist");
 const LEGACY_COACH_ROUTE_REDIRECTS: Record<string, string> = {
@@ -444,16 +233,6 @@ const LEGACY_COACH_ROUTE_REDIRECTS: Record<string, string> = {
   "/settings": "/stats/settings",
 };
 
-function resolveCoachRedirectOrigin(req: Request): string {
-  const configured = process.env.COACH_DASHBOARD_ORIGIN?.trim();
-  if (configured) {
-    return configured.replace(/\/$/, "");
-  }
-  if ((process.env.NODE_ENV ?? "development") === "production") {
-    return `${req.protocol}://${req.get("host") ?? ""}`.replace(/\/$/, "");
-  }
-  return "http://localhost:5173";
-}
 
 const {
   passwordResetTokens,

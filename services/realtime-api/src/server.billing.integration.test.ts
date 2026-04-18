@@ -92,13 +92,13 @@ describe("server billing integration", () => {
       },
       body: JSON.stringify({ couponCode: "SAVE10" }),
     });
-    expect(validateCouponResponse.status).toBe(200);
+    expect(validateCouponResponse.status).toBe(410);
     const validateCouponPayload = await validateCouponResponse.json() as {
       valid?: boolean;
-      percentOff?: number | null;
+      error?: string;
     };
-    expect(validateCouponPayload.valid).toBe(true);
-    expect(validateCouponPayload.percentOff).toBe(10);
+    expect(validateCouponPayload.valid).toBe(false);
+    expect(typeof validateCouponPayload.error).toBe("string");
 
     const applyCouponResponse = await fetch(`${API_BASE}/api/billing/apply-coupon`, {
       method: "POST",
@@ -109,7 +109,7 @@ describe("server billing integration", () => {
       },
       body: JSON.stringify({ couponCode: "SAVE10" }),
     });
-    expect(applyCouponResponse.status).toBe(200);
+    expect(applyCouponResponse.status).toBe(410);
 
     const checkoutResponse = await fetch(`${API_BASE}/api/billing/checkout-session`, {
       method: "POST",

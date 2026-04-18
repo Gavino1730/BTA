@@ -22,6 +22,7 @@ async function startSecurityServer(env: {
   process.env.BTA_REQUIRE_TENANT = "0";
   process.env.BTA_JWT_WRITE_REQUIRED = env.jwtWriteRequired ?? "0";
   process.env.BTA_PAYWALL_ENABLED = "0";
+  process.env.BTA_FAIL_CLOSED_ON_MISCONFIG = "1";
   process.env.NODE_ENV = "test";
   process.env.PORT = API_PORT;
 
@@ -48,6 +49,7 @@ async function stopSecurityServer(server: ServerModule): Promise<void> {
   delete process.env.BTA_REQUIRE_TENANT;
   delete process.env.BTA_JWT_WRITE_REQUIRED;
   delete process.env.BTA_PAYWALL_ENABLED;
+  delete process.env.BTA_FAIL_CLOSED_ON_MISCONFIG;
   delete process.env.BTA_API_KEY;
   delete process.env.BTA_WRITE_API_KEY;
   delete process.env.PORT;
