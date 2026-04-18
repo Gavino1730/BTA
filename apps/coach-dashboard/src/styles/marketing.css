@@ -1363,6 +1363,19 @@
   gap: var(--auth-login-gap);
 }
 
+.auth-login-shell-simple {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 2rem 1rem;
+}
+
+.auth-login-shell-simple .auth-login-card {
+  width: 100%;
+  max-width: 420px;
+}
+
 .auth-login-card,
 .auth-login-hero-panel {
   border-radius: var(--auth-login-radius-lg);

@@ -149,19 +149,8 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
       <div className="auth-page-glow auth-page-glow-left" aria-hidden="true" />
       <div className="auth-page-glow auth-page-glow-right" aria-hidden="true" />
 
-      <header className="auth-topbar auth-login-topbar">
-        <button type="button" className="auth-topbar-link" onClick={onBackHome}>Back Home</button>
-        <span className="auth-topbar-pill">Coach Access</span>
-      </header>
-
-      <main className="auth-shell auth-shell-wide auth-login-shell">
+      <main className="auth-shell auth-login-shell-simple">
         <section className="auth-card auth-login-card">
-          <span className="auth-kicker">School dashboard</span>
-          <div className="auth-card-head">
-            <h2>Sign in to your workspace</h2>
-            <p>Admins land on School Overview. Coaches land in their assigned team workspace.</p>
-          </div>
-
           <form className="auth-form auth-login-form" onSubmit={handleSubmit}>
             <label className="auth-field">
               <span>Coach Email</span>
@@ -201,43 +190,6 @@ export function LoginPage({ onSuccess, onBackHome, onCreateAccount, onForgotPass
           </div>
 
           <p className={`auth-status auth-login-status${statusIsError ? " auth-status-error" : ""}`}>{status}</p>
-        </section>
-
-        <section className="auth-hero-panel auth-login-hero-panel">
-          <div className="auth-login-hero-header">
-            <span className="auth-kicker">School-first control center</span>
-            <h1 className="auth-display-title">
-              One school.
-              <span>Multiple team workspaces.</span>
-            </h1>
-            <p className="auth-hero-copy">
-              Boys Varsity, Boys JV, Freshman, and Girls teams now sit under one school workspace with clean team switching and admin controls.
-            </p>
-          </div>
-
-          <div className="auth-login-snapshot-card" aria-hidden="true">
-            <div className="auth-login-snapshot-head">
-              <strong>School Overview</strong>
-              <span>Admin Control</span>
-            </div>
-            <div className="auth-login-snapshot-events">
-              <p>Teams: Varsity, JV, Freshman</p>
-              <p>Staff: School-wide + team assignments</p>
-              <p>Live games: Team-scoped operator sessions</p>
-            </div>
-          </div>
-
-          <aside className="auth-side-note auth-login-cta-note">
-            <strong>{hasInviteLink ? "Finish your invite setup" : "Need a workspace?"}</strong>
-            <p>
-              {hasInviteLink
-                ? "Create your account with the invited address and you will be attached to the correct workspace."
-                : "Create an account to set up a school workspace and your first basketball team."}
-            </p>
-            <button type="button" className="auth-text-link auth-secondary-button" onClick={onCreateAccount}>
-              {hasInviteLink ? "Complete Invite" : "Create Account"}
-            </button>
-          </aside>
         </section>
       </main>
     </div>
