@@ -147,8 +147,15 @@ export function registerTeamRoutes(app: Express, options: RegisterTeamRoutesOpti
     }
 
     const existing = teams[teamIndex]!;
+    const VALID_FOCUS_INSIGHTS = new Set([
+      "timeouts", "substitutions", "foul_management", "momentum",
+      "shot_selection", "ball_security", "hot_hand", "defense",
+    ]);
+    type FocusInsight = NonNullable<RosterTeam["focusInsights"]>[number];
     const focusInsights = Array.isArray(payload.focusInsights)
-      ? (payload.focusInsights as unknown[]).map((v) => options.sanitizeTextField(v, 200)).filter(Boolean)
+      ? (payload.focusInsights as unknown[])
+          .map((v) => options.sanitizeTextField(v, 200))
+          .filter((v): v is FocusInsight => VALID_FOCUS_INSIGHTS.has(v))
       : existing.focusInsights;
 
     const updated = {
