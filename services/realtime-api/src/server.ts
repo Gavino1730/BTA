@@ -86,7 +86,9 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-const { eventRateLimiter, authRateLimiter } = createRealtimeApiRateLimiters();
+const { eventRateLimiter, authRateLimiter } = createRealtimeApiRateLimiters({
+  disableRateLimit: process.env.BTA_AUTH_TEST_MODE === "1",
+});
 
 const tenantComposition = createTenantCompositionHelpers({
   ioEmitRosterTeams: (schoolId, teams) => {

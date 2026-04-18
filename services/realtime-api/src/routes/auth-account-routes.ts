@@ -18,7 +18,7 @@ interface RegisterAuthAccountRoutesOptions {
   saveOrganizationMember: (member: any, scope: { schoolId: string }) => any;
   persistSchoolTeams: (schoolId: string, teams: any[]) => any[];
   generatePassword?: () => string;
-  saveBillingState?: (state: { status: string; planId: string }, scope: { schoolId: string }) => { status: string; planId: string };
+  saveBillingState?: (state: any, scope: { schoolId: string }) => any;
   normalizeMemberRole?: (value: unknown, fallback: string) => string;
   enableLegacyLocalAuth?: boolean;
 }

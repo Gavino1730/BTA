@@ -70,6 +70,7 @@ import {
   saveOrganizationMember,
   saveRosterTeams,
   saveOnboardingAccountState,
+  deleteLocalAuthAccount,
 } from "../store.js";
 import {
   seasonAnalysisBySchool,
@@ -315,6 +316,8 @@ export function registerAllRoutes(
     buildResetPath,
     exposePasswordResetToken: EXPOSE_PASSWORD_RESET_TOKEN,
     getLocalAuthAccountsByScope,
+    saveOrganizationMember,
+    deleteLocalAuthAccount,
     billingGuardBeforeRegister: undefined,
     enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
   });
@@ -334,9 +337,8 @@ export function registerAllRoutes(
     findPlayerRecord,
     saveOrganizationMember,
     persistSchoolTeams,
-    generatePassword: () => randomBytes(12).toString("base64url"),
-    saveBillingState,
-    normalizeMemberRole,
+    generatePassword: () => Math.random().toString(36).slice(-10),
+    saveBillingState: saveBillingState as any,
     enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
   });
 

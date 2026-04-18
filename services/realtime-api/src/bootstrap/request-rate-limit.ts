@@ -51,10 +51,14 @@ export function createRateLimitMiddleware(bucket: string, maxRequests: number, w
   };
 }
 
-export function createRealtimeApiRateLimiters(): {
+export function createRealtimeApiRateLimiters(options?: { disableRateLimit?: boolean }): {
   eventRateLimiter: ReturnType<typeof createRateLimitMiddleware>;
   authRateLimiter: ReturnType<typeof createRateLimitMiddleware>;
 } {
+  if (options?.disableRateLimit) {
+    const noopLimiter = (_req: Request, _res: Response, next: NextFunction) => next();
+    return { eventRateLimiter: noopLimiter as any, authRateLimiter: noopLimiter as any };
+  }
   return {
     eventRateLimiter: createRateLimitMiddleware("events", 100, 60000),
     authRateLimiter: createRateLimitMiddleware("auth", 20, 15 * 60 * 1000),
