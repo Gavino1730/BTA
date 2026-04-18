@@ -1497,7 +1497,7 @@
 
 .setup-page {
   position: relative;
-  max-width: 1140px;
+  max-width: 720px;
   padding-top: 1.45rem;
   padding-bottom: 1.8rem;
 }
@@ -1606,6 +1606,76 @@
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+/* Step bar — replaces progress card strip */
+.setup-step-bar {
+  display: flex;
+  align-items: center;
+  padding: 0.15rem 0 0.65rem;
+}
+
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  white-space: nowrap;
+}
+
+.setup-step-connector {
+  flex: 1;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 0.55rem;
+  min-width: 20px;
+  border-radius: 2px;
+}
+
+.setup-step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim, rgba(244, 246, 251, 0.42));
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+.setup-step.is-done .setup-step-dot {
+  background: color-mix(in srgb, var(--bta-success) 20%, transparent);
+  border-color: var(--bta-success);
+  color: var(--bta-success);
+}
+
+.setup-step.is-active .setup-step-dot {
+  background: var(--bta-accent-violet);
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 80%, white);
+  color: white;
+  box-shadow: 0 0 0 3px var(--bta-accent-violet-soft);
+}
+
+.setup-step-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-dim, rgba(244, 246, 251, 0.42));
+  transition: color 200ms ease;
+}
+
+.setup-step.is-done .setup-step-label {
+  color: var(--text-muted, rgba(244, 246, 251, 0.62));
+}
+
+.setup-step.is-active .setup-step-label {
+  color: var(--text, #f4f6fb);
+  font-weight: 700;
+}
+
+/* Legacy progress strip — kept for backward compat */
 .setup-progress-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1706,6 +1776,30 @@
   line-height: 1.4;
 }
 
+/* Increased contrast for setup form inputs */
+.setup-page .stats-filter-field input,
+.setup-page .stats-filter-field select,
+.setup-page .stats-filter-field textarea {
+  background: rgba(18, 28, 62, 0.92);
+  border-color: rgba(118, 145, 218, 0.32);
+}
+
+.setup-page .stats-filter-field input:focus,
+.setup-page .stats-filter-field select:focus,
+.setup-page .stats-filter-field textarea:focus {
+  background: rgba(22, 34, 74, 0.97);
+  border-color: color-mix(in srgb, var(--bta-accent-violet) 70%, transparent);
+  box-shadow: 0 0 0 3px var(--bta-accent-violet-soft);
+}
+
+.setup-page .stats-filter-field input::placeholder {
+  color: rgba(200, 210, 235, 0.35);
+}
+
+.setup-page .stats-filter-field > span {
+  color: rgba(200, 215, 245, 0.78);
+}
+
 .setup-auth-section {
   gap: 0.8rem;
 }
@@ -1721,7 +1815,7 @@
 
 .setup-auth-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.8fr);
+  grid-template-columns: 1fr;
   gap: 0.9rem;
 }
 
@@ -2777,6 +2871,17 @@
   justify-content: flex-end;
   gap: 0.7rem;
   flex-wrap: wrap;
+}
+
+.setup-actions .shell-nav-link-active,
+.setup-actions .setup-primary-action {
+  flex: 1;
+}
+
+.setup-primary-action {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.2rem;
 }
 
 .setup-submit-button {

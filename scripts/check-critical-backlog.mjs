@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
-const TRACKER_PATH = path.join(ROOT, "improvements", "IMPROVEMENTS.md");
+const TRACKER_PATH = path.join(ROOT, "IMPROVEMENTS.md");
 const enforceEnv = process.env.BTA_ENFORCE_CRITICAL_METADATA;
 const ENFORCE = enforceEnv === "1" || (process.env.CI === "true" && enforceEnv !== "0");
 const MAX_OPEN_P0 = 5;
@@ -20,7 +20,7 @@ function lineNumberFromIndex(content, index) {
 }
 
 if (!fs.existsSync(TRACKER_PATH)) {
-  console.error("[check-critical-backlog] Tracker file not found: improvements/IMPROVEMENTS.md");
+  console.error("[check-critical-backlog] Tracker file not found: IMPROVEMENTS.md");
   process.exit(ENFORCE ? 1 : 0);
 }
 

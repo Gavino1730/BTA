@@ -167,11 +167,6 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       return false;
     }
 
-    if (authMode === "register" && !schoolName.trim()) {
-      setAuthStatus("School name is required.");
-      return false;
-    }
-
     if (!normalizedEmail.includes("@")) {
       setAuthStatus("Enter a valid coach email address.");
       return false;
@@ -308,27 +303,38 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     setStatus("Creating school workspace...");
 
     try {
-      const existingContext = await fetchWorkspaceContext().catch(() => null);
-      const existingSchool = existingContext?.schools.find((school) => school.schoolId === normalizedSchoolId) ?? null;
-      if (!existingSchool) {
-        await bootstrapSchoolWorkspace({
-          schoolId: normalizedSchoolId,
-          schoolName: normalizedSchoolName,
-        });
-      }
-
-      setStatus("Creating first team...");
-      const teamResult = await createSchoolTeam(normalizedSchoolId, {
-        gender: "custom",
-        level: "custom",
-        displayName: normalizedDisplayName,
-        abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
-        teamColor,
+      // Always bootstrap so the user-provided school name is applied even if
+      // a school record already exists from a prior session (bootstrapSchoolWorkspace
+      // calls saveSchoolRecord which is a full upsert and always updates the name).
+      await bootstrapSchoolWorkspace({
+        schoolId: normalizedSchoolId,
+        schoolName: normalizedSchoolName,
       });
+
+      // Re-fetch context after bootstrap so school membership is active and any
+      // pre-existing roster teams (e.g. from old onboarding) are visible.
+      const postBootstrapContext = await fetchWorkspaceContext().catch(() => null);
+      const existingTeam = postBootstrapContext?.teams.find((team) => team.schoolId === normalizedSchoolId) ?? null;
+
+      let activeTeamId: string;
+      if (existingTeam) {
+        // School already has at least one team — skip creation to avoid duplicates.
+        activeTeamId = existingTeam.id;
+      } else {
+        setStatus("Creating first team...");
+        const teamResult = await createSchoolTeam(normalizedSchoolId, {
+          gender: "custom",
+          level: "custom",
+          displayName: normalizedDisplayName,
+          abbreviation: teamAbbreviation.trim().toUpperCase() || undefined,
+          teamColor,
+        });
+        activeTeamId = teamResult.team.id;
+      }
 
       await saveWorkspaceContextPreference({
         schoolId: normalizedSchoolId,
-        teamId: teamResult.team.id,
+        teamId: activeTeamId,
         contextType: "team",
       }).catch(() => undefined);
 
@@ -345,8 +351,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     <div className="stats-page setup-page">
       <section className="stats-page-hero setup-hero">
         <div className="setup-hero-copy">
-          <p className="stats-page-eyebrow">School onboarding</p>
-          <h1>Launch Your School Workspace</h1>
+          <p className="stats-page-eyebrow">Get started</p>
+          <h1>Create Your Basketball Program</h1>
           {inviteToken ? (
             <div className="setup-hero-ribbon-row">
               <span className="team-workspace-chip">Invite attached</span>
@@ -354,45 +360,42 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           ) : null}
         </div>
         <div className="setup-hero-status">
-          <span className="setup-status-pill">{completionPercent}% ready</span>
           <p className="stats-page-status">{status}</p>
         </div>
       </section>
 
       <form className="stats-page-card setup-form setup-form-shell" onSubmit={handleSubmit}>
-        <section className="setup-progress-strip" aria-label="Onboarding progress">
-          {setupChecklist.map((item, index) => {
+        <nav className="setup-step-bar" aria-label="Setup progress">
+          {setupChecklist.flatMap((item, index) => {
             const stepNum = (index + 1) as 1 | 2 | 3;
             const isActive = stepNum === step;
-            return (
-              <article key={item.label} className={`setup-progress-card${item.complete ? " is-complete" : ""}${isActive ? " is-active" : ""}`}>
-                <div className="setup-progress-card-head">
-                  <span className="setup-progress-index">0{stepNum}</span>
-                  <span className={`setup-progress-state${item.complete ? " is-complete" : ""}${isActive && !item.complete ? " is-active" : ""}`}>
-                    {item.complete ? "Ready" : isActive ? "Current" : "Pending"}
-                  </span>
-                </div>
-                <strong>{item.label}</strong>
-                <p>{item.detail}</p>
-              </article>
+            const isDone = stepNum < step || item.complete;
+            const stepEl = (
+              <div key={item.label} className={`setup-step${isDone ? " is-done" : ""}${isActive ? " is-active" : ""}`}>
+                <span className="setup-step-dot">{isDone ? "✓" : stepNum}</span>
+                <span className="setup-step-label">{item.label}</span>
+              </div>
             );
+            if (index > 0) {
+              return [<span key={`conn-${index}`} className="setup-step-connector" aria-hidden="true" />, stepEl];
+            }
+            return [stepEl];
           })}
-        </section>
+        </nav>
 
         {step === 1 && (
         <section className="setup-section setup-auth-section">
           <div className="setup-section-head setup-section-head-inline">
             <div>
-              <h3>Step 1: Account</h3>
-              <p className="setup-section-copy">Create or sign in to the coach account that owns this school workspace.</p>
+              <h3>Your Coach Account</h3>
+              <p className="setup-section-copy">Create or sign in to the coach account that owns this workspace.</p>
             </div>
             <span className={`setup-auth-pill ${authSession ? "setup-auth-pill-active" : ""}`}>
               {authSession ? "Signed in" : "Required"}
             </span>
           </div>
 
-          <div className="setup-auth-layout">
-            <div className="setup-auth-card">
+          <div className="setup-auth-card">
             {authSession ? (
               <div className="setup-auth-signed-in">
                 <div>
@@ -434,19 +437,13 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
                 <div className="setup-grid">
                   <label className="stats-filter-field">
-                    <span>Coach Name</span>
+                    <span>Your Name</span>
                     <input value={coachName} onChange={(event) => setCoachName(event.target.value)} placeholder="Coach Taylor" />
                   </label>
                   <label className="stats-filter-field">
-                    <span>Coach Email</span>
+                    <span>Email</span>
                     <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.org" />
                   </label>
-                  {authMode === "register" ? (
-                    <label className="stats-filter-field">
-                      <span>School Name</span>
-                      <input value={schoolName} onChange={(event) => setSchoolName(event.target.value)} placeholder={schoolPlaceholder || "Lincoln High School"} />
-                    </label>
-                  ) : null}
                   <label className="stats-filter-field">
                     <span>Password</span>
                     <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" />
@@ -462,15 +459,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                 <p className="stats-page-status">{authStatus}</p>
               </>
             )}
-            </div>
-
-
-          </div>
-
-          <div className="setup-actions">
             <button
               type="button"
-              className="shell-nav-link shell-nav-link-active setup-auth-submit"
+              className="shell-nav-link shell-nav-link-active setup-primary-action"
               onClick={() => void handleStep1Continue()}
               disabled={authBusy}
             >
@@ -488,8 +479,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         <section className="setup-section setup-stage-card">
             <div className="setup-section-head">
               <div>
-                <h3>Step 2: School Details</h3>
-                <p className="setup-section-copy">This becomes the billing and admin entity for every team workspace in the school.</p>
+              <h3>School Details</h3>
+              <p className="setup-section-copy">This becomes the admin entity for every team workspace in the school.</p>
               </div>
             </div>
 
@@ -510,7 +501,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
               <button type="button" className="shell-nav-link" onClick={() => setStep(1)}>
                 Back
               </button>
-              <button type="button" className="shell-nav-link shell-nav-link-active" onClick={handleStep2Continue}>
+              <button type="button" className="shell-nav-link shell-nav-link-active setup-primary-action" onClick={handleStep2Continue}>
                 Continue to First Team
               </button>
             </div>
@@ -521,7 +512,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         <section className="setup-section setup-stage-card">
             <div className="stats-page-card-head setup-section-head setup-section-head-inline">
               <div>
-                <h3>Step 3: First Team</h3>
+              <h3>First Team</h3>
                 <p className="setup-section-copy">Create the first basketball team workspace. Roster import can happen after entry.</p>
               </div>
               <div className="setup-roster-toolbar">
@@ -564,7 +555,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             <button type="button" className="shell-nav-link" onClick={() => setStep(2)} disabled={saving}>
               Back
             </button>
-            <button type="submit" className="shell-nav-link shell-nav-link-active setup-submit-button" disabled={saving}>
+            <button type="submit" className="shell-nav-link shell-nav-link-active setup-primary-action" disabled={saving}>
               {saving ? "Creating Workspace..." : "Create School Workspace"}
             </button>
           </div>
