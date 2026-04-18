@@ -167,7 +167,7 @@ export function registerTeamRoutes(app: Express, options: RegisterTeamRoutesOpti
       ...(payload.playingStyle !== undefined && { playingStyle: options.sanitizeTextField(payload.playingStyle, 500) || undefined }),
       ...(payload.teamContext !== undefined && { teamContext: options.sanitizeTextField(payload.teamContext, 1200) || undefined }),
       ...(payload.customPrompt !== undefined && { customPrompt: options.sanitizeTextField(payload.customPrompt, 1200) || undefined }),
-      ...(payload.focusInsights !== undefined && { focusInsights: focusInsights as string[] | undefined }),
+      ...(payload.focusInsights !== undefined && { focusInsights: focusInsights as RosterTeam["focusInsights"] }),
     };
 
     const nextTeams = [...teams];
