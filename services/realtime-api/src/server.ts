@@ -1,14 +1,12 @@
-﻿import cors from "cors";
+import cors from "cors";
 import express, { type Request } from "express";
 import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import { registerAllRoutes } from "./bootstrap/register-routes.js";
 import { normalizeTeamColor } from "@bta/shared-schema";
 import {
-  initializeStore,
   getOrganizationProfileByScope,
   getOnboardingAccountStateByScope,
   getOrganizationMembersByScope,
@@ -16,17 +14,13 @@ import {
   getRosterTeamsByScope,
   saveRosterTeams,
   getPersistenceStatus,
-  getSchoolRecord,
 } from "./store.js";
 import {
   extractBearerToken,
   isJwtAuthEnabled,
-  isLocalTokenAuthEnabled,
   verifyBearerToken,
 } from "./auth.js";
-import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
 import { sendTransactionalEmail } from "./email.js";
-import { sendSupabasePasswordResetEmail } from "./supabase-auth-email.js";
 import { registerHealthRoute } from "./routes/system-routes.js";
 import { logger } from "./logger.js";
 import {
@@ -40,7 +34,6 @@ import { createGameBroadcastManager } from "./sockets/game-broadcast-manager.js"
 import { registerSocketAuth } from "./sockets/socket-auth.js";
 import {
   sanitizeTextField,
-  isValidEmail,
   buildOrganizationSlug,
   buildTeamAbbreviation,
   sanitizeFocusInsights,
@@ -58,6 +51,8 @@ import { createRealtimeApiRateLimiters } from "./bootstrap/request-rate-limit.js
 import { createTenantCompositionHelpers } from "./bootstrap/tenant-composition.js";
 import { createAuthSessionBootstrap } from "./bootstrap/auth-session.js";
 import { createServerMiddleware } from "./bootstrap/server-middleware.js";
+import { createWorkspaceInvitationHandler, registerPasswordResetEmailRoute } from "./bootstrap/server-invite.js";
+import { createServerLifecycle } from "./bootstrap/server-lifecycle.js";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -176,51 +171,16 @@ registerSocketAuth(io, {
   },
 });
 
-const {
-  operatorPresenceBySocketId,
-  operatorPresenceByDeviceId,
-  normalizeConnectionKey,
-  getOperatorsByConnectionId,
-  refreshOperatorConnectionIndex,
-  buildConnectionPresencePayload,
-  getOperatorLinkSetup,
-  setOperatorLinkSetup,
-  getLatestOperatorLinkSetup,
-  clearOperatorLinksForSchool,
-  listSchoolIdsForConnection,
-  emitPresenceForDevice,
-  emitPresenceForConnection,
-} = createOperatorPresenceManager({
+const operatorPresence = createOperatorPresenceManager({
   io,
   deviceRoom,
   connectionRoom,
 });
 
-
-const {
-  emitToGameRooms,
-  broadcastGameStateWithDebounce,
-} = createGameBroadcastManager({
+const gameBroadcast = createGameBroadcastManager({
   io,
   gameRoom,
 });
-const {
-  getPrimaryTeam,
-  persistSchoolTeams,
-  upsertPrimaryTeam,
-  buildOnboardingProfileView,
-  buildOnboardingCompletionSummary,
-  buildAuthSessionResponse,
-  buildSuggestedCoachIdentity,
-  resolveCurrentOrganizationMember,
-  ensureAuthenticatedOrganizationMember,
-  ensureOwnerMembership,
-  requireOrganizationOwner,
-  requireOrganizationManager,
-  normalizeMemberRole,
-  withSuggestedOnboardingIdentity,
-  activateKnownMemberForAccount,
-} = tenantComposition;
 
 // Serve the built coach-dashboard SPA from the same origin.
 const COACH_DIST = path.join(__dirname, "..", "..", "..", "apps", "coach-dashboard", "dist");
@@ -233,18 +193,7 @@ const LEGACY_COACH_ROUTE_REDIRECTS: Record<string, string> = {
   "/settings": "/stats/settings",
 };
 
-
-const {
-  passwordResetTokens,
-  invitationTokens,
-  passwordResetTokenTtlMs,
-  buildResetPath,
-  buildInvitePath,
-  pruneExpiredPasswordResetTokens,
-  pruneExpiredInvitationTokens,
-  deliverPasswordResetEmail,
-  issueMemberInvitation,
-} = createAuthSessionBootstrap({
+const authSession = createAuthSessionBootstrap({
   resolveCoachRedirectOrigin,
   sendTransactionalEmail,
   sanitizeTextField,
@@ -252,71 +201,13 @@ const {
   getOrganizationProfileByScope,
 });
 
-async function issueWorkspaceInvitation(req: Request, input: {
-  schoolId: string;
-  membershipId: string;
-  email: string;
-  fullName: string;
-  roleLabel: string;
-}) {
-  pruneExpiredInvitationTokens();
-
-  for (const [token, invitation] of invitationTokens.entries()) {
-    if (invitation.schoolId === input.schoolId && invitation.memberId === input.membershipId) {
-      invitationTokens.delete(token);
-    }
-  }
-
-  const inviteToken = randomBytes(24).toString("hex");
-  const now = Date.now();
-  const schoolName = sanitizeTextField(
-    getSchoolRecord(input.schoolId)?.name
-      || getOnboardingAccountStateByScope({ schoolId: input.schoolId })?.organization.organizationName
-      || getOrganizationProfileByScope({ schoolId: input.schoolId })?.organizationName
-      || "your school",
-    160,
-  );
-  const invitePath = buildInvitePath(input.schoolId, inviteToken);
-  const inviteUrl = new URL(invitePath, `${resolveCoachRedirectOrigin(req)}/`).toString();
-
-  invitationTokens.set(inviteToken, {
-    token: inviteToken,
-    schoolId: input.schoolId,
-    memberId: input.membershipId,
-    email: input.email,
-    fullName: input.fullName,
-    role: "coach",
-    organizationName: schoolName,
-    createdAt: now,
-    expiresAt: now + (7 * 24 * 60 * 60 * 1000),
-  });
-
-  const emailDelivery = await sendTransactionalEmail({
-    to: input.email,
-    subject: `You're invited to ${schoolName} on BTA`,
-    text: [
-      `Hi ${input.fullName || "Coach"},`,
-      "",
-      `You've been invited to join ${schoolName} on BTA as ${input.roleLabel}.`,
-      `Accept your invite here: ${inviteUrl}`,
-      "",
-      "If you already have a BTA login for this email, sign in from the same link and your workspace access will be activated.",
-    ].join("\n"),
-    html: [
-      `<p>Hi ${input.fullName || "Coach"},</p>`,
-      `<p>You've been invited to join <strong>${schoolName}</strong> on BTA as ${input.roleLabel}.</p>`,
-      `<p><a href="${inviteUrl}">Accept your invite</a></p>`,
-      "<p>If you already have a BTA login for this email, sign in from the same link and your workspace access will be activated.</p>",
-    ].join(""),
-  });
-
-  return {
-    inviteToken: (process.env.BTA_EXPOSE_INVITATION_TOKEN === "1" || (process.env.NODE_ENV ?? "development") !== "production") ? inviteToken : undefined,
-    invitePath,
-    emailDelivery,
-    warning: emailDelivery.delivered ? undefined : "Invitation email was not delivered. Share the invite link manually.",
-  };
-}
+const issueWorkspaceInvitation = createWorkspaceInvitationHandler({
+  invitationTokens: authSession.invitationTokens,
+  pruneExpiredInvitationTokens: authSession.pruneExpiredInvitationTokens,
+  buildInvitePath: authSession.buildInvitePath,
+  resolveCoachRedirectOrigin,
+  sendTransactionalEmail,
+});
 
 app.use(express.static(COACH_DIST, { index: false }));
 app.get(Object.keys(LEGACY_COACH_ROUTE_REDIRECTS), (req, res) => {
@@ -341,55 +232,7 @@ app.get("/api", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/api/auth/password-reset/email", authRateLimiter, async (req, res) => {
-  const payload = (req.body ?? {}) as Record<string, unknown>;
-  const email = sanitizeTextField(payload.email, 160).toLowerCase();
-  if (!isValidEmail(email)) {
-    res.status(400).json({ error: "Enter a valid email address." });
-    return;
-  }
-
-  const redirectTo = resolvePasswordResetRedirect(
-    req,
-    typeof payload.redirectTo === "string" ? payload.redirectTo : undefined,
-  );
-  const emailDelivery = await sendSupabasePasswordResetEmail({
-    email,
-    redirectTo,
-    sendEmail: sendTransactionalEmail,
-  });
-
-  if (emailDelivery.delivered) {
-    res.json({
-      message: "If this email exists, a password reset link has been sent.",
-      emailDelivery,
-    });
-    return;
-  }
-
-  if (emailDelivery.skipped) {
-    logger.warn("auth.password_reset_email_unavailable", {
-      email,
-      reason: emailDelivery.reason,
-      redirectTo,
-    });
-    res.status(503).json({
-      error: emailDelivery.reason || "Password reset email is not configured.",
-      emailDelivery,
-    });
-    return;
-  }
-
-  logger.warn("auth.password_reset_email_failed", {
-    email,
-    reason: emailDelivery.reason,
-    redirectTo,
-  });
-  res.status(502).json({
-    error: emailDelivery.reason || "Could not send password reset email.",
-    emailDelivery,
-  });
-});
+registerPasswordResetEmailRoute(app, { authRateLimiter, resolvePasswordResetRedirect, sendTransactionalEmail });
 
 app.use(attachAuthContext);
 app.use("/api", requireTenantScope);
@@ -416,30 +259,9 @@ registerAllRoutes(app, io, {
   BILLING_STRIPE_PRICE_ID_YEARLY,
   EXPOSE_PASSWORD_RESET_TOKEN,
   ENABLE_LEGACY_LOCAL_AUTH,
-  passwordResetTokens,
-  invitationTokens,
-  passwordResetTokenTtlMs,
-  buildResetPath,
-  buildInvitePath,
-  pruneExpiredPasswordResetTokens,
-  pruneExpiredInvitationTokens,
-  deliverPasswordResetEmail,
-  issueMemberInvitation,
-  operatorPresenceBySocketId,
-  operatorPresenceByDeviceId,
-  normalizeConnectionKey,
-  getOperatorsByConnectionId,
-  refreshOperatorConnectionIndex,
-  buildConnectionPresencePayload,
-  getOperatorLinkSetup,
-  setOperatorLinkSetup,
-  getLatestOperatorLinkSetup,
-  clearOperatorLinksForSchool,
-  listSchoolIdsForConnection,
-  emitPresenceForDevice,
-  emitPresenceForConnection,
-  emitToGameRooms,
-  broadcastGameStateWithDebounce,
+  ...authSession,
+  ...operatorPresence,
+  ...gameBroadcast,
   ...tenantComposition,
 });
 
@@ -459,122 +281,22 @@ app.get("*", (_req, res) => {
   });
 });
 
-let serverStarted = false;
-
 // Warn if API key not set in production
-const NODE_ENV = process.env.NODE_ENV ?? "development";
-if (NODE_ENV === "production" && !API_KEY) {
+if ((process.env.NODE_ENV ?? "development") === "production" && !API_KEY) {
   logger.warn("startup.api_key_missing_warning", { message: "BTA_API_KEY not set. Read-protected API-key routes require JWT or BTA_WRITE_API_KEY." });
 }
 
-/**
- * Start the HTTP server. Accepts an optional port override (pass 0 for an
- * OS-assigned ephemeral port â€” useful in tests to avoid EADDRINUSE conflicts).
- * Returns the actual bound port number.
- */
-export async function startServer(overridePort?: number): Promise<number> {
-  if (serverStarted) {
-    const addr = httpServer.address();
-    const boundPort = (typeof addr === "object" && addr !== null)
-      ? (addr as { port: number }).port
-      : (overridePort ?? Number(process.env.PORT ?? 4000));
-    return boundPort;
-  }
+const { startServer, stopServer, registerShutdownHandlers } = createServerLifecycle({
+  httpServer,
+  API_KEY,
+  WRITE_API_KEY,
+  REQUIRE_TENANT,
+  ALLOWED_ORIGINS,
+});
 
-  assertRuntimeConfig(readRuntimeConfig(isJwtAuthEnabled()));
-
-  const strictPersistenceInit = process.env.BTA_PERSISTENCE_STARTUP_STRICT === "1";
-  try {
-    await initializeStore();
-  } catch (error) {
-    logger.error("startup.store_initialize_failed", {
-      strictPersistenceInit,
-      error,
-    });
-    if (strictPersistenceInit) {
-      throw error;
-    }
-  }
-
-  const port = overridePort ?? Number(process.env.PORT ?? 4000);
-  const host = process.env.HOST ?? "0.0.0.0";
-  const persistenceStatus = getPersistenceStatus();
-
-  return new Promise<number>((resolve) => {
-    httpServer.listen(port, host, () => {
-      serverStarted = true;
-      const addr = httpServer.address();
-      const boundPort = (typeof addr === "object" && addr !== null)
-        ? (addr as { port: number }).port
-        : port;
-      logger.info("startup.server_listening", { port: boundPort, host });
-      logger.info("startup.api_key_auth", { enabled: Boolean(API_KEY) });
-      logger.info("startup.write_api_key_auth", { enabled: Boolean(WRITE_API_KEY) });
-      logger.info("startup.persistence_backend", { backend: persistenceStatus.backend, durable: persistenceStatus.durable });
-      if (persistenceStatus.warning) {
-        logger.warn("startup.persistence_degraded", {
-          backend: persistenceStatus.backend,
-          warning: persistenceStatus.warning,
-          dataFile: persistenceStatus.dataFile,
-        });
-      }
-      if (!isJwtAuthEnabled() && !WRITE_API_KEY) {
-        logger.warn("startup.write_auth_degraded", {
-          warning: "No write-capable auth path configured; protected write routes will return 503 until JWT auth or BTA_WRITE_API_KEY is configured.",
-        });
-      }
-      if (isJwtAuthEnabled()) {
-        logger.info("startup.jwt_auth", { enabled: true });
-      }
-      logger.info("startup.local_token_auth", { enabled: isLocalTokenAuthEnabled() });
-      logger.info("startup.tenant_strict_mode", { enabled: REQUIRE_TENANT });
-      logger.info("startup.cors_origins", { origins: ALLOWED_ORIGINS });
-      resolve(boundPort);
-    });
-  });
-}
-
-export async function stopServer(): Promise<void> {
-  if (!serverStarted) {
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    httpServer.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      serverStarted = false;
-      resolve();
-    });
-  });
-}
-
-let shutdownInProgress = false;
-
-async function handleShutdownSignal(signal: NodeJS.Signals): Promise<void> {
-  if (shutdownInProgress) {
-    return;
-  }
-
-  shutdownInProgress = true;
-  logger.info("shutdown.signal_received", { signal });
-  try {
-    await stopServer();
-    process.exit(0);
-  } catch (error) {
-    logger.error("shutdown.graceful_failed", { error });
-    process.exit(1);
-  }
-}
+export { startServer, stopServer };
 
 if (!process.env.VITEST) {
-  process.once("SIGTERM", () => {
-    void handleShutdownSignal("SIGTERM");
-  });
-  process.once("SIGINT", () => {
-    void handleShutdownSignal("SIGINT");
-  });
+  registerShutdownHandlers();
   void startServer();
 }

@@ -307,7 +307,7 @@ export function AiInsightsPage() {
               fetch(`${apiBase}/api/games/${encodeURIComponent(live.sessionId)}/ai-context`, { headers: apiKeyHeader() })
                 .then((r) => r.ok ? r.json() as Promise<{ preGameNotes?: string }> : null)
                 .then((ctx) => { if (ctx?.preGameNotes) setPreGameNotes(sanitizeText(ctx.preGameNotes)); })
-                .catch(() => {});
+                .catch((err) => { console.warn("[AiInsightsPage] Failed to fetch pre-game notes:", err); });
             }
           }
           setStatus("Ready.");
@@ -509,7 +509,7 @@ export function AiInsightsPage() {
                       headers: { "Content-Type": "application/json", ...apiKeyHeader() },
                       body: JSON.stringify({ preGameNotes: preGameNotes.trim() || "" }),
                     })
-                      .catch(() => {})
+                      .catch((err) => { console.warn("[AiInsightsPage] Failed to save pre-game notes:", err); })
                       .finally(() => setPreGameNotesSaving(false));
                   }}
                 >

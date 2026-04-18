@@ -10,7 +10,7 @@ const ENFORCE = enforceEnv === "1" || (process.env.CI === "true" && enforceEnv !
 
 function isIgnoredPath(filePath) {
   const normalized = filePath.replace(/\\/g, "/");
-  if (normalized.includes("/node_modules/") || normalized.includes("/dist/") || normalized.includes("/test-results/")) {
+  if (normalized.includes("/node_modules/") || normalized.includes("/dist/") || normalized.includes("/test-results/") || normalized.includes("/.next/")) {
     return true;
   }
   return false;
