@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GameSummaryModal } from "./GameSummaryModal.js";
-import { ModalRouter, ChainPromptBar } from "./ModalRouter.js";
-import { ScoringPanel } from "./ScoringPanel.js";
-import { RosterPanel } from "./RosterPanel.js";
-import { LiveCenterPanel } from "./LiveCenterPanel.js";
-import { InlineNoticeBar, AlertBanner, ConfirmDialogOverlay } from "./OperatorOverlays.js";
+import { InlineNoticeBar, ConfirmDialogOverlay } from "./OperatorOverlays.js";
 import { useFeedback, useInlineNotice, useConfirmDialog, useNetworkStatus, useWakeLock, useClockTick, useClockControls, useEventQueue, useCoachSync, useSocket, useGameActions, useEventEditor, usePeriodControl, getPeriodOrder, useGameFlow, DEFAULT_CONNECTION_SYNC_STATUS, useLiveGameDerived, useTeamSetup, useLineupSync } from "./hooks/index.js";
 import {
   normalizeTeamColor,
@@ -53,8 +48,8 @@ import {
   PostGameView,
   PreGameView,
   SettingsViewRenderer,
-  TutorialGate,
 } from "./OperatorPhaseViews.js";
+import { LiveGameView } from "./LiveGameView.js";
 
 function parseViewFromHash(hash: string): { view: "game" | "settings"; settingsView: SettingsView } {
   const h = hash.replace(/^#\/?/, "");
@@ -666,228 +661,74 @@ export function App() {
   }
 
   return (
-    <div
-      className="game-layout"
-      style={{
-        ["--team-home-color" as string]: homeTeamColor,
-        ["--team-away-color" as string]: awayTeamColor,
+    <LiveGameView
+      homeTeamColor={homeTeamColor}
+      awayTeamColor={awayTeamColor}
+      showTutorial={showTutorial}
+      onSetShowTutorial={setShowTutorial}
+      inlineNotice={inlineNotice}
+      onDismissInlineNotice={dismissInlineNotice}
+      liveAlerts={liveAlerts}
+      dismissedAlertIds={dismissedAlertIds}
+      onDismissAlertId={setDismissedAlertIds}
+      confirmDialog={confirmDialog}
+      onResolveConfirm={resolveConfirm}
+      modal={modal}
+      modalTeam={{ vcSideSetup, opponentSide, homeTeamName, awayTeamName, homeTeamColor, awayTeamColor, homePlayers, awayPlayers }}
+      modalGame={{ allEventObjs, pTotals, startingLineup: appData.gameSetup.startingLineup ?? [], overtimeCount, resolveTeamId, isOpponentStatEnabled }}
+      modalCallbacks={{ setModal, confirmShot, confirmFreeThrow, confirmStat, confirmAssistScorer, confirmAssistPoints, confirmSubOut, confirmSubIn, saveEditedEvent, deleteEventRecord, requestConfirm, postEvent, base, sequence }}
+      chainPrompt={chainPrompt}
+      opponentHasRoster={opponentHasRoster}
+      onDismissChain={dismissChain}
+      onSetModal={setModal}
+      onRecordTeamRebound={recordTeamRebound}
+      showGameSummary={showGameSummary}
+      onSetShowGameSummary={setShowGameSummary}
+      gameSummary={{
+        onPlayerQuickShot: handlePlayerQuickShot,
+        onPlayerQuickStat: handlePlayerQuickStat,
+        period, overtimeCount, clockInput, setClockInput,
+        changePeriod, getPeriodOrder, gameMoment, setGameMoment,
+        vcSideSetup, homeTeamName, awayTeamName, homeTeamAbbr, awayTeamAbbr,
+        scores, homeTeamStats, awayTeamStats, periodTeamFouls,
+        totalTimeoutsLeft, trackedPlayers, trackedTopScorer,
+        foulAlerts, pTotals, allEventObjs,
+        gameSetup: appData.gameSetup,
+        gameId, gamePhase, homeTeamId, awayTeamId,
       }}
-    >
-      <TutorialGate showTutorial={showTutorial} onDismiss={() => setShowTutorial(false)} />
-      <button className="help-fab" onClick={() => setShowTutorial(true)} title="Help &amp; Tutorial">?</button>
-      <InlineNoticeBar notice={inlineNotice} onDismiss={dismissInlineNotice} />
-      <AlertBanner alerts={liveAlerts} dismissedIds={dismissedAlertIds} onDismissId={setDismissedAlertIds} />
-      <ConfirmDialogOverlay dialog={confirmDialog} onResolve={resolveConfirm} />
-      <ModalRouter
-        modal={modal}
-        team={{
-          vcSideSetup,
-          opponentSide,
-          homeTeamName,
-          awayTeamName,
-          homeTeamColor,
-          awayTeamColor,
-          homePlayers,
-          awayPlayers,
-        }}
-        game={{
-          allEventObjs,
-          pTotals,
-          startingLineup: appData.gameSetup.startingLineup ?? [],
-          overtimeCount,
-          resolveTeamId,
-          isOpponentStatEnabled,
-        }}
-        callbacks={{
-          setModal,
-          confirmShot,
-          confirmFreeThrow,
-          confirmStat,
-          confirmAssistScorer,
-          confirmAssistPoints,
-          confirmSubOut,
-          confirmSubIn,
-          saveEditedEvent,
-          deleteEventRecord,
-          requestConfirm,
-          postEvent,
-          base,
-          sequence,
-        }}
-      />
-      {!modal && (
-        <ChainPromptBar
-          chainPrompt={chainPrompt}
-          vcSideSetup={vcSideSetup}
-          opponentSide={opponentSide}
-          opponentHasRoster={opponentHasRoster}
-          homeTeamName={homeTeamName}
-          awayTeamName={awayTeamName}
-          homeTeamColor={homeTeamColor}
-          awayTeamColor={awayTeamColor}
-          onDismiss={dismissChain}
-          setModal={setModal}
-          recordTeamRebound={recordTeamRebound}
-        />
-      )}
-      {showGameSummary && (
-        <GameSummaryModal
-          onClose={() => setShowGameSummary(false)}
-          onPlayerQuickShot={handlePlayerQuickShot}
-          onPlayerQuickStat={handlePlayerQuickStat}
-          period={period}
-          overtimeCount={overtimeCount}
-          clockInput={clockInput}
-          setClockInput={setClockInput}
-          changePeriod={changePeriod}
-          getPeriodOrder={getPeriodOrder}
-          gameMoment={gameMoment}
-          setGameMoment={setGameMoment}
-          vcSideSetup={vcSideSetup}
-          homeTeamName={homeTeamName}
-          awayTeamName={awayTeamName}
-          homeTeamAbbr={homeTeamAbbr}
-          awayTeamAbbr={awayTeamAbbr}
-          scores={scores}
-          homeTeamStats={homeTeamStats}
-          awayTeamStats={awayTeamStats}
-          periodTeamFouls={periodTeamFouls}
-          totalTimeoutsLeft={totalTimeoutsLeft}
-          trackedPlayers={trackedPlayers}
-          trackedTopScorer={trackedTopScorer}
-          foulAlerts={foulAlerts}
-          pTotals={pTotals}
-          allEventObjs={allEventObjs}
-          gameSetup={appData.gameSetup}
-          gameId={gameId}
-          gamePhase={gamePhase}
-          homeTeamId={homeTeamId}
-          awayTeamId={awayTeamId}
-        />
-      )}
-      {!hasSchoolScope && pendingEvents.length > 0 && (
-        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
-          {pendingEvents.length} queued locally - waiting for school sync
-        </button>
-      )}
-      {hasOfflineQueue && hasSchoolScope && (
-        <button className="offline-queue-banner" onClick={handleQueueSyncPress}>
-          Offline - {pendingEvents.length} event{pendingEvents.length === 1 ? "" : "s"} queued. Tap to retry sync.
-        </button>
-      )}
-      {!hasOfflineQueue && !online && (
-        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
-          OFFLINE - Tap to reconnect
-        </button>
-      )}
-      {hasSchoolScope && !hasOfflineQueue && online && pendingEvents.length > 0 && (
-        <button className="offline-badge pending-badge" onClick={handleQueueSyncPress}>
-          {pendingEvents.length} pending upload - Tap to resubmit
-        </button>
-      )}
-
-      {/* LEFT: Scoring */}
-      <ScoringPanel
-        vcSideSetup={vcSideSetup}
-        opponentSide={opponentSide}
-        homeTeamName={homeTeamName}
-        awayTeamName={awayTeamName}
-        timeoutRemaining={timeoutRemaining}
-        inOvertimeNow={inOvertimeNow}
-        trackTimeouts={trackTimeouts}
-        isOpponentStatEnabled={isOpponentStatEnabled}
-        setModal={setModal}
-        takeTimeout={takeTimeout}
-      />
-
-      {/* CENTER: Feed */}
-      <LiveCenterPanel
-        connectionId={appData.gameSetup.connectionId}
-        connectedOperatorCount={connectedOperatorCount}
-        online={online}
-        currentGameState={currentGameState}
-        vcSideSetup={vcSideSetup}
-        homeTeamName={homeTeamName}
-        awayTeamName={awayTeamName}
-        homeTeamColor={homeTeamColor}
-        awayTeamColor={awayTeamColor}
-        homeTeamId={homeTeamId}
-        awayTeamId={awayTeamId}
-        scores={scores}
-        periodTeamFouls={periodTeamFouls}
-        homeInBonus={homeInBonus}
-        awayInBonus={awayInBonus}
-        possessionTeamId={possessionTeamId}
-        allEvents={allEvents}
-        allPlayers={allPlayers}
-        pTotals={pTotals}
-        foulAlerts={foulAlerts}
-        period={period}
-        overtimeCount={overtimeCount}
-        trackClock={trackClock}
-        trackPossession={trackPossession}
-        clockVisible={appData.gameSetup.clockVisible ?? true}
-        clockEnabled={appData.gameSetup.clockEnabled ?? true}
-        clockInput={clockInput}
-        clockRunning={clockRunning}
-        clockPadOpen={clockPadOpen}
-        clockPadDigits={clockPadDigits}
-        showClockAdmin={showClockAdmin}
-        openFeedEventEditor={openFeedEventEditor}
-        deleteEventRecord={deleteEventRecord}
-        changePeriod={changePeriod}
-        addOvertimePeriod={addOvertimePeriod}
-        deleteOvertimePeriod={deleteOvertimePeriod}
-        getPeriodOrder={getPeriodOrder}
-        requestConfirm={requestConfirm}
-        setPossession={setPossession}
-        setClockInput={setClockInput}
-        setClockRunning={setClockRunning}
-        setClockPadOpen={setClockPadOpen}
-        setClockPadDigits={setClockPadDigits}
-        setShowClockAdmin={setShowClockAdmin}
-        resetClockForPeriod={resetClockForPeriod}
-        adjustClock={adjustClock}
-        onToggleClockVisible={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } })}
-        onToggleClockEnabled={() => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } })}
-      />
-
-      {/* RIGHT: Players + Stats */}
-      <RosterPanel
-        vcSideSetup={vcSideSetup}
-        homePlayers={homePlayers}
-        awayPlayers={awayPlayers}
-        allEventObjs={allEventObjs}
-        vcTeamId={vcTeamId}
-        startingLineup={appData.gameSetup.startingLineup ?? []}
-        pTotals={pTotals}
-        showRosterPanel={showRosterPanel}
-        setShowRosterPanel={setShowRosterPanel}
-        activeRosterPlayerId={activeRosterPlayerId}
-        setActiveRosterPlayerId={setActiveRosterPlayerId}
-        setModal={setModal}
-        handlePlayerQuickShot={handlePlayerQuickShot}
-        handlePlayerQuickStat={handlePlayerQuickStat}
-      />
-
-      <div className="live-bottom-nav" role="navigation" aria-label="Live game actions">
-        <button className="live-nav-btn live-nav-btn-undo" onClick={() => void undoLast()} title="Undo last event">
-          Undo
-          {pendingEvents.length > 0 && <span className="nav-pending-badge">{pendingEvents.length}</span>}
-        </button>
-        <button
-          className="live-nav-btn live-nav-btn-secondary"
-          title="Game summary"
-          onClick={() => {
-            setShowGameSummary(true);
-          }}>
-          Summary
-        </button>
-        <button className="live-nav-btn live-nav-btn-secondary" onClick={() => navigateView("settings")} title="Settings">Settings</button>
-        <button className="live-nav-btn live-nav-btn-end" onClick={() => void endGame()}>
-          End Game
-        </button>
-      </div>
-    </div>
+      pendingEventsCount={pendingEvents.length}
+      hasSchoolScope={hasSchoolScope}
+      hasOfflineQueue={hasOfflineQueue}
+      online={online}
+      onQueueSyncPress={handleQueueSyncPress}
+      scoring={{ vcSideSetup, opponentSide, homeTeamName, awayTeamName, timeoutRemaining, inOvertimeNow, trackTimeouts, isOpponentStatEnabled, setModal, takeTimeout }}
+      liveCenter={{
+        connectionId: appData.gameSetup.connectionId,
+        connectedOperatorCount, online, currentGameState,
+        vcSideSetup, homeTeamName, awayTeamName, homeTeamColor, awayTeamColor,
+        homeTeamId, awayTeamId, scores, periodTeamFouls, homeInBonus, awayInBonus,
+        possessionTeamId, allEvents, allPlayers, pTotals, foulAlerts,
+        period, overtimeCount, trackClock, trackPossession,
+        clockVisible: appData.gameSetup.clockVisible ?? true,
+        clockEnabled: appData.gameSetup.clockEnabled ?? true,
+        clockInput, clockRunning, clockPadOpen, clockPadDigits, showClockAdmin,
+        openFeedEventEditor, deleteEventRecord, changePeriod, addOvertimePeriod,
+        deleteOvertimePeriod, getPeriodOrder, requestConfirm, setPossession,
+        setClockInput, setClockRunning, setClockPadOpen, setClockPadDigits, setShowClockAdmin,
+        resetClockForPeriod, adjustClock,
+        onToggleClockVisible: () => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockVisible: !(appData.gameSetup.clockVisible ?? true) } }),
+        onToggleClockEnabled: () => persistData({ ...appData, gameSetup: { ...appData.gameSetup, clockEnabled: !(appData.gameSetup.clockEnabled ?? true) } }),
+      }}
+      roster={{
+        vcSideSetup, homePlayers, awayPlayers, allEventObjs, vcTeamId,
+        startingLineup: appData.gameSetup.startingLineup ?? [],
+        pTotals, showRosterPanel, setShowRosterPanel,
+        activeRosterPlayerId, setActiveRosterPlayerId,
+        setModal, handlePlayerQuickShot, handlePlayerQuickStat,
+      }}
+      onUndoLast={() => void undoLast()}
+      onEndGame={() => void endGame()}
+      onNavigateSettings={() => navigateView("settings")}
+    />
   );
 }

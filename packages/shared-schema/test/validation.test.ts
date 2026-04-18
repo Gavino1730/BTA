@@ -205,3 +205,32 @@ describe("semantic validation", () => {
     });
   });
   });
+
+describe("schema migration", () => {
+  const base = {
+    id: "evt-mig",
+    schoolId: "school-1",
+    gameId: "game-1",
+    sequence: 1,
+    timestampIso: "2026-03-18T20:00:00.000Z",
+    period: "Q1",
+    clockSecondsRemaining: 480,
+    teamId: "home",
+    operatorId: "op-1",
+    type: "shot_attempt" as const,
+    playerId: "p1",
+    made: true,
+    points: 2 as const,
+    zone: "paint" as const,
+  };
+
+  it("parses a legacy event with no schemaVersion field and stamps it as v1", () => {
+    const parsed = parseGameEvent(base);
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it("parses an event already at schemaVersion 1", () => {
+    const parsed = parseGameEvent({ ...base, schemaVersion: 1 });
+    expect(parsed.schemaVersion).toBe(1);
+  });
+});

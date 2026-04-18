@@ -1,30 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameEvent } from "@bta/shared-schema";
 import type { GameSetup } from "../types.js";
+import { apiHeaders, apiKeyHeader } from "../helpers/network.js";
+import { buildRealtimeGameRegistrationPayload } from "../helpers/gameRegistration.js";
+import { loadAppData } from "../helpers/storage.js";
 import {
-  apiHeaders,
-  apiKeyHeader,
-  fetchOperatorLinkSnapshot,
-  mergeCoachLinkSnapshot,
-} from "../helpers/network.js";
-import { buildRealtimeGameRegistrationPayload } from "./useGameFlow.js";
-import { loadAppData, saveAppData } from "../helpers/storage.js";
-import {
-  appendPendingConflicts,
   consumePendingIntegrityIssue,
   loadPending,
   loadSeq,
-  type PendingConflictRecord,
   savePending,
   saveSeq,
 } from "../helpers/storage.js";
-
-function summarizeError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return String(error ?? "unknown error");
-}
+import {
+  summarizeError,
+  canCallTenantScopedEventApi,
+  recoverSetupFromConnection,
+  reconcilePendingWithServer,
+} from "../helpers/queueUtils.js";
 
 export interface EventQueueDeps {
   gameId: string;
@@ -59,45 +51,14 @@ export function useEventQueue(deps: EventQueueDeps) {
     onHydrateState,
   } = deps;
 
-  function canCallTenantScopedEventApi(setup: GameSetup = gameSetup, targetGameId: string = gameId): boolean {
-    const normalizedGameId = targetGameId.trim();
-    const hasTenantScope = Boolean(setup.schoolId?.trim());
-    const hasApiUrl = Boolean(setup.apiUrl?.trim());
-    const isPlaceholderPreGame = gamePhase === "pre-game"
-      && normalizedGameId === "game-1"
-      && !setup.syncedConnectionId?.trim();
-
-    return Boolean(normalizedGameId) && hasApiUrl && hasTenantScope && !isPlaceholderPreGame;
-  }
-
-  async function recoverSetupFromConnection(options?: { clearStaleToken?: boolean }): Promise<GameSetup | null> {
-    const latest = loadAppData();
-    const baseSetup = options?.clearStaleToken
-      ? { ...latest.gameSetup, apiKey: undefined }
-      : latest.gameSetup;
-
-    if (options?.clearStaleToken && baseSetup.apiKey !== latest.gameSetup.apiKey) {
-      saveAppData({ ...latest, gameSetup: baseSetup });
-    }
-
-    const snapshot = await fetchOperatorLinkSnapshot(baseSetup).catch(() => null);
-    if (!snapshot) {
-      return options?.clearStaleToken ? baseSetup : null;
-    }
-
-    const nextAppData = mergeCoachLinkSnapshot({ ...latest, gameSetup: baseSetup }, snapshot.payload);
-    const nextSetup: GameSetup = nextAppData.gameSetup;
-
-    if (JSON.stringify(nextSetup) !== JSON.stringify(latest.gameSetup)) {
-      saveAppData(nextAppData);
-    }
-    return nextSetup;
+  function canCallApi(overrideSetup?: GameSetup, overrideId?: string): boolean {
+    return canCallTenantScopedEventApi(gamePhase, gameId, gameSetup, overrideSetup, overrideId);
   }
 
   async function ensureRealtimeGameExists(gid: string): Promise<boolean> {
     const latest = loadAppData();
     const apiUrl = latest.gameSetup.apiUrl?.trim();
-    if (!apiUrl || !gid || !canCallTenantScopedEventApi(latest.gameSetup, gid)) return false;
+    if (!apiUrl || !gid || !canCallApi(latest.gameSetup, gid)) return false;
     try {
       let activeSetup = latest.gameSetup;
       let res = await fetch(`${apiUrl}/api/games`, {
@@ -134,19 +95,6 @@ export function useEventQueue(deps: EventQueueDeps) {
   const flushBackoffUntilRef = useRef(0);
   const lastConflictNoticeAtMsRef = useRef(0);
 
-  function stableSerialize(value: unknown): string {
-    if (Array.isArray(value)) {
-      return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
-    }
-    if (value && typeof value === "object") {
-      const entries = Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`);
-      return `{${entries.join(",")}}`;
-    }
-    return JSON.stringify(value);
-  }
-
   useEffect(() => { sequenceRef.current = sequence; }, [sequence]);
   useEffect(() => { normalizeEventTeamIdRef.current = normalizeEventTeamId; }, [normalizeEventTeamId]);
   useEffect(() => { onHydrateStateRef.current = onHydrateState; }, [onHydrateState]);
@@ -154,7 +102,7 @@ export function useEventQueue(deps: EventQueueDeps) {
   // --- Submit a single event to the API ---
   async function submitEvent(event: GameEvent): Promise<boolean> {
     const normalizedEvent = normalizeEventTeamIdRef.current(event);
-    if (!canCallTenantScopedEventApi()) {
+    if (!canCallApi()) {
       return false;
     }
     try {
@@ -213,92 +161,39 @@ export function useEventQueue(deps: EventQueueDeps) {
   }
 
   // --- Flush entire pending queue ---
-  async function reconcilePendingWithServer(queue: GameEvent[]): Promise<GameEvent[]> {
-    if (queue.length === 0 || !canCallTenantScopedEventApi()) {
-      return queue;
-    }
-
-    try {
-      let activeSetup = loadAppData().gameSetup;
-      let res = await fetch(`${activeSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(activeSetup));
-      if (res.status === 401) {
-        const recoveredSetup = await recoverSetupFromConnection({ clearStaleToken: true });
-        if (recoveredSetup) {
-          activeSetup = recoveredSetup;
-          res = await fetch(`${activeSetup.apiUrl}/api/games/${gameId}/events`, apiHeaders(activeSetup));
-        }
-      }
-
-      if (!res.ok) {
-        return queue;
-      }
-
-      const remoteEvents = ((await res.json()) as GameEvent[]).map((event) => normalizeEventTeamIdRef.current(event));
-      const remoteById = new Map(remoteEvents.map((event) => [event.id, event]));
-
-      const duplicateIds = new Set<string>();
-      const conflictIds = new Set<string>();
-      const conflictRecords: PendingConflictRecord[] = [];
-      const eventsToSubmit: GameEvent[] = [];
-
-      for (const localEvent of queue) {
-        const normalizedLocalEvent = normalizeEventTeamIdRef.current(localEvent);
-        const remoteEvent = remoteById.get(normalizedLocalEvent.id);
-        if (!remoteEvent) {
-          eventsToSubmit.push(normalizedLocalEvent);
-          continue;
-        }
-        if (stableSerialize(remoteEvent) === stableSerialize(normalizedLocalEvent)) {
-          duplicateIds.add(normalizedLocalEvent.id);
-          continue;
-        }
-        conflictIds.add(normalizedLocalEvent.id);
-        conflictRecords.push({
-          localEvent: normalizedLocalEvent,
-          remoteEvent,
-          detectedAtIso: new Date().toISOString(),
-          reason: "payload_mismatch",
-        });
-      }
-
-      if (duplicateIds.size > 0) {
-        setPendingEvents((current) => current.filter((event) => !duplicateIds.has(event.id)));
-        showInlineNotice(
-          `${duplicateIds.size} queued event${duplicateIds.size === 1 ? " was" : "s were"} already synced. Removed local duplicate${duplicateIds.size === 1 ? "" : "s"}.`,
-          "info",
-          4500,
-        );
-      }
-
-      if (conflictIds.size > 0) {
-        appendPendingConflicts(gameId, conflictRecords);
-        setPendingEvents((current) => current.filter((event) => !conflictIds.has(event.id)));
-
-        const now = Date.now();
-        if (now - lastConflictNoticeAtMsRef.current > 8000) {
-          showInlineNotice(
-            `${conflictIds.size} queued event${conflictIds.size === 1 ? "" : "s"} conflict with server state. Quarantined from auto-sync to prevent overwrite.`,
-            "warning",
-            9000,
-          );
-          lastConflictNoticeAtMsRef.current = now;
-        }
-      }
-
-      return eventsToSubmit;
-    } catch (error) {
-      console.warn("[ipad-operator] reconcilePendingWithServer failed", summarizeError(error));
-      return queue;
-    }
-  }
-
   async function flushQueue() {
     if (isFlushingRef.current) return;
     if (Date.now() < flushBackoffUntilRef.current) return;
     if (!navigator.onLine || pendingEvents.length === 0) return;
-    if (!canCallTenantScopedEventApi()) return;
+    if (!canCallApi()) return;
 
-    const eventsToFlush = await reconcilePendingWithServer(pendingEvents);
+    const eventsToFlush = await reconcilePendingWithServer(pendingEvents, {
+      gameId,
+      gamePhase,
+      gameSetup,
+      normalizeEvent: normalizeEventTeamIdRef.current,
+      onRemoveDuplicates: (ids) => {
+        setPendingEvents((current) => current.filter((event) => !ids.has(event.id)));
+      },
+      onRecordConflicts: (ids) => {
+        setPendingEvents((current) => current.filter((event) => !ids.has(event.id)));
+      },
+      showDuplicateNotice: (count) => {
+        showInlineNotice(
+          `${count} queued event${count === 1 ? " was" : "s were"} already synced. Removed local duplicate${count === 1 ? "" : "s"}.`,
+          "info",
+          4500,
+        );
+      },
+      showConflictNotice: (count) => {
+        showInlineNotice(
+          `${count} queued event${count === 1 ? "" : "s"} conflict with server state. Quarantined from auto-sync to prevent overwrite.`,
+          "warning",
+          9000,
+        );
+      },
+      lastConflictNoticeAtMs: lastConflictNoticeAtMsRef,
+    });
     if (eventsToFlush.length === 0) {
       return;
     }
@@ -340,7 +235,7 @@ export function useEventQueue(deps: EventQueueDeps) {
       showInlineNotice("Still offline. Check Wi-Fi and tap again to retry.", "warning", 3200);
       return;
     }
-    if (!canCallTenantScopedEventApi()) {
+    if (!canCallApi()) {
       showInlineNotice("Waiting for school sync before submitting events.", "info", 2200);
       return;
     }
@@ -361,7 +256,7 @@ export function useEventQueue(deps: EventQueueDeps) {
     const normalizedWithSequence = normalizeEventTeamIdRef.current({ ...event, sequence: reservedSequence });
     setPendingEvents(cur => [...cur, normalizedWithSequence].sort((a, b) => a.sequence - b.sequence));
     triggerFeedback("event", 30);
-    if (!canCallTenantScopedEventApi()) {
+    if (!canCallApi()) {
       showInlineNotice("Event saved locally. It will sync after school setup is connected.", "info", 2500);
       return;
     }
@@ -381,7 +276,7 @@ export function useEventQueue(deps: EventQueueDeps) {
     }
     setPendingEvents(cur => cur.filter(e => e.id !== last.id));
     if (submittedEvents.some(e => e.id === last.id)) {
-      if (!canCallTenantScopedEventApi()) {
+      if (!canCallApi()) {
         showInlineNotice("Removed locally. Server sync will resume after school setup is connected.", "warning", 3000);
         return;
       }
@@ -425,7 +320,7 @@ export function useEventQueue(deps: EventQueueDeps) {
       showInlineNotice(`${integrityNotice} Reconnect and resubmit after confirming setup.`, "warning", 8000);
     }
 
-    if (!canCallTenantScopedEventApi()) {
+    if (!canCallApi()) {
       setSubmittedEvents([]);
       return;
     }

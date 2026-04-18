@@ -22,6 +22,28 @@ export const securityTelemetry: Record<SecurityMetricKey, number> = {
   forbiddenWriteRole: 0,
 };
 
+// ---------------------------------------------------------------------------
+// AI budget telemetry
+// ---------------------------------------------------------------------------
+
+export type AiMetricKey =
+  | "budgetExceeded"
+  | "budgetWarning"
+  | "chatSafetyFilter"
+  | "statusDegraded";
+
+export const aiTelemetry: Record<AiMetricKey, number> = {
+  budgetExceeded: 0,
+  budgetWarning: 0,
+  chatSafetyFilter: 0,
+  statusDegraded: 0,
+};
+
+export function trackAiEvent(event: AiMetricKey): void {
+  aiTelemetry[event] += 1;
+  scheduleMetricsPush();
+}
+
 let metricsPushTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function renderPrometheusSecurityMetrics(): string {
@@ -44,6 +66,19 @@ export function renderPrometheusSecurityMetrics(): string {
     "# HELP bta_security_forbidden_write_role_total Forbidden write role attempts.",
     "# TYPE bta_security_forbidden_write_role_total counter",
     `bta_security_forbidden_write_role_total ${securityTelemetry.forbiddenWriteRole}`,
+    "",
+    "# HELP bta_ai_budget_exceeded_total Number of times AI generation was blocked by a per-game budget cap.",
+    "# TYPE bta_ai_budget_exceeded_total counter",
+    `bta_ai_budget_exceeded_total ${aiTelemetry.budgetExceeded}`,
+    "# HELP bta_ai_budget_warning_total Number of times AI budget crossed the 80% soft-warning threshold.",
+    "# TYPE bta_ai_budget_warning_total counter",
+    `bta_ai_budget_warning_total ${aiTelemetry.budgetWarning}`,
+    "# HELP bta_ai_chat_safety_filter_total Number of AI chat responses rejected by the safety filter.",
+    "# TYPE bta_ai_chat_safety_filter_total counter",
+    `bta_ai_chat_safety_filter_total ${aiTelemetry.chatSafetyFilter}`,
+    "# HELP bta_ai_status_degraded_total Number of times the AI status transitioned to degraded.",
+    "# TYPE bta_ai_status_degraded_total counter",
+    `bta_ai_status_degraded_total ${aiTelemetry.statusDegraded}`,
     "",
   ].join("\n");
 }

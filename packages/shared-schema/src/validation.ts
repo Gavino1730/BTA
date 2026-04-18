@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  CURRENT_SCHEMA_VERSION,
   EVENT_TYPES,
   FOUL_TYPES,
   SHOT_ZONES,
@@ -21,7 +22,8 @@ const baseSchema = z.object({
   clockSecondsRemaining: z.number().min(0),
   teamId: z.string().min(1),
   operatorId: z.string().min(1),
-  type: z.enum(EVENT_TYPES)
+  type: z.enum(EVENT_TYPES),
+  schemaVersion: z.literal(1).optional()
 });
 
 // Field goals only (2pt or 3pt) — free throws use free_throw_attempt
@@ -153,12 +155,26 @@ export const gameEventSchema = z.discriminatedUnion("type", [
   { message: "newPeriod must differ from the current period", path: ["newPeriod"] }
 );
 
+/**
+ * Migrates a raw event payload to the current schema version.
+ * Events without schemaVersion are treated as v1 (the original schema).
+ * Future migrations: add an `else if (r.schemaVersion === 1)` block for v1→v2 transforms.
+ */
+function migrateEvent(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const r = raw as Record<string, unknown>;
+  if (r.schemaVersion == null) {
+    return { ...r, schemaVersion: CURRENT_SCHEMA_VERSION };
+  }
+  return raw;
+}
+
 export function parseGameEvent(input: unknown): GameEvent {
-  return gameEventSchema.parse(input) as GameEvent;
+  return gameEventSchema.parse(migrateEvent(input)) as GameEvent;
 }
 
 export function isGameEvent(input: unknown): input is GameEvent {
-  return gameEventSchema.safeParse(input).success;
+  return gameEventSchema.safeParse(migrateEvent(input)).success;
 
 /** Maximum clock seconds allowed per period type (NFHS: 8-min quarters, 4-min OT). */
 }

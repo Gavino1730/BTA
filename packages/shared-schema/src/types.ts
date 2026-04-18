@@ -61,6 +61,9 @@ export const TIMEOUT_TYPES = ["full", "short"] as const;
 
 export type TimeoutType = (typeof TIMEOUT_TYPES)[number];
 
+export const CURRENT_SCHEMA_VERSION = 1 as const;
+export type SchemaVersion = 1;
+
 export interface GameEventBase {
   id: string;
   schoolId: string;
@@ -73,6 +76,7 @@ export interface GameEventBase {
   teamId: string;
   operatorId: string;
   type: EventType;
+  schemaVersion?: SchemaVersion;
 }
 
 // Field goal attempts only (2pt or 3pt). Free throws use free_throw_attempt.

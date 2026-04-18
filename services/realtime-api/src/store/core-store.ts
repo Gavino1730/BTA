@@ -27,6 +27,7 @@ import {
 } from "../persistence.js";
 import { DEFAULT_SCHOOL_ID, normalizeSchoolId } from "../school-id.js";
 import { logger } from "../logger.js";
+import { trackAiEvent } from "../helpers/metrics-helpers.js";
 import { createActivityStore } from "./activity-store.js";
 import { createAuthStore } from "./auth-store.js";
 import { createBillingStore } from "./billing-store.js";
@@ -326,6 +327,8 @@ export interface GameAiStatus {
   totalEstimatedCostUsd: number;
   maxTokensPerGame?: number;
   maxCostPerGameUsd?: number;
+  /** Set when consumption crosses 80% of a cap but generation has not yet stopped. */
+  budgetWarning?: string;
   lastSuccessAtIso?: string;
   lastErrorAtIso?: string;
   lastErrorCode?: GameAiErrorCode;
@@ -845,6 +848,7 @@ function markAiFailure(
     status,
     message,
   });
+  trackAiEvent("statusDegraded");
 }
 
 interface AiRequestIssue {
@@ -915,11 +919,34 @@ function syncAiBudgetCaps(session: GameSession): void {
   session.aiStatus.maxCostPerGameUsd = caps.maxCostPerGameUsd;
 }
 
+/**
+ * Returns the fraction of each cap at which a soft warning fires.
+ * Reads `BTA_AI_ALERT_TOKENS_THRESHOLD` (token count) and
+ * `BTA_AI_ALERT_COST_USD_THRESHOLD` (USD) from the environment.
+ * When either is set it overrides the default 80% fraction for that cap.
+ */
+function getAiBudgetWarnThresholds(maxTokens?: number, maxCostUsd?: number): { tokenThreshold?: number; costThreshold?: number } {
+  const envTokens = process.env.BTA_AI_ALERT_TOKENS_THRESHOLD?.trim();
+  const envCost = process.env.BTA_AI_ALERT_COST_USD_THRESHOLD?.trim();
+  const DEFAULT_FRACTION = 0.80;
+
+  const tokenThreshold = envTokens
+    ? Math.max(0, Number(envTokens))
+    : (typeof maxTokens === "number" ? Math.floor(maxTokens * DEFAULT_FRACTION) : undefined);
+
+  const costThreshold = envCost
+    ? Math.max(0, Number(envCost))
+    : (typeof maxCostUsd === "number" ? Number((maxCostUsd * DEFAULT_FRACTION).toFixed(6)) : undefined);
+
+  return { tokenThreshold, costThreshold };
+}
+
 function getAiBudgetViolation(session: GameSession): AiRequestIssue | null {
   syncAiBudgetCaps(session);
 
   const maxTokensPerGame = session.aiStatus.maxTokensPerGame;
   if (typeof maxTokensPerGame === "number" && session.aiStatus.totalTokensUsed >= maxTokensPerGame) {
+    trackAiEvent("budgetExceeded");
     return {
       code: "budget_exceeded",
       message: `AI token budget reached for this game (${session.aiStatus.totalTokensUsed}/${maxTokensPerGame} tokens).`,
@@ -929,6 +956,7 @@ function getAiBudgetViolation(session: GameSession): AiRequestIssue | null {
 
   const maxCostPerGameUsd = session.aiStatus.maxCostPerGameUsd;
   if (typeof maxCostPerGameUsd === "number" && session.aiStatus.totalEstimatedCostUsd >= maxCostPerGameUsd) {
+    trackAiEvent("budgetExceeded");
     return {
       code: "budget_exceeded",
       message: `AI cost budget reached for this game ($${session.aiStatus.totalEstimatedCostUsd.toFixed(4)}/$${maxCostPerGameUsd.toFixed(4)}).`,
@@ -937,6 +965,52 @@ function getAiBudgetViolation(session: GameSession): AiRequestIssue | null {
   }
 
   return null;
+}
+
+function updateAiBudgetWarning(session: GameSession): void {
+  const maxTokensPerGame = session.aiStatus.maxTokensPerGame;
+  const maxCostPerGameUsd = session.aiStatus.maxCostPerGameUsd;
+  const { tokenThreshold, costThreshold } = getAiBudgetWarnThresholds(maxTokensPerGame, maxCostPerGameUsd);
+
+  const tokenWarning = typeof tokenThreshold === "number"
+    && typeof maxTokensPerGame === "number"
+    && session.aiStatus.totalTokensUsed >= tokenThreshold
+    && session.aiStatus.totalTokensUsed < maxTokensPerGame;
+
+  const costWarning = typeof costThreshold === "number"
+    && typeof maxCostPerGameUsd === "number"
+    && session.aiStatus.totalEstimatedCostUsd >= costThreshold
+    && session.aiStatus.totalEstimatedCostUsd < maxCostPerGameUsd;
+
+  if (tokenWarning || costWarning) {
+    const pctTokens = typeof maxTokensPerGame === "number"
+      ? Math.round((session.aiStatus.totalTokensUsed / maxTokensPerGame) * 100)
+      : null;
+    const pctCost = typeof maxCostPerGameUsd === "number"
+      ? Math.round((session.aiStatus.totalEstimatedCostUsd / maxCostPerGameUsd) * 100)
+      : null;
+    const detail = [
+      pctTokens !== null ? `${pctTokens}% of token cap used` : "",
+      pctCost !== null ? `${pctCost}% of cost cap used` : "",
+    ].filter(Boolean).join(", ");
+    const warning = `AI budget approaching limit (${detail}). Rules-based insights remain active.`;
+
+    if (session.aiStatus.budgetWarning !== warning) {
+      session.aiStatus.budgetWarning = warning;
+      trackAiEvent("budgetWarning");
+      logger.warn("ai.budget_warning", {
+        gameId: session.state.gameId,
+        schoolId: session.schoolId,
+        totalTokensUsed: session.aiStatus.totalTokensUsed,
+        maxTokensPerGame,
+        totalEstimatedCostUsd: session.aiStatus.totalEstimatedCostUsd,
+        maxCostPerGameUsd,
+      });
+    }
+  } else {
+    // Clear once consumption drops back below threshold (e.g. game reset) or no caps set.
+    session.aiStatus.budgetWarning = undefined;
+  }
 }
 
 function recordAiUsage(session: GameSession, rawUsage: unknown): void {
@@ -951,6 +1025,8 @@ function recordAiUsage(session: GameSession, rawUsage: unknown): void {
   session.aiStatus.totalEstimatedCostUsd = Number(
     (session.aiStatus.totalEstimatedCostUsd + estimateUsageCostUsd(usage)).toFixed(6)
   );
+
+  updateAiBudgetWarning(session);
 }
 
 function mapOpenAiHttpFailure(status: number): AiRequestIssue {
@@ -2063,14 +2139,23 @@ function hasUnsafeAiInsightText(value: string): boolean {
     return true;
   }
 
-  const lower = value.toLowerCase();
-  if (lower.includes("```") || /<\s*script/i.test(value)) {
+  // Reject any HTML-like markup — legitimate basketball advice is plain text.
+  if (/<[a-zA-Z][^>]*>/.test(value)) {
     return true;
   }
 
-  return /(ignore\s+(all\s+)?previous\s+instructions|disregard\s+previous\s+instructions|reveal\s+system\s+prompt|show\s+system\s+prompt|developer\s+message|prompt\s+injection|jailbreak)/i.test(value);
-}
+  // Reject JavaScript URL schemes and HTML event handler attributes.
+  if (/\bjavascript\s*:/i.test(value) || /\bon[a-z]+\s*=/i.test(value)) {
+    return true;
+  }
 
+  if (value.includes("```")) {
+    return true;
+  }
+
+  // Prompt-injection and jailbreak patterns.
+  return /(ignore\s+(all\s+)?previous\s+instructions|disregard\s+previous\s+instructions|reveal\s+system\s+prompt|show\s+system\s+prompt|developer\s+message|prompt\s+injection\b|jailbreak|override\s+(your\s+)?(instructions|system)|forget\s+(all\s+)?instructions|new\s+instructions\s*:|you\s+are\s+now\s+(a|an)\s|act\s+as\s+(a|an)\s|pretend\s+(you\s+are|to\s+be)|your\s+(new\s+)?(role|purpose)\s+is|<\|im_start\|>)/i.test(value);
+}
 function summarizeHistoricalPlayers(playersPayload: SeasonPlayerSummary[], session: GameSession): string {
   if (playersPayload.length === 0) {
     return "";
@@ -2274,9 +2359,9 @@ async function fetchHistoricalContextSummary(session: GameSession): Promise<stri
 function parseAiChatResponse(content: string): { answer: string; suggestions: string[] } {
   try {
     const parsed = JSON.parse(content) as { answer?: unknown; suggestions?: unknown };
-    const answer = trimToLength(parsed.answer, 4000);
+    const answer = normalizeAiInsightText(parsed.answer, 4000);
     const suggestions = Array.isArray(parsed.suggestions)
-      ? parsed.suggestions.map((item) => trimToLength(item, 160)).filter(Boolean).slice(0, 3)
+      ? parsed.suggestions.map((item) => normalizeAiInsightText(item, 160)).filter(Boolean).slice(0, 3)
       : [];
 
     if (answer) {
@@ -2287,7 +2372,7 @@ function parseAiChatResponse(content: string): { answer: string; suggestions: st
   }
 
   return {
-    answer: trimToLength(content, 4000),
+    answer: normalizeAiInsightText(content, 4000),
     suggestions: []
   };
 }
@@ -2381,9 +2466,20 @@ async function requestAiChatResponse(
     }
 
     const parsed = parseAiChatResponse(content);
+
+    // Safety gate: discard responses that contain injection or markup patterns.
+    if (hasUnsafeAiInsightText(parsed.answer)) {
+      trackAiEvent("chatSafetyFilter");
+      logger.warn("ai.chat_safety_filter", {
+        gameId: session.state.gameId,
+        schoolId: session.schoolId,
+      });
+      return null;
+    }
+
     return {
       answer: parsed.answer,
-      suggestions: parsed.suggestions,
+      suggestions: parsed.suggestions.filter((s) => !hasUnsafeAiInsightText(s)),
       generatedAtIso: new Date().toISOString(),
       usedHistoricalContext: Boolean(session.historicalContextSummary)
     };

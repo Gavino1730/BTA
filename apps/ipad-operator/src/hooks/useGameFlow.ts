@@ -1,18 +1,15 @@
 import type { GameEvent } from "@bta/shared-schema";
+import { generateFreshGameId, generateGameId, apiKeyHeader } from "../helpers/network.js";
+import { loadAppData } from "../helpers/storage.js";
+import type { AppData, Team, TeamSide } from "../types.js";
 import {
-  apiKeyHeader,
-  buildAiContextFromSetup,
-  fetchOperatorLinkSnapshot,
-  generateFreshGameId,
-  generateGameId,
-  isConnectionReadyForStart,
-  isLegacyStatsExportConfigured,
-  mergeCoachLinkSnapshot,
-  normalizeConnectionId,
-} from "../helpers/network.js";
-import { computeDashboardPlayerStats, computeTeamStats } from "../helpers/players.js";
-import { loadAppData, saveAppData } from "../helpers/storage.js";
-import type { AppData, GameSetup, Team, TeamSide } from "../types.js";
+  startGame as startGameHelper,
+  type StartGameDeps,
+} from "../helpers/gameRegistration.js";
+import {
+  buildLegacyDashboardApiUrl,
+  submitToDashboard as submitToDashboardHelper,
+} from "../helpers/legacyExport.js";
 
 export interface UseGameFlowInput {
   appData: AppData;
@@ -47,39 +44,7 @@ export interface UseGameFlowInput {
   }) => Promise<boolean>;
 }
 
-export function buildRealtimeGameRegistrationPayload(activeSetup: GameSetup, gid: string, preGameNotes: string) {
-  const vcSide = activeSetup.vcSide ?? "home";
-  const opponentName = activeSetup.opponent?.trim() || "";
-  const opponentTeamId = opponentName
-    ? `team-${opponentName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "opponent"}`
-    : "opponent";
-  const hId = vcSide === "home"
-    ? activeSetup.myTeamId || "team-home"
-    : opponentTeamId;
-  const aId = vcSide === "away"
-    ? activeSetup.myTeamId || "team-away"
-    : opponentTeamId;
-  const trackedTeamId = vcSide === "home" ? hId : aId;
-  const startingLineup = Array.isArray(activeSetup.startingLineup)
-    ? [...new Set(activeSetup.startingLineup.map((p) => String(p).trim()).filter(Boolean))].slice(0, 5)
-    : [];
-  const startingLineupByTeam = startingLineup.length > 0
-    ? { [trackedTeamId]: startingLineup }
-    : undefined;
-
-  return {
-    gameId: gid,
-    homeTeamId: hId,
-    awayTeamId: aId,
-    opponentName,
-    opponentTeamId,
-    startingLineupByTeam,
-    aiContext: {
-      ...buildAiContextFromSetup(activeSetup),
-      preGameNotes: preGameNotes.trim() || undefined,
-    },
-  };
-}
+export { buildRealtimeGameRegistrationPayload } from "../helpers/gameRegistration.js";
 
 export function useGameFlow({
   appData, setAppData, gameId, gameDate, setGameDate,
@@ -92,182 +57,12 @@ export function useGameFlow({
   showInlineNotice, requestConfirm,
 }: UseGameFlowInput) {
 
-  async function refreshOperatorAuthFromConnection(current: AppData): Promise<AppData> {
-    const snapshot = await fetchOperatorLinkSnapshot(current.gameSetup).catch(() => null);
-    if (!snapshot) {
-      const connectionId = normalizeConnectionId(current.gameSetup.syncedConnectionId || current.gameSetup.connectionId);
-      if (!connectionId) {
-        return current;
-      }
-      return current;
-    }
-
-    try {
-      const next = mergeCoachLinkSnapshot(current, snapshot.payload);
-      if (
-        next.gameSetup.apiKey !== current.gameSetup.apiKey
-        || next.gameSetup.schoolId !== current.gameSetup.schoolId
-        || next.gameSetup.connectionId !== current.gameSetup.connectionId
-        || next.gameSetup.syncedConnectionId !== current.gameSetup.syncedConnectionId
-        || next.gameSetup.liveSessionId !== current.gameSetup.liveSessionId
-      ) {
-        saveAppData(next);
-        setAppData(next);
-      }
-      return next;
-    } catch {
-      return current;
-    }
-  }
-
-  function hasWriteCredential(headers: Record<string, string>): boolean {
-    return Boolean(headers.Authorization || headers["x-api-key"]);
-  }
-
-  function buildLegacyDashboardApiUrl(rawDashboardUrl: string, apiPath: string): string | null {
-    const trimmed = rawDashboardUrl.trim();
-    if (!trimmed) return null;
-
-    try {
-      const parsed = new URL(trimmed);
-      // Legacy export endpoints are served at the dashboard origin under /api.
-      return new URL(apiPath, `${parsed.origin}/`).toString();
-    } catch {
-      const sanitized = trimmed.replace(/[?#].*$/, "").replace(/\/+$/, "");
-      if (!sanitized) return null;
-      return `${sanitized}${apiPath}`;
-    }
-  }
+  const gameDeps: StartGameDeps = {
+    preGameNotes, showInlineNotice, persistPhase, resetTimeline, setAppData,
+  };
 
   async function startGame(newGameId?: string) {
-    let latest = loadAppData();
-    const gid = newGameId ?? latest.gameSetup.gameId;
-    let effectiveGameId = gid;
-    let shouldResetEventTimeline = false;
-    let serverOpponentName: string | undefined;
-    let serverVcSide: "home" | "away" | undefined;
-
-    if (!latest.gameSetup.apiKey?.trim()) {
-      latest = await refreshOperatorAuthFromConnection(latest);
-    }
-
-    if (!latest.gameSetup.schoolId?.trim()) {
-      showInlineNotice(
-        "School scope is not synced yet. Tap Sync Now on Ready to Track, wait for sync to complete, then Start Game.",
-        "warning",
-        7000,
-      );
-      return;
-    }
-
-    const requestHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
-    if (!hasWriteCredential(requestHeaders)) {
-      showInlineNotice(
-        "Live auth token is missing. Tap Sync Now on Ready to Track, then try Start Game again.",
-        "warning",
-        7000,
-      );
-      return;
-    }
-
-    try {
-      let res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
-        method: "POST",
-        headers: requestHeaders,
-        body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
-      });
-
-      if (res.status === 401) {
-        latest = await refreshOperatorAuthFromConnection(latest);
-        const retryHeaders = { "Content-Type": "application/json", ...apiKeyHeader(latest.gameSetup) };
-        if (hasWriteCredential(retryHeaders)) {
-          res = await fetch(`${latest.gameSetup.apiUrl}/api/games`, {
-            method: "POST",
-            headers: retryHeaders,
-            body: JSON.stringify(buildRealtimeGameRegistrationPayload(latest.gameSetup, gid, preGameNotes)),
-          });
-        }
-      }
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        if (res.status === 409) {
-          let parsed: { activeGameId?: string; activeState?: { gameId?: string; homeTeamId?: string; awayTeamId?: string; opponentName?: string } } = {};
-          try { parsed = JSON.parse(body); } catch { /* ignore */ }
-          const activeGameId = typeof parsed.activeGameId === "string"
-            ? parsed.activeGameId
-            : (typeof parsed.activeState?.gameId === "string" ? parsed.activeState.gameId : null);
-          if (!activeGameId) {
-            showInlineNotice(
-              "Live server already has an active game in progress. Resume or submit that game before starting a new one.",
-              "error"
-            );
-            return;
-          }
-
-          if (!isConnectionReadyForStart(latest.gameSetup)) {
-            showInlineNotice(
-              "Another device has a live game. Enter and sync the coach connection code on this iPad before joining it.",
-              "warning",
-              7000,
-            );
-            return;
-          }
-
-          effectiveGameId = activeGameId;
-          if (parsed.activeState) {
-            serverOpponentName = parsed.activeState.opponentName;
-            if (latest.gameSetup.myTeamId && parsed.activeState.awayTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "away";
-            } else if (latest.gameSetup.myTeamId && parsed.activeState.homeTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "home";
-            }
-          }
-          showInlineNotice(
-            `Live server already has an active game (${activeGameId}). Resuming that game instead.`,
-            "warning",
-            6000,
-          );
-        } else {
-          showInlineNotice(
-            `Could not register game on the live server (${res.status}): ${body || "unknown error"}. Check Settings > API URL and try again.`,
-            "error"
-          );
-          return;
-        }
-      } else {
-        if (res.status === 201) {
-          shouldResetEventTimeline = true;
-        } else {
-          try {
-            const serverState = await res.json() as { homeTeamId?: string; awayTeamId?: string; opponentName?: string };
-            serverOpponentName = serverState.opponentName;
-            if (latest.gameSetup.myTeamId && serverState.awayTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "away";
-            } else if (latest.gameSetup.myTeamId && serverState.homeTeamId === latest.gameSetup.myTeamId) {
-              serverVcSide = "home";
-            }
-          } catch { /* keep local values */ }
-        }
-      }
-    } catch {
-      showInlineNotice(
-        `Could not reach the live server at ${latest.gameSetup.apiUrl}. Make sure the realtime API is running, then go to Settings > Game Setup and tap Start Game again.`,
-        "error"
-      );
-      return;
-    }
-
-    const mergedSetup = { ...latest.gameSetup, gameId: effectiveGameId, statsGameId: undefined as number | undefined };
-    if (serverOpponentName) mergedSetup.opponent = serverOpponentName;
-    if (serverVcSide) mergedSetup.vcSide = serverVcSide;
-    const nextData: AppData = { ...latest, gameSetup: mergedSetup };
-    setAppData(nextData);
-    saveAppData(nextData);
-    if (shouldResetEventTimeline) {
-      resetTimeline(effectiveGameId);
-    }
-    persistPhase("live");
+    return startGameHelper(gameDeps, newGameId);
   }
 
   async function endAndResetGame() {
@@ -303,130 +98,10 @@ export function useGameFlow({
   }
 
   async function submitToDashboard(overrides?: { opponent?: string; date?: string; homeScore?: number; awayScore?: number }) {
-    const vcSide = appData.gameSetup.vcSide ?? "home";
-    const oppSide: TeamSide = vcSide === "home" ? "away" : "home";
-    const opponent = overrides?.opponent?.trim() || appData.gameSetup.opponent?.trim() || "";
-    const dashboardUrl = appData.gameSetup.dashboardUrl?.trim() || "";
-
-    if (!opponent) {
-      const message = "Enter the opponent name in Game Setup before submitting.";
-      setSubmitMessage(message);
-      showInlineNotice("Enter the opponent name in Game Setup (Settings > Game Setup) before submitting.", "warning");
-      return false;
-    }
-
-    const vcTeam = vcSide === "home" ? homeTeam : awayTeam;
-    if (!vcTeam) {
-      const message = "Tracked team is not configured. Check Game Setup in Settings.";
-      setSubmitMessage(message);
-      showInlineNotice("Tracked team is not configured. Check Game Setup in Settings.", "warning");
-      return false;
-    }
-
-    if (!isLegacyStatsExportConfigured(appData.gameSetup)) {
-      setSubmitStatus("success");
-      setSubmitMessage("Live stats are already available in the coach dashboard.");
-      setTimeout(() => {
-        setSubmitStatus("idle");
-        setSubmitMessage("Ready to publish final stats.");
-      }, 4000);
-      return true;
-    }
-
-    setSubmitStatus("pending");
-    setSubmitMessage(`Saving final stats to ${dashboardUrl}...`);
-
-    const effectiveDate = overrides?.date || gameDate;
-    const dateParts = new Date(effectiveDate + "T12:00:00").toLocaleDateString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
-    });
-
-    const computedVcScore = scores[vcSide];
-    const computedOppScore = scores[oppSide];
-    const vcScore = vcSide === "home"
-      ? (overrides?.homeScore ?? computedVcScore)
-      : (overrides?.awayScore ?? computedVcScore);
-    const oppScore = vcSide === "home"
-      ? (overrides?.awayScore ?? computedOppScore)
-      : (overrides?.homeScore ?? computedOppScore);
-    const playerStats = computeDashboardPlayerStats(allEventObjs, vcTeam.players, vcTeamId);
-    const teamStats = computeTeamStats(allEventObjs, vcTeamId);
-
-    const rosterPayload = vcTeam.players.map(p => ({
-      number: parseInt(p.number, 10) || 0,
-      name: p.name,
-      position: p.position || undefined,
-      height: p.height || undefined,
-      grade: p.grade || undefined,
-    }));
-
-    const payload: Record<string, unknown> = {
-      date: dateParts,
-      opponent,
-      location: vcSide,
-      vc_score: vcScore,
-      opp_score: oppScore,
-      team_stats: teamStats,
-      player_stats: playerStats,
-      roster: rosterPayload,
-    };
-    if (appData.gameSetup.statsGameId != null) {
-      payload.gameId = appData.gameSetup.statsGameId;
-    }
-
-    const ingestUrl = buildLegacyDashboardApiUrl(dashboardUrl, "/api/ingest-game");
-    if (!ingestUrl) {
-      setSubmitMessage("Legacy stats export URL is invalid. Update Settings > Game Setup.");
-      showInlineNotice(
-        "Legacy stats export URL is invalid. Update Settings > Game Setup > Legacy Stats Export URL and retry.",
-        "error"
-      );
-      setSubmitStatus("error");
-      return false;
-    }
-
-    try {
-      const res = await fetch(ingestUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeader(appData.gameSetup) },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json().catch(() => ({})) as { message?: string; gameId?: number; error?: string };
-      if (res.ok) {
-        if (result.gameId != null && result.gameId !== appData.gameSetup.statsGameId) {
-          persistData({
-            ...appData,
-            gameSetup: { ...appData.gameSetup, statsGameId: result.gameId },
-          });
-        }
-        setSubmitStatus("success");
-        setSubmitMessage(`Saved final stats to ${dashboardUrl}.`);
-        setTimeout(() => {
-          setSubmitStatus("idle");
-          setSubmitMessage("Ready to publish final stats.");
-        }, 4000);
-        return true;
-      } else {
-        const errorMessage = result.error || result.message || `Request failed with status ${res.status}.`;
-        console.error("Dashboard ingest error:", errorMessage);
-        setSubmitMessage(`Dashboard save failed: ${errorMessage}`);
-        showInlineNotice(
-          `Could not save final stats to the legacy stats export endpoint. ${errorMessage} Check Settings > Game Setup > Legacy Stats Export URL and make sure that service is running.`,
-          "error"
-        );
-        setSubmitStatus("error");
-        return false;
-      }
-    } catch (err) {
-      console.error("Could not reach Stats dashboard:", err);
-      setSubmitMessage(`Could not reach dashboard at ${dashboardUrl}. Start the dashboard or update the URL in Game Setup.`);
-      showInlineNotice(
-        `Could not reach the legacy stats export endpoint at ${dashboardUrl}. Start that service or update Settings > Game Setup > Legacy Stats Export URL, then retry.`,
-        "error"
-      );
-      setSubmitStatus("error");
-      return false;
-    }
+    return submitToDashboardHelper(
+      { appData, gameDate, scores, homeTeam, awayTeam, vcTeamId, allEventObjs, setSubmitStatus, setSubmitMessage, showInlineNotice, persistData },
+      overrides,
+    );
   }
 
   // ---- Post-game helpers ----

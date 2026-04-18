@@ -1,221 +1,67 @@
-import cors from "cors";
+﻿import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
+import { registerAllRoutes } from "./bootstrap/register-routes.js";
+import { normalizeTeamColor } from "@bta/shared-schema";
 import {
-  normalizeTeamColor,
-  sanitizePromptText,
-} from "@bta/shared-schema";
-import {
-  answerGameAiChat,
-  type CoachAiChatResponse,
-  type AiPromptPreview,
-  type GameAiContext,
-  type CoachAiSettings,
-  type OnboardingAccountInput,
-  type OnboardingAccountState,
-  type OrganizationMember,
-  type OrganizationProfile,
-  type RosterPlayer,
-  type RosterTeam,
-  createGame,
-  deleteGame,
-  submitGame,
-  isGameSubmitted,
-  deleteEvent,
-  getGameAiContext,
-  getGameAiPromptPreview,
-  getGameAiSettings,
-  getGameEvents,
-  getGameInsights,
-  getActiveGameState,
-  getLiveContext,
-  getRosterPlayers,
-  getRosterTeamsByScope,
-  getSeasonGames,
-  getSeasonPlayers,
-  getSeasonTeamStats,
-  getGameState,
-  ingestEvent,
-  patchGameLineup,
-  refreshGameAiInsights,
-  saveRosterTeams,
-  saveOrganizationProfile,
-  updateGameAiContext,
-  updateGameAiSettings,
-  updateEvent,
-  resetAllData,
   initializeStore,
   getOrganizationProfileByScope,
   getOnboardingAccountStateByScope,
-  saveOnboardingAccountState,
   getOrganizationMembersByScope,
-  getLocalAuthAccountByEmail,
-  getLocalAuthAccountsByEmailAcrossSchools,
-  getLocalAuthAccountsByScope,
-  saveLocalAuthAccount,
-  recordLocalAuthLogin,
   saveOrganizationMember,
-  deleteOrganizationMember,
-  type LocalAuthAccount,
-  getGameOverrideMap,
-  setGameOverride,
-  getSchoolRecord,
-  saveSchoolRecord,
-  getUserWorkspaceProfile,
-  saveUserWorkspaceProfile,
+  getRosterTeamsByScope,
+  saveRosterTeams,
   getSchoolMembershipsByScope,
-  saveSchoolMembership,
-  deleteSchoolMembership,
   getTeamMembershipsByScope,
-  saveTeamMembership,
-  deleteTeamMembership,
-  listSchoolMembershipsForUser,
-  listTeamMembershipsForUser,
-  getTeamById,
-  getActivityEventsByScope,
-  saveActivityEvent,
-  getLiveGameSessionsByScope,
-  createLiveGameSessionRecord,
-  getLiveGameSessionById,
-  saveOperatorSessionRecord,
-  getOperatorSessionByLiveSession,
+  getPersistenceStatus,
+  refreshGameAiInsights,
+  getSchoolRecord,
 } from "./store.js";
 import {
   extractBearerToken,
   isJwtAuthEnabled,
   isLocalTokenAuthEnabled,
-  issueLocalAuthToken,
   verifyBearerToken,
-  type AuthContext
+  type AuthContext,
 } from "./auth.js";
 import { assertRuntimeConfig, readRuntimeConfig } from "./config-validation.js";
 import { sendTransactionalEmail } from "./email.js";
 import { sendSupabasePasswordResetEmail } from "./supabase-auth-email.js";
-import {
-  hasWriteRole,
-  normalizeSchoolId,
-} from "./tenant-guards.js";
-import { registerOnboardingRoutes } from "./routes/onboarding-routes.js";
-import { registerOrgMembersRoutes } from "./routes/org-members-routes.js";
-import { registerTeamConfigRoutes } from "./routes/team-config-routes.js";
-import { registerPlayerRoutes } from "./routes/player-routes.js";
-import { registerGameManagementRoutes } from "./routes/game-management-routes.js";
-import { registerLiveInsightsRoutes } from "./routes/live-insights-routes.js";
-import { registerAdvancedInsightsRoutes } from "./routes/advanced-insights-routes.js";
-import { registerAiCompatibilityRoutes } from "./routes/ai-compat-routes.js";
-import { registerAdvancedLegacyRoutes } from "./routes/advanced-legacy-routes.js";
-import { registerRosterConfigRoutes } from "./routes/roster-config-routes.js";
-import { registerOperatorLinkRoutes } from "./routes/operator-link-routes.js";
-import { registerTeamManagementRoutes } from "./routes/team-management-routes.js";
-import { registerGameSessionRoutes } from "./routes/game-session-routes.js";
-import { registerGameAiRoutes } from "./routes/game-ai-routes.js";
-import { registerGameEventRoutes } from "./routes/game-event-routes.js";
-import { registerAuthCoreRoutes } from "./routes/auth-core-routes.js";
-import { registerAuthAccountRoutes } from "./routes/auth-account-routes.js";
-import { registerBillingRoutes } from "./routes/billing-routes.js";
-import { registerWorkspaceRoutes } from "./routes/workspace-routes.js";
+import { hasWriteRole } from "./tenant-guards.js";
+import { registerHealthRoute } from "./routes/system-routes.js";
 import { logger } from "./logger.js";
-import { createAuthzMiddleware } from "./middleware/authz.js";
-import { createBillingEntitlementMiddleware } from "./middleware/billing-entitlement.js";
 import {
   applySecurityHeaders,
   buildAllowedOrigins,
   createCorsOriginHandler,
   createOriginAllowChecker,
 } from "./middleware/security-bootstrap.js";
-import { registerAdminRoutes, registerHealthRoute } from "./routes/system-routes.js";
-import {
-  getBillingStateByScope,
-  saveBillingState,
-  findBillingStateByStripeCustomerId,
-  findBillingStateByStripeSubscriptionId,
-  hasProcessedStripeWebhookEvent,
-  markProcessedStripeWebhookEvent,
-  trimProcessedStripeWebhookEvents,
-  getPersistenceStatus,
-} from "./store.js";
-import {
-  seasonAnalysisBySchool,
-  playerAnalysisCacheBySchool,
-  roundStat,
-  resolveGameResult,
-  getRosterPlayerByIdForSchool,
-  getOurTeamId,
-  buildDefaultGamePlayerStats,
-  buildGamesPayload,
-  buildLeaderboardsPayload,
-  buildTeamTrendsPayload,
-  buildTeamAdvancedPayload,
-  buildPlayerAdvancedPayload,
-  buildPlayerTrendsPayload,
-  buildPlayerComparisonPayload,
-  buildVolatilityPayload,
-  buildComprehensiveInsightsPayload,
-  buildAiSafetyMetadata,
-  buildTeamSummaryText,
-  buildGameAnalysisText,
-  buildPlayerInsightsText,
-  buildSeasonAnalysisPayload,
-  buildPlayerAnalysisPayload,
-} from "./helpers/analytics-helpers.js";
 import { createOperatorPresenceManager } from "./sockets/operator-presence-manager.js";
 import { createGameBroadcastManager } from "./sockets/game-broadcast-manager.js";
 import { registerSocketAuth } from "./sockets/socket-auth.js";
-import { registerRealtimeConnectionHandlers } from "./sockets/realtime-connection.js";
 import {
-  TEAM_AI_FOCUS_OPTIONS,
-  normalizePersonName,
-  normalizeNameKey,
-  buildOrganizationSlug,
-  buildTeamAbbreviation,
-  buildSchoolTeamId,
-  buildUniqueSchoolTeamId,
   sanitizeTextField,
   isValidEmail,
-  resolveSchoolName,
-  resolveCoachName,
-  resolveCoachEmail,
-  shouldSyncPrimaryCoachIdentity,
-  defaultTeamAiSettings,
-  hashPassword,
-  verifyPassword,
+  buildOrganizationSlug,
+  buildTeamAbbreviation,
   sanitizeFocusInsights,
-  extractTeamAiSettings,
-  buildPlayerId,
-  buildRosterPlayer,
-  findPlayerRecord,
-  buildOrganizationProfilePayload,
-  buildOnboardingAccountPayload,
-  requireOnboardingIdentity,
 } from "./helpers/string-helpers.js";
+import { trackSecurityEvent } from "./helpers/metrics-helpers.js";
 import {
-  type SecurityMetricKey,
-  securityTelemetry,
-  renderPrometheusSecurityMetrics,
-  trackSecurityEvent,
-} from "./helpers/metrics-helpers.js";
-import {
-  type AuthedRequest,
   type ScopedRequest,
   schoolRoom,
   gameRoom,
   deviceRoom,
   connectionRoom,
-  isPublicAuthBootstrapRequest,
-  isOperatorBootstrapRequest,
   isOptionalTenantScopeRequest,
   shouldSuppressMissingTenantTelemetry,
   resolveRequestSchoolId,
   resolveSocketSchoolId,
   getSchoolIdFromRequest,
-  getSchoolIdFromSocket,
-  resolveAuthSchoolId,
-  allocateBootstrapSchoolId,
-  buildBootstrapSchoolSeed,
 } from "./helpers/tenant-helpers.js";
 import { createRealtimeApiRateLimiters } from "./bootstrap/request-rate-limit.js";
 import { createTenantCompositionHelpers } from "./bootstrap/tenant-composition.js";
@@ -393,7 +239,7 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction): P
     ? "jwt-write-required"
     : "missing-valid-credentials";
   trackSecurityEvent("unauthorizedHttp", { reason, path: req.path, method: req.method });
-  res.status(401).json({ error: "Unauthorized — provide a valid bearer token or x-api-key" });
+  res.status(401).json({ error: "Unauthorized â€” provide a valid bearer token or x-api-key" });
 }
 
 async function attachAuthContext(req: Request, _res: Response, next: NextFunction): Promise<void> {
@@ -764,452 +610,50 @@ app.use("/teams", requireTenantScope);
 app.use("/config", requireTenantScope);
 app.use("/admin", requireTenantScope);
 
-registerAuthCoreRoutes(app, {
+registerAllRoutes(app, io, {
+  requireApiKey,
+  requireWriteRole,
   authRateLimiter,
-  resolveRequestSchoolId,
-  getSchoolIdFromRequest,
-  getAuthContextFromRequest: (req) => (req as ScopedRequest).authContext,
-  buildOnboardingCompletionSummary,
-  buildSuggestedCoachIdentity,
-  resolveCurrentOrganizationMember,
-  getLocalAuthAccountByEmail,
-  getLocalAuthAccountsByEmailAcrossSchools,
-  buildAuthSessionResponse,
-  getUserWorkspaceProfile,
-  listSchoolMembershipsForUser,
-  sanitizeTextField,
-  resolveAuthSchoolId,
-  pruneExpiredInvitationTokens,
-  invitationTokens,
-  isValidEmail,
-  hashPassword,
-  getOrganizationMembersByScope,
-  saveLocalAuthAccount,
-  activateKnownMemberForAccount,
-  shouldSyncPrimaryCoachIdentity,
-  saveOnboardingAccountState,
-  issueLocalAuthToken,
-  buildInvitePath,
-  verifyPassword,
-  recordLocalAuthLogin,
-  pruneExpiredPasswordResetTokens,
-  passwordResetTokens,
-  generatePasswordResetToken: () => randomBytes(24).toString("hex"),
-  passwordResetTokenTtlMs: passwordResetTokenTtlMs,
-  deliverPasswordResetEmail,
-  buildResetPath,
-  exposePasswordResetToken: EXPOSE_PASSWORD_RESET_TOKEN,
-  getLocalAuthAccountsByScope,
-  billingGuardBeforeRegister: undefined,
-  enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
-});
-
-registerAuthAccountRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  requireOrganizationManager,
-  sanitizeTextField,
-  normalizePersonName,
-  isValidEmail,
-  hashPassword,
-  getLocalAuthAccountByEmail,
-  saveLocalAuthAccount,
-  getRosterTeamsByScope,
-  findPlayerRecord,
-  saveOrganizationMember,
-  persistSchoolTeams,
-  enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
-});
-
-registerWorkspaceRoutes(app, {
-  paywallEnabled: BILLING_PAYWALL_ENABLED,
-  requireApiKey,
-  requireWriteRole,
-  getAuthUser: (req) => getAuthUserFromContext((req as ScopedRequest).authContext),
-  sanitizeTextField,
-  buildUniqueSchoolTeamId,
-  normalizeTeamColor,
-  getSchoolRecord,
-  saveSchoolRecord,
-  getUserWorkspaceProfile,
-  saveUserWorkspaceProfile,
-  getSchoolMembershipsByScope,
-  saveSchoolMembership,
-  deleteSchoolMembership,
-  getTeamMembershipsByScope,
-  saveTeamMembership,
-  deleteTeamMembership,
-  listSchoolMembershipsForUser,
-  listTeamMembershipsForUser,
-  getRosterTeamsByScope,
-  saveRosterTeams,
-  getTeamById,
-  getActivityEventsByScope,
-  saveActivityEvent,
-  getLiveGameSessionsByScope,
-  createLiveGameSessionRecord,
-  getLiveGameSessionById,
-  saveOperatorSessionRecord,
-  getOperatorSessionByLiveSession,
-  issueLocalAuthToken,
-  getBillingStateByScope,
-  saveBillingState,
-  createGame,
-  setOperatorLinkSetup,
-  issueWorkspaceInvitation,
-});
-
-registerOnboardingRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  resolveRequestSchoolId,
-  getSchoolIdFromRequest,
-  getSuggestedCoachIdentity: (req) => buildSuggestedCoachIdentity((req as ScopedRequest).authContext),
-  buildOnboardingProfileView,
-  getOnboardingAccountStateByScope,
-  getPrimaryTeam,
-  withSuggestedOnboardingIdentity,
-  requireOnboardingIdentity,
-  saveOnboardingAccountState,
-  buildOnboardingAccountPayload,
-  ensureAuthenticatedOrganizationMember,
-  ensureOwnerMembership,
-  saveOrganizationProfile,
-  buildOrganizationProfilePayload,
-  buildOrganizationSlug,
-  normalizeNameKey,
-  buildRosterPlayer,
-  upsertPrimaryTeam,
-  persistSchoolTeams,
-  sanitizeTextField,
-  buildTeamAbbreviation,
-});
-
-registerOrgMembersRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getOnboardingAccountStateByScope,
-  ensureAuthenticatedOrganizationMember,
-  requireOrganizationManager,
-  getOrganizationMembersByScope,
-  sanitizeTextField,
-  isValidEmail,
-  normalizeMemberRole,
-  saveOrganizationMember,
-  deleteOrganizationMember,
-  issueMemberInvitation,
-});
-
-registerTeamConfigRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getRosterTeamsByScope,
-  defaultTeamAiSettings,
-  getPrimaryTeam,
-  extractTeamAiSettings,
-  upsertPrimaryTeam,
-  persistSchoolTeams,
-  normalizeNameKey,
-  buildRosterPlayer,
-  buildTeamAbbreviation,
-  sanitizeTextField,
-});
-
-registerPlayerRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getSeasonPlayers,
-  getRosterPlayers,
-  normalizeNameKey,
-  normalizePersonName,
-  getPrimaryTeam,
-  buildRosterPlayer,
-  findPlayerRecord,
-  getRosterTeamsByScope,
-  persistSchoolTeams,
-  sanitizeTextField,
-  isValidEmail,
-  getOnboardingAccountStateByScope,
-  getOrganizationMembersByScope,
-  saveOrganizationMember,
-  issueMemberInvitation,
-});
-
-registerGameManagementRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getRosterTeamsByScope,
-  getGameState,
-  getSeasonTeamStats,
-  buildGamesPayload,
-  getGameOverrideMap,
-  sanitizeTextField,
-  resolveGameResult,
-  setGameOverride,
-  deleteGame,
-  emitToGameRooms,
-  submitGame,
-  resetAllData,
-});
-
-// ---------------------------------------------------------------------------
-// Billing paywall middleware for premium feature endpoints.
-// Applied as app.use() guards before the relevant route registrations.
-// ---------------------------------------------------------------------------
-const { requireActiveBillingEntitlement } = createBillingEntitlementMiddleware({
-  paywallEnabled: BILLING_PAYWALL_ENABLED,
-  getSchoolIdFromRequest,
-  buildBillingEntitlement: (schoolId: string) => {
-    const state = getBillingStateByScope({ schoolId });
-    if (!BILLING_PAYWALL_ENABLED) {
-      return { accessActive: true, status: "active", reason: "billing_disabled" };
-    }
-    if (!state) {
-      return { accessActive: false, status: "incomplete", reason: "inactive_subscription" };
-    }
-    if (state.status === "active" || state.status === "trialing") {
-      return { accessActive: true, status: state.status, reason: "subscription_active" };
-    }
-    return { accessActive: false, status: state.status || "incomplete", reason: "inactive_subscription" };
-  },
-  loggerWarn: (message, context) => logger.warn(message, context),
-});
-
-// Wire paywall to premium endpoints
-app.use("/api/season-stats", requireActiveBillingEntitlement);
-app.use("/api/season-analysis", requireActiveBillingEntitlement);
-app.use("/api/notifications", requireActiveBillingEntitlement);
-app.use("/api/live-context", requireActiveBillingEntitlement);
-app.use("/api/leaderboards", requireActiveBillingEntitlement);
-app.use("/api/team-trends", requireActiveBillingEntitlement);
-app.use("/api/player-trends", requireActiveBillingEntitlement);
-app.use("/api/player-comparison", requireActiveBillingEntitlement);
-app.use("/api/advanced", requireActiveBillingEntitlement);
-app.use("/api/comprehensive-insights", requireActiveBillingEntitlement);
-app.use("/api/ai", requireActiveBillingEntitlement);
-
-registerLiveInsightsRoutes(app, {
-  getSchoolIdFromRequest,
-  getLiveContext,
-  buildLeaderboardsPayload,
-  buildTeamTrendsPayload,
-  normalizePersonName,
-  buildPlayerTrendsPayload,
-  buildPlayerComparisonPayload,
-});
-
-registerAdvancedInsightsRoutes(app, {
-  getSchoolIdFromRequest,
-  buildTeamAdvancedPayload,
-  buildPlayerAdvancedPayload,
-  buildVolatilityPayload,
-  buildComprehensiveInsightsPayload,
-});
-
-registerAiCompatibilityRoutes(app, {
-  requireApiKey,
-  getSchoolIdFromRequest,
-  sanitizeTextField,
-  buildAiSafetyMetadata,
-  getSeasonGames,
-  answerGameAiChat,
-  buildTeamSummaryText,
-  buildPlayerInsightsText,
-  buildGameAnalysisText,
-  buildSeasonAnalysisPayload,
-  seasonAnalysisBySchool,
-  playerAnalysisCacheBySchool,
-  buildPlayerAnalysisPayload,
-});
-
-registerAdvancedLegacyRoutes(app, {
-  getSchoolIdFromRequest,
-  buildGamesPayload,
-  roundStat,
-  buildComprehensiveInsightsPayload,
-  buildTeamAdvancedPayload,
-  buildVolatilityPayload,
-});
-
-registerRosterConfigRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getRosterTeamsByScope,
-  saveRosterTeams,
-  emitRosterTeams: (schoolId, teams) => {
-    io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  },
-});
-
-registerOperatorLinkRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  normalizeConnectionKey,
-  resolveRequestSchoolId,
-  listSchoolIdsForConnection,
-  getOperatorLinkSetup,
-  setOperatorLinkSetup,
-  issueLocalAuthToken,
-  getRosterTeamsByScope,
-  sanitizeTextField,
-  normalizeTeamColor,
-  emitOperatorLinkUpdated: (schoolId, connectionId, response) => {
-    io.to(connectionRoom(schoolId, connectionId)).emit("operator:link:updated", response);
-  },
-});
-
-registerTeamManagementRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getRosterTeamsByScope,
-  saveRosterTeams,
-  sanitizeTextField,
-  normalizeTeamColor,
-  buildUniqueSchoolTeamId,
-  emitRosterTeams: (schoolId, teams) => {
-    io.to(schoolRoom(schoolId)).emit("roster:teams", teams);
-  },
-  emitTeamCreated: (schoolId, team) => {
-    io.to(schoolRoom(schoolId)).emit("team:created", { team });
-  },
-  emitTeamUpdated: (schoolId, team) => {
-    io.to(schoolRoom(schoolId)).emit("team:updated", { team });
-  },
-  emitTeamDeleted: (schoolId, teamId) => {
-    io.to(schoolRoom(schoolId)).emit("team:deleted", { teamId });
-  },
-  emitPlayerAdded: (schoolId, teamId, player) => {
-    io.to(schoolRoom(schoolId)).emit("player:added", { teamId, player });
-  },
-  emitPlayerUpdated: (schoolId, teamId, player) => {
-    io.to(schoolRoom(schoolId)).emit("player:updated", { teamId, player });
-  },
-  emitPlayerDeleted: (schoolId, teamId, playerId) => {
-    io.to(schoolRoom(schoolId)).emit("player:deleted", { teamId, playerId });
-  },
-});
-
-registerGameSessionRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getRosterTeamsByScope,
-  getGameState,
-  getActiveGameState,
-  createGame,
-  emitToGameRooms,
-  getLatestOperatorLinkSetup,
-  patchGameLineup,
-});
-
-registerGameAiRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  getGameState,
-  refreshGameAiInsights,
-  getGameInsights,
-  getGameAiSettings,
-  updateGameAiSettings,
-  emitGameInsights: (schoolId, gameId, insights) => {
-    emitToGameRooms(schoolId, gameId, "game:insights", insights);
-  },
-  getGameAiContext,
-  updateGameAiContext,
-  getGameAiPromptPreview,
-  sanitizePromptText,
-  answerGameAiChat,
-});
-
-registerGameEventRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
   eventRateLimiter,
-  getSchoolIdFromRequest,
-  getRosterTeamsByScope,
-  getGameState,
-  getGameEvents,
-  ingestEvent,
-  emitToGameRooms,
-  broadcastGameStateWithDebounce,
-  refreshAndBroadcastInsights,
-  deleteEvent,
-  updateEvent,
-});
-
-registerRealtimeConnectionHandlers(io, {
-  getSchoolIdFromSocket,
-  schoolRoom,
-  normalizeConnectionKey,
-  apiKey: API_KEY,
-  writeApiKey: WRITE_API_KEY,
-  isJwtAuthEnabled,
-  jwtWriteRequired: JWT_WRITE_REQUIRED,
-  hasWriteRole,
-  getOperatorsByConnectionId,
+  getAuthUserFromContext,
+  issueWorkspaceInvitation,
+  resolveCoachRedirectOrigin,
+  API_KEY,
+  WRITE_API_KEY,
+  JWT_WRITE_REQUIRED,
+  BILLING_PAYWALL_ENABLED,
+  BILLING_STRIPE_TEST_MODE,
+  BILLING_STRIPE_SECRET_KEY,
+  BILLING_STRIPE_WEBHOOK_SECRET,
+  BILLING_STRIPE_PRICE_ID_MONTHLY,
+  BILLING_STRIPE_PRICE_ID_YEARLY,
+  EXPOSE_PASSWORD_RESET_TOKEN,
+  ENABLE_LEGACY_LOCAL_AUTH,
+  passwordResetTokens,
+  invitationTokens,
+  passwordResetTokenTtlMs,
+  buildResetPath,
+  buildInvitePath,
+  pruneExpiredPasswordResetTokens,
+  pruneExpiredInvitationTokens,
+  deliverPasswordResetEmail,
+  issueMemberInvitation,
   operatorPresenceBySocketId,
   operatorPresenceByDeviceId,
+  normalizeConnectionKey,
+  getOperatorsByConnectionId,
   refreshOperatorConnectionIndex,
-  gameRoom,
-  deviceRoom,
-  emitPresenceForDevice,
-  connectionRoom,
-  emitPresenceForConnection,
-  patchGameLineup,
-  emitToGameRooms,
-  isGameSubmitted,
-  getGameState,
-  getGameInsights,
-  refreshAndBroadcastInsights,
   buildConnectionPresencePayload,
-});
-
-registerAdminRoutes(app, {
-  requireApiKey,
-  requireWriteRole,
-  getSecurityTelemetry: () => securityTelemetry,
-  renderPrometheusSecurityMetrics,
-  getSchoolIdFromRequest,
-  resetAllData,
+  getOperatorLinkSetup,
+  setOperatorLinkSetup,
+  getLatestOperatorLinkSetup,
   clearOperatorLinksForSchool,
-});
-
-registerBillingRoutes(app, {
-  paywallEnabled: BILLING_PAYWALL_ENABLED,
-  stripeTestMode: BILLING_STRIPE_TEST_MODE,
-  stripeSecretKey: BILLING_STRIPE_SECRET_KEY,
-  stripeWebhookSecret: BILLING_STRIPE_WEBHOOK_SECRET,
-  stripePriceIdMonthly: BILLING_STRIPE_PRICE_ID_MONTHLY,
-  stripePriceIdYearly: BILLING_STRIPE_PRICE_ID_YEARLY,
-  requireApiKey,
-  requireWriteRole,
-  getSchoolIdFromRequest,
-  sanitizeTextField,
-  isValidEmail,
-  allocateBootstrapSchoolId,
-  buildBootstrapSchoolSeed,
-  normalizeSchoolId,
-  resolveCoachRedirectOrigin,
-  getBillingStateByScope,
-  saveBillingState,
-  findBillingStateByStripeCustomerId,
-  findBillingStateByStripeSubscriptionId,
-  hasProcessedStripeWebhookEvent,
-  markProcessedStripeWebhookEvent,
-  trimProcessedStripeWebhookEvents,
-  getOrganizationProfileByScope,
-  saveOrganizationProfile,
-  loggerInfo: (message, context) => logger.info(message, context),
-  loggerWarn: (message, context) => logger.warn(message, context),
-  loggerError: (message, context) => logger.error(message, context),
+  listSchoolIdsForConnection,
+  emitPresenceForDevice,
+  emitPresenceForConnection,
+  emitToGameRooms,
+  broadcastGameStateWithDebounce,
+  ...tenantComposition,
 });
 
 // SPA fallback: serve index.html for any non-API route not matched above.
@@ -1238,7 +682,7 @@ if (NODE_ENV === "production" && !API_KEY) {
 
 /**
  * Start the HTTP server. Accepts an optional port override (pass 0 for an
- * OS-assigned ephemeral port — useful in tests to avoid EADDRINUSE conflicts).
+ * OS-assigned ephemeral port â€” useful in tests to avoid EADDRINUSE conflicts).
  * Returns the actual bound port number.
  */
 export async function startServer(overridePort?: number): Promise<number> {

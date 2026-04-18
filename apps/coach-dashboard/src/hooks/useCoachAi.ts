@@ -52,6 +52,7 @@ interface GameAiStatus {
   healthy: boolean;
   lastErrorCode?: string;
   lastErrorMessage?: string;
+  budgetWarning?: string;
 }
 
 const AI_ERROR_MESSAGES: Record<string, string> = {
@@ -349,7 +350,11 @@ export function useCoachAi({ gameId, setInsights, setDashboardStatus }: UseCoach
         return;
       }
       const status = (await resp.json()) as GameAiStatus;
-      if (status.healthy) { setAiHealthMessage(""); return; }
+      if (status.healthy) {
+        // Show a soft budget warning even while generation is still running.
+        setAiHealthMessage(status.budgetWarning ?? "");
+        return;
+      }
       const msg = (status.lastErrorCode ? AI_ERROR_MESSAGES[status.lastErrorCode] : null)
         ?? (status.lastErrorMessage ? `AI unavailable: ${status.lastErrorMessage}` : null)
         ?? "AI generation unavailable. Rules-based insights are still active.";

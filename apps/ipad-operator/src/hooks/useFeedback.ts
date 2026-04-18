@@ -177,7 +177,11 @@ export function useFeedback(options: FeedbackOptions = {}) {
   }
 
   function triggerFeedback(tone: FeedbackTone, vibrateMs = 0) {
-    if (unlockedRef.current) {
+    // On iOS, the AudioContext can be re-suspended after backgrounding even
+    // when unlockedRef is true. Check the actual state to detect this.
+    const ctx = audioRef.current;
+    const isReady = unlockedRef.current && ctx?.state === "running";
+    if (isReady) {
       playTone(tone);
     } else {
       void unlockFeedbackAudio().then((ready) => {
@@ -197,9 +201,15 @@ export function useFeedback(options: FeedbackOptions = {}) {
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
+      // iOS suspends the AudioContext when the app is backgrounded. Reset the
+      // unlock flag so the next user tap re-unlocks from within a gesture handler
+      // (iOS rejects ctx.resume() outside of a gesture).
+      unlockedRef.current = false;
       void unlockFeedbackAudio();
     };
     const handlePageShow = () => {
+      // bfcache restore on iOS: context is suspended, reset so next tap re-unlocks.
+      unlockedRef.current = false;
       void unlockFeedbackAudio();
     };
 

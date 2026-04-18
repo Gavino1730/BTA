@@ -80,6 +80,10 @@ export interface GameSetup {
   hapticsEnabled?: boolean;
   startingLineup?: string[];
   deviceName?: string;
+  /** Legacy stats export endpoint URL */
+  dashboardUrl?: string;
+  /** ID assigned by the legacy dashboard after first successful stats export */
+  statsGameId?: number;
   /** @deprecated use myTeamId + vcSide instead */
   homeTeamId?: string;
   /** @deprecated use myTeamId + vcSide instead */

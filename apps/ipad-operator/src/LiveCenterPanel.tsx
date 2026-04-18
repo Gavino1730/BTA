@@ -12,7 +12,7 @@ type GameStateDisplay = { tone: string; label: string };
 type FeedItem = { event: GameEvent; pending: boolean };
 type ConfirmOpts = { title: string; message: string; confirmLabel: string; tone?: "default" | "danger" };
 
-interface LiveCenterPanelProps {
+export interface LiveCenterPanelProps {
   // Connection
   connectionId: string | undefined;
   connectedOperatorCount: number;

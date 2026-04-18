@@ -3,13 +3,17 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    env:
+      # Smoke test and UI audit require a running API — handled by the separate smoke-test job.
+      BTA_RUN_E2E_GATE: "0"
 
     steps:
       - name: Checkout
@@ -26,3 +30,154 @@ jobs:
 
       - name: Run CI gate
         run: node scripts/ci-gate.mjs
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/master'
+
+    env:
+      BTA_API_KEY: ${{ secrets.BTA_API_KEY }}
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build API
+        run: npm run build -w @bta/realtime-api
+
+      - name: Start API in background
+        run: node services/realtime-api/dist/server.js &
+        env:
+          PORT: 4000
+          BTA_API_KEY: ${{ secrets.BTA_API_KEY }}
+          NODE_ENV: production
+          BTA_REQUIRE_TENANT: "0"
+          BTA_JWT_WRITE_REQUIRED: "0"
+
+      - name: Wait for API to be healthy
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:4000/health; then
+              echo "API is healthy"
+              exit 0
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 2
+          done
+          echo "API did not start in time"
+          exit 1
+
+      - name: Run smoke test
+        run: npm run smoke-test
+        env:
+          BTA_API_KEY: ${{ secrets.BTA_API_KEY }}
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/master'
+
+    env:
+      BTA_API_KEY: ${{ secrets.BTA_API_KEY }}
+      BTA_LOCAL_AUTH_SECRET: ${{ secrets.BTA_LOCAL_AUTH_SECRET }}
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build packages and API
+        run: |
+          npm run build -w @bta/shared-schema
+          npm run build -w @bta/game-state
+          npm run build -w @bta/insight-engine
+          npm run build -w @bta/realtime-api
+
+      - name: Start all services (background)
+        run: npm run dev:all &
+        env:
+          PORT: 4000
+          BTA_API_KEY: ${{ secrets.BTA_API_KEY }}
+          BTA_LOCAL_AUTH_SECRET: ${{ secrets.BTA_LOCAL_AUTH_SECRET }}
+          NODE_ENV: production
+          BTA_REQUIRE_TENANT: "0"
+          BTA_JWT_WRITE_REQUIRED: "0"
+
+      - name: Wait for API to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/health; then
+              echo "API ready"
+              exit 0
+            fi
+            echo "Waiting for API... ($i/30)"
+            sleep 3
+          done
+          echo "API did not start in time"
+          exit 1
+
+      - name: Wait for coach dashboard (port 5173)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5173; then
+              echo "Coach dashboard ready"
+              exit 0
+            fi
+            echo "Waiting for coach dashboard... ($i/30)"
+            sleep 3
+          done
+          echo "Coach dashboard did not start in time"
+          exit 1
+
+      - name: Wait for operator app (port 5174)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5174; then
+              echo "Operator app ready"
+              exit 0
+            fi
+            echo "Waiting for operator app... ($i/30)"
+            sleep 3
+          done
+          echo "Operator app did not start in time"
+          exit 1
+
+      - name: Run fake-game-flow E2E test
+        run: npx playwright test e2e/fake-game-flow.spec.ts --project=chromium
+        env:
+          BTA_API_KEY: ${{ secrets.BTA_API_KEY }}
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
