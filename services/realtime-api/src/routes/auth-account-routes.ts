@@ -17,11 +17,14 @@ interface RegisterAuthAccountRoutesOptions {
   findPlayerRecord: (teams: any[], playerName: string) => { player: any; playerIndex: number; teamIndex: number } | null;
   saveOrganizationMember: (member: any, scope: { schoolId: string }) => any;
   persistSchoolTeams: (schoolId: string, teams: any[]) => any[];
+  generatePassword?: () => string;
+  saveBillingState?: (state: { status: string; planId: string }, scope: { schoolId: string }) => { status: string; planId: string };
+  normalizeMemberRole?: (value: unknown, fallback: string) => string;
   enableLegacyLocalAuth?: boolean;
 }
 
 export function registerAuthAccountRoutes(app: Express, options: RegisterAuthAccountRoutesOptions): void {
-  function rejectLegacyLocalAuth(res: Response, action: "coach password reset" | "player account" | "player password reset"): boolean {
+  function rejectLegacyLocalAuth(res: Response, action: "coach account" | "coach password reset" | "player account" | "player password reset"): boolean {
     if (options.enableLegacyLocalAuth !== false) {
       return false;
     }
@@ -32,6 +35,97 @@ export function registerAuthAccountRoutes(app: Express, options: RegisterAuthAcc
     });
     return true;
   }
+
+  app.post("/api/auth/coach-account", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    if (rejectLegacyLocalAuth(res, "coach account")) {
+      return;
+    }
+
+    const schoolId = options.getSchoolIdFromRequest(req);
+    const actingMember = options.requireOrganizationManager(req, res);
+    if (!actingMember) {
+      return;
+    }
+
+    const payload = (req.body ?? {}) as Record<string, unknown>;
+    const fullName = options.sanitizeTextField(payload.fullName, 120);
+    const email = options.sanitizeTextField(payload.email, 160).toLowerCase();
+    const role = options.normalizeMemberRole ? options.normalizeMemberRole(payload.role, "coach") : "coach";
+    const grantComplimentaryAccess = Boolean(payload.grantComplimentaryAccess);
+    const useGeneratedPassword = Boolean(payload.generatePassword);
+
+    if (!fullName || !email) {
+      res.status(400).json({ error: "fullName and email are required" });
+      return;
+    }
+
+    if (!options.isValidEmail(email)) {
+      res.status(400).json({ error: "Enter a valid email address" });
+      return;
+    }
+
+    let password: string;
+    let temporaryPassword: string | undefined;
+
+    if (useGeneratedPassword) {
+      if (!options.generatePassword) {
+        res.status(400).json({ error: "Password generation not available" });
+        return;
+      }
+      temporaryPassword = options.generatePassword();
+      password = temporaryPassword;
+    } else {
+      password = String(payload.password ?? "").trim();
+      if (!password) {
+        res.status(400).json({ error: "password or generatePassword is required" });
+        return;
+      }
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({ error: "Password must be at least 8 characters" });
+      return;
+    }
+
+    if (options.getLocalAuthAccountByEmail(email, { schoolId })) {
+      res.status(409).json({ error: "An account with that email already exists" });
+      return;
+    }
+
+    const { passwordHash, passwordSalt } = options.hashPassword(password);
+    const account = options.saveLocalAuthAccount({
+      email,
+      fullName,
+      passwordHash,
+      passwordSalt,
+      organizationId: actingMember.organizationId,
+      role,
+      status: "active",
+    }, { schoolId });
+
+    options.saveOrganizationMember({
+      organizationId: actingMember.organizationId,
+      authSubject: account.accountId,
+      fullName: account.fullName,
+      email: account.email,
+      role,
+      status: "active",
+      joinedAtIso: new Date().toISOString(),
+    }, { schoolId });
+
+    const responseBody: Record<string, unknown> = { message: "Coach account created" };
+    if (temporaryPassword !== undefined) {
+      responseBody.temporaryPassword = temporaryPassword;
+    }
+
+    if (grantComplimentaryAccess && options.saveBillingState) {
+      const billing = options.saveBillingState({ status: "active", planId: "complimentary" }, { schoolId });
+      responseBody.complimentaryAccessGranted = true;
+      responseBody.billing = { status: billing.status, planId: billing.planId };
+    }
+
+    res.status(201).json(responseBody);
+  });
 
   app.post("/api/auth/coach-account/reset-password", options.requireApiKey, options.requireWriteRole, (req, res) => {
     if (rejectLegacyLocalAuth(res, "coach password reset")) {

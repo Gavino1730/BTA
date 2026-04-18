@@ -361,11 +361,13 @@ export function SchoolTeamsSection({
   canManageSchool,
   onAddTeam,
   onOpenTeam,
+  onDeleteTeam,
 }: {
   overview: SchoolOverviewPayload;
   canManageSchool: boolean;
   onAddTeam: () => void;
   onOpenTeam: (teamId: string) => void;
+  onDeleteTeam?: (teamId: string) => void;
 }) {
   return (
     <section className="stats-page-card settings-section-card">
@@ -409,6 +411,19 @@ export function SchoolTeamsSection({
                 <button type="button" className="shell-nav-link shell-nav-link-active" onClick={() => onOpenTeam(team.id)}>
                   Open Team
                 </button>
+                {canManageSchool && onDeleteTeam ? (
+                  <button
+                    type="button"
+                    className="shell-nav-link"
+                    onClick={() => {
+                      if (window.confirm(`Delete "${team.displayName ?? team.name}"? This cannot be undone.`)) {
+                        onDeleteTeam(team.id);
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
               </div>
             </div>
           ))}

@@ -83,11 +83,11 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
   }
 
   function buildResetPath(schoolId: string, token: string): string {
-    return `/reset-password?schoolId=${encodeURIComponent(schoolId)}&token=${encodeURIComponent(token)}`;
+    return `/reset-password?token=${encodeURIComponent(token)}&schoolId=${encodeURIComponent(schoolId)}`;
   }
 
   function buildInvitePath(schoolId: string, token: string): string {
-    return `/setup?schoolId=${encodeURIComponent(schoolId)}&invite=${encodeURIComponent(token)}`;
+    return `/login?invite=${encodeURIComponent(token)}&schoolId=${encodeURIComponent(schoolId)}`;
   }
 
   function buildAbsoluteCoachUrl(req: Request, pathname: string): string {

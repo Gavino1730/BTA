@@ -18,7 +18,13 @@ export interface TestEmailMessage extends EmailMessage {
   sentAtIso: string;
 }
 
-const testEmailOutbox: TestEmailMessage[] = [];
+const testEmailOutbox: TestEmailMessage[] = (() => {
+  const g = globalThis as Record<string, unknown>;
+  if (!Array.isArray(g.__btaTestEmailOutbox)) {
+    g.__btaTestEmailOutbox = [];
+  }
+  return g.__btaTestEmailOutbox as TestEmailMessage[];
+})();
 
 function resolveProvider(): string {
   if (process.env.BTA_AUTH_TEST_MODE === "1") {

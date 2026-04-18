@@ -17,7 +17,7 @@ Prioritize safe, minimal, test-backed changes that preserve live game reliabilit
 - packages/shared-schema: Canonical Zod event schema and shared types
 - packages/game-state: Deterministic game state engine and replay logic
 - packages/ui-tokens: Shared design token CSS
-- services/realtime-api: Express + Socket.io ingest/fanout service
+- services/realtime-api: Express + Socket.io ingest/fanout service, plus billing (Stripe), auth, onboarding, workspace, org membership, and roster management
 - services/insight-engine: Rules-based live insight generator (TypeScript)
 - skills/: Canonical Copilot skill files (stripe-best-practices, stripe-projects, upgrade-stripe)
 
@@ -27,6 +27,7 @@ Run commands from repo root unless noted.
 - Install JS deps: npm install
 - Build all TS workspaces: npm run build
 - Test all JS/TS workspaces: npm run test
+- Run E2E tests: npm run test:e2e (Playwright)
 - Dev realtime API: npm run dev:api
 - Dev operator app: npm run dev:operator
 - Dev coach dashboard: npm run dev:coach
@@ -35,6 +36,7 @@ Run commands from repo root unless noted.
 - Start all apps/services: npm run dev:all
 - Smoke checks: npm run smoke-test
 - UI audit: npm run audit:ui
+- Validate env vars: npm run validate:env
 
 ## Architecture Boundaries
 - Treat packages/shared-schema as source of truth for event contracts.
@@ -43,15 +45,14 @@ Run commands from repo root unless noted.
 - Do not create direct app-to-app imports; share through packages/*.
 - Keep insight-engine rules-based and deterministic unless explicitly adding model-backed logic.
 - Keep realtime-api concerns separated from UI concerns:
-  - realtime-api: low-latency ingest, corrections, websocket fanout, auth, persistence
+  - realtime-api: low-latency ingest, corrections, websocket fanout, auth, billing/Stripe, onboarding, workspace/org/roster management, persistence
   - coach-dashboard / ipad-operator: rendering, workflow, local UI state
+- Supabase is the auth and database backend. Both apps have a `supabase/` client directory; realtime-api uses Supabase auth for JWT verification and email flows. DATABASE_URL (Postgres) is required for durable production storage.
 
 ## File Size Discipline
-- Keep files under 300 lines. If a file would exceed this, split it first.
 - One concern per file: each component, hook, or helper has its own file.
 - Route/page files import components — they do not define them inline.
 - Extract a `useSomething` hook whenever a `useState` + `useEffect` pair managing the same concern exceeds ~50 lines.
-- If adding code would push a file past 300 lines, pause and propose a split before proceeding.
 
 ## Code Conventions
 - TypeScript uses ESM and strict mode from tsconfig.base.json.
@@ -84,6 +85,7 @@ Use these docs for detailed procedures instead of repeating them in code comment
 - packages/shared-schema/src/types.ts
 - packages/shared-schema/src/validation.ts
 - packages/game-state/src/index.ts
+- packages/game-state/src/state-machine.ts
 - services/realtime-api/src/server.ts
-- services/realtime-api/src/store.ts
+- services/realtime-api/src/store/ (modular store directory — core-store, game-store, billing-store, etc.)
 - services/insight-engine/src/index.ts

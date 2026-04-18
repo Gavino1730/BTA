@@ -334,6 +334,9 @@ export function registerAllRoutes(
     findPlayerRecord,
     saveOrganizationMember,
     persistSchoolTeams,
+    generatePassword: () => randomBytes(12).toString("base64url"),
+    saveBillingState,
+    normalizeMemberRole,
     enableLegacyLocalAuth: ENABLE_LEGACY_LOCAL_AUTH,
   });
 
@@ -373,6 +376,9 @@ export function registerAllRoutes(
     createGame,
     setOperatorLinkSetup,
     issueWorkspaceInvitation,
+    emitTeamDeleted: (schoolId, teamId) => {
+      io.to(schoolRoom(schoolId)).emit("team:deleted", { teamId });
+    },
   });
 
   registerOnboardingRoutes(app, {

@@ -17,6 +17,7 @@ import {
 import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 import {
   createSchoolTeam,
+  deleteSchoolTeam,
   fetchSchoolOverview,
   inviteSchoolStaff,
   removeSchoolStaffMembership,
@@ -110,6 +111,22 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
       setInviteTeamId(overview.teams[0]?.id ?? "");
     }
   }, [inviteAccess, inviteTeamId, overview?.teams]);
+
+  async function handleDeleteTeam(teamId: string) {
+    if (!overview) {
+      return;
+    }
+    setBusy(true);
+    setStatus("Deleting team...");
+    try {
+      await deleteSchoolTeam(overview.school.schoolId, teamId);
+      await reloadOverview("Team deleted.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete team.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreateTeam() {
     if (!overview) {
@@ -331,6 +348,7 @@ export function SchoolOverviewPage({ schoolId, canManageSchool, onOpenTeam }: Sc
         canManageSchool={canManageSchool}
         onAddTeam={() => setShowAddTeam(true)}
         onOpenTeam={onOpenTeam}
+        onDeleteTeam={(teamId) => void handleDeleteTeam(teamId)}
       />
 
       <section className="stats-page-grid two-column" style={{ marginTop: "1.5rem" }}>

@@ -130,6 +130,7 @@ interface RegisterWorkspaceRoutesOptions {
     emailDelivery: unknown;
     warning?: string;
   }>;
+  emitTeamDeleted: (schoolId: string, teamId: string) => void;
 }
 
 function buildPairingCode(): string {
@@ -532,6 +533,29 @@ export function registerWorkspaceRoutes(app: Express, options: RegisterWorkspace
         : undefined,
       nextChecklist: ["Invite staff", "Import roster", "Start first live game"],
     });
+  });
+
+  app.delete("/api/schools/:schoolId/teams/:teamId", options.requireApiKey, options.requireWriteRole, (req, res) => {
+    const schoolId = options.sanitizeTextField(req.params.schoolId, 80);
+    const teamId = options.sanitizeTextField(req.params.teamId, 120);
+    const schoolMembership = resolveActingSchoolMembership(options, req, schoolId);
+    if (!isSchoolAdmin(schoolMembership?.role)) {
+      res.status(403).json({ error: "School admin access required" });
+      return;
+    }
+
+    const teams = options.getRosterTeamsByScope({ schoolId });
+    const idx = teams.findIndex((t) => t.id === teamId);
+    if (idx < 0) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+
+    const deleted = teams.splice(idx, 1)[0];
+    options.saveRosterTeams(teams, { schoolId });
+    options.emitTeamDeleted(schoolId, deleted.id);
+
+    res.json({ teamId: deleted.id });
   });
 
   app.post("/api/schools/:schoolId/staff/invitations", options.requireApiKey, options.requireWriteRole, async (req, res) => {

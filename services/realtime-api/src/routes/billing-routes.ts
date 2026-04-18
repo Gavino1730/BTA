@@ -40,6 +40,7 @@ export function buildBillingEntitlement(
   paywallEnabled: boolean;
   accessActive: boolean;
   status: string;
+  planId?: string;
   reason: string;
   activeTeamLimit: number | null;
 } {
@@ -52,6 +53,7 @@ export function buildBillingEntitlement(
       paywallEnabled: false,
       accessActive: true,
       status: "active",
+      planId: billingState?.planId,
       reason: "billing_disabled",
       activeTeamLimit: null,
     };
@@ -74,6 +76,7 @@ export function buildBillingEntitlement(
       paywallEnabled: true,
       accessActive: true,
       status,
+      planId: billingState.planId,
       reason: "subscription_active",
       activeTeamLimit,
     };
@@ -84,6 +87,7 @@ export function buildBillingEntitlement(
       paywallEnabled: true,
       accessActive: false,
       status: "past_due",
+      planId: billingState.planId,
       reason: "inactive_subscription",
       activeTeamLimit,
     };
@@ -94,6 +98,7 @@ export function buildBillingEntitlement(
       paywallEnabled: true,
       accessActive: false,
       status: "canceled",
+      planId: billingState.planId,
       reason: "inactive_subscription",
       activeTeamLimit,
     };
@@ -103,6 +108,7 @@ export function buildBillingEntitlement(
     paywallEnabled: true,
     accessActive: false,
     status: status || "incomplete",
+    planId: billingState.planId,
     reason: "inactive_subscription",
     activeTeamLimit,
   };

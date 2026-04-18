@@ -302,12 +302,14 @@ export function createTenantCompositionHelpers(deps: TenantCompositionDependenci
 
   function ensureOwnerMembership(req: Request, schoolId: string, account: OnboardingAccountState): OrganizationMember {
     const payload = withSuggestedOnboardingIdentity(req, {});
+    const existingMember = ensureAuthenticatedOrganizationMember(req, schoolId);
+    const role = existingMember?.role ?? "owner";
     return deps.saveOrganizationMember({
       organizationId: account.organization.organizationId,
       authSubject: resolveAuthSubject((req as ScopedRequest).authContext),
       fullName: deps.sanitizeTextField(payload.coachName ?? account.primaryCoach.fullName, 120),
       email: deps.sanitizeTextField(payload.coachEmail ?? account.primaryCoach.email, 160).toLowerCase(),
-      role: "owner",
+      role,
       status: "active",
       joinedAtIso: new Date().toISOString(),
     }, { schoolId });

@@ -182,6 +182,17 @@ export async function createSchoolTeam(schoolId: string, input: {
   return response.json() as Promise<{ team: WorkspaceTeam; billingNotice?: string }>;
 }
 
+export async function deleteSchoolTeam(schoolId: string, teamId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/schools/${encodeURIComponent(schoolId)}/teams/${encodeURIComponent(teamId)}`, {
+    method: "DELETE",
+    headers: apiKeyHeader(),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "Could not delete team.");
+  }
+}
+
 export async function createTeamLiveSession(teamId: string, input: {
   opponentName: string;
   gameId?: string;

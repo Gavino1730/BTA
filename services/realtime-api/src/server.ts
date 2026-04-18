@@ -291,6 +291,12 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
     return;
   }
 
+  // When no separate write API key is configured, the regular API key grants write access too
+  if (!WRITE_API_KEY && hasValidApiKeyRequest(req)) {
+    next();
+    return;
+  }
+
   if (!hasConfiguredWriteAuthPath()) {
     if (ALLOW_UNCONFIGURED_AUTH_IN_TESTS) {
       next();
@@ -677,7 +683,7 @@ let serverStarted = false;
 // Warn if API key not set in production
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 if (NODE_ENV === "production" && !API_KEY) {
-  console.warn("[realtime-api] WARNING: BTA_API_KEY not set. Read-protected API-key routes require JWT or BTA_WRITE_API_KEY.");
+  logger.warn("startup.api_key_missing_warning", { message: "BTA_API_KEY not set. Read-protected API-key routes require JWT or BTA_WRITE_API_KEY." });
 }
 
 /**
@@ -772,12 +778,12 @@ async function handleShutdownSignal(signal: NodeJS.Signals): Promise<void> {
   }
 
   shutdownInProgress = true;
-  console.log(`[realtime-api] Received ${signal}, shutting down gracefully...`);
+  logger.info("shutdown.signal_received", { signal });
   try {
     await stopServer();
     process.exit(0);
   } catch (error) {
-    console.error("[realtime-api] Graceful shutdown failed", error);
+    logger.error("shutdown.graceful_failed", { error });
     process.exit(1);
   }
 }
