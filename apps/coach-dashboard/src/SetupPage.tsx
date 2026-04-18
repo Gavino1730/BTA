@@ -312,14 +312,19 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       });
 
       // Re-fetch context after bootstrap so school membership is active and any
-      // pre-existing roster teams (e.g. from old onboarding) are visible.
+      // pre-existing roster teams (e.g. from old onboarding or a still-running
+      // API instance with in-memory data) are visible.
       const postBootstrapContext = await fetchWorkspaceContext().catch(() => null);
-      const existingTeam = postBootstrapContext?.teams.find((team) => team.schoolId === normalizedSchoolId) ?? null;
+      // Use the first team from ANY school — guards against both same-school and
+      // cross-school duplicates when old data is present in the API's memory.
+      const anyExistingTeam = postBootstrapContext?.teams[0] ?? null;
 
+      let activeSchoolId = normalizedSchoolId;
       let activeTeamId: string;
-      if (existingTeam) {
-        // School already has at least one team — skip creation to avoid duplicates.
-        activeTeamId = existingTeam.id;
+      if (anyExistingTeam) {
+        // User already has at least one team — skip creation to avoid duplicates.
+        activeSchoolId = anyExistingTeam.schoolId ?? normalizedSchoolId;
+        activeTeamId = anyExistingTeam.id;
       } else {
         setStatus("Creating first team...");
         const teamResult = await createSchoolTeam(normalizedSchoolId, {
@@ -333,7 +338,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       }
 
       await saveWorkspaceContextPreference({
-        schoolId: normalizedSchoolId,
+        schoolId: activeSchoolId,
         teamId: activeTeamId,
         contextType: "team",
       }).catch(() => undefined);

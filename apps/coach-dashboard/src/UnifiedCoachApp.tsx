@@ -715,7 +715,7 @@ export function UnifiedCoachApp() {
       {route === "stats-players" && <PlayersPage />}
       {route === "stats-trends" && <TrendsPage />}
       {route === "stats-insights" && <AiInsightsPage />}
-      {route === "stats-settings" && <TeamSettingsPage />}
+      {route === "stats-settings" && <TeamSettingsPage activeTeamId={activeTeamId} />}
       {!currentTeam && route === "billing" ? <BillingPage onNavigate={navigate} /> : null}
     </GameSessionProvider>
   );

@@ -12,6 +12,7 @@ export interface TeamDto {
   teamContext?: string;
   customPrompt?: string;
   focusInsights?: string[];
+  players?: RosterPlayerDto[];
 }
 
 export interface AiSettingsDto {
@@ -77,6 +78,7 @@ export interface InviteActionResponse {
 }
 
 export interface RosterPlayerDto {
+  id?: string;
   name: string;
   number?: string | number;
   position?: string;
@@ -91,6 +93,7 @@ export interface RosterPlayerDto {
 
 export interface RosterEditRow {
   key: string;
+  playerId?: string;
   originalName: string;
   name: string;
   number: string;

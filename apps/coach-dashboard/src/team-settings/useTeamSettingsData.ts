@@ -7,12 +7,11 @@ import type {
   OrganizationProfileDto,
   OrganizationMemberDto,
   RosterEditRow,
-  RosterPlayerDto,
   TeamDto,
   OrganizationMembersResponse,
 } from "./types.js";
 
-export function useTeamSettingsData(activeSchoolId: string) {
+export function useTeamSettingsData(activeSchoolId: string, activeTeamId?: string | null) {
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [profile, setProfile] = useState<OrganizationProfileDto | null>(null);
   const [members, setMembers] = useState<OrganizationMemberDto[]>([]);
@@ -35,12 +34,11 @@ export function useTeamSettingsData(activeSchoolId: string) {
     async function load() {
       setStatus("Loading team settings...");
       try {
-        const [teamsResponse, aiResponse, profileResponse, membersResponse, rosterResponse] = await Promise.all([
+        const [teamsResponse, aiResponse, profileResponse, membersResponse] = await Promise.all([
           fetch(`${apiBase}/api/teams`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/ai-settings`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/onboarding/account`, { headers: apiKeyHeader() }),
           fetch(`${apiBase}/api/org/members`, { headers: apiKeyHeader() }),
-          fetch(`${apiBase}/api/roster/players`, { headers: apiKeyHeader() }),
         ]);
 
         if (!teamsResponse.ok || !aiResponse.ok || !profileResponse.ok || !membersResponse.ok) {
@@ -51,8 +49,8 @@ export function useTeamSettingsData(activeSchoolId: string) {
         const aiPayload = await aiResponse.json() as AiSettingsDto;
         const profilePayload = await profileResponse.json() as OnboardingAccountResponse;
         const membersPayload = await membersResponse.json() as OrganizationMembersResponse;
-        const primaryTeam = Array.isArray(teamsPayload.teams) && teamsPayload.teams.length > 0 ? teamsPayload.teams[0] : null;
-        const rosterPayload = rosterResponse.ok ? await rosterResponse.json() as RosterPlayerDto[] : [];
+        const allTeams = Array.isArray(teamsPayload.teams) ? teamsPayload.teams : [];
+        const primaryTeam = (activeTeamId ? allTeams.find((t) => t.id === activeTeamId) : null) ?? allTeams[0] ?? null;
 
         if (cancelled) {
           return;
@@ -65,7 +63,7 @@ export function useTeamSettingsData(activeSchoolId: string) {
         setCustomPrompt(aiPayload.customPrompt ?? primaryTeam?.customPrompt ?? "");
         setCurrentMember(mapCurrentMember(membersPayload.currentMember));
         setMembers(mapOrganizationMembers(membersPayload.members));
-        setRoster(mapRosterPayloadToRows(rosterPayload));
+        setRoster(mapRosterPayloadToRows(primaryTeam?.players ?? []));
         setFocusInsightsText(formatFocusInsights(aiPayload.focusInsights ?? primaryTeam?.focusInsights));
         setStatus("Settings synced.");
       } catch {
@@ -79,7 +77,7 @@ export function useTeamSettingsData(activeSchoolId: string) {
     return () => {
       cancelled = true;
     };
-  }, [activeSchoolId]);
+  }, [activeSchoolId, activeTeamId]);
 
   return {
     team,

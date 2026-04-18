@@ -10,6 +10,11 @@ type TeamPlayer = {
   position: string;
   height?: string;
   grade?: string;
+  weight?: string;
+  role?: string;
+  notes?: string;
+  email?: string;
+  phone?: string;
 };
 
 interface RegisterTeamManagementRoutesOptions {
@@ -153,7 +158,7 @@ export function registerTeamManagementRoutes(app: Express, options: RegisterTeam
 
   app.post("/teams/:teamId/players", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
-    const { number, name, position, height, grade } = req.body ?? {};
+    const { number, name, position, height, grade, weight, role, notes, email, phone } = req.body ?? {};
     if (!name) {
       res.status(400).json({ error: "name is required" });
       return;
@@ -175,6 +180,11 @@ export function registerTeamManagementRoutes(app: Express, options: RegisterTeam
       position: String(position || ""),
       height: height ? String(height) : undefined,
       grade: grade ? String(grade) : undefined,
+      weight: weight ? String(weight) : undefined,
+      role: role ? String(role) : undefined,
+      notes: notes ? String(notes) : undefined,
+      email: email ? String(email) : undefined,
+      phone: phone ? String(phone) : undefined,
     };
 
     team.players.push(player);
@@ -187,7 +197,7 @@ export function registerTeamManagementRoutes(app: Express, options: RegisterTeam
 
   app.put("/teams/:teamId/players/:playerId", options.requireApiKey, options.requireWriteRole, (req, res) => {
     const schoolId = options.getSchoolIdFromRequest(req);
-    const { number, name, position, height, grade } = req.body ?? {};
+    const { number, name, position, height, grade, weight, role, notes, email, phone } = req.body ?? {};
     const teams = options.getRosterTeamsByScope({ schoolId });
     const team = teams.find((t) => t.id === req.params.teamId);
 
@@ -207,6 +217,11 @@ export function registerTeamManagementRoutes(app: Express, options: RegisterTeam
     if (position !== undefined) player.position = String(position);
     if (height !== undefined) player.height = height ? String(height) : undefined;
     if (grade !== undefined) player.grade = grade ? String(grade) : undefined;
+    if (weight !== undefined) player.weight = weight ? String(weight) : undefined;
+    if (role !== undefined) player.role = role ? String(role) : undefined;
+    if (notes !== undefined) player.notes = notes ? String(notes) : undefined;
+    if (email !== undefined) player.email = email ? String(email) : undefined;
+    if (phone !== undefined) player.phone = phone ? String(phone) : undefined;
 
     options.saveRosterTeams(teams, { schoolId });
     options.emitRosterTeams(schoolId, teams);

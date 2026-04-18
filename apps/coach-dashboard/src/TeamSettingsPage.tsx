@@ -22,7 +22,7 @@ import { useTeamSettingsActions } from "./team-settings/useTeamSettingsActions.j
 import { useTeamSettingsData } from "./team-settings/useTeamSettingsData.js";
 import { TeamWorkspaceHeader } from "./TeamWorkspaceHeader.js";
 
-export function TeamSettingsPage() {
+export function TeamSettingsPage({ activeTeamId }: { activeTeamId?: string | null }) {
   const activeSchoolId = resolveActiveSchoolId();
   const { activeSection, setActiveSection } = useSettingsSectionState();
   const {
@@ -45,7 +45,7 @@ export function TeamSettingsPage() {
     setFocusInsightsText,
     status,
     setStatus,
-  } = useTeamSettingsData(activeSchoolId);
+  } = useTeamSettingsData(activeSchoolId, activeTeamId);
   const {
     billingEntitlement,
     billingStatus,

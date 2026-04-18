@@ -119,6 +119,7 @@ export function buildProfileState(payload: OnboardingAccountResponse): Organizat
 export function mapRosterPlayerToEditRow(player: RosterPlayerDto, index: number): RosterEditRow {
   return {
     key: `existing-${index}-${player.name ?? ""}`,
+    playerId: player.id,
     originalName: player.name ?? "",
     name: player.name ?? "",
     number: String(player.number ?? ""),

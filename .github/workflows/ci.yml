@@ -54,8 +54,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build API
-        run: npm run build -w @bta/realtime-api
+      - name: Build packages and API
+        run: |
+          npm run build -w @bta/shared-schema
+          npm run build -w @bta/game-state
+          npm run build -w @bta/insight-engine
+          npm run build -w @bta/realtime-api
 
       - name: Start API in background
         run: node services/realtime-api/dist/server.js &

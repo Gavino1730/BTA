@@ -288,11 +288,19 @@ export function useTeamSettingsActions({
     setSaving(true);
     setStatus(`Adding ${name}...`);
 
+    const teamId = team?.id;
+    if (!teamId) {
+      setStatus("No active team selected.");
+      setSaving(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${apiBase}/api/player/${encodeURIComponent(name)}`, {
+      const response = await fetch(`${apiBase}/teams/${encodeURIComponent(teamId)}/players`, {
         method: "POST",
         headers: apiKeyHeader(true),
         body: JSON.stringify({
+          name,
           number: newPlayer.number.trim() || undefined,
           position: newPlayer.position.trim() || undefined,
           grade: newPlayer.grade.trim() || undefined,
@@ -309,10 +317,12 @@ export function useTeamSettingsActions({
         throw new Error("Add player failed");
       }
 
+      const payload = await response.json() as { player?: { id?: string } };
       setRoster((current) => [
         ...current,
         {
           key: `new-${Date.now()}`,
+          playerId: payload.player?.id,
           originalName: name,
           name,
           number: newPlayer.number.trim(),
@@ -340,18 +350,23 @@ export function useTeamSettingsActions({
     if (!name) {
       return;
     }
-    const originalName = row.originalName.trim() || name;
 
     setSaving(true);
     setStatus(`Saving ${name}...`);
 
+    const teamId = team?.id;
+    if (!teamId || !row.playerId) {
+      setStatus("Cannot save: missing team or player ID.");
+      setSaving(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${apiBase}/api/player/${encodeURIComponent(originalName)}`, {
-        method: "POST",
+      const response = await fetch(`${apiBase}/teams/${encodeURIComponent(teamId)}/players/${encodeURIComponent(row.playerId)}`, {
+        method: "PUT",
         headers: apiKeyHeader(true),
         body: JSON.stringify({
           name,
-          originalName,
           number: row.number.trim() || undefined,
           position: row.position.trim() || undefined,
           grade: row.grade.trim() || undefined,
@@ -396,7 +411,6 @@ export function useTeamSettingsActions({
 
   async function removePlayer(row: RosterEditRow) {
     const name = row.name.trim();
-    const originalName = row.originalName.trim() || name;
     if (!name) {
       setRoster((current) => current.filter((entry) => entry.key !== row.key));
       return;
@@ -405,8 +419,15 @@ export function useTeamSettingsActions({
     setSaving(true);
     setStatus(`Removing ${name}...`);
 
+    const teamId = team?.id;
+    if (!teamId || !row.playerId) {
+      setStatus("Cannot remove: missing team or player ID.");
+      setSaving(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${apiBase}/api/roster/player/${encodeURIComponent(originalName)}`, {
+      const response = await fetch(`${apiBase}/teams/${encodeURIComponent(teamId)}/players/${encodeURIComponent(row.playerId)}`, {
         method: "DELETE",
         headers: apiKeyHeader(),
       });
