@@ -4,9 +4,9 @@ import { ContentPage } from "@/components/pages/content-page";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Support | BTA Courtside",
+  title: "Support | BTA Courtside Help Center",
   description:
-    "Get BTA Courtside support resources for account access, onboarding, operator workflows, and troubleshooting.",
+    "Get BTA Courtside support for live game workflows, account access, onboarding, and escalation. Severity-based triage with direct engineering paths for critical incidents.",
   path: "/support",
 });
 

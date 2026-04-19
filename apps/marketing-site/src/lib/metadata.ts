@@ -35,17 +35,29 @@ export function buildPageMetadata({ title, description, path }: MetaInput): Meta
     alternates: {
       canonical: canonicalPath,
     },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+      },
+    },
     openGraph: {
       title: normalizedTitle,
       description,
       type: "website",
       url: canonicalUrl,
+      siteName: "BTA Courtside",
+      locale: "en_US",
       images: [
         {
           url: "/opengraph-image",
           width: 1200,
           height: 630,
-          alt: "BTA Courtside marketing preview",
+          alt: `${normalizedTitle} — BTA Courtside`,
         },
       ],
     },

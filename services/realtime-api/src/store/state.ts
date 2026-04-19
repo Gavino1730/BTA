@@ -7,4 +7,4 @@ export type {
   OperatorSessionRecord,
   RosterPlayer,
   RosterTeam,
-} from "./core-store.js";
+} from "./store-types.js";

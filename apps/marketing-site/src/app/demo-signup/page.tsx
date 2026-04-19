@@ -4,9 +4,9 @@ import { ContentPage } from "@/components/pages/content-page";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Demo Signup | BTA Courtside",
+  title: "Request a Demo | See BTA Courtside Live",
   description:
-    "Request a live BTA Courtside product demo and we will tailor the session to your team workflows, staffing model, and game-day setup.",
+    "Request a personalized BTA Courtside demo tailored to your program. See live stat keeping, coaching dashboards, and film sync in action with your game-day workflows.",
   path: "/demo-signup",
 });
 

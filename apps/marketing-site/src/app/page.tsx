@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { AmbientGrid } from "@/components/sections/ambient-grid";
 import { DataStream } from "@/components/sections/data-stream";
 import { FinalCta } from "@/components/sections/final-cta";
@@ -11,6 +12,15 @@ import { SocialProof } from "@/components/sections/social-proof";
 import { TrustStrip } from "@/components/sections/trust-strip";
 import { UseCases } from "@/components/sections/use-cases";
 import { WhyDifferent } from "@/components/sections/why-different";
+
+export const metadata: Metadata = {
+  title: "BTA Courtside | Live Basketball Operations Platform",
+  description:
+    "BTA Courtside is the all-in-one basketball operations platform for live stat keeping, coaching dashboards, synced film review, and AI insights. Built for high school, AAU, and club programs.",
+  alternates: {
+    canonical: "/",
+  },
+};
 
 export default function Home(): JSX.Element {
   return (

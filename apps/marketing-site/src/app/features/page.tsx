@@ -4,9 +4,9 @@ import { ContentPage } from "@/components/pages/content-page";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Platform Features | BTA Courtside",
+  title: "Features | Basketball Operations Platform",
   description:
-    "Review BTA Courtside platform capabilities for live event capture, coaching dashboards, synchronized film, and insight workflows.",
+    "Explore BTA Courtside features: real-time stat keeping, coaching dashboards, synchronized film review, deterministic game-state engine, and AI-driven insights for competitive basketball programs.",
   path: "/features",
 });
 

@@ -3,7 +3,7 @@ import type {
   LiveGameSessionRecord,
   OperatorSessionRecord,
   TenantScope,
-} from "./core-store.js";
+} from "./store-types.js";
 
 interface ActivityStoreDependencies {
   resolveSchoolId: (scope?: TenantScope) => string;

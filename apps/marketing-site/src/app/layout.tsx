@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Syne } from "next/font/google";
 import { getSiteUrl } from "@/lib/site-url";
 import { PageTransition } from "@/components/layout/page-transition";
+import { SiteJsonLd } from "@/components/seo/json-ld";
 import "./globals.css";
 
 const bodyFont = Inter({
@@ -25,9 +26,40 @@ const monoFont = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BTA Courtside",
+  title: {
+    default: "BTA Courtside | Live Basketball Operations Platform",
+    template: "%s | BTA Courtside",
+  },
   description:
     "BTA Courtside Intelligence is premium basketball operations software for live stat keeping, game workflows, synced film review, and AI coaching insights.",
+  keywords: [
+    "basketball operations software",
+    "live stat keeping",
+    "coaching analytics",
+    "basketball coaching platform",
+    "game day operations",
+    "AI coaching insights",
+    "film review sync",
+    "high school basketball",
+    "AAU basketball software",
+    "basketball dashboard",
+  ],
+  authors: [{ name: "BTA Courtside Intelligence" }],
+  creator: "BTA Courtside Intelligence",
+  publisher: "BTA Courtside Intelligence",
+  applicationName: "BTA Courtside",
+  referrer: "origin-when-cross-origin",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
   icons: {
     icon: "/brand-icon.png",
     apple: "/brand-icon.png",
@@ -37,26 +69,30 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   openGraph: {
-    title: "BTA Courtside",
+    title: "BTA Courtside | Live Basketball Operations Platform",
     description:
       "Live stat keeping, game operations, film sync, and AI coaching insights in one connected basketball platform.",
     type: "website",
+    url: "/",
+    siteName: "BTA Courtside",
+    locale: "en_US",
     images: [
       {
         url: "/opengraph-image",
         width: 1200,
         height: 630,
-        alt: "BTA Courtside platform preview",
+        alt: "BTA Courtside — Live Basketball Operations Platform",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "BTA Courtside",
+    title: "BTA Courtside | Live Basketball Operations Platform",
     description:
       "Live basketball operations software for coaches, operators, and programs.",
     images: ["/twitter-image"],
   },
+  category: "sports technology",
 };
 
 export default function RootLayout({
@@ -66,6 +102,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${bodyFont.variable} ${displayFont.variable} ${monoFont.variable} h-full antialiased`}>
+      <head>
+        <SiteJsonLd />
+      </head>
       <body className="marketing-shell min-h-full flex flex-col">
         <div className="global-brand-badge" aria-hidden="true">
           <img src="/brand-icon.png" alt="" className="rounded-sm" />

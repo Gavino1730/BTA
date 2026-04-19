@@ -1,4 +1,4 @@
-import type { BillingState, BillingSubscriptionStatus, TenantScope } from "./core-store.js";
+import type { BillingState, BillingSubscriptionStatus, TenantScope } from "./store-types.js";
 
 interface BillingStoreDependencies {
   resolveSchoolId: (scope?: TenantScope) => string;

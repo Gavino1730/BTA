@@ -4,9 +4,9 @@ import { ContentPage } from "@/components/pages/content-page";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "About BTA Courtside | Basketball Operations Intelligence",
+  title: "About | Basketball Operations Intelligence",
   description:
-    "Learn how BTA Courtside helps basketball programs run game-day operations, synced film review, and coaching analytics in one system.",
+    "BTA Courtside was built by basketball operators for real game pressure. One connected system for live operations, coaching analytics, and synced film review — no fragmented tools on game day.",
   path: "/about",
 });
 

@@ -1,4 +1,4 @@
-import type { LocalAuthAccount, LocalAuthAccountInput, TenantScope } from "./core-store.js";
+import type { LocalAuthAccount, LocalAuthAccountInput, TenantScope } from "./store-types.js";
 
 interface AuthStoreDependencies {
   resolveSchoolId: (scope?: TenantScope) => string;

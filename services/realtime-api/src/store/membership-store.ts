@@ -9,7 +9,7 @@ import type {
   TeamMembership,
   TenantScope,
   UserWorkspaceProfile,
-} from "./core-store.js";
+} from "./store-types.js";
 
 interface MembershipStoreDependencies {
   resolveSchoolId: (scope?: TenantScope) => string;

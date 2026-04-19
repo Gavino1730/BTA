@@ -1,4 +1,4 @@
-import type { RosterTeam, TenantScope } from "./core-store.js";
+import type { RosterTeam, TenantScope } from "./store-types.js";
 
 interface RosterStoreDependencies {
   resolveSchoolId: (scope?: TenantScope) => string;

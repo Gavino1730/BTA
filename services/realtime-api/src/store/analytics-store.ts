@@ -7,7 +7,7 @@ import type {
   SeasonPlayerSummary,
   SeasonTeamStats,
   TenantScope,
-} from "./core-store.js";
+} from "./store-types.js";
 
 interface AnalyticsSessionLike {
   schoolId: string;

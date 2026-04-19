@@ -4,9 +4,9 @@ import { ContentPage } from "@/components/pages/content-page";
 import { buildPageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Contact | BTA Courtside",
+  title: "Contact | Talk with the BTA Courtside Team",
   description:
-    "Contact the BTA Courtside team for sales, partnerships, implementation questions, and platform evaluations.",
+    "Contact BTA Courtside for sales inquiries, program rollout planning, implementation questions, or game-day support. We route every request to the right specialist.",
   path: "/contact",
 });
 
