@@ -258,7 +258,8 @@ describe("server auth integration", () => {
     };
     expect(inviteBody.member?.status).toBe("invited");
     expect(inviteBody.inviteToken).toBeTruthy();
-    expect(inviteBody.invitePath).toContain("/login?");
+    expect(inviteBody.invitePath).toContain("/setup?");
+    expect(inviteBody.invitePath).toContain("email=assistant-coach%40example.org");
 
     const emails = readTestEmailOutbox();
     expect(emails).toHaveLength(1);
@@ -376,7 +377,8 @@ describe("server auth integration", () => {
 
     expect(updateBody.member?.email).toBe("assistant-new@school.org");
     expect(updateBody.inviteToken).toBeTruthy();
-    expect(updateBody.invitePath).toContain("/login?");
+    expect(updateBody.invitePath).toContain("/setup?");
+    expect(updateBody.invitePath).toContain("email=assistant-new%40school.org");
 
     const emails = readTestEmailOutbox();
     expect(emails).toHaveLength(1);
@@ -428,7 +430,8 @@ describe("server auth integration", () => {
       invitePath?: string;
     };
     expect(createWithEmailBody.inviteToken).toBeTruthy();
-    expect(createWithEmailBody.invitePath).toContain("/login?");
+    expect(createWithEmailBody.invitePath).toContain("/setup?");
+    expect(createWithEmailBody.invitePath).toContain("email=jordan.lane%40school.org");
 
     let emails = readTestEmailOutbox();
     expect(emails).toHaveLength(1);
@@ -471,7 +474,8 @@ describe("server auth integration", () => {
       invitePath?: string;
     };
     expect(addEmailBody.inviteToken).toBeTruthy();
-    expect(addEmailBody.invitePath).toContain("/login?");
+    expect(addEmailBody.invitePath).toContain("/setup?");
+    expect(addEmailBody.invitePath).toContain("email=aiden.cole%40school.org");
 
     emails = readTestEmailOutbox();
     expect(emails).toHaveLength(1);
