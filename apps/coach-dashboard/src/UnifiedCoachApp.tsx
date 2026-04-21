@@ -405,8 +405,14 @@ export function UnifiedCoachApp() {
     };
   }, [applyResolvedContext, workspaceContext]);
 
-  const handleAuthSuccess = useCallback(async () => {
+  const handleAuthSuccess = useCallback(async (options?: { forceExitSetup?: boolean }) => {
     const { needsSetup, authenticated } = await syncWorkspaceState();
+    if (authenticated && options?.forceExitSetup) {
+      setRequiresSetup(false);
+      window.history.replaceState({}, "", "/live");
+      setRoute("live");
+      return;
+    }
     if (authenticated && needsSetup && route !== "setup") {
       navigate("/setup");
     }
@@ -529,7 +535,8 @@ export function UnifiedCoachApp() {
     return (
       <SetupPage
         onComplete={() => {
-          void handleAuthSuccess();
+          const hasInvite = Boolean(new URLSearchParams(window.location.search).get("invite")?.trim());
+          void handleAuthSuccess({ forceExitSetup: hasInvite });
         }}
       />
     );
