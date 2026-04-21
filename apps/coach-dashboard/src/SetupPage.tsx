@@ -75,6 +75,38 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const sessionRestoredRef = useRef(false);
 
+  async function acceptInviteMembership(emailValue: string): Promise<boolean> {
+    if (!inviteToken) {
+      return true;
+    }
+
+    const normalizedEmail = emailValue.trim().toLowerCase() || inviteEmail;
+    if (!normalizedEmail) {
+      setAuthStatus("Invite email is missing. Ask your admin to resend the invite.");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${apiBase}/api/org/members/accept-invite`, {
+        method: "POST",
+        headers: apiKeyHeader(true),
+        body: JSON.stringify({ email: normalizedEmail, token: inviteToken }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        const message = payload.error?.toLowerCase() ?? "";
+        if (message.includes("already") || message.includes("active")) {
+          return true;
+        }
+        throw new Error(payload.error || "Could not activate invite membership.");
+      }
+      return true;
+    } catch (error) {
+      setAuthStatus(error instanceof Error ? error.message : "Could not activate invite membership.");
+      return false;
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -101,6 +133,13 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
         });
 
+        if (inviteToken) {
+          const accepted = await acceptInviteMembership(payload.user.email ?? inviteEmail);
+          if (!accepted) {
+            return;
+          }
+        }
+
         setAuthSession(payload.user);
         setCoachName(payload.user.fullName ?? "");
         setCoachEmail(payload.user.email ?? inviteEmail);
@@ -120,7 +159,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           setSchoolName(context.schools[0].name);
         }
 
-        if (!cancelled && !sessionRestoredRef.current) {
+        if (!cancelled && !sessionRestoredRef.current && !inviteToken) {
           sessionRestoredRef.current = true;
           setStep(2);
         }
@@ -252,6 +291,14 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         schoolId: payload.user.schoolId,
         lastLoginAtIso: payload.user.lastLoginAtIso ?? null,
       });
+
+      if (inviteToken) {
+        const accepted = await acceptInviteMembership(payload.user.email ?? normalizedEmail);
+        if (!accepted) {
+          return false;
+        }
+      }
+
       setAuthSession(payload.user);
       setPassword("");
       setConfirmPassword("");
@@ -288,7 +335,16 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   async function handleStep1Continue() {
     if (authSession) {
       if (inviteToken) {
-        onComplete();
+        const accepted = await acceptInviteMembership(authSession.email ?? inviteEmail);
+        if (!accepted) {
+          return;
+        }
+        const context = await fetchWorkspaceContext().catch(() => null);
+        if (context && context.schools.length > 0) {
+          onComplete();
+          return;
+        }
+        setAuthStatus("Invite accepted, but workspace context is not ready yet. Retry in a moment.");
         return;
       }
       setStep(2);
@@ -486,12 +542,12 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   </label>
                   <label className="stats-filter-field">
                     <span>Password</span>
-                    <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" />
+                    <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" autoComplete={authMode === "register" ? "new-password" : "current-password"} />
                   </label>
                   {authMode === "register" ? (
                     <label className="stats-filter-field">
                       <span>Confirm Password</span>
-                      <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Re-enter password" />
+                      <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Re-enter password" autoComplete="new-password" />
                     </label>
                   ) : null}
                 </div>
