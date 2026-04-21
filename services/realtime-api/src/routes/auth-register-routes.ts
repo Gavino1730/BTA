@@ -5,6 +5,7 @@ type RejectLegacyFn = (res: Response, action: "register" | "login" | "password r
 interface InvitationTokenRecord {
   token: string;
   schoolId: string;
+  memberId?: string;
   email: string;
   fullName: string;
   role: string;
@@ -31,6 +32,10 @@ export interface RegisterAuthRegisterRoutesOptions {
   getLocalAuthAccountsByEmailAcrossSchools: (email: string) => any[];
   getLocalAuthAccountsByScope: (scope: { schoolId: string }) => any[];
   getOrganizationMembersByScope: (scope: { schoolId: string }) => any[];
+  getSchoolMembershipsByScope: (scope: { schoolId: string }) => any[];
+  saveSchoolMembership: (membership: any) => any;
+  getTeamMembershipsByScope: (scope: { schoolId: string }) => any[];
+  saveTeamMembership: (membership: any) => any;
   hashPassword: (password: string, salt?: string) => { passwordHash: string; passwordSalt: string };
   saveLocalAuthAccount: (account: any, scope: { schoolId: string }) => any;
   activateKnownMemberForAccount: (schoolId: string, account: any) => any;
@@ -56,6 +61,76 @@ export function registerAuthRegisterRoutes(
   options: RegisterAuthRegisterRoutesOptions,
   rejectLegacyLocalAuth: RejectLegacyFn,
 ): void {
+  app.post("/api/org/members/accept-invite", options.authRateLimiter, (req, res) => {
+    const payload = (req.body ?? {}) as Record<string, unknown>;
+    const token = String(payload.token ?? "").trim();
+    const email = options.sanitizeTextField(payload.email, 160).toLowerCase();
+
+    if (!token || !email) {
+      res.status(400).json({ error: "email and token are required" });
+      return;
+    }
+
+    options.pruneExpiredInvitationTokens();
+    const invitation = options.invitationTokens.get(token) ?? null;
+    if (!invitation) {
+      res.status(404).json({ error: "Invitation not found or expired" });
+      return;
+    }
+
+    if (invitation.email !== email) {
+      res.status(400).json({ error: "Invite token does not match this email address" });
+      return;
+    }
+
+    const schoolId = invitation.schoolId;
+    let activated = 0;
+
+    const orgMembers = options.getOrganizationMembersByScope({ schoolId });
+    for (const member of orgMembers) {
+      if (member.email !== email || member.status !== "invited") {
+        continue;
+      }
+      options.saveOrganizationMember({
+        ...member,
+        status: "active",
+        joinedAtIso: member.joinedAtIso || new Date().toISOString(),
+      }, { schoolId });
+      activated += 1;
+    }
+
+    const schoolMemberships = options.getSchoolMembershipsByScope({ schoolId });
+    for (const membership of schoolMemberships) {
+      if (membership.email !== email || membership.status !== "invited") {
+        continue;
+      }
+      options.saveSchoolMembership({
+        ...membership,
+        status: "active",
+      });
+      activated += 1;
+    }
+
+    const teamMemberships = options.getTeamMembershipsByScope({ schoolId });
+    for (const membership of teamMemberships) {
+      if (membership.email !== email || membership.status !== "invited") {
+        continue;
+      }
+      options.saveTeamMembership({
+        ...membership,
+        status: "active",
+      });
+      activated += 1;
+    }
+
+    options.invitationTokens.delete(token);
+    res.json({
+      accepted: true,
+      schoolId,
+      activated,
+    });
+  });
+
   app.post("/api/auth/register", options.authRateLimiter, (req, res) => {
     if (rejectLegacyLocalAuth(res, "register")) {
       return;
