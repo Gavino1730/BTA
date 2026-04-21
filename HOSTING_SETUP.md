@@ -54,6 +54,7 @@ Minimum coach Vercel env vars:
 - `VITE_OPERATOR_CONSOLE=https://operator.btaintel.com`
 - `VITE_SUPABASE_URL=https://<project-ref>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-anon-key>`
+- `VITE_AUTH_REDIRECT_BASE=https://dashboard.btaintel.com` (recommended so signup/password emails always land on the public dashboard domain)
 - Optional fallback during API-key rollout: `VITE_API_KEY=<same as Railway BTA_API_KEY>`
 
 The included `vercel.json` already handles:

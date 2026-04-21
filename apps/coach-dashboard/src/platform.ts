@@ -207,8 +207,20 @@ export const marketingBase = resolveRuntimeBase(
   defaultHost,
   pageProtocol,
 );
+export const authRedirectBase = resolveRuntimeBase(
+  import.meta.env.VITE_AUTH_REDIRECT_BASE
+    ?? import.meta.env.VITE_COACH_DASHBOARD
+    ?? defaultOrigin,
+  defaultHost,
+  pageProtocol,
+);
 export const API_KEY: string = import.meta.env.VITE_API_KEY ?? "";
 export const AUTH_SESSION_KEY = "bta.coach.authSession";
+
+export function buildAuthRedirectUrl(pathname: string): string {
+  const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return `${authRedirectBase}${normalizedPath}`;
+}
 
 export type AuthSessionPersistence = "local" | "session";
 

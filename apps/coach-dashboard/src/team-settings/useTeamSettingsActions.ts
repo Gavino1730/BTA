@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { apiBase, apiKeyHeader } from "../platform.js";
+import { apiBase, apiKeyHeader, buildAuthRedirectUrl } from "../platform.js";
 import { requestSupabasePasswordReset } from "../supabase/client.js";
 import { buildInviteDeliveryStatus, createEmptyNewPlayer, mapOrganizationMembers, parseFocusInsightsText, roleToApi } from "./helpers.js";
 import type { AppMemberRole, InviteActionResponse, NewPlayerFormState, OrganizationMemberDto, RosterEditRow, TeamDto } from "./types.js";
@@ -279,7 +279,7 @@ export function useTeamSettingsActions({
     setStatus(`Sending password reset email to ${email}...`);
 
     try {
-      await requestSupabasePasswordReset(email.trim().toLowerCase(), `${window.location.origin}/reset-password`);
+      await requestSupabasePasswordReset(email.trim().toLowerCase(), buildAuthRedirectUrl("/reset-password"));
       setStatus(`Password reset email sent to ${email}.`);
     } catch {
       setStatus("Could not send password reset email.");

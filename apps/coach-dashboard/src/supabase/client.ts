@@ -83,6 +83,62 @@ export async function getSupabaseSessionIdentity(): Promise<{
   };
 }
 
+export async function initializeSupabaseAuthSessionFromUrl(): Promise<{
+  token: string | null;
+  email?: string;
+  fullName?: string;
+  userId?: string;
+} | null> {
+  const client = createSupabaseClient();
+  if (!client || typeof window === "undefined") {
+    return null;
+  }
+
+  const url = new URL(window.location.href);
+  const type = (url.searchParams.get("type") ?? "").trim().toLowerCase();
+  const tokenHash = (url.searchParams.get("token_hash") ?? "").trim();
+  const code = (url.searchParams.get("code") ?? "").trim();
+  let changedUrl = false;
+
+  if (tokenHash && type) {
+    const allowedTypes = new Set([
+      "signup",
+      "invite",
+      "magiclink",
+      "recovery",
+      "email_change",
+      "email",
+    ]);
+    if (allowedTypes.has(type)) {
+      const { error } = await client.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: type as "signup" | "invite" | "magiclink" | "recovery" | "email_change" | "email",
+      });
+      if (error) {
+        throw new Error(error.message || "Could not verify auth link.");
+      }
+      url.searchParams.delete("token_hash");
+      url.searchParams.delete("type");
+      changedUrl = true;
+    }
+  } else if (code) {
+    const { error } = await client.auth.exchangeCodeForSession(code);
+    if (error) {
+      throw new Error(error.message || "Could not verify auth callback.");
+    }
+    url.searchParams.delete("code");
+    changedUrl = true;
+  }
+
+  if (changedUrl) {
+    const nextSearch = url.searchParams.toString();
+    const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ""}${url.hash || ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }
+
+  return getSupabaseSessionIdentity();
+}
+
 export async function initializeSupabaseRecoverySessionFromUrl(): Promise<{
   token: string | null;
   email?: string;

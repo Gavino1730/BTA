@@ -23,7 +23,7 @@ export interface WorkspaceInvitationOptions {
     expiresAt: number;
   }>;
   pruneExpiredInvitationTokens: () => void;
-  buildInvitePath: (schoolId: string, token: string, email?: string) => string;
+  buildInvitePath: (schoolId: string, token: string, email?: string, fullName?: string) => string;
   resolveCoachRedirectOrigin: (req: Request) => string;
   sendTransactionalEmail: typeof SendEmailFn;
 }
@@ -61,7 +61,7 @@ export function createWorkspaceInvitationHandler(opts: WorkspaceInvitationOption
         || "your school",
       160,
     );
-    const invitePath = buildInvitePath(input.schoolId, inviteToken, input.email);
+    const invitePath = buildInvitePath(input.schoolId, inviteToken, input.email, input.fullName);
     const inviteUrl = new URL(invitePath, `${resolveCoachRedirectOrigin(req)}/`).toString();
 
     invitationTokens.set(inviteToken, {

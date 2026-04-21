@@ -47,7 +47,7 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
   invitationTokens: Map<string, InvitationTokenRecord>;
   passwordResetTokenTtlMs: number;
   buildResetPath: (schoolId: string, token: string) => string;
-  buildInvitePath: (schoolId: string, token: string, email?: string) => string;
+  buildInvitePath: (schoolId: string, token: string, email?: string, fullName?: string) => string;
   pruneExpiredPasswordResetTokens: (now?: number) => void;
   pruneExpiredInvitationTokens: (now?: number) => void;
   deliverPasswordResetEmail: (req: Request, schoolId: string, account: LocalAuthAccount, token: string) => Promise<EmailDeliveryResult>;
@@ -86,13 +86,17 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
     return `/reset-password?token=${encodeURIComponent(token)}&schoolId=${encodeURIComponent(schoolId)}`;
   }
 
-  function buildInvitePath(schoolId: string, token: string, email?: string): string {
+  function buildInvitePath(schoolId: string, token: string, email?: string, fullName?: string): string {
     const params = new URLSearchParams();
     params.set("invite", token);
     params.set("schoolId", schoolId);
     const normalizedEmail = deps.sanitizeTextField(email, 160).toLowerCase();
+    const normalizedFullName = deps.sanitizeTextField(fullName, 120);
     if (normalizedEmail) {
       params.set("email", normalizedEmail);
+    }
+    if (normalizedFullName) {
+      params.set("name", normalizedFullName);
     }
     return `/setup?${params.toString()}`;
   }
@@ -133,7 +137,7 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
     req: Request,
     invitation: InvitationTokenRecord,
   ): Promise<EmailDeliveryResult> {
-    const invitePath = buildInvitePath(invitation.schoolId, invitation.token, invitation.email);
+    const invitePath = buildInvitePath(invitation.schoolId, invitation.token, invitation.email, invitation.fullName);
     const inviteUrl = buildAbsoluteCoachUrl(req, invitePath);
     return deps.sendTransactionalEmail({
       to: invitation.email,
@@ -186,7 +190,7 @@ export function createAuthSessionBootstrap(deps: AuthSessionDependencies): {
     };
 
     invitationTokens.set(inviteToken, invitation);
-    const invitePath = buildInvitePath(schoolId, inviteToken, member.email);
+    const invitePath = buildInvitePath(schoolId, inviteToken, member.email, member.fullName);
     const emailDelivery = await deliverInvitationEmail(req, invitation);
 
     return {

@@ -12,6 +12,7 @@ import {
   clearAuthSession,
   marketingBase,
   readStoredAuthSession,
+  storeAuthSession,
 } from "./platform.js";
 import { ResetPasswordPage } from "./ResetPasswordPage.js";
 import { canonicalizeCoachPath, resolveCoachRoute, type AppRoute } from "./routes.js";
@@ -27,15 +28,16 @@ import { WorkspaceStateCard } from "./WorkspaceStateCard.js";
 import { TrendsPage } from "./TrendsPage.js";
 import { TutorialOverlay } from "./TutorialOverlay.js";
 import { BillingPage } from "./RouteShellPages.js";
-import { signOutSupabase } from "./supabase/client.js";
+import { initializeSupabaseAuthSessionFromUrl, signOutSupabase } from "./supabase/client.js";
 import { fetchWorkspaceContext, saveWorkspaceContextPreference, type WorkspaceContext } from "./workspace.js";
 
 function buildSetupPathFromInviteQuery(): string {
   const params = new URLSearchParams(window.location.search);
   const invite = params.get("invite")?.trim() ?? "";
   const email = params.get("email")?.trim() ?? "";
+  const name = params.get("name")?.trim() ?? "";
   const schoolId = params.get("schoolId")?.trim() ?? "";
-  if (!invite && !email && !schoolId) {
+  if (!invite && !email && !name && !schoolId) {
     return "/setup";
   }
 
@@ -48,6 +50,9 @@ function buildSetupPathFromInviteQuery(): string {
   }
   if (email) {
     next.set("email", email);
+  }
+  if (name) {
+    next.set("name", name);
   }
 
   return `/setup?${next.toString()}`;
@@ -283,7 +288,22 @@ export function UnifiedCoachApp() {
       return;
     }
 
-    void syncWorkspaceState().catch(() => {
+    void (async () => {
+      try {
+        const restored = await initializeSupabaseAuthSessionFromUrl();
+        if (restored?.token) {
+          storeAuthSession({
+            token: restored.token,
+            email: restored.email,
+            fullName: restored.fullName,
+          });
+        }
+      } catch {
+        // best effort URL callback processing
+      }
+
+      return syncWorkspaceState();
+    })().catch(() => {
       const storedSession = readStoredAuthSession();
       setIsAuthenticated(Boolean(storedSession?.token));
       setRequiresSetup(!Boolean(storedSession?.token));

@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { buildAuthRedirectUrl } from "./platform.js";
 import { requestSupabasePasswordReset } from "./supabase/client.js";
 
 interface ForgotPasswordPageProps {
@@ -29,7 +30,7 @@ export function ForgotPasswordPage({ onBackLogin, onBackHome }: ForgotPasswordPa
     setStatus("Preparing your reset email...");
 
     try {
-      const redirectTo = `${window.location.origin}/reset-password`;
+      const redirectTo = buildAuthRedirectUrl("/reset-password");
       await requestSupabasePasswordReset(normalized, redirectTo);
       setStatus("If this email exists, a password reset link has been sent.");
     } catch (error) {

@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   apiBase,
   apiKeyHeader,
+  buildAuthRedirectUrl,
   clearAuthSession,
   formatSchoolNameFromId,
   resolveActiveSchoolId,
@@ -55,9 +56,10 @@ function slugifySchoolId(value: string): string {
 export function SetupPage({ onComplete }: SetupPageProps) {
   const schoolPlaceholder = useMemo(() => formatSchoolNameFromId(resolveActiveSchoolId()), []);
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get("invite")?.trim() ?? "", []);
+  const inviteName = useMemo(() => new URLSearchParams(window.location.search).get("name")?.trim() ?? "", []);
   const inviteEmail = useMemo(() => new URLSearchParams(window.location.search).get("email")?.trim().toLowerCase() ?? "", []);
   const [schoolName, setSchoolName] = useState("");
-  const [coachName, setCoachName] = useState("");
+  const [coachName, setCoachName] = useState(inviteName);
   const [coachEmail, setCoachEmail] = useState(inviteEmail);
   const [displayName, setDisplayName] = useState("");
   const [teamAbbreviation, setTeamAbbreviation] = useState("");
@@ -105,7 +107,10 @@ export function SetupPage({ onComplete }: SetupPageProps) {
         setAuthStatus(`Signed in as ${payload.user.email ?? payload.user.fullName ?? "coach"}.`);
 
         const context = await fetchWorkspaceContext().catch(() => null);
-        if (!cancelled && context && context.schools.length > 0 && context.teams.length > 0) {
+        const hasAccessibleWorkspace = inviteToken
+          ? Boolean(context && context.schools.length > 0)
+          : Boolean(context && context.schools.length > 0 && context.teams.length > 0);
+        if (!cancelled && hasAccessibleWorkspace) {
           onComplete();
           return;
         }
@@ -127,7 +132,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [inviteEmail, onComplete, schoolName]);
+  }, [inviteEmail, inviteToken, onComplete, schoolName]);
 
   const completionPercent = useMemo(() => {
     const completed = [
@@ -195,7 +200,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
             name: normalizedName,
             school_name: schoolName.trim() || undefined,
             invite_token: inviteToken || undefined,
-          }, `${window.location.origin}/login`);
+          }, buildAuthRedirectUrl("/login"));
 
       if (!authResult.token) {
         if (authMode === "register") {
@@ -259,6 +264,15 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           : `Account ready for ${payload.user.email ?? normalizedEmail}. Continue below.`,
       );
 
+      if (inviteToken) {
+        const context = await fetchWorkspaceContext().catch(() => null);
+        if (context && context.schools.length > 0) {
+          setAuthStatus("Invite accepted. Opening your workspace...");
+          onComplete();
+          return true;
+        }
+      }
+
       if (payload.onboarding?.completed) {
         onComplete();
       }
@@ -273,11 +287,15 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
   async function handleStep1Continue() {
     if (authSession) {
+      if (inviteToken) {
+        onComplete();
+        return;
+      }
       setStep(2);
       return;
     }
     const success = await handleAuthSubmit();
-    if (success) {
+    if (success && !inviteToken) {
       setStep(2);
     }
   }
