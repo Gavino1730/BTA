@@ -264,7 +264,13 @@ export function UnifiedCoachApp() {
 
     const context = await fetchWorkspaceContext();
     setWorkspaceContext(context);
-    const needsSetup = context.schools.length === 0 || context.teams.length === 0;
+    const hasActiveAdminMembership = context.schoolMemberships.some((membership) =>
+      membership.status === "active"
+        && (membership.role === "owner" || membership.role === "school_admin"),
+    );
+    const hasActiveTeamMembership = context.teamMemberships.some((membership) => membership.status === "active");
+    const needsSetup = context.schools.length === 0
+      || (hasActiveAdminMembership && !hasActiveTeamMembership && context.teams.length === 0);
     setRequiresSetup(needsSetup);
     applyResolvedContext(context);
     return { needsSetup, authenticated: true };
