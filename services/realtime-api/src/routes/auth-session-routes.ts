@@ -24,7 +24,7 @@ export interface RegisterAuthSessionRoutesOptions extends RegisterAuthMeRoutesOp
   saveOnboardingAccountState: (input: any, scope: { schoolId: string }) => unknown;
   issueLocalAuthToken: (input: { subject: string; email: string; name: string; schoolId: string; role: string }) => string | null;
   pruneExpiredInvitationTokens: (now?: number) => void;
-  invitationTokens: Map<string, { token: string; schoolId: string; email: string; fullName: string; role: string; organizationName: string; expiresAt: number }>;
+  invitationTokens: Map<string, { token: string; schoolId: string; memberId?: string; email: string; fullName: string; role: string; organizationName: string; expiresAt: number }>;
   buildInvitePath: (schoolId: string, token: string, email?: string, fullName?: string) => string;
 }
 
