@@ -314,9 +314,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           onComplete();
           return true;
         }
-        setAuthStatus("Invite linked. Opening your workspace...");
-        onComplete();
-        return true;
+        setAuthStatus("Invite linked. Finalizing workspace access. Please wait a moment and try again.");
+        return false;
       }
 
       if (payload.onboarding?.completed) {
@@ -343,8 +342,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           onComplete();
           return;
         }
-        setAuthStatus("Invite linked. Opening your workspace...");
-        onComplete();
+        setAuthStatus("Invite linked. Finalizing workspace access. Please wait a moment and try again.");
         return;
       }
       setStep(2);

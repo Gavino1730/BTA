@@ -264,13 +264,7 @@ export function UnifiedCoachApp() {
 
     const context = await fetchWorkspaceContext();
     setWorkspaceContext(context);
-    const hasActiveAdminMembership = context.schoolMemberships.some((membership) =>
-      membership.status === "active"
-        && (membership.role === "owner" || membership.role === "school_admin"),
-    );
-    const hasActiveTeamMembership = context.teamMemberships.some((membership) => membership.status === "active");
-    const needsSetup = context.schools.length === 0
-      || (hasActiveAdminMembership && !hasActiveTeamMembership && context.teams.length === 0);
+    const needsSetup = context.schools.length === 0;
     setRequiresSetup(needsSetup);
     applyResolvedContext(context);
     return { needsSetup, authenticated: true };
@@ -407,7 +401,7 @@ export function UnifiedCoachApp() {
 
   const handleAuthSuccess = useCallback(async (options?: { forceExitSetup?: boolean }) => {
     const { needsSetup, authenticated } = await syncWorkspaceState();
-    if (authenticated && options?.forceExitSetup) {
+    if (authenticated && options?.forceExitSetup && !needsSetup) {
       setRequiresSetup(false);
       window.history.replaceState({}, "", "/live");
       setRoute("live");
