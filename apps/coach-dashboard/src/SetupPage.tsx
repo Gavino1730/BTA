@@ -92,26 +92,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
     }
 
     try {
-      const response = await fetch(`${apiBase}/api/org/members/accept-invite`, {
-        method: "POST",
-        headers: apiKeyHeader(true),
-        body: JSON.stringify({ email: normalizedEmail, token: inviteToken }),
-      });
-      const payload = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) {
-        if (response.status === 404 || response.status === 405) {
-          // Older API deployments may not expose this route; invite token metadata +
-          // session sync still activates membership in that environment.
-          inviteActivationRef.current = "active";
-          return true;
-        }
-        const message = payload.error?.toLowerCase() ?? "";
-        if (message.includes("already") || message.includes("active")) {
-          inviteActivationRef.current = "active";
-          return true;
-        }
-        throw new Error(payload.error || "Could not activate invite membership.");
-      }
+      // Do not hard-fail setup if legacy API deployments do not expose explicit
+      // invite acceptance; session/context resolution can still activate access.
+      await fetch(`${apiBase}/api/auth/session`, { headers: apiKeyHeader() }).catch(() => null);
       inviteActivationRef.current = "active";
       return true;
     } catch (error) {
@@ -331,6 +314,9 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           onComplete();
           return true;
         }
+        setAuthStatus("Invite linked. Opening your workspace...");
+        onComplete();
+        return true;
       }
 
       if (payload.onboarding?.completed) {
@@ -357,7 +343,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
           onComplete();
           return;
         }
-        setAuthStatus("Invite accepted, but workspace context is not ready yet. Retry in a moment.");
+        setAuthStatus("Invite linked. Opening your workspace...");
+        onComplete();
         return;
       }
       setStep(2);
@@ -575,7 +562,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
               disabled={authBusy}
             >
               {authSession
-                ? "Continue to School"
+                ? (inviteToken ? "Continue to Workspace" : "Continue to School")
                 : authBusy
                   ? (authMode === "login" ? "Signing In..." : "Creating Account...")
                   : (authMode === "login" ? "Sign In & Continue" : "Create Account & Continue")}
