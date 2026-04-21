@@ -32,6 +32,19 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const hasToken = Boolean(token.trim());
+  const setupPath = useMemo(() => {
+    const params = new URLSearchParams();
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedToken = token.trim();
+    if (normalizedToken) {
+      params.set("invite", normalizedToken);
+    }
+    if (normalizedEmail) {
+      params.set("email", normalizedEmail);
+    }
+    const query = params.toString();
+    return query ? `/setup?${query}` : "/setup";
+  }, [email, token]);
   const nextLoginPath = useMemo(() => {
     const normalizedEmail = email.trim().toLowerCase();
     return normalizedEmail ? `/login?email=${encodeURIComponent(normalizedEmail)}` : "/login";
@@ -57,6 +70,11 @@ export function InviteAcceptancePage({ onNavigate }: RoutedPageProps) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 404 || response.status === 405) {
+          setStatusMessage("Redirecting to invite setup...");
+          onNavigate(setupPath);
+          return;
+        }
         setErrorMessage(typeof payload.error === "string" ? payload.error : "Could not accept invite.");
         return;
       }

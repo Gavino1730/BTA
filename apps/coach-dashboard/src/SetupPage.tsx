@@ -74,9 +74,14 @@ export function SetupPage({ onComplete }: SetupPageProps) {
   const [authBusy, setAuthBusy] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const sessionRestoredRef = useRef(false);
+  const inviteActivationRef = useRef<"idle" | "active">("idle");
 
   async function acceptInviteMembership(emailValue: string): Promise<boolean> {
     if (!inviteToken) {
+      return true;
+    }
+
+    if (inviteActivationRef.current === "active") {
       return true;
     }
 
@@ -94,12 +99,20 @@ export function SetupPage({ onComplete }: SetupPageProps) {
       });
       const payload = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) {
+        if (response.status === 404 || response.status === 405) {
+          // Older API deployments may not expose this route; invite token metadata +
+          // session sync still activates membership in that environment.
+          inviteActivationRef.current = "active";
+          return true;
+        }
         const message = payload.error?.toLowerCase() ?? "";
         if (message.includes("already") || message.includes("active")) {
+          inviteActivationRef.current = "active";
           return true;
         }
         throw new Error(payload.error || "Could not activate invite membership.");
       }
+      inviteActivationRef.current = "active";
       return true;
     } catch (error) {
       setAuthStatus(error instanceof Error ? error.message : "Could not activate invite membership.");
@@ -538,7 +551,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                   </label>
                   <label className="stats-filter-field">
                     <span>Email</span>
-                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.org" />
+                    <input type="email" value={coachEmail} onChange={(event) => setCoachEmail(event.target.value)} placeholder="coach@school.org" autoComplete="username" />
                   </label>
                   <label className="stats-filter-field">
                     <span>Password</span>
